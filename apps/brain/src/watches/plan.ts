@@ -1,7 +1,9 @@
 // Which watches a trip needs right now, kept in step with the trip on every change (level-triggered).
 // A watch's query is P4's StatusQuery as it is.
 import type pg from 'pg';
+import type * as C from '@go/contract';
 import type { Trip } from '../door/methods.js';
+import { picksOf, type PersonPick } from '../travel/picks.js';
 import type { StatusQuery } from '../travel/travel.js';
 
 export interface WatchPlan {
@@ -28,27 +30,38 @@ export function flightNumber(number: string, carrierCode: string): string {
   return /^\d/.test(rest) ? rest : n;
 }
 
-export function planWatches(trip: Trip, now: Date): WatchPlan[] {
+/** A flight's watch, from a day before it leaves to an hour after it lands; null once it has, or with no number. */
+function flightWatch(watchId: string, tripId: string, j: C.Journey | null | undefined, personIds: string[], t: number): WatchPlan | null {
+  if (!j || !j.carrier_code || !j.number) return null;
+  const depart = Date.parse(j.depart_at);
+  const arrive = Date.parse(j.arrive_at);
+  if (arrive + H <= t) return null;
+  const number = flightNumber(j.number, j.carrier_code);
+  return {
+    watchId,
+    tripId,
+    query: { kind: 'flight', carrierCode: j.carrier_code, number, date: j.depart_at.slice(0, 10) },
+    personIds,
+    label: `${j.carrier_name ? `${j.carrier_name} ` : ''}${j.carrier_code} ${number}`,
+    startAt: new Date(Math.max(t, depart - 24 * H)),
+    endsAt: new Date(arrive + H),
+  };
+}
+
+/**
+ * The trip's watches: each confirmed booking's flight or train, and each person's own flight pick (travel/picks.ts),
+ * booked through Go or on ixigo by themselves, for them alone. A pick a booking of theirs already watches, or of someone
+ * no longer in the trip, adds none.
+ */
+export function planWatches(trip: Trip, now: Date, picks: PersonPick[] = []): WatchPlan[] {
   const out: WatchPlan[] = [];
   const t = now.getTime();
   for (const b of trip.bookings) {
     if (b.status !== 'confirmed') continue;
     const j = b.journey;
     if (b.kind === 'flight') {
-      if (!j || !j.carrier_code || !j.number) continue;
-      const depart = Date.parse(j.depart_at);
-      const arrive = Date.parse(j.arrive_at);
-      if (arrive + H <= t) continue;
-      const number = flightNumber(j.number, j.carrier_code);
-      out.push({
-        watchId: `flight:${trip.trip_id}:${b.booking_id}`,
-        tripId: trip.trip_id,
-        query: { kind: 'flight', carrierCode: j.carrier_code, number, date: j.depart_at.slice(0, 10) },
-        personIds: b.for_person_ids,
-        label: `${j.carrier_name ? `${j.carrier_name} ` : ''}${j.carrier_code} ${number}`,
-        startAt: new Date(Math.max(t, depart - 24 * H)),
-        endsAt: new Date(arrive + H),
-      });
+      const w = flightWatch(`flight:${trip.trip_id}:${b.booking_id}`, trip.trip_id, j, b.for_person_ids, t);
+      if (w) out.push(w);
     } else if (b.kind === 'train') {
       const leaves = Date.parse(j?.depart_at ?? b.starts_at ?? '');
       if (Number.isNaN(leaves) || leaves <= t) continue;
@@ -63,11 +76,20 @@ export function planWatches(trip: Trip, now: Date): WatchPlan[] {
       });
     }
   }
+  const people = new Set(trip.people.map((p) => p.person_id));
+  for (const p of picks) {
+    if (p.kind !== 'flight' || !people.has(p.personId)) continue;
+    const w = flightWatch(`flight:${trip.trip_id}:pick:${p.personId}:${p.way}`, trip.trip_id, p.journey, [p.personId], t);
+    if (!w || w.query.kind !== 'flight') continue;
+    const q = w.query;
+    const booked = out.some((o) => o.query.kind === 'flight' && o.query.carrierCode === q.carrierCode && o.query.number === q.number && o.query.date === q.date && o.personIds.includes(p.personId));
+    if (!booked) out.push(w);
+  }
   return out;
 }
 
 export async function syncWatches(pool: pg.Pool, trip: Trip, now: Date): Promise<void> {
-  const plans = planWatches(trip, now);
+  const plans = planWatches(trip, now, await picksOf(pool, trip.trip_id));
   for (const p of plans) {
     await pool.query(
       `insert into watches (watch_id, trip_id, kind, query, person_ids, label, next_check_at, ends_at)
