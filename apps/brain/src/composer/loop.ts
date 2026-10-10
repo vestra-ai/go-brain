@@ -217,7 +217,7 @@ async function runTool(tool: QuickTool<any> | undefined, call: Anthropic.ToolUse
     content,
     ...(isError ? { is_error: true } : {}),
   });
-  if (!tool) return result(`There is no tool named ${call.name}.`, true);
+  if (!tool) return result(i.tools.map((t) => t.misnamed?.(call.name)).find((hint) => hint !== undefined) ?? `There is no tool named ${call.name}.`, true);
   // A turn with limits (P6's proactive bar): any other tool is refused before it runs. The definitions sent never change.
   const allowed = i.ctx.allowedTools;
   if (allowed && call.name !== STAY_SILENT && !allowed.includes(call.name)) {

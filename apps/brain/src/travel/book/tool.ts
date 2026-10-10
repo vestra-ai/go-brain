@@ -169,12 +169,20 @@ export function ixigoTool(d: IxigoToolDeps): QuickTool<{ recipe: string; inputs:
     description:
       "Runs one of Go's ixigo.com recipes in the trip's browser and answers with what ixigo shows, for what the searches " +
       "don't cover. A line a recipe: its id, its inputs (? optional, # an option from this trip's search results, written " +
-      `results_id#n like r_ab12#2, or an options card's id#n as the chat numbers its options, like c_opt_ab12#1) and what it answers.\n${bookLines(recipes)}`,
+      `results_id#n like r_ab12#2, or an options card's id#n as the chat numbers its options, like c_opt_ab12#1) and what it answers. ` +
+      `Each id is a value of this tool's recipe field, never a tool of its own: call ixigo with {"recipe": "<its id>", "inputs": {…}}.\n${bookLines(recipes)}`,
     input: z.object({
       recipe: z.enum(ids).describe('The recipe id'),
       inputs: z.record(z.string(), Value).describe('The recipe\'s inputs by name, places as the person said them, dates as YYYY-MM-DD'),
     }),
     timeoutMs: 15_000,
+    misnamed(name) {
+      // "hotels.rooms_placeholder" (10 Oct drill): a recipe's id called as a tool, with or without more after it.
+      const norm = (s: string): string => s.toLowerCase().replace(/_/g, '.');
+      const r = recipes.filter((x) => norm(name) === norm(x.id) || norm(name).startsWith(`${norm(x.id)}.`)).sort((x, y) => y.id.length - x.id.length)[0];
+      if (!r) return undefined;
+      return `There is no tool named ${name}: ${r.id} is a recipe of the ixigo tool. Call ixigo with {"recipe": "${r.id}", "inputs": ${JSON.stringify(inputsOf(r))}}.`;
+    },
     async run(a, ctx: TurnCtx) {
       if (!d.live()) return { recipe: a.recipe, error: 'not_here', note: "Go's ixigo recipes run only when Go searches ixigo.com itself." };
       const recipe = recipes.find((r) => r.id === a.recipe);
