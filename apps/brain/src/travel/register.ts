@@ -6,7 +6,7 @@
 import type { RegisterLane } from '../app.js';
 import { loadBook } from './book/book.js';
 import { createEngine } from './book/engine.js';
-import { ixigoTool } from './book/tool.js';
+import { ixigoTool, toolRecipes } from './book/tool.js';
 import { tripToday } from './dates.js';
 import { readTravelEnv } from './env.js';
 import { FakeIxigoStore } from './fake-ixigo/data.js';
@@ -23,8 +23,9 @@ import { createIxigoWebBackend, LINK_ONLY_KINDS, searchKindOf } from './recipes/
 import { createOffers } from './recipes/offers.js';
 import { offersNow } from './recipes/offers-now.js';
 import { createEarlyStart } from './recipes/early.js';
-import { earlyAnswer, earlySearchNow } from './recipes/now.js';
+import { earlyAnswer, earlyReadNow, earlySearchNow } from './recipes/now.js';
 import { loadLearnedPlaces } from './recipes/places-store.js';
+import { stayOnCard } from './recipes/stay-on-card.js';
 import { createPlaceFor } from './place-for.js';
 import { createResultsStore } from './results.js';
 import { createRunLog } from './runs.js';
@@ -238,9 +239,14 @@ export const registerTravel: RegisterLane = async (brain) => {
     travel: () => brain.travel, switches: brain.switches, today: tripToday(brain.pool, brain.now), now: brain.now, log: brain.log,
     warmForTravel: warm,
     linkOnly: (kind) => LINK_ONLY_KINDS.has(kind),
+    // The asks beyond the searches (a train's status, a guide, the offers...): the facts recipes the ixigo tool offers, so
+    // its call for the same inputs joins the read (the engine keeps a facts read in flight).
+    recipes: { has: (id) => toolRecipes(book).some((r) => r.id === id), run: (id, given, o) => engine.answer(id, given, o) },
+    stayFor: (tripId, text) => stayOnCard(brain.pool, results, tripId, text),
   });
   brain.hooks.onRead((msg, read, pack) => early.onRead(msg, read, pack));
   brain.context.addNow(earlySearchNow({ early, results, travel, now: brain.now }));
+  brain.context.addNow(earlyReadNow({ early, now: brain.now }));
   // The sites' own filter lists the trip's searches brought: the model maps the ask onto them (site_filters).
   brain.context.addNow(offersNow({ offers }));
   // A plain search ask whose early search found options answers with no model call: the card and a line from its data.

@@ -150,3 +150,89 @@ describe('the early start', () => {
     await vi.waitFor(() => expect(w.log.warn).toHaveBeenCalledWith(expect.objectContaining({ tripId: 't_goa', kind: 'flights' }), expect.stringContaining('early search failed')));
   });
 });
+
+describe('the early start of an ixigo read beyond the searches', () => {
+  const BOOK = new Set(['trains.running_status', 'trains.schedule', 'plan.destination', 'offers.list', 'hotels.reviews']);
+  function readWorld(mode = 'ixigo_web', o: { fail?: boolean; stay?: { ref: string; page: string } | null; book?: Set<string> } = {}) {
+    const runs: Array<{ id: string; given: Record<string, unknown>; tripId: string }> = [];
+    const switches = new FakeSwitches();
+    void switches.set('TRAVEL_MODE', mode);
+    const log = { warn: vi.fn() };
+    const warmed: string[] = [];
+    const facts = { as: 'facts' as const, title: 'Train 12051 today', rows: [{ state: 'On time' }], page: 'https://www.ixigo.com/trains/12051/running-status', checkedAt: '2026-10-07T12:00:00.000Z', ms: 900 };
+    const early = createEarlyStart({
+      travel: () => ({ search: vi.fn() }) as unknown as Travel, switches, today: async () => '2026-10-07', now: () => new Date('2026-10-07T12:00:00Z'), log,
+      warmForTravel: (tripId, kind) => warmed.push(`${tripId}:${kind}`),
+      recipes: {
+        has: (id) => (o.book ?? BOOK).has(id),
+        run: async (id, given, r) => {
+          runs.push({ id, given, tripId: r.tripId });
+          if (o.fail) throw new TravelError('unreachable', 'PNR 4512873690 did not load');
+          return facts;
+        },
+      },
+      stayFor: async () => o.stay ?? null,
+    });
+    return { early, runs, log, warmed, facts };
+  }
+  const picked = (value: string): ReflexRead => ({ ...forGo, recipe: { value: value as never, sure: true } });
+
+  it("runs a train's running status at once for a live pick, wakes the computer, and keeps the read for the turn", async () => {
+    const w = readWorld();
+    expect(await w.early.onRead(msg(60, 'p_arjun', 'Go 12051 abhi kahan chal rahi hai?'), picked('train_status'), goaPack())).toEqual({ dueNow: true });
+    expect(w.runs).toEqual([{ id: 'trains.running_status', given: { train: '12051' }, tripId: 't_goa' }]);
+    expect(w.warmed).toEqual(['t_goa:null']);
+    const read = w.early.readFor('t_goa', 'm_60')!;
+    expect(read).toMatchObject({ choice: 'train_status', recipe: 'trains.running_status', asked: { train: '12051' } });
+    await expect(read.answer).resolves.toBe(w.facts);
+  });
+
+  it("reads a guide for the trip's own place, and a shown stay's reviews by its option", async () => {
+    const w = readWorld('ixigo_web', { stay: { ref: 'r_ab12#2', page: 'https://www.ixigo.com/hotels/palm-grove/details?x=1' } });
+    await w.early.onRead(msg(61, 'p_meher', 'Go yahan kya kya ghoomne layak hai?'), picked('guide'), goaPack());
+    await w.early.onRead(msg(62, 'p_priya', 'Go Palm Grove ke reviews kaise hain?'), picked('hotel_reviews'), goaPack());
+    expect(w.runs.map((r) => [r.id, r.given])).toEqual([
+      ['plan.destination', { place: 'North Goa' }],
+      ['hotels.reviews', { hotel: 'https://www.ixigo.com/hotels/palm-grove/details?x=1' }],
+    ]);
+    expect(w.early.readFor('t_goa', 'm_62')!.asked).toEqual({ hotel: 'r_ab12#2' });
+  });
+
+  it('starts nothing when the words lack a slot, the book lacks the recipe, Go does not search ixigo.com, or the pick is not live', async () => {
+    const w = readWorld();
+    // A train by its name only: the composer looks its number up.
+    expect(await w.early.onRead(msg(63, 'p_meher', 'Go where is the Konkan Kanya Express right now?'), picked('train_status'), goaPack())).toBeUndefined();
+    // The book has no PNR recipe yet.
+    expect(await w.early.onRead(msg(64, 'p_kabir', 'Go PNR 4512873690 ka status batao'), picked('pnr'), goaPack())).toBeUndefined();
+    // No stay on a card that the line plainly points at.
+    expect(await w.early.onRead(msg(65, 'p_priya', 'Go us villa ke reviews?'), picked('hotel_reviews'), goaPack())).toBeUndefined();
+    // A watch is the watch tool's, never a read now.
+    expect(await w.early.onRead(msg(66, 'p_arjun', 'Go let us know when 12051 is running late'), picked('train_status'), goaPack())).toBeUndefined();
+    // Jev's shadow pick acts as none: the live read is sure no search is asked.
+    expect(await w.early.onRead(msg(67, 'p_arjun', 'Go 12051 abhi kahan hai?'), { ...forGo, recipe: { value: null, sure: true } }, goaPack())).toBeUndefined();
+    expect(w.runs).toEqual([]);
+    for (const mode of ['fake', 'ixigo']) {
+      const other = readWorld(mode);
+      expect(await other.early.onRead(msg(68, 'p_arjun', 'Go 12051 abhi kahan chal rahi hai?'), picked('train_status'), goaPack()), mode).toBeUndefined();
+      expect(other.runs, mode).toEqual([]);
+    }
+  });
+
+  it('never starts a search for an ask beyond the searches, even when its words would read as one', async () => {
+    const w = readWorld();
+    await w.early.onRead(msg(69, 'p_rahul', 'Go Mumbai se Madgaon 5 Nov ki train mein WL 18 hai, confirm hoga kya?'), picked('confirm_chance'), goaPack());
+    expect(w.runs).toEqual([]);
+    expect(w.early.searchFor('t_goa', 'm_69')).toBeNull();
+  });
+
+  it('logs a failed read with its error, but never a PNR read\'s, and keeps no copy of the number for the tool', async () => {
+    const w = readWorld('ixigo_web', { fail: true, book: new Set([...BOOK, 'trains.pnr_status']) });
+    await w.early.onRead(msg(70, 'p_arjun', 'Go 12051 abhi kahan chal rahi hai?'), picked('train_status'), goaPack());
+    await w.early.onRead(msg(71, 'p_kabir', 'Go PNR 4512873690 ka status batao'), picked('pnr'), goaPack());
+    await vi.waitFor(() => expect(w.log.warn).toHaveBeenCalledTimes(2));
+    const [[status], [pnr]] = w.log.warn.mock.calls as Array<[Record<string, unknown>, string]>;
+    expect(status).toMatchObject({ tripId: 't_goa', recipe: 'trains.running_status', err: expect.any(TravelError) });
+    expect(pnr).toEqual({ tripId: 't_goa', recipe: 'trains.pnr_status' });
+    expect(w.early.readFor('t_goa', 'm_71')!.asked).toEqual({});
+  });
+});

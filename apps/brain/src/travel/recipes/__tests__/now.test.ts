@@ -2,8 +2,9 @@ import { describe, expect, it, vi } from 'vitest';
 import { CARD_LINE } from '../../../composer/rules.js';
 import type { DeskItem } from '../../../desk/desk.js';
 import type { TravelOption, TravelQuery, TravelSearch } from '../../travel.js';
-import type { EarlySearch } from '../early.js';
-import { EARLY_WAIT_MS, earlyAnswer, earlySearchNow } from '../now.js';
+import type { EngineAnswer } from '../../book/engine.js';
+import type { EarlyRead, EarlySearch } from '../early.js';
+import { EARLY_WAIT_MS, earlyAnswer, earlyReadNow, earlySearchNow } from '../now.js';
 import { searchWakeAnswer } from '../../search-wake.js';
 import { msg } from '../../../__tests__/fixtures/goa.js';
 import { makeTurnCtx } from '../../../composer/tools.js';
@@ -372,5 +373,46 @@ describe('an early search reaches the room only when the turn takes it up', () =
     expect(await searchWakeAnswer({ results: t.results as never, images: t.images })({ tripId: 't_goa', wake: [t.puts[0]!], pack: t.pack, ctx: next })).toBe(true);
     expect(next.cards).toHaveLength(1);
     expect(next.lines).toEqual(['Stays in Anjuna for 6 to 9 Nov, from ₹4,800 a night.']);
+  });
+});
+
+describe('the early ixigo read block', () => {
+  const FACTS: EngineAnswer = {
+    as: 'facts', title: 'Train 12051 today', rows: [{ train: 'Jan Shatabdi', state: 'On time', stations: ['Thivim: arrives 10:42'] }],
+    page: 'https://www.ixigo.com/trains/12051/running-status', checkedAt: '2026-10-07T12:00:00.000Z', ms: 900,
+  };
+  function readWorld(answer: Promise<EngineAnswer>, choice: EarlyRead['choice'] = 'train_status', asked: Record<string, string> = { train: '12051' }) {
+    const waits: number[] = [];
+    const early = { readFor: (tripId: string, messageId: string): EarlyRead | null => (tripId === 't_goa' && messageId === 'm_57' ? { choice, recipe: 'trains.running_status', asked, answer } : null) };
+    const block = earlyReadNow({ early, now: () => new Date('2026-10-07T12:00:00Z'), wait: async (ms) => { waits.push(ms); await new Promise((r) => setTimeout(r, 5)); } });
+    return { block, waits };
+  }
+
+  it('hands the turn the facts of a read that finished, fenced, with no need to call the tool', async () => {
+    const text = await readWorld(Promise.resolve(FACTS)).block.render('t_goa', [wakeFor('m_57', 57)]);
+    expect(text).toContain('Already read ixigo for #57 (trains.running_status), checked 2026-10-07T12:00:00.000Z: no need to call the ixigo tool for it.');
+    expect(text).toContain('<data source="ixigo facts">\nTrain 12051 today\n{"train":"Jan Shatabdi","state":"On time","stations":["Thivim: arrives 10:42"]}\n</data>');
+    expect(text).toContain('If they asked for something else');
+  });
+
+  it('says what to call to join a read still running, never a PNR, and nothing for one that failed', async () => {
+    const running = readWorld(new Promise<EngineAnswer>(() => undefined));
+    const text = await running.block.render('t_goa', [wakeFor('m_57', 57)]);
+    expect(text).toContain('call the ixigo tool with recipe trains.running_status and inputs {"train":"12051"}: it joins the same read.');
+    expect(running.waits).toEqual([EARLY_WAIT_MS]);
+    const pnr = await readWorld(new Promise<EngineAnswer>(() => undefined), 'pnr', {}).block.render('t_goa', [wakeFor('m_57', 57)]);
+    expect(pnr).toContain('the PNR in their message');
+    const failed = readWorld(Promise.reject(new Error('nope')));
+    expect(await failed.block.render('t_goa', [wakeFor('m_57', 57)])).toBeNull();
+    expect(await readWorld(Promise.resolve(FACTS)).block.render('t_goa', [wakeFor('m_58', 58)])).toBeNull();
+  });
+
+  it('says plainly when ixigo has nothing, and keeps a big read to its share of the prompt', async () => {
+    const none = await readWorld(Promise.resolve({ ...FACTS, rows: [] } as EngineAnswer)).block.render('t_goa', [wakeFor('m_57', 57)]);
+    expect(none).toContain('ixigo has nothing for this.');
+    const big = { ...FACTS, rows: Array.from({ length: 40 }, (_, i) => ({ station: `Station ${i}`, note: 'x'.repeat(200) })) } as EngineAnswer;
+    const text = (await readWorld(Promise.resolve(big)).block.render('t_goa', [wakeFor('m_57', 57)]))!;
+    expect(text).toMatch(/\(\d+ more: the ixigo tool gives them\)/);
+    expect(text.length).toBeLessThan(6_500);
   });
 });

@@ -78,6 +78,10 @@ const inputsOf = (r: RecipeFile | undefined): Record<string, string> =>
 export const NAMES_ONLY_FROM_IXIGO =
   "Answer in your own words, from these facts, as the person asked: a line or two, or a short list if they asked for some. Name a cafe, restaurant, bar, beach shack, club or shop only if it is in these facts or someone in the group named it, never one from memory, and never say why you can or can't name one. Well-known places (beaches, forts, falls, markets) you may name from what you know too. When these facts don't match the ask exactly (another area, another kind of place), offer the nearest ones in them, with no word about what ixigo doesn't have.";
 
+/** What the model is told when ixigo has nothing for a recipe's ask. */
+export const NOTHING_ON_IXIGO =
+  "ixigo has nothing for this. Answer from what you know, as a well-travelled friend would, with no word about ixigo: well-known places (beaches, forts, falls, markets) by name with a short reason; a cafe, restaurant, bar, beach shack, club or shop never from memory, so for those talk about the area.";
+
 const Value = z.union([z.string().min(1).max(120), z.number()]);
 
 export function ixigoTool(d: IxigoToolDeps): QuickTool<{ recipe: string; inputs: Record<string, string | number> }> | null {
@@ -116,7 +120,7 @@ export function ixigoTool(d: IxigoToolDeps): QuickTool<{ recipe: string; inputs:
         const answer = await d.engine.answer(a.recipe, given, { tripId: ctx.tripId });
         if (answer.as !== 'facts') return { recipe: a.recipe, error: 'refused', note: 'This recipe answers with options: use the search tools.' };
         if (answer.rows.length === 0) {
-          return { recipe: a.recipe, title: answer.title, facts: [], note: "ixigo has nothing for this. Answer from what you know, as a well-travelled friend would, with no word about ixigo: well-known places (beaches, forts, falls, markets) by name with a short reason; a cafe, restaurant, bar, beach shack, club or shop never from memory, so for those talk about the area." };
+          return { recipe: a.recipe, title: answer.title, facts: [], note: NOTHING_ON_IXIGO };
         }
         return { recipe: a.recipe, title: answer.title, checked_at: answer.checkedAt, source: answer.page, facts: answer.rows, tell_the_room: NAMES_ONLY_FROM_IXIGO };
       } catch (err) {

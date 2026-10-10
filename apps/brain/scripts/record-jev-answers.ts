@@ -9,7 +9,7 @@ import { dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createJev, JEV_MODEL, type JevAnswer } from '../src/reflex/jev.js';
 import { buildQuestions, buildState, QUESTION_VERSIONS } from '../src/reflex/questions.js';
-import { formatScores, loadRows, RECORDED_PATH, rowInput, scoreSet, sweep, type Recorded } from '../src/reflex/testset.js';
+import { formatChoices, formatScores, loadRows, RECORDED_PATH, rowInput, scoreChoices, scoreSet, sweep, type Recorded } from '../src/reflex/testset.js';
 
 const key = process.env.TYPESAFE_API_KEY;
 if (!key) {
@@ -48,4 +48,6 @@ console.log(`wrote ${out}`);
 const at = (q: number) => Math.round([...times].sort((x, y) => x - y)[Math.min(times.length - 1, Math.floor(q * times.length))]!);
 console.log(`jev call, all questions: p50 ${at(0.5)} ms, p90 ${at(0.9)} ms, max ${at(1)} ms over ${times.length} calls`);
 console.log(formatScores(scoreSet(rows, recorded)).join('\n'));
+// Question 10 choice by choice, as Jev read it: a shadow choice joins LIVE_RECIPES only once it passes here.
+console.log(formatChoices(scoreChoices(rows, recorded)).join('\n'));
 console.log(sweep(rows, recorded).join('\n'));
