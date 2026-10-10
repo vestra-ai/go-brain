@@ -188,4 +188,20 @@ describe('startProactive', () => {
     const timers = await db.pool.query(`select 1 from proactive_candidates where trip_id = 't_swept_gone'`);
     expect(timers.rowCount).toBe(0);
   });
+
+  it('the sweep reads nothing for a trip whose Server has been away for minutes (a closed drill), and reads the rest', async () => {
+    const time = manualTime('2026-10-06T06:30:00Z');
+    const { brain } = fakeBrain({ pool: db.pool, now: time.now });
+    Object.assign(brain.door.link, { away: async (tripId: string) => tripId === 't_swept_away' });
+    const h = await startProactive(brain, { intervals: false, travel: null });
+    for (const id of ['t_swept_away', 't_swept_here']) {
+      await seedTrip(db.pool, id);
+      await db.pool.query(`update trips set created_at = $2 where trip_id = $1`, [id, time.now()]);
+    }
+    await h.sweep();
+    const link = brain.door.link as unknown as { of(method: string): Array<Record<string, unknown>> };
+    const read = link.of('read_trip').map((p) => p.trip_id);
+    expect(read).not.toContain('t_swept_away');
+    expect(read).toContain('t_swept_here');
+  });
 });

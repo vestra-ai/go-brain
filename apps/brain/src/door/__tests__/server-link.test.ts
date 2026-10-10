@@ -378,6 +378,30 @@ describe('ServerLink', () => {
     }
   });
 
+  it("a trip's Server is away once its instance has had no socket for the away time, and back the moment it dials in again", async () => {
+    await own('t_drill_9', 'drill-9');
+    await db.pool.query('insert into trips (trip_id) values ($1)', ['t_no_instance_9']);
+    vi.useFakeTimers({ toFake: ['Date'] });
+    try {
+      const { l } = link({ awayAfterMs: 600_000 });
+      l.attach(socketOf('drill-9a', 'drill-9'));
+      l.attach(socketOf('room-9', 'room-9'));
+      expect(await l.away('t_drill_9')).toBe(false);
+      l.detach('drill-9a');
+      // Another Server's socket is open all along: the trip's own instance is what counts.
+      vi.setSystemTime(Date.now() + 600_000);
+      expect(await l.away('t_drill_9')).toBe(false);
+      vi.setSystemTime(Date.now() + 1);
+      expect(await l.away('t_drill_9')).toBe(true);
+      l.attach(socketOf('drill-9b', 'drill-9'));
+      expect(await l.away('t_drill_9')).toBe(false);
+      // A trip with no instance is never away: its requests take any socket, as before.
+      expect(await l.away('t_no_instance_9')).toBe(false);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('replicas of one Server share its instance: its trips use any of them, and a closing one hands its request to another at once', async () => {
     await own('t_rep', 'server');
     const { l } = link({ timeoutMs: 5_000 });
