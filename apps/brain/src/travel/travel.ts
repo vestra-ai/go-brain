@@ -95,6 +95,10 @@ export interface TravelSearch {
   runId?: string;
   /** The results page it read on ixigo.com, where the whole list is (ixigo_web). */
   page?: string;
+  /** The page's own lines about the whole list, for the model (ixigo's Smart Lock for a route). */
+  notes?: string[];
+  /** Buses: the group's stay each bus's nearest drop was measured from, and whose it is ("Casa Anjuna, the stay you voted for"). */
+  nearStay?: string;
   /**
    * The conditions ixigo was asked to filter on and did not: its filtered page caught nothing in time, so the list is the
    * same page without them (ixigo_web, backend.ts). The travel layer picks the stays that say them, or, when none does,

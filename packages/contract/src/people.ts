@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { AmountMinor, Currency, HttpUrl, Id, IsoDateTime } from './common.js';
+import { AmountMinor, Currency, HttpUrl, Id, IsoDateTime, PositiveAmountMinor } from './common.js';
 
 /**
  * A person in a trip. `person_id` is the Server's id for the human and stays the same across every
@@ -41,6 +41,10 @@ export type BudgetBand = z.infer<typeof BudgetBand>;
 /**
  * The trip's budget as Go may see it: only the lowest band anyone picked, and how many have
  * answered. Never who picked what, so Go cannot let it slip.
+ *
+ * 1.1 (10 Oct): people no longer answer privately. A trip has one optional budget per person, the
+ * group's, set in the App or by Go (`update_trip.budget_per_person_minor`). When it is set,
+ * `per_person_minor` has it, and the rest reads as everyone answering that one amount.
  */
 export const BudgetSummary = z
   .object({
@@ -48,5 +52,7 @@ export const BudgetSummary = z
     lowest: BudgetBand.nullish(),
     answered: z.int().nonnegative(),
     of: z.int().nonnegative(),
+    /** 1.1: the group's budget per person, in the trip's currency. Absent when none is set. */
+    per_person_minor: PositiveAmountMinor.nullish(),
   })
   .meta({ id: 'BudgetSummary' });

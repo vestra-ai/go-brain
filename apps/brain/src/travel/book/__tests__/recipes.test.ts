@@ -370,8 +370,11 @@ describe('buses.between', () => {
     if (got.as !== 'options') throw new Error('not options');
     // An id the list doesn't name, or a blank name, is left out; a point with no rank comes after the ranked ones.
     expect(got.options[0]!.facts).toMatchObject({ boarding_points: 'Borivali East; Andheri East; Sion', dropping_points: 'Panjim; Mapusa; Mapusa- Isbt Private Bus Stand' });
+    // The drops ixigo placed, for the nearest one to the group's stay (group-stay.ts): Mapusa's bus stand has no position.
+    expect(got.options[0]!.facts['drop_spots']).toBe('Mapusa (15.589, 73.8099); Panjim (15.4939, 73.8369)');
     expect(got.options[1]!.facts['boarding_points']).toBe('Sion');
     expect(got.options[1]!.facts).not.toHaveProperty('dropping_points');
+    expect(got.options[1]!.facts).not.toHaveProperty('drop_spots');
     expect(got.options[2]!.facts).not.toHaveProperty('boarding_points');
     // On the stage: the pickup's chip, then the Dropping Points tab and the drop's chip, each skipped when it isn't there.
     expect(runs[0]!.plan.steps).toEqual([

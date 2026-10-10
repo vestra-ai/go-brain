@@ -42,7 +42,10 @@ export const PersonUpdated = ev('person.updated',
 export const PersonLeft = ev('person.left', z.object({ person_id: Id }), 'PersonLeft', 'Someone left the trip.');
 export const TripCreated = ev('trip.created', z.object({ trip: TripSnapshot }), 'TripCreated',
   'A new trip room. Carries the whole trip, so Go can greet the group and start.');
-/** A budget change always has `by: { kind: "system" }`, so nobody's answer can be traced to them. */
+/**
+ * A budget change comes by the person who set the group's budget, or by Go (1.1). Before 1.1 it always had
+ * `by: { kind: "system" }`, so nobody's private answer could be traced to them.
+ */
 export const TripUpdated = ev('trip.updated',
   z.object({ by: Actor, changed: z.array(z.enum(['title', 'destination', 'dates', 'vibe', 'stay', 'itinerary', 'status', 'budget'])).min(1) }),
   'TripUpdated', 'Trip details changed. Read the trip to see the new values.');
@@ -84,15 +87,18 @@ export const BookingChanged = ev('booking.changed',
 export const ExpenseChanged = ev('expense.changed',
   z.object({
     expense: Expense,
-    /** 1.1 adds approved and disputed: someone it is split between agreed to it, or disputed it. */
-    change: z.enum(['added', 'removed', 'approved', 'disputed']),
+    /**
+     * 1.1 adds updated: someone fixed its split (the event carries the whole expense). approved and disputed are no
+     * longer sent (expense answers were withdrawn on 10 Oct); Go still takes them from an older Server.
+     */
+    change: z.enum(['added', 'removed', 'updated', 'approved', 'disputed']),
     by: Actor,
-    /** 1.1: on approved and disputed, who answered. */
+    /** 1.1, withdrawn: on approved and disputed, who answered. */
     by_person_id: Id.nullish(),
   }),
-  'ExpenseChanged', 'An expense was added or removed, or (1.1) someone it is split between approved or disputed it.');
+  'ExpenseChanged', 'An expense was added, removed, or (1.1) changed.');
 export const SettlementRecorded = ev('settlement.recorded', z.object({ settlement: Settlement, by: Actor }), 'SettlementRecorded',
-  '1.1: someone paid someone back, and the one paid confirmed it. Only confirmed settlements are sent.');
+  '1.1: someone recorded paying someone back. It counts at once, so its status is always confirmed.');
 
 export const Event = z
   .discriminatedUnion('type', [

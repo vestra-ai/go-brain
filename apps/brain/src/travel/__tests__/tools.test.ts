@@ -165,6 +165,30 @@ describe('search tools', () => {
     expect(buses.results.map((r: { title: string }) => r.title)).toEqual(['Kadamba Transport (KTCL)', 'Paulo Travels', 'Neeta Tours and Travels']);
   });
 
+  // The lead, 10 Oct: each bus's nearest drop to the group's stay, in a straight line, and whose stay it is.
+  it("search_buses says each bus's nearest drop to the group's stay first, and tells the model whose stay it is", async () => {
+    const paulo = {
+      kind: 'bus' as const, title: 'Paulo Travels Express', priceMinor: 150_000, currency: 'INR', priceNote: 'per seat, from', highlights: ['AC Sleeper (2+1)'],
+      facts: { dropping_points: 'Panjim; Mapusa', drop_spots: 'Panjim (15.4939, 73.8369); Mapusa (15.589, 73.8099)' },
+      journey: { mode: 'bus' as const, origin: { name: 'Bengaluru' }, destination: { name: 'Goa' }, depart_at: '2026-11-06T19:30:00+05:30', arrive_at: '2026-11-07T08:30:00+05:30' },
+    };
+    const stub = { search: async () => ({ results: [paulo], checkedAt: '2026-10-10T06:00:00.000Z', found: 1 }) } as unknown as Travel;
+    const tools = travelTools({
+      travel: stub, results, images: createImages({ pool: db.pool, publicUrl: 'https://go.test' }), now: lb.clock.now,
+      groupStay: async () => ({ name: 'Casa Anjuna', lat: 15.5733, lng: 73.74, why: 'voted' }),
+    });
+    const buses = tools.find((t) => t.name === 'search_buses')!;
+    const out = (await buses.run({ from: 'Bengaluru', to: 'Goa', date: '2026-11-06', wants: ['AC sleeper'] }, lb.ctx({ turnId: 'turn_b5' }))) as any;
+    expect(out.results[0].highlights[0]).toBe('Get off at Mapusa, about 8 km from Casa Anjuna');
+    expect(out.note).toContain("Each bus's first highlight is its nearest drop to Casa Anjuna, the stay you voted for, in a straight line");
+    // Trains and stays never ask where the group stays.
+    let asked = 0;
+    const empty = { search: async () => ({ results: [], checkedAt: '2026-10-10T06:00:00.000Z', found: 0 }) } as unknown as Travel;
+    const counting = travelTools({ travel: empty, results, images: createImages({ pool: db.pool, publicUrl: 'https://go.test' }), now: lb.clock.now, groupStay: async () => { asked += 1; return null; } });
+    await counting.find((t) => t.name === 'search_trains')!.run({ from: 'Mumbai', to: 'Goa', date: '2026-11-06' }, lb.ctx({ turnId: 'turn_t9' }));
+    expect(asked).toBe(0);
+  });
+
   it("takes what no argument covers as wants, which the model picks from each option's details (asks nobody listed: an AC sleeper, a 3A berth)", async () => {
     const buses = (await lb.tools.run('search_buses', { from: 'Mumbai', to: 'Goa', date: '2026-11-06', wants: ['AC sleeper'] }, lb.ctx({ turnId: 'turn_b2' }))) as any;
     expect(buses.summary).toContain("Not filtered by ixigo, for you to pick from each option's amenities and details: AC sleeper.");
@@ -445,11 +469,12 @@ describe('put_to_vote', () => {
   });
 
   it('with no card_id, votes on the options card shown earlier in the same reply', async () => {
-    const found = (await lb.tools.run('search_stays', STAYS, lb.ctx({ turnId: 'turn_r1' }))) as any;
-    const reply = lb.ctx({ turnId: 'turn_r2' });
+    // Turns of its own: turn_r2 already showed a card of flights (above), which a rerun of that turn would show again.
+    const found = (await lb.tools.run('search_stays', STAYS, lb.ctx({ turnId: 'turn_nc1' }))) as any;
+    const reply = lb.ctx({ turnId: 'turn_nc2' });
     await lb.tools.run('show_options', { line: 'Here are the villas.', results_id: found.results_id, title: 'Villas' }, reply);
     const out = (await lb.tools.run('put_to_vote', { line: 'Vote is up.' }, reply)) as any;
-    expect(out.decision_id).toBeDefined();
+    expect(out).toMatchObject({ decision_id: expect.any(String) });
     const card = C.OptionsCard.parse(reply.cards[0]);
     const vote = lb.link.sent('open_vote').at(-1)!;
     expect((vote.options as Array<{ option_ref: string }>).map((o) => o.option_ref)).toEqual(card.options.map((o) => o.option_id));
@@ -468,18 +493,18 @@ describe('put_to_vote', () => {
     expect(two.cards.map((c) => c.kind)).toEqual(['options', 'options']);
   });
 
-  it('puts trains to a vote at their per-person fares, each option answering travel.offer as a train, which is never booked for the group', async () => {
+  it("never puts a ticket to a group vote: a train's card is each traveller's own pick, and the model is told so", async () => {
     const found = (await lb.tools.run('search_trains', { from: 'Delhi', to: 'Goa', date: '2026-11-06' }, lb.ctx({ turnId: 'turn_tr1' }))) as any;
     const showCtx = lb.ctx({ turnId: 'turn_tr2' });
     const shown = (await lb.tools.run('show_options', { line: 'Here are the villas.', results_id: found.results_id, title: 'Trains to Goa' }, showCtx)) as any;
     const card = C.OptionsCard.parse(showCtx.cards[0]);
     expect(card.option_kind).toBe('train');
+    const votes = lb.link.sent('open_vote').length;
     const out = (await lb.tools.run('put_to_vote', { line: 'Vote is up.', card_id: shown.card_id }, lb.ctx({ turnId: 'turn_tr3' }))) as any;
-    expect(out.decision_id).toBeDefined();
-    const vote = lb.link.sent('open_vote').at(-1)!;
-    expect(vote).toMatchObject({ question: 'Which train?' });
-    expect((vote.options as Array<{ price_minor: number }>).map((o) => o.price_minor)).toEqual(card.options.map((o) => o.price_minor));
-    // P5 reads the kind and refuses group journeys: a train is searchable and votable, never paid for here.
+    expect(out).toMatchObject({ error: 'personal', note: expect.stringContaining("its traveller's own, never a group vote") });
+    expect(lb.link.sent('open_vote')).toHaveLength(votes);
+    expect(card.actions?.map((a) => a.action_id)).not.toContain('vote');
+    // The option is still a train the travel layer knows, searchable and picked by each person.
     expect((await travel.offer(card.options[0]!.option_id))?.kind).toBe('train');
   });
 });

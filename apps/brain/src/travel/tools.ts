@@ -15,6 +15,7 @@ import { flightDetails, stayDetails, trainDetails } from './details.js';
 import { DEFAULT_TRIP_TZ } from './dates.js';
 import { asked } from './filters.js';
 import { stableId } from './ids.js';
+import { nearStay, type GroupStay } from './group-stay.js';
 import type { Images } from './images.js';
 import { guestsIn } from './recipes/ask.js';
 import { TRAVEL_WAIT_MS } from './recipes/backend.js';
@@ -48,6 +49,8 @@ export interface TravelToolDeps {
    * it (Keshav, 10 Oct: the group sees Go act on ixigo). Absent, nothing opens.
    */
   showPick?: (tripId: string, pick: { page: string; name: string }) => void;
+  /** Where the group stays, with its position (group-stay.ts): each bus's nearest drop to it. Absent, none is said. */
+  groupStay?: (tripId: string) => Promise<GroupStay | null>;
 }
 
 const todayOf = (d: Pick<TravelToolDeps, 'today' | 'now'>, tripId: string): Promise<string> =>
@@ -309,7 +312,9 @@ async function runSearch(kind: TravelKind, given: TravelQuery, ctx: TurnCtx, d: 
   // over kept, and the search without them when they hold nothing: backend.ts). Never a guessed budget.
   const decided = kind === 'stays' ? (given.maxShareMinor ?? (d.stayBudget ? await d.stayBudget(ctx.tripId).catch(() => null) : null)) : null;
   const q: TravelQuery = decided ? { ...given, budgetMinor: decided } : given;
-  const pending = d.travel.search(kind, q, { tripId: ctx.tripId, turnId: ctx.turnId });
+  // Buses: each one's nearest drop to the group's stay, for this trip only (the read itself is shared across trips).
+  const stay = kind === 'buses' && d.groupStay ? d.groupStay(ctx.tripId).catch(() => null) : null;
+  const pending = d.travel.search(kind, q, { tripId: ctx.tripId, turnId: ctx.turnId }).then(async (f) => (stay ? nearStay(f, await stay) : f));
   // Handled at once, so a refusal that lands while the wait is worked out is never an unhandled rejection; it is read below.
   pending.catch(() => undefined);
   // A search that can't answer in time (an ixigo.com page on a slow box, or the agent job) goes on without the turn.
@@ -694,6 +699,7 @@ export async function searchAnswer(kind: TravelKind, ask: TravelQuery, found: Tr
     `${prices ? `: ${prices}` : ''}${areas.length ? `, in ${listOf(areas)}` : ''}.` +
     `${fit > options.length ? ` The best ${options.length} are below.` : ''}` +
     `${left ? ` ${left}.` : ''}` +
+    `${found.notes?.length ? ` ${found.notes.join(' ')}` : ''}` +
     `${pick.length ? ` Not filtered by ixigo, for you to pick from each option's amenities and details: ${listOf(pick)}.` : ''}` +
     `${list ? ` ixigo's own filters for this place, now known: ${list}.` : ''}` +
     `${found.site?.priced ? ` ixigo filtered them by price for the group's budget: up to ${formatInr(found.site.priced * 100)} a night a room, and one band over.` : ''}` +
@@ -708,6 +714,9 @@ export async function searchAnswer(kind: TravelKind, ask: TravelQuery, found: Tr
     card: { results_id: set.resultsId, option_numbers: saved.slice(0, 3).map((_, i) => i + 1), title: suggestTitle(kind, q) },
     note:
       wasNote +
+      (found.nearStay
+        ? `Each bus's first highlight is its nearest drop to ${found.nearStay}, in a straight line: say it with the stay and whose it is ("about 3 km from Casa Anjuna, the villa you voted for"), never a drive time. `
+        : '') +
       (besides.length
         ? `Only ${counted(options.length, 'stay fits', 'stays fit')}: show ${options.length === 1 ? 'it' : 'them'} first and the nearest after on the same card, and say plainly which fit and what the others miss, as the summary says. `
         : '') +
@@ -715,6 +724,7 @@ export async function searchAnswer(kind: TravelKind, ask: TravelQuery, found: Tr
       "Each option's area, time and price are as given here: name no other, and say no count the summary does not give. " +
       'If someone asked for a place an option is not in, say the option\'s own area: asked for Calangute, a villa in Vagator is in Vagator. ' +
       `${left ? `Say in the line that ${left}. ` : ''}` +
+      `${found.notes?.length ? "What ixigo itself offers for this list is in the summary: say it in one short line when it helps the ask (holding a fare while the group decides, a budget), as ixigo's to set, never Go's. " : ''}` +
       (pick.length
         ? `Show the options whose amenities or details fit ${listOf(pick)}, the best three when there are three, best first, and say which part ixigo filtered and which you picked; ` +
           "a want the data can't show (quiet) is no reason to show fewer: pick on what it does show and say plainly what ixigo doesn't tell. " +
@@ -842,7 +852,7 @@ export function travelTools(d: TravelToolDeps): QuickTool<any>[] {
       'Opens a vote on the options of an options card Go showed (card_id), even a card with one option (that option or keep looking). ' +
       'Only this vote can be booked: never open_vote for options on a card. To show options and put them to a vote at once, ' +
       'call show_options and then this with no card_id, in the same reply. The vote card goes out with the line you give it. ' +
-      `${CARD_LINE} Use it when the group should decide together. ` +
+      `${CARD_LINE} Use it when the group should decide together on a shared thing (a stay, a cab, an activity), never on a ticket: a flight, train or bus is each traveller's own pick. ` +
       'Set anonymous when someone asks for a secret or anonymous vote.',
     input: VoteArgs,
     endsTurn: true,
@@ -871,6 +881,12 @@ export function travelTools(d: TravelToolDeps): QuickTool<any>[] {
           ...(a.anonymous ? { anonymous: true } : {}),
         },
       );
+      if (r.ok === false && r.reason === 'personal') {
+        return {
+          error: 'personal',
+          note: "A ticket (a flight, train or bus) is its traveller's own, never a group vote: each person taps \"I'll take this\" on it, and Go posts their own confirm. Say that in one line if anyone asked for a vote.",
+        };
+      }
       if (!r.ok) return { error: r.reason, ...(r.decisionId ? { decision_id: r.decisionId } : {}) };
       ctx.cards.push(r.voteCard);
       ctx.lines.push(a.line);

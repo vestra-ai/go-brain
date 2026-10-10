@@ -83,13 +83,28 @@ export interface ResultsStore {
   offersOnCard(cardId: string): Promise<StoredOffer[]>;
   /** The option's own name, place and area (a stay's), as the search gave them: what Go saves when a vote picked it. */
   placeOf(optionId: string): Promise<OptionPlace | null>;
+  /** The top pick on the trip's latest card of this kind of option (a stay), as placeOf gives it; null with no such card. */
+  topPick(tripId: string, kind: string): Promise<OptionPlace | null>;
 }
 
 export interface OptionPlace {
   kind: string;
   title: string;
-  place: { name: string; address: string | null } | null;
+  /** lat and lng when the search gave them (ixigo's stays do). */
+  place: { name: string; address: string | null; lat?: number; lng?: number } | null;
   area: string | null;
+}
+
+function placeOfRow(r: { kind: string; title: string; option: ResultOption }): OptionPlace {
+  const area = r.option.facts['area'];
+  const p = r.option.place;
+  return {
+    kind: r.kind, title: r.title,
+    place: p
+      ? { name: p.name, address: p.address ?? null, ...(typeof p.lat === 'number' && typeof p.lng === 'number' ? { lat: p.lat, lng: p.lng } : {}) }
+      : null,
+    area: typeof area === 'string' ? area : null,
+  };
 }
 
 export function toResultOption(o: TravelOption): ResultOption {
@@ -222,14 +237,16 @@ export function createResultsStore(pool: pg.Pool): ResultsStore {
 
     async placeOf(optionId) {
       const { rows } = await pool.query<{ kind: string; title: string; option: ResultOption }>('select kind, title, option from travel_offers where option_id = $1', [optionId]);
-      const r = rows[0];
-      if (!r) return null;
-      const area = r.option.facts['area'];
-      return {
-        kind: r.kind, title: r.title,
-        place: r.option.place ? { name: r.option.place.name, address: r.option.place.address ?? null } : null,
-        area: typeof area === 'string' ? area : null,
-      };
+      return rows[0] ? placeOfRow(rows[0]) : null;
+    },
+
+    async topPick(tripId, kind) {
+      // A card's picks are saved together, so they share a created_at: the lowest number is its top pick.
+      const { rows } = await pool.query<{ kind: string; title: string; option: ResultOption }>(
+        'select kind, title, option from travel_offers where trip_id = $1 and kind = $2 order by created_at desc, n asc limit 1',
+        [tripId, kind],
+      );
+      return rows[0] ? placeOfRow(rows[0]) : null;
     },
 
     async offersOnCard(cardId) {

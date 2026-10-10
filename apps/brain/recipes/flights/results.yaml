@@ -50,6 +50,10 @@ read:
   also:
     # Every event's airports as one (a stream may send its flights over several events).
     airports: { from: /flights/v2/search/stream, format: sse, value: $merge(data.airportDetails) }
+    # ixigo's Smart Lock, on a logged-in browser's one-way domestic search (the 10 Oct atlas, his browser): an ixigo agent
+    # that watches the route's fares 24x7 and locks the flight within the person's budget, for a fee. The last event that
+    # carries it is read: {titleHtml, highlightText (the route's cheapest), description, cta "Set Smart Lock", flightsCount}.
+    smart_lock: { from: /flights/v2/search/stream, format: sse, value: '(data.smartLockDetails)[-1]' }
 # One flights page across every trip at most every 20 s, and none for 10 minutes after one ixigo refused: flights.search's
 # link answers in its place (recipes/backend.ts).
 pace: { gap_seconds: 20, quiet_minutes: 10 }
@@ -126,5 +130,16 @@ answer:
         "sourceUrl": $page
       }
     )
+  # Smart Lock, said for the route as ixigo's own: the person sets it on ixigo, and Go sets nothing on anyone's account.
+  # Of ixigo's own text only the amount's digits are said: nothing the page writes reaches the model as words (and the
+  # stream's text comes mis-decoded until Bash keeps it as UTF-8).
+  notes:
+    - |
+      $smart_lock.cta ? (
+        $under := $replace($string($smart_lock.highlightText), /[^0-9,]/, "");
+        "ixigo offers its Smart Lock on this route: a paid ixigo feature that watches the fares 24x7 and locks a flight"
+        & " within a budget the person sets" & ($contains($under, /[0-9]/) ? " (ixigo's pitch here: fly in less than ₹" & $under & ")" : "")
+        & ". The person sets it up themselves, on ixigo's results page (its Set Smart Lock button); Go never sets it."
+      )
 measured: { fast_ms: null, page_ms: 4100, flow_ms: null }
 notes: The stream's fares are ixigo's shown ones; the fare a person pays is ixigo's at Book, Review and Traveller Details.
