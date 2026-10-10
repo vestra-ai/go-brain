@@ -1,6 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { withSchema } from '../../db/test-db.js';
 import { goaTrip } from '../../proactive/fakes.js';
+import { recordPick, wayOf, type PersonPick } from '../../travel/picks.js';
 import type { StatusResult } from '../../travel/travel.js';
 import { diffReading, type WatchInfo } from '../diff.js';
 import { flightNumber, noteWatchNotice, planWatches, syncWatches } from '../plan.js';
@@ -87,6 +88,44 @@ describe('diffReading: train tickets by PNR', () => {
   });
 });
 
+/** Arjun's own flight, picked from his card (Mumbai to Goa, on the trip's day): no booking of the group's covers him. */
+const ARJUN_FLIGHT = {
+  mode: 'flight' as const, origin: { name: 'Mumbai', code: 'BOM' }, destination: { name: 'Goa', code: 'GOX' },
+  depart_at: '2026-11-06T17:05:00+05:30', arrive_at: '2026-11-06T18:20:00+05:30', carrier_name: 'Air India Express', carrier_code: 'IX', number: 'IX 1196',
+};
+const pick = (over: Partial<PersonPick> = {}): PersonPick => ({
+  tripId: 't_goa', personId: 'p_arjun', kind: 'flight', way: wayOf(ARJUN_FLIGHT), optionId: 'opt_ix1196', title: 'Air India Express IX1196',
+  journey: ARJUN_FLIGHT, pickedAt: new Date('2026-10-10T08:00:00Z'), ...over,
+});
+
+describe("a person's own flight pick is watched for them", () => {
+  const now = new Date('2026-10-06T06:30:00Z');
+
+  it('watches a picked flight for its picker alone, by its number, as a booked one is', () => {
+    expect(wayOf(ARJUN_FLIGHT)).toBe('BOM-GOX');
+    const plans = planWatches(goaTrip(), now, [pick()]);
+    expect(plans.map((p) => p.watchId)).toEqual(['flight:t_goa:b_flight', 'flight:t_goa:pick:p_arjun:BOM-GOX']);
+    const w = plans[1]!;
+    expect(w).toMatchObject({ personIds: ['p_arjun'], label: 'Air India Express IX 1196', query: { kind: 'flight', carrierCode: 'IX', number: '1196', date: '2026-11-06' } });
+    expect(w.startAt.toISOString()).toBe('2026-11-05T11:35:00.000Z');
+    expect(w.endsAt.toISOString()).toBe('2026-11-06T13:50:00.000Z');
+  });
+
+  it("adds none for a flight a booking of theirs already watches, a train, a ticket with no number, someone gone, or one that landed", () => {
+    const booked = { ...ARJUN_FLIGHT, origin: { name: 'Delhi', code: 'DEL' }, depart_at: '2026-11-06T18:15:00+05:30', arrive_at: '2026-11-06T20:45:00+05:30', carrier_name: 'IndiGo', carrier_code: '6E', number: '6E2134' };
+    const none = [
+      pick({ personId: 'p_kabir', journey: booked, way: wayOf(booked) }),
+      pick({ kind: 'train', journey: { ...ARJUN_FLIGHT, mode: 'train', carrier_code: null, number: '12051' } }),
+      pick({ journey: { ...ARJUN_FLIGHT, number: null } }),
+      pick({ personId: 'p_left' }),
+    ];
+    expect(planWatches(goaTrip(), now, none).map((p) => p.watchId)).toEqual(['flight:t_goa:b_flight']);
+    // Someone else on the group's flight who picked the same one for themselves is watched on their own.
+    expect(planWatches(goaTrip(), now, [pick({ personId: 'p_meher', journey: booked, way: wayOf(booked) })]).map((p) => p.personIds)).toEqual([['p_rahul', 'p_priya', 'p_kabir'], ['p_meher']]);
+    expect(planWatches(goaTrip(), new Date('2026-11-06T14:00:00Z'), [pick()]).map((p) => p.watchId)).not.toContain('flight:t_goa:pick:p_arjun:BOM-GOX');
+  });
+});
+
 describe('planWatches and syncWatches', () => {
   it("asks for the flight by its number alone: the contract's \"6E 2134\" loses its carrier code", () => {
     for (const n of ['6E 2134', '6E-2134', '6e2134', ' 6E  2134 ', '2134']) expect(flightNumber(n, '6E'), n).toBe('2134');
@@ -158,5 +197,23 @@ describe('planWatches and syncWatches', () => {
     });
     await syncWatches(db.pool, rebooked, now);
     expect(await state()).toEqual({ last_reading: null, last_change_key: null, notice_card_id: null, errors: 0 });
+  });
+
+  it("watches each person's kept flight pick, and a new pick of the same way (Change) starts its watch afresh", async () => {
+    const now = new Date('2026-10-06T06:30:00Z');
+    const trip = goaTrip({ trip_id: 't_goa_picks' });
+    const watched = async () =>
+      (await db.pool.query<{ watch_id: string; person_ids: string[]; query: unknown; last_change_key: string | null }>(
+        `select watch_id, person_ids, query, last_change_key from watches where trip_id = 't_goa_picks' and active order by watch_id`,
+      )).rows;
+    await recordPick(db.pool, pick({ tripId: 't_goa_picks' }));
+    await syncWatches(db.pool, trip, now);
+    expect((await watched()).map((w) => w.watch_id)).toEqual(['flight:t_goa_picks:b_flight', 'flight:t_goa_picks:pick:p_arjun:BOM-GOX']);
+    await db.pool.query(`update watches set last_change_key = 'k_delay' where watch_id = 'flight:t_goa_picks:pick:p_arjun:BOM-GOX'`);
+    // Change: another flight the same way replaces the pick, and its watch asks for the new number with nothing carried over.
+    await recordPick(db.pool, pick({ tripId: 't_goa_picks', optionId: 'opt_6e5310', title: 'IndiGo 6E5310', journey: { ...ARJUN_FLIGHT, carrier_name: 'IndiGo', carrier_code: '6E', number: '6E 5310' } }));
+    await syncWatches(db.pool, trip, now);
+    const after = (await watched()).find((w) => w.watch_id === 'flight:t_goa_picks:pick:p_arjun:BOM-GOX');
+    expect(after).toMatchObject({ person_ids: ['p_arjun'], query: { kind: 'flight', carrierCode: '6E', number: '5310', date: '2026-11-06' }, last_change_key: null });
   });
 });

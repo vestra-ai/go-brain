@@ -32,7 +32,8 @@ async function facts(id: string, inputs: Record<string, unknown>, captures: Capt
 }
 
 const ROUTE = { from: 'Bangalore', to: 'Chennai', date: '2026-10-22' };
-const RESULTS = 'https://www.ixigo.com/trains/search-pwa/from/SBC/to/MAS/22-10-2026';
+// The newer results page, its stations in small letters: it searches on every load, never drawing a kept answer.
+const RESULTS = 'https://www.ixigo.com/trains/search-pwa/from/sbc/to/mas/22-10-2026';
 const search = () => [capture(SEARCH, SEARCH_URL, sample('trains.between.page.json'))];
 
 describe('trains.confirm_chance', () => {
