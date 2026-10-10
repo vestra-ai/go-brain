@@ -67,6 +67,18 @@ describe('drawPage', () => {
     await setCarryOver(db.pool, 'p_meher', false);
   });
 
+  it("carries only a fact about the person: one about that trip alone stays there (staging, 10 Oct: \"can leave Thursday\")", async () => {
+    await saveFact(db.pool, fact({ tripId: 't_manali', topic: 'leaving', text: 'Can leave Thursday', messageId: 'm_0201', saidAt: new Date('2026-12-01T05:00:00Z'), scope: 'trip' }));
+    await saveFact(db.pool, fact({ tripId: 't_manali', topic: 'flights', text: 'Dislikes early flights', messageId: 'm_0201', saidAt: new Date('2026-12-01T05:00:00Z') }));
+    await setCarryOver(db.pool, 'p_meher', true);
+    const page = await drawPage(db.pool, 't_kerala', 'p_meher', 'group');
+    expect(page).toContain('- flights: Dislikes early flights (earlier trip)');
+    expect(page).not.toContain('Thursday');
+    // In its own trip it still shows.
+    expect(await drawPage(db.pool, 't_manali', 'p_meher', 'group')).toContain('- leaving: Can leave Thursday (#201)');
+    await setCarryOver(db.pool, 'p_meher', false);
+  });
+
   it('is empty for someone Go knows nothing about', async () => {
     expect(await drawPage(db.pool, 't_goa', 'p_nobody', 'go')).toBe('');
   });

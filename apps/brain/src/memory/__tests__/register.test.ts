@@ -101,11 +101,15 @@ const read = (over: Partial<ReflexRead>): ReflexRead => ({ ...codeOnly({ namesGo
 describe('joinFacts', () => {
   it('turns join answers into facts with plain topics', () => {
     const [rahul, priya, arjun, meher, kabir] = goaPeople();
-    expect(joinFacts(rahul!)).toEqual([{ topic: 'from', text: 'From Delhi' }, { topic: 'leaving', text: 'Can leave Fri after 6 pm' }]);
-    expect(joinFacts(priya!)).toEqual([{ topic: 'from', text: 'From Delhi' }, { topic: 'food', text: 'Vegetarian' }, { topic: 'seats', text: 'Window seat' }]);
+    expect(joinFacts(rahul!)).toEqual([{ topic: 'from', text: 'From Delhi', scope: 'person' }, { topic: 'leaving', text: 'Can leave Fri after 6 pm', scope: 'trip' }]);
+    expect(joinFacts(priya!)).toEqual([
+      { topic: 'from', text: 'From Delhi', scope: 'person' }, { topic: 'food', text: 'Vegetarian', scope: 'person' }, { topic: 'seats', text: 'Window seat', scope: 'person' },
+    ]);
     expect(joinFacts(arjun!).map((f) => f.topic)).toEqual(['from', 'flights', 'arriving']);
+    // "Lands late on Friday" and "Fri after 6 pm" are this trip's answers: never carried into the next trip.
+    expect(joinFacts(arjun!).find((f) => f.topic === 'arriving')?.scope).toBe('trip');
     expect(joinFacts(meher!).map((f) => f.topic)).toEqual(['from', 'birthday']);
-    expect(joinFacts(kabir!)).toContainEqual({ topic: 'drinks', text: "I don't drink" });
+    expect(joinFacts(kabir!)).toContainEqual({ topic: 'drinks', text: "I don't drink", scope: 'person' });
   });
 });
 
@@ -275,6 +279,24 @@ describe('wireMemory', () => {
     expect(w.model.prompts[0]!.user).toContain('#30 [person Priya | p_priya]: I can only do Friday night');
     // The side pass ran on brain.anthropic with SIDE_MODEL, not on a client of its own.
     expect(w.model.prompts[0]!).toMatchObject({ model: 'side-test', maxTokens: 1_500 });
+  });
+
+  it("reads a line again 15 s after people react to it, with their reactions, and keeps a reactor's lean with no ✅ on the line", async () => {
+    // Staging, 10 Oct: 😍 on a beach photo and 👍 on a pool villa were never read.
+    const photo = msg(60, 'p_priya', 'this vibe 😍', { reactions: [{ emoji: '😍', person_id: 'p_kabir' }, { emoji: '😍', person_id: 'p_meher' }] });
+    const answer = JSON.stringify({ facts: [{ person_id: 'p_kabir', topic: 'stays', text: 'Likes beachy stays', message: 60, reaction: true }], lines: [] });
+    const w = setup('t_r10', [photo], [answer]);
+    await w.wired.onEvent(ev('t_r10', 61, 'reaction.added', { message_id: photo.message_id, reaction: { emoji: '😍', person_id: 'p_kabir' } }));
+    await w.wired.onEvent(ev('t_r10', 62, 'reaction.added', { message_id: photo.message_id, reaction: { emoji: '😍', person_id: 'p_meher' } }));
+    // Go's own reaction reads nothing again.
+    await w.wired.onEvent(ev('t_r10', 63, 'reaction.added', { message_id: photo.message_id, reaction: { emoji: '✅', person_id: null } }));
+    w.t.advance(14_000);
+    expect(w.model.prompts).toHaveLength(0);
+    w.t.advance(1_000);
+    await vi.waitFor(() => expect(w.model.prompts).toHaveLength(1));
+    expect(w.model.prompts[0]!.user).toContain('#60 [person Priya | p_priya]: this vibe 😍 (reactions: 😍 Kabir p_kabir, 😍 Meher p_meher)');
+    await vi.waitFor(async () => expect((await currentFacts(db.pool, { personId: 'p_kabir', tripId: 't_r10' })).map((f) => f.text)).toEqual(['Likes beachy stays']));
+    expect(w.link.calls.filter((c) => c.method === 'add_reaction')).toEqual([]);
   });
 
   it('stop() clears every quiet and after-post timer: nothing runs after Go stops', async () => {

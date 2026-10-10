@@ -245,6 +245,9 @@ describe('the notes pass', () => {
     expect(NOTES_RULES).toContain('The organizer\'s own line that states a plan point as settled ("Goa trip is happening!! 6 to 9 Nov", "We\'re doing North Goa") is agreed on its own, with that line as proof');
     expect(NOTES_RULES).toContain('one from the organizer that proposes or asks ("6 to 9 Nov?", "how about North Goa?") is open');
     expect(NOTES_RULES).toContain("The trip's own plan (its dates, its place), said as the plan, is not a fact about whoever said it: it goes in the record.");
+    // Staging, 10 Oct: "can leave Thursday" and "mom might join" carried into the next trip; 😍 and 👍 were never read.
+    expect(NOTES_RULES).toContain('Give "this_trip": true for a fact that only holds for this trip');
+    expect(NOTES_RULES).toContain('A reaction on a line can show the reactor\'s lean (😍 on a beach photo, 👍 on a pool villa): note it for the person who reacted, with that line as the message and "reaction": true');
     const messages = [
       msg(3, 'p_rahul', 'Goa trip is happening!! 6 to 9 Nov, Diwali weekend 🌴'),
       msg(4, 'p_kabir', 'haha 😂'),

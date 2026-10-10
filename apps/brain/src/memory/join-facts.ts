@@ -7,7 +7,7 @@ import type * as C from '@go/contract';
 import type { Pool } from 'pg';
 import { hasSecret } from '../reflex/secrets.js';
 import { cleanText } from './checker.js';
-import { currentFacts, deleteFactChain, saveFact } from './facts.js';
+import { currentFacts, deleteFactChain, saveFact, type FactScope } from './facts.js';
 
 const KNOW_TOPICS: Array<[RegExp, string]> = [
   [/\b(veg|vegetarian|vegan|jain|non[- ]?veg|allerg\w*|nuts?|gluten|lactose|eat|khana|spicy)\b/i, 'food'],
@@ -20,16 +20,19 @@ const KNOW_TOPICS: Array<[RegExp, string]> = [
   [/\b(swim|sea|boat|boats|seasick)\b/i, 'water'],
 ];
 
-export function joinFacts(p: C.Person): Array<{ topic: string; text: string }> {
-  const out: Array<{ topic: string; text: string }> = [];
+const TRIP_TOPICS: ReadonlySet<string> = new Set(['leaving', 'arriving']);
+
+export function joinFacts(p: C.Person): Array<{ topic: string; text: string; scope: FactScope }> {
+  const out: Array<{ topic: string; text: string; scope: FactScope }> = [];
   const used = new Set<string>();
-  const add = (topic: string, raw: string): void => {
+  // When they can leave or land is this trip's answer, never their next trip's; the rest is about them.
+  const add = (topic: string, raw: string, scope: FactScope = TRIP_TOPICS.has(topic) ? 'trip' : 'person'): void => {
     const text = cleanText(raw, 200);
     if (!text || hasSecret(text)) return;
     let t = topic;
     for (let i = 2; used.has(t); i += 1) t = `${topic}_${i}`;
     used.add(t);
-    out.push({ topic: t, text });
+    out.push({ topic: t, text, scope });
   };
   if (p.from_city) add('from', `From ${p.from_city}`);
   if (p.earliest_leave) add('leaving', `Can leave ${p.earliest_leave}`);
@@ -46,7 +49,7 @@ export async function syncJoinFacts(pool: Pool, tripId: string, person: C.Person
     if (had && had.source !== 'join') continue; // the person's own words win
     await saveFact(pool, {
       personId: person.person_id, tripId, topic: w.topic, text: w.text, messageId: null,
-      saidAt: new Date(person.joined_at), audience: 'group', source: 'join',
+      saidAt: new Date(person.joined_at), audience: 'group', source: 'join', scope: w.scope,
     });
   }
   const wanted = new Set(want.map((w) => w.topic));

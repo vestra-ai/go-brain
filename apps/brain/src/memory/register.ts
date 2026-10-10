@@ -44,6 +44,8 @@ export interface WireDeps {
 
 const JOIN_FIELDS = new Set(['from_city', 'earliest_leave', 'know']);
 const AFTER_POST_MS = 2_000;
+/** Reactions on one line come in a flurry: its notes pass waits this long after the last one. */
+const REACTIONS_QUIET_MS = 15_000;
 /** A quiet 👍 or 🙌 waits this long: a burst's next line comes within a second or two (the intake waits 2 s for it). */
 const QUIET_HOLD_MS = 3_000;
 const NOTES_LONGEST_WAIT_MS = 60_000;
@@ -143,6 +145,14 @@ export function wireMemory(brain: Brain, d: WireDeps): {
         case 'mandate.declined':
           // A vote that ended, or a mandate set, settles Go's open lines about it.
           await settleDecisionLines(brain.pool, brain.door.link, ev.trip_id, await brain.packs.get(ev.trip_id));
+          break;
+        case 'reaction.added':
+          // A person's reaction can show their lean (😍 on a beach photo, 👍 on a pool villa): the line is read again once
+          // its reactions have landed (staging, 10 Oct: none of them was ever read).
+          if (ev.data.reaction.person_id) {
+            const id = ev.data.message_id;
+            debounce.after(`notes-react:${ev.trip_id}:${id}`, REACTIONS_QUIET_MS, () => runNotes(ev.trip_id, [id]));
+          }
           break;
         case 'message.created':
           // Go just spoke: read the turn's new lines once the burst has landed, and fold now if the chat is past its
