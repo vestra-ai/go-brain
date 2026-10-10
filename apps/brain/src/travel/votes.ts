@@ -7,8 +7,8 @@
  */
 import type * as C from '@go/contract';
 import type { ServerLink } from '../door/server-link.js';
-import { clip, formatInr, ixigoPage, PERSONAL_KINDS, placeKindNotAll } from './cards.js';
-import type { OptionKind, ResultsStore } from './results.js';
+import { clip, formatInr, ixigoPage, PERSONAL_KINDS, placeKindNotAll, type OptionsCardT } from './cards.js';
+import type { OptionFields, OptionKind, ResultsStore } from './results.js';
 import type { StoredOffer } from './travel.js';
 
 export type VoteCard = Extract<C.Card, { kind: 'vote' }>;
@@ -33,16 +33,16 @@ function stayQuestion(question: string, offers: StoredOffer[]): string {
   return question.replace(new RegExp(`\\b(${kind})(s?)\\b`, 'gi'), (_w, k: string, s: string) => `${k[0] === k[0]!.toUpperCase() ? 'S' : 's'}tay${s}`);
 }
 
-interface VoteOption { label: string; image_url?: string; price_minor?: number; currency?: string; option_ref?: string; note?: string; photos?: C.Photo[] }
+type VoteOption = { label: string; image_url?: string; price_minor?: number; currency?: string; option_ref?: string; note?: string } & OptionFields;
 
 /** The other answer of a one-option vote: no offer behind it, so nothing is ever booked when it wins. */
 export const KEEP_LOOKING = 'Keep looking';
 
-/** photos: as the options card shows them, the top pick's labelled ones once its page was read (pick-photos.ts, 10 Oct B3). */
-function voteOptions(
-  offers: StoredOffer[],
-  shown: Map<string, { image_url?: string | null | undefined; subtitle?: string | null | undefined; photos?: C.Photo[] | null | undefined }>,
-): VoteOption[] {
+/**
+ * Each option as the options card shows it: its photos and its rooms too, the top pick's from its own page once read
+ * (pick-photos.ts, the Server team's 10 Oct B3 and B4).
+ */
+function voteOptions(offers: StoredOffer[], shown: Map<string, OptionsCardT['options'][number]>): VoteOption[] {
   return offers.slice(0, 10).map((of) => {
     const c = shown.get(of.optionId);
     const price = of.totalMinor ?? of.priceMinor;
@@ -53,6 +53,9 @@ function voteOptions(
       option_ref: of.optionId,
       ...(c?.subtitle ? { note: clip(c.subtitle, 120) } : {}),
       ...(c?.photos?.length ? { photos: c.photos } : {}),
+      ...(c?.room_types?.length ? { room_types: c.room_types } : {}),
+      ...(typeof c?.price_min_minor === 'number' ? { price_min_minor: c.price_min_minor } : {}),
+      ...(typeof c?.price_max_minor === 'number' ? { price_max_minor: c.price_max_minor } : {}),
     };
   });
 }

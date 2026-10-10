@@ -71,6 +71,23 @@ describe("the top pick's own photos", () => {
     for (const o of options) expect(C.DecisionOption.safeParse(o).success).toBe(true);
   });
 
+  // B4's seam (p4's rooms.ts): a card's option may gain its rooms the same way, and a vote carries them as the card shows them.
+  it('a vote carries whatever the card\'s option gained after it went up: its rooms and price range too', async () => {
+    await cardOnTrip('t_rooms', 'c_rooms');
+    const room_types = [{ room_type_id: 'rt_deluxe', label: 'Deluxe room', sleeps: 2, price_minor: 2_400_000 }];
+    const kept = await results.setOptionFields('t_rooms', 'c_rooms', 'opt_c_rooms_2', { room_types, price_min_minor: 1_200_000, price_max_minor: 1_500_000 });
+    expect(kept!.options[1]).toMatchObject({ room_types, price_min_minor: 1_200_000, price_max_minor: 1_500_000, photos: [{ url: 'https://go.test/img/search2.jpg' }] });
+    expect(kept!.options[0]).not.toHaveProperty('room_types');
+    const link = new FakeLink();
+    await openVoteFromCard({ results, link, now: () => new Date('2026-10-07T12:05:00Z') }, {
+      tripId: 't_rooms', cardId: 'c_rooms', key: 'turn_r', requestId: 'go_vote_r', voteCardId: 'c_vote_r',
+    });
+    const options = link.sent('open_vote')[0]!['options'] as Array<Record<string, unknown>>;
+    expect(options[1]).toMatchObject({ room_types, price_min_minor: 1_200_000, price_max_minor: 1_500_000 });
+    expect(options[0]).not.toHaveProperty('room_types');
+    for (const o of options) expect(C.DecisionOption.safeParse(o).success).toBe(true);
+  });
+
   it('change nothing when the page listed none, or the card or the option is not kept', async () => {
     await cardOnTrip('t_none', 'c_none');
     const link = new FakeLink();

@@ -23,7 +23,7 @@ export interface TopPick {
  * replaced. A page with none, or a card or option no longer kept, changes nothing.
  */
 export async function showPickPhotos(
-  d: { results: Pick<ResultsStore, 'setPhotos'>; images: Pick<Images, 'rehostUrl'>; link: Pick<ServerLink, 'request'> },
+  d: { results: Pick<ResultsStore, 'setOptionFields'>; images: Pick<Images, 'rehostUrl'>; link: Pick<ServerLink, 'request'> },
   tripId: string,
   pick: Pick<TopPick, 'cardId' | 'optionId'>,
   answer: EngineAnswer,
@@ -32,7 +32,7 @@ export async function showPickPhotos(
   if (!Array.isArray(list)) return false;
   const photos = await photosOf(list as SourcePhoto[], d.images);
   if (photos.length === 0) return false;
-  const card = await d.results.setPhotos(tripId, pick.cardId, pick.optionId, photos);
+  const card = await d.results.setOptionFields(tripId, pick.cardId, pick.optionId, { photos });
   if (!card) return false;
   await d.link.request('replace_card', { trip_id: tripId, card });
   return true;
