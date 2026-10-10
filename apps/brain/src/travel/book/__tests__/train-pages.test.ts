@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import type { Capture, FetchPlan } from '../../recipes/recipe.js';
 import { capture } from '../../recipes/__tests__/fixtures.js';
+import { readBodyAs, type HtmlInputs } from '../bodies.js';
 import { BOOK_DIR, loadBook } from '../book.js';
 import { createEngine } from '../engine.js';
 
@@ -121,5 +122,50 @@ describe('trains.tatkal', () => {
     expect(questions[2]).toMatch(/^How do I cancel Tatkal tickets\? Confirmed tickets do not get a refund upon cancellation\./);
     expect(questions[5]).toMatch(/^Is the senior citizen quota available for Tatkal\? No\./);
     expect(JSON.stringify(tatkal)).not.toMatch(/<[a-z]|&amp;/i);
+  });
+});
+
+// The train page's own data (html_inputs, "dataBE"): the page of 8 Oct, logged out, trimmed to its title, canonical
+// address and hidden inputs, the data cut to the train, its stops, fares and stations.
+describe('trains.coach_position', () => {
+  const PAGE = 'https://www.ixigo.com/trains/10103';
+  const page = (html = sample('trains.coach_position.html')) => [capture('/trains/10103$', PAGE, html)];
+  // A list, never one long line: a fact longer than 300 characters is cut, and a long rake's line would be.
+  const MANDOVI = [
+    'Engine', 'General', 'General', 'M3 (3E)', 'M2 (3E)', 'M1 (3E)', 'B4 (3A)', 'B3 (3A)', 'B2 (3A)', 'B1 (3A)', 'A1 (2A)', 'HA1 (1A+2A)',
+    'Pantry car', 'S7 (SL)', 'S6 (SL)', 'S5 (SL)', 'S4 (SL)', 'S3 (SL)', 'S2 (SL)', 'S1 (SL)', 'General', 'General',
+  ];
+
+  it("says the coaches from the engine end at the train's first station, and its rake", async () => {
+    const got = await facts('trains.coach_position', { train: '10103' }, page());
+    expect(got.page).toBe(PAGE);
+    expect(got.runs[0]!.plan.capture).toEqual([{ match: '/trains/10103$', required: true, max_bytes: 1_000_000 }]);
+    expect(got.title).toBe('Train 10103 coaches');
+    expect(got.rows).toEqual([{ train: 'Mandovi Express 10103', at: 'C Shivaji Mah T (CSMT)', coaches: 22, order_from_engine: MANDOVI, rake: 'LHB' }]);
+  });
+
+  it('finds the coach people asked about at the station they named, by its name or its code', async () => {
+    const got = await facts('trains.coach_position', { train: '10103', coach: 'b2', station: 'thivim' }, page());
+    expect(got.rows[0]).toMatchObject({ at: 'Thivim (THVM)', coach: 'B2 (3A): position 8 of 0 to 21 from the engine end' });
+    expect((await facts('trains.coach_position', { train: '10103', coach: 'S1', station: 'MAO' }, page())).rows[0]!['coach']).toBe('S1 (SL): position 19 of 0 to 21 from the engine end');
+    expect((await facts('trains.coach_position', { train: '10103', coach: 'B9' }, page())).rows[0]!['coach']).toBe("B9 is not one of this train's coaches");
+  });
+
+  it("says a station the train doesn't stop at, with its stops, and the first station's order", async () => {
+    const got = await facts('trains.coach_position', { train: '10103', station: 'JP' }, page());
+    expect(got.rows[0]).toMatchObject({
+      at: 'C Shivaji Mah T (CSMT)',
+      not_a_stop: 'JP is not one of its stops: CSMT, DR, TNA, PNVL, MNI, KHED, CHI, SGR, RN, ADVI, RAJP, VBW, KKW, SNDD, KUDL, SWV, PERN, THVM, KRMI, MAO',
+    });
+  });
+
+  it('reads the order the train stands in at a station past a reversal, and says where it flips', async () => {
+    const data = (readBodyAs(sample('trains.coach_position.html'), 'html_inputs', 'the train') as HtmlInputs).inputs['dataBE'] as { schedules: Array<{ locoIndex: number }> };
+    data.schedules.forEach((stop, i) => { stop.locoIndex = i >= 8 ? 1 : 0; });
+    const reversed = `<html><body><input type="hidden" id="dataBE" value="${JSON.stringify(data).replace(/&/g, '&amp;').replace(/"/g, '&quot;')}"></body></html>`;
+    const got = await facts('trains.coach_position', { train: '10103', coach: 'S1', station: 'Madgaon' }, page(reversed));
+    expect(got.rows[0]).toMatchObject({ at: 'Madgaon (MAO)', coach: 'S1 (SL): position 3 of 0 to 21 from the engine end', order_flips_at: ['Ratnagiri (RN)'] });
+    expect((got.rows[0]!['order_from_engine'] as string[]).slice(0, 5)).toEqual(['Engine', 'General', 'General', 'S1 (SL)', 'S2 (SL)']);
+    expect((await facts('trains.coach_position', { train: '10103' }, page(reversed))).rows[0]!['order_from_engine']).toEqual(MANDOVI);
   });
 });

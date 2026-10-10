@@ -172,8 +172,9 @@ export const RecipeFile = z
     read: z
       .object({
         /** unique: a row's key, when a call came back more than once (pages 1 and 2) and a row may repeat. */
-        /** format: json, or a Next.js flight payload (rsc), a Next.js page with one in its scripts (next_html), or an older
-         *  Next.js page with its props in its __NEXT_DATA__ script (next_data). */
+        /** format: json, or a Next.js flight payload (rsc), a Next.js page with one in its scripts (next_html), an older
+         *  Next.js page with its props in its __NEXT_DATA__ script (next_data), a plain page's tables (html_tables) or the
+         *  JSON in its hidden inputs (html_inputs), or a stream of server-sent events (sse). */
         rows: z.object({ from: z.string().min(1), format: z.enum(BODY_FORMATS).default('json'), list: Expr, unique: Expr.optional() }),
         also: z
           .record(z.string().regex(/^[a-z][a-z_]*$/), z.object({ from: z.string().min(1), format: z.enum(BODY_FORMATS).default('json'), value: Expr }))
