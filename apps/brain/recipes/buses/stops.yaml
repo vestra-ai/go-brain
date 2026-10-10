@@ -34,7 +34,7 @@ read:
     list: |
       ($type($) = "array" ? $[0] : $)[
         $lowercase($trim(travelerAgentName)) = $lowercase($operator) and
-        ($type(startTimeDateFormat) != "string" or $not($contains(startTimeDateFormat, /\d{1,2}:\d{2}/)) or $contains(startTimeDateFormat, $departs))
+        (($type(startTimeDateFormat) = "string" and $contains(startTimeDateFormat, /\d{1,2}:\d{2}/)) ? $contains(startTimeDateFormat, $departs) : true)
       ]
 answer:
   as: facts
