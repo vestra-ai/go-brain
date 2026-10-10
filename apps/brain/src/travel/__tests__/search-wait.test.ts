@@ -181,7 +181,7 @@ describe('a stays search past its 12 s (staging pass, 8 Oct: a cold box took 13 
     expect(out).not.toHaveProperty('answered');
     expect(String(out.summary)).toContain("Pet-friendly property (ixigo's filter)");
     expect(String(out.summary)).toContain("Not filtered by ixigo, for you to pick from each option's amenities and details: beachfront and quiet.");
-    expect((out.results as Array<Record<string, unknown>>)[0]).toMatchObject({ amenities: ['Beach access', 'Free Wifi'], distance: '1 km from Anjuna Beach' });
+    expect((out.results as Array<Record<string, unknown>>)[0]).toMatchObject({ amenities: ['Beach access', 'Free Wifi'], details: { distance: '1 km from Anjuna Beach' } });
     expect(String(out.note)).toContain('Show only the options whose amenities or details fit beachfront and quiet');
     // Past its turn: the wake is the model's, to pick, not a card posted with no model call.
     const puts: DeskItem[] = [];

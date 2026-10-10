@@ -28,12 +28,28 @@ export function isHush(msg: Message, pack: TripPack): boolean {
 }
 
 /**
+ * Whether a line not for Go carries something Go could help with unasked, by what the reflex is sure of. The reflex's own
+ * opening question (q9) is still in shadow (Jev too rarely sure to pass its gate), so on its own it never fired and Go
+ * never chimed in (the 9 Oct run sheet: Kabir's "guys dates final karo yaar, kal tak" on a trip set for 6 to 9 Nov got
+ * silence). The live questions carry the same moments: something to keep to (a fact: "I'm veg btw", "can't leave
+ * before 6"), something agreed, open or taken on (a record kind: dates to settle, "3 of us said yes to Saudades"), or a
+ * search the group wants run (a recipe: "koi trains dekh lo"). Banter carries none of them. The composer, which knows
+ * the trip, decides whether there is anything worth a line, and stays silent otherwise.
+ */
+export function isMoment(read: ReflexRead): boolean {
+  return (read.opening.sure && read.opening.value === true)
+    || (read.fact.sure && read.fact.value === true)
+    || (read.recordKind.sure && read.recordKind.value !== null)
+    || (read.recipe !== undefined && read.recipe.sure && read.recipe.value !== null);
+}
+
+/**
  * A message that names Go is the composer's to answer (P1 wakes it). An opening is only for a message the reflex is
  * sure is not for Go, so the same message never gets both an answer and an unprompted post.
  */
 export function chatOpening(msg: Message, read: ReflexRead, pack: TripPack, now: Date): Candidate | null {
   if (msg.author.kind !== 'person' || msg.withheld || msg.deleted || msg.mentions_go) return null;
-  if (!(read.opening.sure && read.opening.value === true)) return null;
+  if (!isMoment(read)) return null;
   if (!(read.forGo.sure && read.forGo.value === false) || plainlyNamesGo(msg, pack)) return null;
   const tripId = pack.trip.trip_id;
   return {
@@ -48,7 +64,8 @@ export function chatOpening(msg: Message, read: ReflexRead, pack: TripPack, now:
     urgency: 0.9,
     useful: ['react', 'record', 'message'],
     personIds: [],
-    facts: { message_id: msg.message_id, seq: msg.seq },
+    // When it was said: a chime-in on a line this fresh skips the night raise (policy.ts repliesToSomeoneAwake).
+    facts: { message_id: msg.message_id, seq: msg.seq, said_at: msg.sent_at },
     simulated: false,
     small: false,
   };

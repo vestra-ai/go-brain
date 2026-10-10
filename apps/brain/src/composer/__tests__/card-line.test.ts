@@ -53,7 +53,8 @@ describe('what Go knows without a check', () => {
   it('says distances, the area, tips and seasonal weather plainly; names a venue only from ixigo or the group', () => {
     const section = GO_RULES.slice(GO_RULES.indexOf('\nTruth and money\n'), GO_RULES.indexOf('\nForget me\n'));
     expect(section).toContain(
-      '- Prices, availability and opening hours: only give what you checked in this turn, or say how old it is ("checked 10 min ago"). No check, no number.\n' +
+      '- Live prices, availability and opening hours: only give what you checked in this turn, or say how old it is ("checked 10 min ago"). No check, no live number. ' +
+        'A budget to plan for is not a live price: see the budget rule below.\n' +
         '- Everything else a well-travelled friend knows, say plainly, with no "I can\'t check live" caveat: distances and travel times, what an area is like, ' +
         'local tips, and the usual weather for the season.\n' +
         '- Name a particular cafe, restaurant, bar, beach or sight only when it came from ixigo in this turn (the destination guide through the ixigo tool, ' +

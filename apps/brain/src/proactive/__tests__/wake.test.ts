@@ -4,7 +4,7 @@ import { ALWAYS, composerRules, rulesForTurn, simulatedIn } from '../allowed.js'
 import { candidate, goaPack, goaTrip } from '../fakes.js';
 import { deskId, toPayload } from '../payload.js';
 import type { Action, Candidate } from '../policy.js';
-import { describeNoticed, openingsNow, renderWake } from '../wake.js';
+import { describeNoticed, howLate, openingsNow, renderWake } from '../wake.js';
 import { clip, namesOf, plain, quote, rupees } from '../words.js';
 
 const NOW = new Date('2026-10-06T06:30:00Z');
@@ -112,10 +112,20 @@ describe('the wake text', () => {
     expect(renderWake(proItem(stopped, ['message']), goaPack(), NOW)).toContain('could not check ixigo for "12608\'s CC to confirm" 6 times in a row');
   });
 
+  it('tells Go to chime in once, briefly, only when it adds something real, and to stay silent on banter', () => {
+    const text = describeNoticed(chat, goaPack(), 'Asia/Kolkata', NOW);
+    expect(text).toContain('Message #9 may be a moment to chime in without being asked');
+    expect(text).toContain("in the group's own words and language");
+    for (const shape of ['Dates are set: 6 to 9 Nov ✅. Want to change them?', "Veg noted, I'll skip seafood shacks", 'Want me to put it to a vote?']) expect(text).toContain(shape);
+    expect(text).toContain('use what the trip and the chat say');
+    expect(text).toContain('Banter, a plan a person is already handling, or nothing new to add: call stay_silent.');
+    expect(text).not.toContain('—');
+  });
+
   it('says the demo watch is simulated, pinned to Arjun, and not for everyone', () => {
     const text = renderWake(proItem(delay, ['pin'], ['p_arjun']), goaPack(), NOW);
     expect(text).toContain('Simulated for the demo');
-    expect(text).toContain('running 120 minutes late');
+    expect(text).toContain('running 2 hours late');
     expect(text).toContain("Arjun's airport cab");
     expect(text).toContain('["p_arjun"]');
     expect(text).toContain('Do not post a message to everyone');
@@ -148,6 +158,34 @@ describe('the wake text', () => {
   it('says how much is at stake when free cancellation ends', () => {
     const c = candidate({ source: 'timer', topic: 'free_cancel', personIds: ['p_rahul'], facts: { booking_id: 'b_villa', refundable_until: '2026-11-01T18:29:59Z' } });
     expect(describeNoticed(c, goaPack(), 'Asia/Kolkata', NOW)).toContain('₹54,200');
+  });
+
+  it("reads a late flight as a friend's heads-up: hours, the new landing, what moves with it, and one next step", () => {
+    const text = describeNoticed(delay, goaPack(), 'Asia/Kolkata', NOW);
+    expect(text).toContain('"IndiGo 6E 2134" is running 2 hours late, now landing');
+    expect(text).toContain('10:45 pm');
+    expect(text).toContain("Write it as a friend's heads-up to Arjun: their name first, what changed in plain words and when they now land");
+    // The new landing is known: what the note times around the old one has to fit it.
+    expect(text).toContain('anything in the note set around the old time has to fit the new landing');
+    expect(text).toContain('using only what the flight and the note say');
+    expect(text).toContain('Want me to move your cab to 11 pm?');
+    // With no landing time, the note moves by the delay.
+    const noLanding = candidate({ ...delay, facts: { ...delay.facts, arriveAt: undefined } });
+    expect(describeNoticed(noLanding, goaPack(), 'Asia/Kolkata', NOW)).toContain('anything in the note set around the old time moves by 2 hours too');
+    expect(text).not.toContain('120 minutes');
+    expect(text).not.toContain('—');
+    // Nobody to tell: what happened, and no heads-up wording.
+    const nobody = candidate({ topic: 'flight_status', personIds: [], facts: { label: 'IndiGo 6E 2134', state: 'delayed', delayMinutes: 120 } });
+    expect(describeNoticed(nobody, goaPack(), 'Asia/Kolkata', NOW)).toBe('"IndiGo 6E 2134" is running 2 hours late.');
+  });
+
+  it('says how late in hours and minutes, as a friend would', () => {
+    expect(howLate(120)).toBe('2 hours');
+    expect(howLate(60)).toBe('1 hour');
+    expect(howLate(90)).toBe('1 hour 30 minutes');
+    expect(howLate(45)).toBe('45 minutes');
+    expect(howLate(1)).toBe('1 minute');
+    expect(howLate(121)).toBe('2 hours 1 minute');
   });
 
   it('reads a watched flight and a train ticket from P4 status words, with how old the check is', () => {

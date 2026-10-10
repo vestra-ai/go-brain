@@ -131,6 +131,20 @@ describe('search tools', () => {
     const buses = (await lb.tools.run('search_buses', { from: 'Mumbai', to: 'Goa', date: '2026-11-06' }, lb.ctx({ turnId: 'turn_b1' }))) as any;
     expect(buses.results.map((r: { title: string }) => r.title)).toEqual(['Kadamba Transport (KTCL)', 'Paulo Travels', 'Neeta Tours and Travels']);
   });
+
+  it("takes what no argument covers as wants, which the model picks from each option's details (asks nobody listed: an AC sleeper, a 3A berth)", async () => {
+    const buses = (await lb.tools.run('search_buses', { from: 'Mumbai', to: 'Goa', date: '2026-11-06', wants: ['AC sleeper'] }, lb.ctx({ turnId: 'turn_b2' }))) as any;
+    expect(buses.summary).toContain("Not filtered by ixigo, for you to pick from each option's amenities and details: AC sleeper.");
+    expect(buses.results[0]).toMatchObject({ details: { bus_type: expect.any(String), seats_left: expect.any(Number) } });
+    expect(buses.note).toContain('Show only the options whose amenities or details fit AC sleeper');
+    expect(buses.answered).toBeUndefined();
+    const trains = (await lb.tools.run('search_trains', { from: 'Delhi', to: 'Goa', date: '2026-11-06', wants: ['a 3A berth'] }, lb.ctx({ turnId: 'turn_t2' }))) as any;
+    expect(trains.results[0]).toMatchObject({ details: { class_code: expect.any(String) } });
+    expect(trains.summary).toContain('for you to pick from each option');
+    // Without wants, the answer stays as short as before: no details.
+    const plain = (await lb.tools.run('search_buses', { from: 'Mumbai', to: 'Goa', date: '2026-11-06' }, lb.ctx({ turnId: 'turn_b3' }))) as any;
+    expect(plain.results[0]).not.toHaveProperty('details');
+  });
 });
 
 describe('a train list', () => {

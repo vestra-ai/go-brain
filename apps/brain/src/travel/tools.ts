@@ -66,6 +66,8 @@ export const FlightsArgs = z.object({
   max_price_per_person: Rupees.optional().describe('In rupees'),
   non_stop: z.boolean().optional(),
   travellers: z.int().min(1).max(9).optional().describe('Only when the ask says how many fly ("for 3 of us"). Leave it out otherwise: Go counts who lives near the origin.'),
+  wants: z.array(z.string().min(1).max(80)).max(8).optional()
+    .describe("Anything else the group asked for that no argument here covers, in their words (an airline, a seat): ixigo's page is linked, and the line says to pick it there"),
 });
 export const JourneyArgs = z.object({
   from: Where.describe('City or station, e.g. "Jaipur"; for trains, a station with its Indian Railways code works too, e.g. "Udaipur City (UDZ)"'),
@@ -76,6 +78,8 @@ export const JourneyArgs = z.object({
   arrive_before: Clock.optional(),
   because: Because,
   max_price_per_person: Rupees.optional().describe('In rupees'),
+  wants: z.array(z.string().min(1).max(80)).max(8).optional()
+    .describe("Anything else the group asked for that no argument here covers, in their words (a class, AC, sleeper, an operator): you pick it from the results' details"),
 });
 export const StaysArgs = z.object({
   area: Where.describe('A city, town or area, e.g. "Manali", "North Goa" or "Anjuna"'),
@@ -104,6 +108,7 @@ export function flightsQuery(a: z.infer<typeof FlightsArgs>): TravelQuery {
     ...(a.max_price_per_person ? { maxPriceMinor: toPaise(a.max_price_per_person) } : {}),
     ...(a.non_stop ? { mustHave: ['non_stop' as const] } : {}),
     ...(a.travellers ? { guests: a.travellers } : {}),
+    ...(a.wants?.length ? { wants: a.wants } : {}),
   };
 }
 
@@ -134,6 +139,7 @@ export function journeyQuery(a: z.infer<typeof JourneyArgs>): TravelQuery {
     ...(a.arrive_before ? { arriveBefore: a.arrive_before } : {}),
     ...(a.because && (a.depart_after || a.depart_before || a.arrive_before) ? { because: a.because } : {}),
     ...(a.max_price_per_person ? { maxPriceMinor: toPaise(a.max_price_per_person) } : {}),
+    ...(a.wants?.length ? { wants: a.wants } : {}),
   };
 }
 
@@ -162,16 +168,20 @@ export function ageText(checkedAt: string, now: Date): string {
 /** A stay's area exactly as the data gives it, so the model never fills one in from what people asked for. */
 const areaOf = (o: { facts: Record<string, string | number | boolean> }): string => (typeof o.facts.area === 'string' ? o.facts.area : 'not in the data');
 
-/** An option in short for the model; with details, what it has (a stay's amenities, its distance, its kind), to pick on. */
+/**
+ * An option in short for the model; with details, everything its row says, to pick on what no filter covered: its
+ * amenities, its carrier, and each fact the recipe read (a stay's kind and distance, a bus's type and seats left, a
+ * train's class and availability), whatever the ask.
+ */
 export function compactOption(n: number, o: ResultOption, details = false): Record<string, unknown> {
   const when = o.journey ? subtitleFor(o) : null;
   const nights = typeof o.facts.nights === 'number' ? o.facts.nights : null;
-  const has = details && o.kind === 'stay'
+  const said = Object.entries(o.facts).filter(([, v]) => typeof v === 'number' || typeof v === 'boolean' || (typeof v === 'string' && v.length <= 80));
+  const has = details
     ? {
         ...(o.amenities?.length ? { amenities: o.amenities.slice(0, 12) } : {}),
-        ...(typeof o.facts.distance === 'string' ? { distance: o.facts.distance } : {}),
-        ...(typeof o.facts.type === 'string' ? { type: o.facts.type } : {}),
-        ...(typeof o.facts.stars === 'number' ? { stars: o.facts.stars } : {}),
+        ...(o.journey?.carrier_name ? { carrier: o.journey.carrier_name } : {}),
+        ...(said.length ? { details: Object.fromEntries(said) } : {}),
       }
     : {};
   return {
@@ -499,7 +509,8 @@ function linkAnswer(kind: TravelKind, q: TravelQuery, url: string, ctx: TurnCtx,
     ...(who ? { set_for: who } : {}),
     note: "ixigo won't show its flights to Go's computer right now. The card with the link to them on ixigo, with these conditions set, goes out with your message.",
     tell_the_room:
-      `Say in one short line that the flights are on the card${who ? `, set ${who}` : ''}, to book on ixigo, and that if they tell you ` +
+      `Say in one short line that the flights are on the card${who ? `, set ${who}` : ''}, to book on ixigo, ` +
+      `${q.wants?.length ? `that the link can't set ${listOf(q.wants)}, so they pick for that on ixigo's page, ` : ''}and that if they tell you ` +
       "which one, you'll note it for the group. You can't book flights: never offer to book one or to take it from there. " +
       'Never say there are no flights, and quote no prices or times.',
   };

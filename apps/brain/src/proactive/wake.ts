@@ -17,6 +17,13 @@ function inAbout(at: Date, now: Date): string {
   return `in about ${Math.round(h / 24)} days`;
 }
 
+/** How late, as a friend says it: "2 hours", "1 hour 30 minutes", "45 minutes". */
+export function howLate(minutes: number): string {
+  const h = Math.floor(minutes / 60);
+  const m = minutes % 60;
+  return [h === 0 ? '' : h === 1 ? '1 hour' : `${h} hours`, m === 0 ? '' : m === 1 ? '1 minute' : `${m} minutes`].filter((x) => x !== '').join(' ');
+}
+
 function ago(iso: string, now: Date): string {
   const m = Math.max(0, Math.round((now.getTime() - Date.parse(iso)) / 60_000));
   if (m < 1) return 'just now';
@@ -65,16 +72,23 @@ export function describeNoticed(c: Candidate, pack: TripPack, tz: string, now: D
       // Facts use P4's status words (state, delayMinutes, expectedDepartAt); the demo's fire adds arriveAt and a note.
       const delay = num('delayMinutes');
       const cancelled = str('state') === 'cancelled';
-      const state = cancelled
-        ? 'is cancelled'
-        : delay !== null && delay > 0 ? `is running ${delay} minutes late` : 'is back on time';
+      const late = !cancelled && delay !== null && delay > 0 ? howLate(delay) : null;
+      const state = cancelled ? 'is cancelled' : late ? `is running ${late} late` : 'is back on time';
       const leaves = cancelled ? null : at('expectedDepartAt');
       const lands = cancelled ? null : at('arriveAt');
       const when = `${leaves ? `, now leaving ${localWhen(leaves, tz)}` : ''}${lands ? `, now landing ${localWhen(lands, tz)}` : ''}`;
       const checked = str('checkedAt') ? ` (checked ${ago(str('checkedAt'), now)})` : '';
       const note = str('note') ? ` Also: ${quote(str('note'), 200)}` : '';
       const concerns = c.personIds.length > 0 ? ` It concerns ${who(c.personIds)}.` : '';
-      return `${quote(str('label') || 'A flight')} ${state}${when}${checked}.${note}${concerns}`;
+      // How it reads: a friend's heads-up, what changes for them and the one next step, never a status alert (the
+      // demo's 3:40 read "your flight is about 120 minutes behind… It may be worth moving the pickup later").
+      const moves = lands
+        ? ` (anything in the note set around the old time has to fit the new landing, ${localWhen(lands, tz)})`
+        : late ? ` (anything in the note set around the old time moves by ${late} too)` : '';
+      const how = c.personIds.length > 0
+        ? ` Write it as a friend's heads-up to ${who(c.personIds)}: their name first, what changed in plain words${lands ? ' and when they now land' : ''}, then what it changes for them${moves}, and the one next step as a question with the new time, using only what the flight and the note say (for example "Want me to move your cab to 11 pm?"). Say hours, not minutes, and never "flight status" or "it may be worth".`
+        : '';
+      return `${quote(str('label') || 'A flight')} ${state}${when}${checked}.${note}${concerns}${how}`;
     }
     case 'pnr_status': {
       const what = str('label') ? ` ${quote(str('label'))}` : '';
@@ -85,7 +99,15 @@ export function describeNoticed(c: Candidate, pack: TripPack, tz: string, now: D
       return `The train ticket${what} ${state}${detail}${checked}.${concerns}`;
     }
     case 'chat':
-      return `Message #${num('seq') ?? '?'} may be a moment to help without being asked: a question to the group Go can answer, a plan clash, or someone asking for help.`;
+      // A friend in the group chiming in, once, when it adds something real (Keshav: "whenever it can intervene it should").
+      return (
+        `Message #${num('seq') ?? '?'} may be a moment to chime in without being asked. Say one short line, in the group's own words and language, ` +
+        'only when it adds something real: a question to the group that the trip already answers (answer it and offer to change it: ' +
+        '"Dates are set: 6 to 9 Nov ✅. Want to change them?"); something someone needs that you will keep to (say so in a few words: ' +
+        '"Veg noted, I\'ll skip seafood shacks"); a choice the group is ready to make (offer a vote: "3 of you said yes to Saudades. Want me to put it to a vote?"); ' +
+        'or a search someone asked the group to run (offer to run it). The examples show the shape only: use what the trip and the chat say. ' +
+        'Banter, a plan a person is already handling, or nothing new to add: call stay_silent.'
+      );
     case 'vote_closed': {
       const winner = str('winner');
       return `The vote ${quote(str('question') || 'on the table')} closed${winner ? `; ${quote(winner)} won` : ' without a clear winner'}. The group may want the next step.`;
