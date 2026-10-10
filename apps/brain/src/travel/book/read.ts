@@ -184,6 +184,13 @@ async function rowsOf(recipe: RecipeFile, captures: Capture[], bindings: Record<
     for (const row of rows) byKey.set(JSON.stringify(await evaluate(read.rows.unique, row, bindings) ?? null), row);
     rows = [...byKey.values()];
   }
+  if (read.rows.where) {
+    // The site's filters applied by Go, for a site whose call holds every row whatever the page's filters (flights).
+    const where = read.rows.where;
+    const keep: unknown[] = [];
+    for (const row of rows) if ((await evaluate(where, row, bindings)) === true) keep.push(row);
+    rows = keep;
+  }
   return rows;
 }
 
@@ -230,6 +237,8 @@ export async function readOptions(
   inputs: Record<string, unknown>,
   page: string,
   extra: Record<string, unknown> = {},
+  /** The recipe's notes about the whole list, as they read, go here (answer.notes). */
+  notes?: string[],
 ): Promise<RecipeOption[]> {
   if (!recipe.read || recipe.answer.as !== 'options') throw new Error(`${recipe.id} has no options to read`);
   const what = recipe.title.toLowerCase();
@@ -251,6 +260,10 @@ export async function readOptions(
     }
   }
   if (rows.length > 0 && out.length === 0) throw new TravelError('refused', `ixigo answered ${what} in a shape Go does not read.`);
+  for (const n of notes ? (recipe.answer.notes ?? []) : []) {
+    const said = await evaluate(n, null, bindings).catch(() => undefined);
+    if (typeof said === 'string' && said.trim()) notes!.push(said.trim().slice(0, 400));
+  }
   if (!recipe.answer.keep) return out;
   const kept: RecipeOption[] = [];
   for (const o of out) if ((await evaluate(recipe.answer.keep, o, bindings)) === true) kept.push(o);

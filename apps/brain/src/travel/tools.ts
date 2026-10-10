@@ -80,8 +80,10 @@ export const FlightsArgs = z.object({
   max_price_per_person: Rupees.optional().describe('In rupees'),
   non_stop: z.boolean().optional(),
   travellers: z.int().min(1).max(9).optional().describe('Only when the ask says how many fly ("for 3 of us"). Leave it out otherwise: Go counts who lives near the origin.'),
+  site_filters: z.array(z.string().min(1).max(80)).max(8).optional()
+    .describe("ixigo's own flight filters the ask means, by their names on ixigo's list for the route (in your context once a search of it ran): an airline, an airport (Mopa for North Goa), a layover city, bags, a free meal, hiding non-refundable fares. Go applies them to the flights and ixigo's page shows them ticked"),
   wants: z.array(z.string().min(1).max(80)).max(8).optional()
-    .describe("Anything else the group asked for that no argument here covers, in their words (an airline, a seat): ixigo's page is linked, and the line says to pick it there"),
+    .describe("Anything else the group asked for that no argument here covers, in their words (a seat): ixigo's page is linked, and the line says to pick it there"),
 });
 export const JourneyArgs = z.object({
   from: Where.describe('City or station, e.g. "Jaipur"; for trains, a station with its Indian Railways code works too, e.g. "Udaipur City (UDZ)"'),
@@ -127,6 +129,7 @@ export function flightsQuery(a: z.infer<typeof FlightsArgs>): TravelQuery {
     ...(a.max_price_per_person ? { maxPriceMinor: toPaise(a.max_price_per_person) } : {}),
     ...(a.non_stop ? { mustHave: ['non_stop' as const] } : {}),
     ...(a.travellers ? { guests: a.travellers } : {}),
+    ...(a.site_filters?.length ? { siteFilters: a.site_filters } : {}),
     ...(a.wants?.length ? { wants: a.wants } : {}),
   };
 }
@@ -700,6 +703,7 @@ export async function searchAnswer(kind: TravelKind, ask: TravelQuery, found: Tr
     `${fit > options.length ? ` The best ${options.length} are below.` : ''}` +
     `${left ? ` ${left}.` : ''}` +
     `${found.cut ? ` ixigo's list came cut short: these are from the first ${before} it sent, not all of them.` : ''}` +
+    `${found.notes?.length ? ` ${found.notes.join(' ')}` : ''}` +
     `${pick.length ? ` Not filtered by ixigo, for you to pick from each option's amenities and details: ${listOf(pick)}.` : ''}` +
     `${list ? ` ixigo's own filters for this place, now known: ${list}.` : ''}` +
     `${found.site?.priced ? ` ixigo filtered them by price for the group's budget: up to ${formatInr(found.site.priced * 100)} a night a room, and one band over.` : ''}` +
@@ -725,6 +729,7 @@ export async function searchAnswer(kind: TravelKind, ask: TravelQuery, found: Tr
       'If someone asked for a place an option is not in, say the option\'s own area: asked for Calangute, a villa in Vagator is in Vagator. ' +
       `${left ? `Say in the line that ${left}. ` : ''}` +
       `${found.cut ? `Say in the line that these are from the first ${before} ixigo sent, and the whole list is on ixigo's page. ` : ''}` +
+      `${found.notes?.length ? "What ixigo itself offers for this list is in the summary: say it in one short line when it helps the ask (holding a fare while the group decides, a budget), as ixigo's to set, never Go's. " : ''}` +
       (pick.length
         ? `Show the options whose amenities or details fit ${listOf(pick)}, the best three when there are three, best first, and say which part ixigo filtered and which you picked; ` +
           "a want the data can't show (quiet) is no reason to show fewer: pick on what it does show and say plainly what ixigo doesn't tell. " +
@@ -795,7 +800,9 @@ const VoteArgs = z.object({
 export function travelTools(d: TravelToolDeps): QuickTool<any>[] {
   const searchFlights: QuickTool<z.infer<typeof FlightsArgs>> = {
     name: 'search_flights',
-    description: `Searches flights on one date. ${SEARCH_RULE} For example depart_after "18:00" when someone cannot leave before 6 pm.`,
+    description:
+      `Searches flights on one date. ${SEARCH_RULE} For example depart_after "18:00" when someone cannot leave before 6 pm. ` +
+      "ixigo's own flight filters for the route, once a search of it has run, are in your context: the ones the ask means go in site_filters, by their names there.",
     input: FlightsArgs,
     run: (a, ctx) => runSearch('flights', askedTravellers(flightsQuery(a), ctx), ctx, d),
     summarizeRound: searchRoundSummary,
@@ -852,7 +859,7 @@ export function travelTools(d: TravelToolDeps): QuickTool<any>[] {
       'Opens a vote on the options of an options card Go showed (card_id), even a card with one option (that option or keep looking). ' +
       'Only this vote can be booked: never open_vote for options on a card. To show options and put them to a vote at once, ' +
       'call show_options and then this with no card_id, in the same reply. The vote card goes out with the line you give it. ' +
-      `${CARD_LINE} Use it when the group should decide together. ` +
+      `${CARD_LINE} Use it when the group should decide together on a shared thing (a stay, a cab, an activity), never on a ticket: a flight, train or bus is each traveller's own pick. ` +
       'Set anonymous when someone asks for a secret or anonymous vote.',
     input: VoteArgs,
     endsTurn: true,
@@ -881,6 +888,12 @@ export function travelTools(d: TravelToolDeps): QuickTool<any>[] {
           ...(a.anonymous ? { anonymous: true } : {}),
         },
       );
+      if (r.ok === false && r.reason === 'personal') {
+        return {
+          error: 'personal',
+          note: "A ticket (a flight, train or bus) is its traveller's own, never a group vote: each person taps \"I'll take this\" on it, and Go posts their own confirm. Say that in one line if anyone asked for a vote.",
+        };
+      }
       if (!r.ok) return { error: r.reason, ...(r.decisionId ? { decision_id: r.decisionId } : {}) };
       ctx.cards.push(r.voteCard);
       ctx.lines.push(a.line);

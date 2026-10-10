@@ -90,7 +90,9 @@ const Suggestions = z.object({
 
 export const Answer = z.discriminatedUnion('as', [
   /** Options for the options card: each row becomes one or more options of this kind. */
-  z.object({ as: z.literal('options'), kind: z.enum(['stay', 'flight', 'train', 'bus']), each: Expr, keep: Expr.optional() }),
+  /** notes: lines for the model about the whole list, from the page (ixigo's Smart Lock for a route); each one that reads
+   *  as text is said, none that doesn't. */
+  z.object({ as: z.literal('options'), kind: z.enum(['stay', 'flight', 'train', 'bus']), each: Expr, keep: Expr.optional(), notes: z.array(Expr).max(4).optional() }),
   /** A card that opens the page, with what was asked set on it. */
   z.object({ as: z.literal('link'), title: z.string().min(1), who: Expr.optional() }),
   /** Facts Go says in its own words: each row as a plain object, at most max of them. */
@@ -165,11 +167,14 @@ export const RecipeFile = z
      * What the page offers to narrow and order its results, as the site itself lists them, read at run time from a call
      * the page makes (from) and never written here: list turns that call into rows of { kind: filter | sort, group, name,
      * code }; for names what the list is kept for (a place), about says it in words. A run's site filters and sort, by
-     * their names on the list, are bound as $site (their codes) and $site_sort (recipes/offers.ts). bands turns the same
-     * call into the site's nameless price bands, rows of { kind: price, group, name, code, min, max }: kept apart from the
-     * list for Go alone, picked by a decided budget (offers.ts bandsFor), never named to the model.
+     * their names on the list, are bound as $site (their codes) and $site_sort (recipes/offers.ts). format: the call's, as
+     * read.rows takes it (an event stream's list is read from its events, flights'). bands turns the same call into the
+     * site's nameless price bands, rows of { kind: price, group, name, code, min, max }: kept apart from the list for Go
+     * alone, picked by a decided budget (offers.ts bandsFor), never named to the model.
      */
-    offers: z.object({ from: z.string().min(1), list: Expr, bands: Expr.optional(), for: z.string().min(1), about: z.string().min(1) }).optional(),
+    offers: z
+      .object({ from: z.string().min(1), format: z.enum(BODY_FORMATS).default('json'), list: Expr, bands: Expr.optional(), for: z.string().min(1), about: z.string().min(1) })
+      .optional(),
     /** What the answer reads: the rows, from one captured call; other calls by name. */
     read: z
       .object({
@@ -177,7 +182,9 @@ export const RecipeFile = z
         /** format: json, or a Next.js flight payload (rsc), a Next.js page with one in its scripts (next_html), an older
          *  Next.js page with its props in its __NEXT_DATA__ script (next_data), a plain page's tables (html_tables) or the
          *  JSON in its hidden inputs (html_inputs), or a stream of server-sent events (sse). */
-        rows: z.object({ from: z.string().min(1), format: z.enum(BODY_FORMATS).default('json'), list: Expr, unique: Expr.optional() }),
+        /** where: the rows kept, true for each; for a site that filters in the page, not in its call (ixigo's flights, whose
+         *  stream holds every fare whatever the page's filters), its filters applied here, from $site. */
+        rows: z.object({ from: z.string().min(1), format: z.enum(BODY_FORMATS).default('json'), list: Expr, unique: Expr.optional(), where: Expr.optional() }),
         also: z
           .record(z.string().regex(/^[a-z][a-z_]*$/), z.object({ from: z.string().min(1), format: z.enum(BODY_FORMATS).default('json'), value: Expr }))
           .optional(),

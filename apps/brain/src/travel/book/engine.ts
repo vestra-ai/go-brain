@@ -20,6 +20,7 @@ import { evaluate } from './expr.js';
 import type { RecipeFile, Step } from './format.js';
 import { clip } from '../cards.js';
 import { boxFetches, pickSuggestion, readSuggestions, type End, type Suggestion } from './lookup.js';
+import { readBodyAs } from './bodies.js';
 import { readFacts, readOptions, shapeOf, unreadBecause, unwrapped } from './read.js';
 import { labelOf, pathOf, runLine, whyOf, type OnRun, type RunLine } from './run-event.js';
 import { fill } from './template.js';
@@ -195,8 +196,9 @@ interface Site {
 }
 
 export type EngineAnswer =
-  /** cut: the call the rows came from was cut short (Bash kept an earlier part of it), so these are the first it sent. */
-  | { as: 'options'; options: RecipeOption[]; page: string; checkedAt: string; ms: number; site?: SiteSaid; cut?: true }
+  /** cut: the call the rows came from was cut short (Bash kept an earlier part of it), so these are the first it sent.
+   *  notes: the recipe's lines about the whole list (ixigo's Smart Lock for the route), for the model. */
+  | { as: 'options'; options: RecipeOption[]; page: string; checkedAt: string; ms: number; site?: SiteSaid; cut?: true; notes?: string[] }
   | { as: 'facts'; title: string; rows: Array<Record<string, unknown>>; page: string; checkedAt: string; ms: number }
   | { as: 'link'; link: string; title: string; who: string | null }
   /** A composite's: its inputs as filled, and each entry (a home city) with each step's answer, or why it has none. */
@@ -602,7 +604,8 @@ export function createEngine(d: EngineDeps) {
     const call = offers ? captures.find((c) => matches(offers.from, c.url) && c.status >= 200 && c.status < 300 && !c.truncated) : undefined;
     if (!offers || !call || site.key === null) return;
     try {
-      const body: unknown = JSON.parse(call.body);
+      // An event stream's list is read from its events (the list expression takes them in order), anything else as JSON.
+      const body: unknown = offers.format === 'sse' ? readBodyAs(call.body, 'sse', 'its list') : JSON.parse(call.body);
       // As it is first; then without what a logged-in answer may wrap it in (read.ts unwrapped).
       let list: Offer[] = [];
       let bands: Offer[] = [];
@@ -697,6 +700,9 @@ export function createEngine(d: EngineDeps) {
    */
   function withOffers(plan: FetchPlan, recipe: RecipeFile, site: Site): FetchPlan {
     if (!recipe.offers || !d.offers || site.key === null) return plan;
+    // A list in the very call the rows come from (flights' stream): kept with the rows, never a second copy of it.
+    const from = recipe.offers.from;
+    if (plan.capture.some((c) => c.match === from)) return plan;
     const call: CaptureSpec = { match: recipe.offers.from, required: false, max_bytes: OFFERS_MAX_BYTES };
     return site.listed
       ? { ...plan, capture: [...plan.capture, { ...call, besides: true }] }
@@ -763,13 +769,14 @@ export function createEngine(d: EngineDeps) {
         const at = d.now();
         return { as: 'facts', title: await fill(recipe.answer.title, inputs, { url: false, bindings: b }), rows, page: opened, checkedAt: at.toISOString(), ms: at.getTime() - started };
       }
-      const options = await readOptions(recipeRead, caps, inputs, opened, b);
+      const notes: string[] = [];
+      const options = await readOptions(recipeRead, caps, inputs, opened, b, notes);
       const at = d.now();
       // A stream cut short (an earlier snapshot of ixigo's flights, or a Bash that cut the whole stream at 1 MB): its whole
       // events read, and the answer says these are the first the page sent.
       const from = recipeRead.read?.rows.from;
       const cut = from !== undefined && caps.some((c) => c.truncated && c.status >= 200 && c.status < 300 && matches(from, c.url));
-      return { as: 'options', options, page: opened, checkedAt: at.toISOString(), ms: at.getTime() - started, ...(cut ? { cut: true as const } : {}) };
+      return { as: 'options', options, page: opened, checkedAt: at.toISOString(), ms: at.getTime() - started, ...(cut ? { cut: true as const } : {}), ...(notes.length > 0 ? { notes } : {}) };
     };
     // Fast first: the page's own call from the trip's warm tab, read as its answer. Any failure falls to the page.
     if (recipe.fast && fastOn(runner) && runner.pageFetch && !o.background && !watched(o)) {

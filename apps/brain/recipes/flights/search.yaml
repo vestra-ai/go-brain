@@ -36,9 +36,15 @@ let:
     )
   landing: |
     arrive_before ? $join($windows[from < $$.arrive_before and to > "00:00"].name, ",")
+  # As flights.results: ixigo's own filters the ask named ($site), as the page's own params. The link has no list of its
+  # own, so it is none here yet; the page and the link stay one.
+  site_params: |
+    $site ? $join($distinct($site.$substringBefore($, ":")).(
+      $k := $; $k & "=" & $join($site[$substringBefore($, ":") = $k].$substringAfter($, ":"), ",")
+    ), "&")
   # What people asked for, in ixigo's own params, and the cheapest first (the param ixigo's "Price / Low to High" writes).
   params: |
-    $join($append($conditions, [$take_off ? "takeOff=" & $take_off, $landing ? "landing=" & $landing, max_price ? "price=0," & $string($floor(max_price / 100)), "sort_type=cheapest"]), "&")
+    $join($append($conditions, [$take_off ? "takeOff=" & $take_off, $landing ? "landing=" & $landing, max_price ? "price=0," & $string($floor(max_price / 100)), $site_params, "sort_type=cheapest"]), "&")
 page: /search/result/flight?from={from.code}&to={to.code}&date={date|DDMMYYYY}&returnDate=&adults={adults}&children=0&infants=0&class=e&source=Search%20Form&{$params|raw}
 answer:
   # ixigo answers flight pages with a 403 from the boxes' shared egress: the group gets the page, set as they asked.
