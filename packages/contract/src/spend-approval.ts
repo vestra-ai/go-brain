@@ -20,7 +20,12 @@ export const MAX_APPROVAL_TTL_SECONDS = 600;
  * Which payment the claims are for: a group's vote (decision_id), or 1.2's ticket (for_person_id, whose traveller is
  * the payer). Null when they say exactly one; else what is wrong.
  */
-export function spendFormProblem(c: { decision_id?: string | null; for_person_id?: string | null; kind?: string | null; payer_person_id: string }): string | null {
+export function spendFormProblem(c: {
+  decision_id?: string | null | undefined;
+  for_person_id?: string | null | undefined;
+  kind?: string | null | undefined;
+  payer_person_id: string;
+}): string | null {
   const vote = c.decision_id != null;
   const ticket = c.for_person_id != null;
   if (vote === ticket) return 'exactly one of decision_id and for_person_id';
