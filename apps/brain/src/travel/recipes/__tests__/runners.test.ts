@@ -6,6 +6,7 @@ import type { FetchPlan } from '../recipe.js';
 import {
   BASH_MAX_BYTES, BUSY_TRIES, CHALLENGE_TRIES, CHALLENGE_WAIT_MS, CHALLENGED, ChallengedError, challenged, challengeTime, createBrowserFetchRunner, DEFAULT_SLOTS, FAST_TIMEOUT_MS, FAST_UNSUPPORTED_MS, FETCH_TIMEOUT_MS, FRAME_WIDTH, HANDOFF_IN_USE_TRIES, IN_USE_PATIENCE_MS, IN_USE_WAIT_MS, LOOK_AFTER_MS, LOOK_UNSUPPORTED_MS, NEAR_UNSUPPORTED_MS, NearUnsupportedError, STAGE_MS, STAGE_TAB,
   LOOK_SETTLE_MS, LOOK_TIMEOUT_MS, NothingCaughtError, OUT_OF_CREDIT, PAYMENT_PAGE_BLOCKED, PRIME_TIMEOUT_MS, SSE_UNSUPPORTED_MS, WARM_TAB_MS, type FetchTrace,
+  bashCaptures, OPTIONAL_GRACE_MS,
 } from '../runners.js';
 import { capture, fixture } from './fixtures.js';
 
@@ -317,6 +318,42 @@ describe("the browser fetch: how the recipe engine reads a page in the trip's br
     expect(w.calls).toHaveLength(2);
     expect(w.elapsed()).toBe(CHALLENGE_WAIT_MS);
     expect(challenged([docAt(429, 370)], BUSES)).toBe(true);
+  });
+
+  // Staging, 10 Oct: hotels.details p50 23.7 s, trains.between and the plain offers read about 20 s. A recipe's
+  // `required: false` went to Bash only with a grace, so Bash waited for the optional call to FETCH_TIMEOUT_MS.
+  describe('an optional capture', () => {
+    const AVAIL = '/api/v3/trains/availability';
+    const plan: FetchPlan = { capture: [{ match: '/trains/v1/search/between/', required: true }, { match: AVAIL, required: false, max_count: 6 }] };
+    const sent = [{ match: '/trains/v1/search/between/', required: true }, { match: AVAIL, required: false, max_count: 6 }];
+
+    it('is asked for as not required, with a short grace, on a page read, the stage and a hand-off alike', async () => {
+      const w = world(() => fetched([busCapture]));
+      const runner = createBrowserFetchRunner(w.deps);
+      await runner.read('t1', BUSES, plan);
+      await runner.onStage!('t1', plan);
+      await runner.handOff!('t1', BUSES, plan, { keepOpenMs: 600_000, tab: 'ixigo_login' });
+      const bodies = w.calls.map((c) => c.opts['body'] as { capture?: unknown[]; grace_ms?: number; timeout_ms: number }).filter((b) => b?.capture);
+      expect(bodies).toHaveLength(3);
+      for (const b of bodies) {
+        expect(b.grace_ms).toBe(OPTIONAL_GRACE_MS);
+        expect(b.capture!.slice(0, 2)).toEqual(sent);
+        expect(b.timeout_ms).toBe(FETCH_TIMEOUT_MS);
+      }
+      expect(OPTIONAL_GRACE_MS).toBeLessThanOrEqual(3_000);
+    });
+
+    it("keeps a plan's own grace, and leaves a plan with nothing optional as it was", () => {
+      expect(bashCaptures({ ...plan, graceMs: 3_000 }).grace_ms).toBe(3_000);
+      expect(bashCaptures(busPlan)).toEqual({ capture: [{ match: '/buslist/v3/services$' }] });
+    });
+
+    it('never makes every capture optional: Bash refuses a fetch with none required', () => {
+      const allOptional = bashCaptures({ capture: [{ match: AVAIL, required: false }] });
+      expect(allOptional).toEqual({ capture: [{ match: AVAIL }] });
+      // A capture never waited for (besides) is no reason for a grace.
+      expect(bashCaptures({ capture: [...busPlan.capture, { match: AVAIL, required: false, besides: true }] }).grace_ms).toBeUndefined();
+    });
   });
 
   it("asks for a capture it never waits for (besides: a site's list of what it offers) as not required, grace or none", async () => {

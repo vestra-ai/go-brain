@@ -32,10 +32,11 @@ export interface IxigoToolDeps {
   card?: (tripId: string, o: { runKey: string; recipe: string }) => LiveSearch;
   cardDelayMs?: number;
   /**
-   * The card key of a read the early start began for a message this turn woke for, when this call is that read (its
-   * recipe and inputs): the call joins the read, so it updates that read's card instead of posting a second.
+   * The read the early start began for a message this turn woke for, when this call is that read (its recipe, and each
+   * input the read was given): the call joins it, on its card. Its answer is the call's too when the call adds only
+   * inputs that narrow the same list (offers.list's bank): one read for the turn, never a second page (exam, 10 Oct).
    */
-  joinKey?: (ctx: TurnCtx, recipe: string, inputs: Record<string, string | number>) => string | null;
+  joined?: (ctx: TurnCtx, recipe: string, inputs: Record<string, string | number>) => { runKey: string; asked: Record<string, string>; answer: Promise<EngineAnswer> } | null;
 }
 
 /**
@@ -251,10 +252,17 @@ export function ixigoTool(d: IxigoToolDeps): QuickTool<{ recipe: string; inputs:
         if (!page) return { recipe: a.recipe, error: 'needs_more', note: `${name} is not an option in this trip's search results: give it as results_id#n from a search, or card_id#n off an options card in the chat.`, inputs: inputsOf(recipe) };
         given[name] = page;
       }
-      const runKey = d.joinKey?.(ctx, a.recipe, a.inputs) ?? `${ctx.turnId ?? ''}|${a.recipe}|${JSON.stringify(given)}`;
+      const early = d.joined?.(ctx, a.recipe, a.inputs) ?? null;
+      const runKey = early?.runKey ?? `${ctx.turnId ?? ''}|${a.recipe}|${JSON.stringify(given)}`;
+      // What the call adds to the early read: inputs that only narrow its list take its answer (a read that failed is
+      // read again); any other is a read of its own.
+      const added = early ? Object.keys(a.inputs).filter((k) => !(k in early.asked)) : [];
+      const takes = early !== null && recipe !== undefined && !link && added.every((k) => recipe.inputs[k]?.narrows === true);
       try {
+        const shared = takes ? await early.answer.catch(() => null) : null;
         // A link opens no page on the stage: it is a card.
-        const answer = recipe && !link ? await runOnStage(d, ctx.tripId, runKey, recipe, given) : await d.engine.answer(a.recipe, given, { tripId: ctx.tripId });
+        const answer = shared ?? (recipe && !link ? await runOnStage(d, ctx.tripId, runKey, recipe, given) : await d.engine.answer(a.recipe, given, { tripId: ctx.tripId }));
+        const wider = shared && added.length > 0 ? { note: `Read for ${JSON.stringify(early!.asked)}: keep only what fits ${added.map((k) => `${k} ${a.inputs[k]}`).join(', ')}.` } : {};
         if (answer.as === 'link') {
           ctx.cards.push(buildIxigoLinkCard({ cardId: ctx.stableId('c_link'), title: answer.title, url: answer.link }));
           return { recipe: a.recipe, link: answer.link, note: 'The card with the link goes out with your message.', tell_the_room: LINK_ON_IXIGO };
@@ -267,7 +275,7 @@ export function ixigoTool(d: IxigoToolDeps): QuickTool<{ recipe: string; inputs:
         }
         return {
           recipe: a.recipe, title: answer.title, checked_at: answer.checkedAt, source: answer.page, facts: answer.rows.map(withoutPhotos),
-          tell_the_room: account ? FROM_THE_ACCOUNT : NAMES_ONLY_FROM_IXIGO,
+          ...wider, tell_the_room: account ? FROM_THE_ACCOUNT : NAMES_ONLY_FROM_IXIGO,
         };
       } catch (err) {
         if (!(err instanceof TravelError)) throw err;

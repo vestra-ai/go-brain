@@ -48,18 +48,13 @@ describe('the options card', () => {
     expect(card.actions?.[2]).toEqual({ action_id: 'see_all', label: 'See all on ixigo', style: 'secondary' });
   });
 
-  it('asks for a budget on a stays card while nobody has a band: "Add my budget" takes "See all on ixigo"\'s place, after the group\'s own buttons', () => {
+  it('never asks for a budget on a stays card (rev 4: one group budget, nobody gives a private one)', () => {
     const onIxigo = picks.map((p) => ({ ...p, option: { ...p.option, kind: 'stay' as const, sourceUrl: 'https://www.ixigo.com/hotels/1/details?hName=x' } }));
-    const three = buildOptionsCard({ cardId: 'c_b3', title: 'Stays in North Goa', optionKind: 'stay', checkedAt: '2026-10-07T12:00:00.000Z', picks: onIxigo, seeAll: true, askBudget: true });
-    expect(C.OptionsCard.safeParse(three).success).toBe(true);
-    expect(three.actions?.map((a) => a.action_id)).toEqual(['pick', 'vote', 'add_budget']);
-    expect(three.actions?.[2]).toEqual({ action_id: 'add_budget', label: 'Add my budget', style: 'secondary' });
-    // One stay: room for each option's "See on ixigo" after it.
-    const one = buildOptionsCard({ cardId: 'c_b1', title: 'Saudades', optionKind: 'stay', checkedAt: '2026-10-07T12:00:00.000Z', picks: onIxigo.slice(0, 1), seeAll: true, askBudget: true });
-    expect(one.actions?.map((a) => a.action_id)).toEqual(['pick', 'add_budget', 'open']);
-    // Once someone has a band, today's buttons.
-    expect(buildOptionsCard({ cardId: 'c_b0', title: 'Stays', optionKind: 'stay', checkedAt: '2026-10-07T12:00:00.000Z', picks: onIxigo, seeAll: true }).actions?.map((a) => a.action_id))
-      .toEqual(['pick', 'vote', 'see_all']);
+    const three = buildOptionsCard({ cardId: 'c_b3', title: 'Stays in North Goa', optionKind: 'stay', checkedAt: '2026-10-07T12:00:00.000Z', picks: onIxigo, seeAll: true });
+    expect(three.actions?.map((a) => a.action_id)).toEqual(['pick', 'vote', 'see_all']);
+    const one = buildOptionsCard({ cardId: 'c_b1', title: 'Saudades', optionKind: 'stay', checkedAt: '2026-10-07T12:00:00.000Z', picks: onIxigo.slice(0, 1) });
+    expect(one.actions?.map((a) => a.action_id)).toEqual(['pick', 'open']);
+    expect(JSON.stringify([three, one])).not.toMatch(/add_budget|my budget/i);
   });
 
   it('builds the flights link card as a valid notice with its one button', () => {

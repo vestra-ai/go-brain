@@ -123,7 +123,7 @@ From each cue to what had to happen, on the wall clock of the run.
 | 36.0 s | Priya | taps "approve" on the pay card: refused, "Only Rahul can approve this payment." |
 | 36.0 s | Rahul | taps "approve" on the pay card: open |
 | 36.0 s | Rahul | approves on the vault page with his passkey (a software passkey in the test), and the 4242 test card is charged on the fake rail |
-| 36.1 s | Go | Booked Villa Sol! Rahul paid ₹38,400, split between all 5. [ticket card: Booked: Villa Sol. Ref IXG456974. Free cancellation until 3 Nov.] |
+| 36.1 s | Go | Booked Villa Sol! [ticket card: Booked: Villa Sol. Ref IXG456974. Free cancellation until 3 Nov.] |
 
 ### 3:40 The simulated watch
 
