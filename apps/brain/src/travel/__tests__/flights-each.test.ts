@@ -68,9 +68,11 @@ const toolWith = (answer: (o: RunFor) => Promise<EngineAnswer>, o: { live?: bool
     engine: { answer: async (id, given, run) => (asked.push({ id, given }), id === FLIGHTS_EACH ? answer(run) : Promise.reject(new Error(id))) },
     results, link: lb.link, now: lb.brain.now, live: () => o.live ?? true, waitMs: o.waitMs ?? 5_000, cardDelayMs: 60_000,
   });
-type Posted = { text: string; card: C.Card };
+type Posted = { text: string; card: C.Card; visibleTo: string[] | undefined };
 const postedSince = (from: number): Posted[] =>
-  lb.link.requests.slice(from).filter((r) => r.method === 'post_message' && (r.params['card'] as C.Card | undefined)?.kind !== 'working').map((r) => ({ text: String(r.params['text']), card: r.params['card'] as C.Card }));
+  lb.link.requests.slice(from).filter((r) => r.method === 'post_message' && (r.params['card'] as C.Card | undefined)?.kind !== 'working').map((r) => ({
+    text: String(r.params['text']), card: r.params['card'] as C.Card, visibleTo: r.params['visible_to_person_ids'] as string[] | undefined,
+  }));
 
 describe("each person's own flights, from their home city", () => {
   it('gives every traveller a card of their own, by their home city and leaving window', () => {
@@ -127,6 +129,7 @@ describe("each person's own flights, from their home city", () => {
     // Bangalore's page didn't come: Arjun gets ixigo's own page, pinned to him.
     const arjun = byTitle.get('Flights for Arjun, Bangalore to North Goa')!;
     expect(arjun.card).toMatchObject({ kind: 'notice', for_person_ids: ['p_arjun'], source: { url: expect.stringContaining('from=BLR') } });
+    expect([arjun.visibleTo, rahul.visibleTo]).toEqual([['p_arjun'], ['p_rahul']]);
     expect((arjun.card as { actions: Array<{ only_for_person_ids?: string[] }> }).actions.map((a) => a.only_for_person_ids)).toEqual([['p_arjun']]);
     expect(arjun.text).toMatch(/^Arjun, Go couldn't read the flights from Bangalore just now/);
     // Rahul's pick on his card is his own: his confirm, never a vote.
@@ -149,8 +152,11 @@ describe("each person's own flights, from their home city", () => {
       }
       return COMPARE;
     }).run({}, ctx);
-    const cards = postedSince(from).map((p) => C.OptionsCard.parse(p.card));
+    const posted = postedSince(from);
+    const cards = posted.map((p) => C.OptionsCard.parse(p.card));
     expect(cards.map((c) => c.for_person_ids).sort()).toEqual([['p_arjun'], ['p_meher'], ['p_priya'], ['p_rahul']]);
+    // Each card is its traveller's alone to see as well (1.2): nobody else in the trip has it.
+    for (const p of posted) expect(p.visibleTo).toEqual((p.card as { for_person_ids: string[] }).for_person_ids);
     for (const c of cards) {
       expect(c.actions?.every((a) => JSON.stringify(a.only_for_person_ids) === JSON.stringify(c.for_person_ids))).toBe(true);
       expect(c.actions?.map((a) => a.action_id)).not.toContain('vote');

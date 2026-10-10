@@ -173,9 +173,11 @@ export function flightsEachTool(d: FlightsEachDeps): QuickTool<z.infer<typeof Ar
       const cities = new Map<string, { steps: number; posted: boolean; link: string | null }>();
       const posts: Array<Promise<void>> = [];
       const said: string[] = [];
-      const post = (key: string, card: C.Card | null, text: string): void => {
+      // Each traveller's card and its line are theirs alone to see (1.2 visible_to_person_ids, Keshav, 10 Oct), as well as
+      // to act on; the turn's own line, to the room, names no flight, price or window.
+      const post = (key: string, card: C.Card | null, text: string, only: string[]): void => {
         posts.push(
-          d.link.request('post_message', { request_id: stableId('go_each', ctx.turnId, key), trip_id: ctx.tripId, text, ...(card ? { card } : {}) })
+          d.link.request('post_message', { request_id: stableId('go_each', ctx.turnId, key), trip_id: ctx.tripId, text, ...(card ? { card } : {}), visible_to_person_ids: only })
             .then(() => undefined)
             .catch((err: unknown) => d.log?.warn({ err: String(err).slice(0, 200), tripId: ctx.tripId }, "travel: a person's flights card could not be posted")),
         );
@@ -193,7 +195,7 @@ export function flightsEachTool(d: FlightsEachDeps): QuickTool<z.infer<typeof Ar
           for (const g of groupsOf(e.entry)) {
             posts.push(
               groupCard(ctx.tripId, ctx.turnId, g, at, got)
-                .then((made) => post(g.people.map((p) => p.personId).join(','), made.card, made.line))
+                .then((made) => post(g.people.map((p) => p.personId).join(','), made.card, made.line, g.people.map((p) => p.personId)))
                 .catch((err: unknown) => d.log?.warn({ err: String(err).slice(0, 200), tripId: ctx.tripId }, "travel: a person's flights card could not be made")),
             );
           }
@@ -212,7 +214,7 @@ export function flightsEachTool(d: FlightsEachDeps): QuickTool<z.infer<typeof Ar
             const link = buildFlightsLinkCard({ cardId: stableId('c_each_link', ctx.turnId, ...only), title, url: city.link });
             // Theirs alone to act on, as their options card would be.
             const card = { ...link, for_person_ids: only, actions: (link.actions ?? []).map((a) => ({ ...a, only_for_person_ids: only })) };
-            post(`${only.join(',')}|link`, card, `${namesOf(g)}, Go couldn't read the flights from ${g.home} just now, so here they are on ixigo${g.window ? `; yours leave ${g.window.words}` : ''}.`);
+            post(`${only.join(',')}|link`, card, `${namesOf(g)}, Go couldn't read the flights from ${g.home} just now, so here they are on ixigo${g.window ? `; yours leave ${g.window.words}` : ''}.`, only);
           }
         }
       };
