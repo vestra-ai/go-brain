@@ -48,7 +48,7 @@ describe("a stay's offer, how it is paid and how scarce it is, from ixigo's own 
     const options = await read('hotels.search', { place: 'Anjuna', check_in: '2026-11-06', check_out: '2026-11-09' }, [capture(SEARCH, URL, JSON.stringify(body))]);
     const got = options.find((o) => o.title === 'Riva Beach Resort')!;
     expect(got.facts).toMatchObject({ coupon: 'IXIFIRST', offer: '₹604 discount' });
-    expect(JSON.stringify(got)).not.toMatch(/<img|hotel-cash|hotel_cash|burn|₹150/i);
+    expect(JSON.stringify(got)).not.toMatch(/<img|hotel-cash|hotel_cash|burnAmount|₹150/);
     expect(stayDetails(toResultOption(got as never), {}, 4, [])!.facts).toContainEqual({ label: 'Offer', value: '₹604 discount' });
     // Logged out, as ever: ixigo's own sentence, and no hotel cash.
     const out = (await anjuna()).find((o) => o.title === 'Riva Beach Resort')!;

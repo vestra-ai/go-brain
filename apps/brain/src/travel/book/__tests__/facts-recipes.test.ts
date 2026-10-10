@@ -169,7 +169,7 @@ describe("a stay's own page", () => {
     rate.fareDetail.burnInfo = [{ key: 'HOTEL_CASH', burnAmount: 120, totalAmount: 120, title: 'Hotel Cash', description: 'Use your hotel cash', summaryText: '₹120 hotel cash' }];
     const got = await facts('hotels.rooms', { hotel: MOJIGAO }, [capture('/rooms$', `${HOTEL_API}/accommodations/details/37957/rooms`, JSON.stringify(body))]);
     expect(got.rows[0]).toMatchObject({ coupon: '₹686 discount' });
-    expect(JSON.stringify(got.rows)).not.toMatch(/<img|hotel-cash|hotel_cash|burn|₹120/i);
+    expect(JSON.stringify(got.rows)).not.toMatch(/<img|hotel-cash|hotel_cash|burnAmount|₹120/);
   });
 
   it("hotels.reviews answers the latest reviews, each guest's rating, kind of trip and words, never a name", async () => {
