@@ -120,4 +120,37 @@ describe('an option input', () => {
     expect(await tool.run({ recipe: 'example.option_details', inputs: { hotel: 'c_opt_other#1' } }, turn)).toMatchObject({ error: 'needs_more' });
     expect(given).toHaveLength(1);
   });
+
+  // The exam, 10 Oct (#17): "can we lock the price while we vote?" was answered "I can't", with each flight's Lock Price
+  // read and kept by its search. option.facts says what ixigo showed for an option, by results_id#n or card_id#n, and
+  // opens no page.
+  it("says an option's kept facts, Lock Price and all, by results_id#n or card_id#n, opening no page, ixigo.com or not", async () => {
+    const flight = {
+      kind: 'flight', title: 'IndiGo 6E 2134', priceMinor: 592_000, currency: 'INR', priceNote: 'per person', highlights: ['Non-stop'],
+      facts: { lock: 'Lock Price ₹349 a person, holds 72 h', refundable: 'partly', photo_list: [{ url: 'https://x/y.jpg' }] },
+      journey: { mode: 'flight', origin: { name: 'Delhi' }, destination: { name: 'Goa' }, depart_at: '2026-11-06T18:10:00+05:30', arrive_at: '2026-11-06T20:45:00+05:30' },
+    };
+    const set = { resultsId: 'r_fl', checkedAt: '2026-10-10T09:00:00.000Z', options: [flight] };
+    const ran: string[] = [];
+    const results = {
+      get: async (tripId: string, id: string) => (tripId === 't_goa' && id === 'r_fl' ? set : null),
+      card: async (tripId: string, cardId: string) => (tripId === 't_goa' && cardId === 'c_opt_fl' ? { card: { options: [{ option_id: 'opt_fl_1' }] } } : null),
+      offer: async (optionId: string) => (optionId === 'opt_fl_1' ? { resultsId: 'r_fl', n: 1 } : null),
+    } as unknown as Pick<ResultsStore, 'get' | 'card' | 'offer'>;
+    const tool = ixigoTool({ book, engine: { answer: async (id: string) => { ran.push(id); throw new Error('no page'); } }, results, live: () => false })!;
+    expect(tool.description).toMatch(/\n\n- option\.facts \(option#\): What ixigo showed for one option on a card or in search results when Go read it: its fare, Lock Price/);
+    const turn = { tripId: 't_goa', turnId: 'turn_k', cards: [], stableId: (p: string) => `${p}_1` } as unknown as TurnCtx;
+    const want = {
+      recipe: 'option.facts', title: 'IndiGo 6E 2134', checked_at: '2026-10-10T09:00:00.000Z',
+      facts: [{ title: 'IndiGo 6E 2134', price: '₹5,920 per person', lock: 'Lock Price ₹349 a person, holds 72 h', refundable: 'partly', leaves: '2026-11-06T18:10:00+05:30' }],
+    };
+    expect(await tool.run({ recipe: 'option.facts', inputs: { option: 'r_fl#1' } }, turn)).toMatchObject(want);
+    expect(await tool.run({ recipe: 'option.facts', inputs: { option: 'c_opt_fl#1' } }, turn)).toMatchObject(want);
+    // Never a photo list in the facts the model reads; an option that isn't there is said plainly.
+    expect(((await tool.run({ recipe: 'option.facts', inputs: { option: 'r_fl#1' } }, turn)) as { facts: Array<Record<string, unknown>> }).facts[0]).not.toHaveProperty('photo_list');
+    expect(await tool.run({ recipe: 'option.facts', inputs: { option: 'c_opt_fl#2' } }, turn)).toMatchObject({ error: 'needs_more' });
+    expect(ran).toEqual([]);
+    // Called as a tool of its own, it is sent back to the ixigo tool.
+    expect(tool.misnamed?.('option_facts')).toContain('{"recipe": "option.facts"');
+  });
 });

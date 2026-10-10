@@ -199,7 +199,7 @@ describe("a run's label", () => {
     const typed = labelOf(book.get('trains.station_lookup')!, { words: "my aunt's flat near the station" });
     expect(typed).not.toMatch(/aunt|flat/);
     expect(book.get('trains.station_lookup')!.title.startsWith(typed.replace(/…$/, ''))).toBe(true);
-    expect(GUIDE).toMatch(/^A destination's guide on ixigo/);
+    expect(GUIDE).toMatch(/^Places to visit and things to do in a destination/);
     expect(GUIDE.length).toBeLessThanOrEqual(60);
   });
 });
