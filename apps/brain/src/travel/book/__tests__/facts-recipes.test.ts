@@ -161,6 +161,17 @@ describe("a stay's own page", () => {
     ])).rejects.toThrow(/did not send/);
   });
 
+  // Phase 2, 10 Oct: logged in, a rate's offer carries ixigo's hotel cash as a picture, and its burnInfo the person's own.
+  it("hotels.rooms reads a logged-in rate's offer as words, and never its hotel cash", async () => {
+    const body = JSON.parse(sample('hotels.rooms.json'));
+    const rate = (body.data ?? body[0].data).rooms[0].roomOptions[0];
+    rate.fareDetail.offerMessage = '₹686 discount + <img src="https://images.ixigo.com/image/upload/accommodations/hotel-cash/cash.png"> ₹120';
+    rate.fareDetail.burnInfo = [{ key: 'HOTEL_CASH', burnAmount: 120, totalAmount: 120, title: 'Hotel Cash', description: 'Use your hotel cash', summaryText: '₹120 hotel cash' }];
+    const got = await facts('hotels.rooms', { hotel: MOJIGAO }, [capture('/rooms$', `${HOTEL_API}/accommodations/details/37957/rooms`, JSON.stringify(body))]);
+    expect(got.rows[0]).toMatchObject({ coupon: '₹686 discount' });
+    expect(JSON.stringify(got.rows)).not.toMatch(/<img|hotel-cash|hotel_cash|burnAmount|₹120/);
+  });
+
   it("hotels.reviews answers the latest reviews, each guest's rating, kind of trip and words, never a name", async () => {
     const got = await facts('hotels.reviews', { hotel: MOJIGAO }, [
       capture('/x', `${HOTEL_API}/accommodations/reviews/aiReviews/37957`, sample('hotels.reviews.json')),
