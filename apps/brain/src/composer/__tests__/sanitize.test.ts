@@ -22,6 +22,13 @@ describe('sanitize', () => {
     expect(sanitize('Running on Sonnet 5.5 today')).toBe('Running on Go today');
   });
 
+  it('takes markdown out: the App shows text as it is (staging, 10 Oct: "**Rahul:** from Delhi")', () => {
+    expect(sanitize("Here's what I have:\n- **Rahul:** from Delhi\n- __Priya__: vegetarian")).toBe("Here's what I have:\n- Rahul: from Delhi\n- Priya: vegetarian");
+    expect(sanitize('## Plan\n* beach day\n* dinner')).toBe('Plan\n- beach day\n- dinner');
+    // A lone asterisk or a star rating stays.
+    expect(sanitize('rated 4.5* on ixigo, 2 * 3 rooms')).toBe('rated 4.5* on ixigo, 2 * 3 rooms');
+  });
+
   it('leaves plain text alone', () => {
     const t = 'Flights from Delhi after 6 pm on Friday: three options, from ₹5,400.';
     expect(sanitize(t)).toBe(t);
