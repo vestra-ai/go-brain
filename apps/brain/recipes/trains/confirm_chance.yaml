@@ -28,25 +28,28 @@ answer:
   title: "{from.name} to {to.name}, {date|D Mon}"
   max: 12
   # A class that is available needs no chance; one that is waitlisted says ixigo's figure and verdict. It is ixigo's
-  # prediction, not a promise.
+  # prediction, not a promise. Tatkal (on the day its booking opens, when ixigo fills it) is said apart, so a watch on
+  # the general quota's seats never fires on a Tatkal seat.
   each: |
     (
       $t := $;
       $classes := $inputs.class ? [$inputs.class] : $keys(availabilityCache);
-      $say := function($c) {(
-        $a := $lookup($t.availabilityCache, $c);
+      $say := function($quota, $c) {(
+        $a := $lookup($quota, $c);
         $pct := $num($a.predictionPercentage);
         $waiting := $contains($string($a.availability), "WL");
         $a ? $c & ": " & ($a.availabilityDisplayName ? $a.availabilityDisplayName : $a.availability)
           & ($waiting and $exists($pct) ? ", " & $string($pct) & "% chance to confirm, ixigo says " & $a.confirmTktStatus : "")
           & ($waiting and $exists($num($a.tgMultiplier)) ? ", Alternate Travel Plan refund up to " & $string($num($a.tgMultiplier)) & "x" : "")
       )};
-      $lines := [$classes.$say($)];
-      $count($lines) > 0 ? {
+      $lines := [$classes.$say($t.availabilityCache, $)];
+      $tatkal := [($inputs.class ? [$inputs.class] : $keys(availabilityCacheTatkal)).$say($t.availabilityCacheTatkal, $)];
+      $count($lines) + $count($tatkal) > 0 ? {
         "train": $titleWords(trainName) & " " & trainNumber,
         "leaves": fromStnCode & " " & departureTime,
         "arrives": toStnCode & " " & arrivalTime,
-        "classes": $lines
+        "classes": $lines,
+        "tatkal": $count($tatkal) > 0 ? $tatkal
       }
     )
 # "Tell us when 12608's 3A confirms": a class line that is available, confirmed or RAC, not on the waiting list.
