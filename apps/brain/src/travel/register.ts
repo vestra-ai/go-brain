@@ -158,6 +158,8 @@ export const registerTravel: RegisterLane = async (brain) => {
     now: brain.now,
     log: brain.log,
     live: (tripId, o) => startLiveSearch({ link: brain.door.link, images, now: brain.now, log: brain.log, saidOnIt }, tripId, o),
+    // A computer that met Cloudflare's check moments ago opens no stays page for an ask (backend.ts CHALLENGE_COOL_MS).
+    challengedAt: (tripId) => brain.recipeRunners?.browserFetch.lastChallenge?.(tripId) ?? null,
   });
   // The trip's likely first stays search, before anyone asks: after the warm at setup, when its dates or destination
   // change, and on a line after the last one ran out. Through Go's searches (shareStep), so no card, and the ask joins it.

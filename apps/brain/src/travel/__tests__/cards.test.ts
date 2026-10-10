@@ -80,6 +80,13 @@ describe('the options card', () => {
     expect(ixigoPage(null)).toBeNull();
   });
 
+  // p0's golden run, 10 Oct: stays that stayed on Cloudflare's check, with no earlier read, go as ixigo's own page.
+  it("puts ixigo's own stays page on a card, set as asked, when Go can't read it", () => {
+    const card = buildFlightsLinkCard({ cardId: 'c_link_s', title: 'Stays in North Goa', url: 'https://www.ixigo.com/hotels/search/result?locationId=32', kind: 'stays' });
+    expect(card.body).toBe("Go can't read ixigo's stays from its computer right now, so here they are on ixigo, with what you asked for already set. Book them there.");
+    expect(card.actions?.map((a) => [a.action_id, a.label])).toEqual([['see_on_ixigo', 'See stays on ixigo']]);
+  });
+
   it('describes a stay by its area and whole-stay price', () => {
     const stay: ResultOption = { kind: 'stay', title: 'Villa Sol', priceMinor: 1280000, totalMinor: 3840000, priceNote: 'per night', highlights: [], facts: { nights: 3, area: 'Anjuna' } };
     expect(subtitleFor(stay)).toBe('Anjuna, ₹38,400 for 3 nights');

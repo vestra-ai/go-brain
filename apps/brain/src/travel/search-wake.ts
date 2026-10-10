@@ -73,7 +73,7 @@ export function searchWakeAnswer(d: Pick<TravelToolDeps, 'results' | 'images'>):
     if (wake.length !== 1 || item?.kind !== 'search' || !KINDS.includes(item.ref)) return false;
     const w = item.payload as Partial<SearchWake> | null;
     if (w?.source === 'travel_search' && w.link) {
-      ctx.cards.push(buildFlightsLinkCard({ cardId: ctx.stableId('c_link'), title: w.link.title, url: w.link.url, who: w.link.who }));
+      ctx.cards.push(buildFlightsLinkCard({ cardId: ctx.stableId('c_link'), title: w.link.title, url: w.link.url, who: w.link.who, ...(item.ref === 'stays' ? { kind: 'stays' as const } : {}) }));
       ctx.lines.push(w.link.line);
       ctx.answered = true;
       return true;

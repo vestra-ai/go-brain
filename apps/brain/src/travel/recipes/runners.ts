@@ -85,6 +85,8 @@ export interface RecipeRunner {
   handOff?(tripId: string, url: string, plan: FetchPlan, o: { keepOpenMs: number; tab: string; check?: PageCall }): Promise<{ captures: Capture[]; challenged?: true }>;
   /** Closes a hand-off's tab, so the person's own window is on top again; nothing when it is already gone. */
   release?(tripId: string, tab: string): Promise<void>;
+  /** When a page this trip's computer opened last met Cloudflare's check (CLOUDFLARE), in ms; null when none has. */
+  lastChallenge?(tripId: string): number | null;
   /**
    * One page call from inside the kept tab of that name (Bash's page_fetch on it, no url), keeping the tab keepOpenMs
    * more: one byte of its answer, for its status. Null when no tab is kept under that name.
@@ -284,6 +286,8 @@ const LOOK_STEP = { op: 'page_fetch', url: '/favicon.ico', method: 'GET', captur
  * hotels page at 18:01 and 18:04, the page then making no call for 20 s) is waited out the same way.
  */
 export const CHALLENGE_WAIT_MS = 1_000;
+/** The trips whose last check Go remembers (lastChallenge). */
+const CHECKED_TRIPS_MAX = 1_000;
 export const CHALLENGE_TRIES = 2;
 /** The least a load again may have: a check that passes takes about 5 s, then the page's own calls about 3 s. */
 export const CHALLENGE_LOAD_MS = 8_000;
@@ -412,6 +416,13 @@ function fetchFailed(
 export function createBrowserFetchRunner(d: RunnerDeps): RecipeRunner {
   const sleep = d.sleep ?? nap;
   const slot = fetchSlots(d.slots ?? (() => DEFAULT_SLOTS));
+  /** When each trip's computer last met Cloudflare's check, newest last; bounded. */
+  const checkedAt = new Map<string, number>();
+  const metCheck = (tripId: string): void => {
+    checkedAt.delete(tripId);
+    checkedAt.set(tripId, d.now().getTime());
+    while (checkedAt.size > CHECKED_TRIPS_MAX) checkedAt.delete(checkedAt.keys().next().value!);
+  };
 
   /**
    * A Bash call, asked again while Bash says its fetches are all taken (one Go doesn't count, or a cap lowered), inside
@@ -488,6 +499,7 @@ export function createBrowserFetchRunner(d: RunnerDeps): RecipeRunner {
      * else a read that fails, saying so.
      */
     const againAfterCheck = async (): Promise<void> => {
+      metCheck(tripId);
       const next = nextLoadMs(pageMs, started, d.now().getTime(), checks);
       if (next === null || o.signal?.aborted) {
         d.log.warn({ tripId, page: what.id, loads: checks + 1 }, "travel: ixigo's page stayed on Cloudflare's check");
@@ -698,6 +710,7 @@ export function createBrowserFetchRunner(d: RunnerDeps): RecipeRunner {
         captures = partialCaptures(err);
       }
       if (!challenged(captures, url)) return { captures: captures.filter((c) => c.match !== doc) };
+      metCheck(tripId);
       // CLOUDFLARE: never handed to the person. Opened again after a wait, a new page in front, with the time left for
       // it; still on it when no load fits, the caller closes it and says so.
       const next = nextLoadMs(pageMs, started, d.now().getTime(), checks);
@@ -762,6 +775,7 @@ export function createBrowserFetchRunner(d: RunnerDeps): RecipeRunner {
     release: (tripId, tab) => inSlot(tripId, {}, () => release(tripId, tab)),
     tabCall: (tripId, tab, call, keepOpenMs) => inSlot(tripId, {}, () => tabCall(tripId, tab, call, keepOpenMs)),
     tabSteps: (tripId, tab, steps, o) => inSlot(tripId, {}, () => tabSteps(tripId, tab, steps, o)),
+    lastChallenge: (tripId) => checkedAt.get(tripId) ?? null,
   };
 }
 
