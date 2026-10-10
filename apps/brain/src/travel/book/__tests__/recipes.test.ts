@@ -327,7 +327,8 @@ describe('buses.between', () => {
       },
       rating: 4.6,
       highlights: ['VE AC Sleeper (2 + 1)', '16 h 25 m'],
-      facts: { bus_type: 'VE AC Sleeper (2 + 1)', seats_left: 31, duration_min: 985, reviews: 15 },
+      // What the page's own filters read (AC, sleeper), from the bus type: Go's wants pick on them.
+      facts: { bus_type: 'VE AC Sleeper (2 + 1)', seats_left: 31, duration_min: 985, reviews: 15, ac: true, sleeper: true },
       sourceUrl: RESULTS,
     });
     expect(got.options[1]!.priceMinor).toBe(300_000);

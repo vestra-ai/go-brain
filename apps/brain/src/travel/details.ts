@@ -75,12 +75,17 @@ export function stayDetails(o: ResultOption, q: TravelQuery, people: number, gal
     ? `${formatInr(total)} for ${span}${rooms !== null && rooms > 1 ? `, ${rooms} rooms` : ''}`
     : null;
   const stars = num(o.facts['stars']);
+  const left = num(o.facts['rooms_left']);
   const facts = [
     ...fact('Area', text(o.facts['area'])),
     ...fact('Nearby', text(o.facts['distance'])),
     ...fact('Hotel class', stars !== null && stars > 0 ? `${stars}-star` : null),
     ...fact('Guests say', text(o.facts['rating_word'])),
     ...fact('Whole stay', whole),
+    // ixigo's own offer, already in the price: its words when it gave them, else its code.
+    ...fact('Offer', text(o.facts['offer']) ?? (text(o.facts['coupon']) ? `Code ${text(o.facts['coupon'])}, already in the price` : null)),
+    ...fact('Pay', o.facts['book_with_zero'] === true ? 'Book with ₹0 now' : o.facts['pay_at_hotel'] === true ? 'Pay at the hotel' : null),
+    ...fact('Rooms left', left !== null && left > 0 && left <= 5 ? `Only ${left} ${left === 1 ? 'room' : 'rooms'} left` : null),
   ];
   const why = whyStay(o, q);
   const details: OptionDetailsT = {
