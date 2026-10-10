@@ -1,5 +1,5 @@
 id: buses.points
-title: A city's bus boarding points, as ixigo's bus box ranks them, the busiest first
+title: A city's busiest bus pickup and boarding points, as ixigo's bus box ranks them by how many board there
 asks:
   - where do buses leave from in bangalore
   - busiest bus pickup point in mumbai

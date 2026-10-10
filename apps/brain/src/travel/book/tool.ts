@@ -8,14 +8,14 @@
  */
 import { z } from 'zod';
 import type { QuickTool, TurnCtx } from '../../composer/tools.js';
-import { buildIxigoLinkCard, clip } from '../cards.js';
+import { buildIxigoLinkCard, clip, formatInr } from '../cards.js';
 import { TravelError } from '../mcp-travel.js';
 import type { LiveSearch } from '../live-search.js';
 import { CARD_DELAY_MS, LINK_FALLBACK, SEARCH_RECIPES, shownAfter } from '../recipes/backend.js';
 import { withoutPhotos } from '../photos.js';
 import type { Book } from './book.js';
 import type { Engine, EngineAnswer } from './engine.js';
-import type { ResultsStore } from '../results.js';
+import type { ResultOption, ResultsStore } from '../results.js';
 import type { RecipeFile } from './format.js';
 
 export interface IxigoToolDeps {
@@ -54,7 +54,7 @@ export function toolRecipes(book: Pick<Book, 'all'>): RecipeFile[] {
 /** A recipe's inputs the model gives (not the ones worked out from the others), by name. */
 const givenInputs = (r: RecipeFile) => Object.entries(r.inputs).filter(([, i]) => !i.value);
 
-/** A title's first clause: "A destination's guide on ixigo, with the best time to go, …" says "A destination's guide on ixigo". */
+/** A title's first clause: "Places to visit and things to do in a destination, its best time to go, …" says "Places to visit and things to do in a destination". */
 const firstClause = (title: string): string => title.split(/,\s|\s\(|;\s|:\s/)[0]!.replace(/\.$/, '');
 
 /**
@@ -82,14 +82,45 @@ export function bookLines(recipes: RecipeFile[]): string {
   return out.join('\n');
 }
 
+/** How an option input is written, as an answer that went wrong says it in full. */
+const OPTION_INPUT = "an option from search results, written results_id#n, like r_ab12#2, or an options card's id#n for its option n, like c_opt_ab12#1";
+
 /** A recipe's inputs in full, for the model to call it again after an answer that went wrong. */
 const inputsOf = (r: RecipeFile | undefined): Record<string, string> =>
   Object.fromEntries(
     (r ? givenInputs(r) : []).map(([name, i]) => [
       name,
-      `${i.optional ? 'optional; ' : ''}${i.kind === 'option' ? 'an option from search results, written results_id#n, like r_ab12#2, or an options card\'s id#n for its option n, like c_opt_ab12#1' : (i.about ?? i.kind).replace(/\s+/g, ' ').trim()}`,
+      `${i.optional ? 'optional; ' : ''}${i.kind === 'option' ? OPTION_INPUT : (i.about ?? i.kind).replace(/\s+/g, ' ').trim()}`,
     ]),
   );
+
+/**
+ * The tool's own entry besides the book's recipes: what ixigo showed for one option when Go read it, kept with its saved
+ * search (its fare, Lock Price, refundability, seats, times), opening no page (the exam, 10 Oct: "can we lock the price
+ * while we vote?" was answered "I can't", with each flight's Lock Price already read and kept).
+ */
+export const KEPT = 'option.facts';
+const KEPT_LINE =
+  `- ${KEPT} (option#): What ixigo showed for one option on a card or in search results when Go read it: its fare, ` +
+  'Lock Price, refundability, seats left, times and details, with when. It opens no page.';
+
+/** What the room is told with an option's kept facts: ixigo's, as of when Go read them. */
+export const KEPT_FACTS_SAY =
+  "Answer from these facts, as ixigo showed them when Go read them (checked_at): a line or two, saying how long ago when it matters (a price, seats left). For what they don't hold, or a price right now, run that option's own recipe or search again; never answer it from memory.";
+
+/** An option's kept facts as one row: ixigo's own details, with its price and times as the card says them. */
+function keptRow(o: ResultOption): Record<string, unknown> {
+  return withoutPhotos({
+    ...o.facts,
+    title: o.title,
+    ...(o.priceMinor !== undefined ? { price: `${formatInr(o.priceMinor)}${o.priceNote ? ` ${o.priceNote}` : ''}` } : {}),
+    ...(o.totalMinor !== undefined ? { total: formatInr(o.totalMinor) } : {}),
+    ...(o.journey ? { leaves: o.journey.depart_at, arrives: o.journey.arrive_at } : {}),
+    ...(o.refundableUntil ? { refundable_until: o.refundableUntil } : {}),
+    ...(o.rating !== undefined ? { rating: o.rating } : {}),
+    ...(o.highlights.length > 0 ? { highlights: o.highlights } : {}),
+  });
+}
 
 /** Go names a venue only from ixigo's own data (a well-known place also from what it knows): what the room is told about the facts it gets. */
 export const NAMES_ONLY_FROM_IXIGO =
@@ -149,7 +180,8 @@ const Value = z.union([z.string().min(1).max(120), z.number()]);
 export function ixigoTool(d: IxigoToolDeps): QuickTool<{ recipe: string; inputs: Record<string, string | number> }> | null {
   const recipes = toolRecipes(d.book);
   if (recipes.length === 0) return null;
-  const ids = recipes.map((r) => r.id) as [string, ...string[]];
+  // The tool's own option.facts first, then the book's: a tuple with one at least, as z.enum takes it.
+  const ids: [string, ...string[]] = [KEPT, ...recipes.map((r) => r.id)];
   /**
    * "r_ab12#2": option 2 of that saved search, in this trip; "c_opt_ab12#1": option 1 on that options card, as the room
    * sees it numbered (the chat shows each card's options by number). Its own ixigo page, or null.
@@ -165,13 +197,30 @@ export function ixigoTool(d: IxigoToolDeps): QuickTool<{ recipe: string; inputs:
     const offer = optionId && d.results.offer ? await d.results.offer(optionId) : null;
     return offer?.sourceUrl ?? null;
   };
+  /** The same two ways to name an option, to its kept read: the option as its search saved it, and when ixigo showed it. */
+  const optionOf = async (ref: string, tripId: string): Promise<{ option: ResultOption; checkedAt: string } | null> => {
+    const m = /^(\S+)#(\d{1,2})$/.exec(ref.trim());
+    const results = d.results;
+    if (!m || !results) return null;
+    const fromSet = async (resultsId: string, n: number) => {
+      const set = await results.get(tripId, resultsId);
+      const option = set?.options[n - 1];
+      return set && option ? { option, checkedAt: set.checkedAt } : null;
+    };
+    const saved = await fromSet(m[1]!, Number(m[2]));
+    if (saved) return saved;
+    const card = results.card ? await results.card(tripId, m[1]!) : null;
+    const optionId = card?.card.options[Number(m[2]) - 1]?.option_id;
+    const offer = optionId && results.offer ? await results.offer(optionId) : null;
+    return offer ? fromSet(offer.resultsId, offer.n) : null;
+  };
   return {
     name: 'ixigo',
     description:
       "Runs one of Go's ixigo.com recipes in the trip's browser and answers with what ixigo shows, for what the searches " +
       "don't cover. A line a recipe: its id, its inputs (? optional, # an option from this trip's search results, written " +
       `results_id#n like r_ab12#2, or an options card's id#n as the chat numbers its options, like c_opt_ab12#1) and what it answers. ` +
-      `Each id is a value of this tool's recipe field, never a tool of its own: call ixigo with {"recipe": "<its id>", "inputs": {…}}.\n${bookLines(recipes)}`,
+      `Each id is a value of this tool's recipe field, never a tool of its own: call ixigo with {"recipe": "<its id>", "inputs": {…}}.\n${bookLines(recipes)}\n\n${KEPT_LINE}`,
     input: z.object({
       recipe: z.enum(ids).describe('The recipe id'),
       inputs: z.record(z.string(), Value).describe('The recipe\'s inputs by name, places as the person said them, dates as YYYY-MM-DD'),
@@ -180,11 +229,18 @@ export function ixigoTool(d: IxigoToolDeps): QuickTool<{ recipe: string; inputs:
     misnamed(name) {
       // "hotels.rooms_placeholder" (10 Oct drill): a recipe's id called as a tool, with or without more after it.
       const norm = (s: string): string => s.toLowerCase().replace(/_/g, '.');
+      if (norm(name) === KEPT) return `There is no tool named ${name}: ${KEPT} is a recipe of the ixigo tool. Call ixigo with {"recipe": "${KEPT}", "inputs": {"option": "${OPTION_INPUT}"}}.`;
       const r = recipes.filter((x) => norm(name) === norm(x.id) || norm(name).startsWith(`${norm(x.id)}.`)).sort((x, y) => y.id.length - x.id.length)[0];
       if (!r) return undefined;
       return `There is no tool named ${name}: ${r.id} is a recipe of the ixigo tool. Call ixigo with {"recipe": "${r.id}", "inputs": ${JSON.stringify(inputsOf(r))}}.`;
     },
     async run(a, ctx: TurnCtx) {
+      // An option's kept facts are Go's own read: no page opens, so they answer whether or not Go searches ixigo.com now.
+      if (a.recipe === KEPT) {
+        const kept = a.inputs['option'] !== undefined ? await optionOf(String(a.inputs['option']), ctx.tripId) : null;
+        if (!kept) return { recipe: KEPT, error: 'needs_more', note: "option is not an option in this trip's search results: give it as results_id#n from a search, or card_id#n off an options card in the chat.", inputs: { option: OPTION_INPUT } };
+        return { recipe: KEPT, title: kept.option.title, checked_at: kept.checkedAt, facts: [keptRow(kept.option)], tell_the_room: KEPT_FACTS_SAY };
+      }
       if (!d.live()) return { recipe: a.recipe, error: 'not_here', note: "Go's ixigo recipes run only when Go searches ixigo.com itself." };
       const recipe = recipes.find((r) => r.id === a.recipe);
       // A link takes its own inputs only: a PNR the model passes anyway never reaches the engine, the card or a log.

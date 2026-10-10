@@ -156,7 +156,10 @@ describe('the ixigo tool', () => {
       'trip.upcoming', 'visa.requirements',
     ]);
     const tool = ixigoTool({ book, engine: { answer: async () => { throw new Error('unused'); } }, live: () => true })!;
-    expect(tool.description).toContain("- plan.destination (place, kind?): A destination's guide on ixigo.");
+    expect(tool.description).toContain('- plan.destination (place, kind?): Places to visit and things to do in a destination.');
+    // The exam, 10 Oct: the model answered "the most common pickup" and Tatkal from memory; each line now says what it answers first.
+    expect(tool.description).toContain("- buses.points (city): A city's busiest bus pickup and boarding points.");
+    expect(tool.description).toContain('- trains.tatkal: When Tatkal booking opens for each class and what it costs extra.');
   });
 
   // Keshav, 10 Oct: "I want users to see how the agent is acting on the ixigo site". A guide, a running status, a PNR the
@@ -237,8 +240,15 @@ describe('the ixigo tool', () => {
 
   // Exam, 10 Oct (#4, #20): the early read had the bank, the call added the product, and the page was read twice.
   describe('a call that only narrows the early read', () => {
-    // offers.list's filters narrow one list (p4 marks them in the recipe): set here, on the real recipe.
-    const narrowed = { all: () => book.all().map((r) => (r.id === 'offers.list' ? { ...r, inputs: Object.fromEntries(Object.entries(r.inputs).map(([k, v]) => [k, { ...v, narrows: true }])) } : r)) };
+    // offers.list's filters narrow one list, as the recipe marks them; unmarked, the call's own read (a filter the page
+    // doesn't keep on one list).
+    const marked = (narrows: boolean) => ({ all: () => book.all().map((r) => (r.id === 'offers.list' ? { ...r, inputs: Object.fromEntries(Object.entries(r.inputs).map(([k, v]) => [k, { ...v, narrows }])) } : r)) });
+    const narrowed = marked(true);
+
+    it('is how the recipe marks its bank, product and journey', () => {
+      const inputs = book.all().find((r) => r.id === 'offers.list')!.inputs;
+      expect(['bank', 'product', 'journey'].map((k) => inputs[k]?.narrows)).toEqual([true, true, true]);
+    });
     const list = { as: 'facts' as const, title: 'Offers on ixigo now', rows: [{ offer: 'Flat 12% off', bank: 'ICICI Bank', for: 'flights' }], page: 'https://www.ixigo.com/offers', checkedAt: '2026-10-10T13:01:55.000Z', ms: 2038 };
     const early = { runKey: 'early:m_20|offers.list', asked: { bank: 'ICICI Bank' }, answer: Promise.resolve(list) };
 
@@ -268,8 +278,8 @@ describe('the ixigo tool', () => {
       failed.answer.catch(() => undefined);
       const tool = ixigoTool({ book: narrowed, engine: engine as never, live: () => true, joined: () => failed })!;
       expect(await tool.run({ recipe: 'offers.list', inputs: { bank: 'ICICI Bank' } }, turn)).not.toHaveProperty('note');
-      // Unmarked, as in the book today: the call's own read.
-      const plain = ixigoTool({ book, engine: engine as never, live: () => true, joined: () => early })!;
+      // Unmarked: the call's own read.
+      const plain = ixigoTool({ book: marked(false), engine: engine as never, live: () => true, joined: () => early })!;
       await plain.run({ recipe: 'offers.list', inputs: { bank: 'ICICI Bank', product: 'flights' } }, turn);
       expect(runs).toEqual([{ bank: 'ICICI Bank' }, { bank: 'ICICI Bank', product: 'flights' }]);
     });
@@ -279,9 +289,9 @@ describe('the ixigo tool', () => {
     const unused = { answer: async () => { throw new Error('unused'); } };
     const tool = ixigoTool({ book, engine: unused, live: () => true })!;
     const recipes = toolRecipes(book);
-    // One line a recipe, in id order, a blank line between sections.
+    // One line a recipe, in id order, a blank line between sections; the tool's own option.facts last (an option's kept read).
     const lines = tool.description.split('\n').filter((l) => l.startsWith('- '));
-    expect(lines.map((l) => l.slice(2).split(/[ :]/)[0])).toEqual(recipes.map((r) => r.id));
+    expect(lines.map((l) => l.slice(2).split(/[ :]/)[0])).toEqual([...recipes.map((r) => r.id), 'option.facts']);
     expect(tool.description).toContain("- trains.schedule (train): A train's route and timetable.\n");
     expect(tool.description).toContain('\n\n- trains.alternate_dates (from, to, date): ');
     // A choice's values are said, since the model can't guess them; nothing else about an input.
