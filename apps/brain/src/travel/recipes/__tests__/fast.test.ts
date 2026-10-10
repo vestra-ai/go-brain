@@ -3,7 +3,7 @@ import { LIVE_RECIPES } from '../../../reflex/live-gate.js';
 import { FAST_CHOICES, isSearchChoice, type FastChoice } from '../../../reflex/questions.js';
 import { loadBook } from '../../book/book.js';
 import { toolRecipes } from '../../book/tool.js';
-import { classIn, coachIn, FAST_ASKS, flightIn, pnrIn, readFastAsk, trainNumberIn, type FastContext } from '../fast.js';
+import { bankIn, classIn, coachIn, FAST_ASKS, flightIn, pnrIn, readFastAsk, trainNumberIn, type FastContext } from '../fast.js';
 import { pickOption } from '../option-on-card.js';
 
 const ctx: FastContext = { today: '2026-10-07', destination: 'North Goa', dates: { start: '2026-11-06', end: '2026-11-09' } };
@@ -68,6 +68,20 @@ describe('the slots of an ixigo ask beyond the searches', () => {
       recipe: 'hotels.offers', given: { place: 'North Goa', check_in: '2026-11-06', check_out: '2026-11-09' }, asked: { place: 'North Goa', check_in: '2026-11-06', check_out: '2026-11-09' },
     });
     expect(read('offers', 'Go does ixigo have any HDFC card offer on hotels?', { dates: null })?.recipe).toBe('offers.list');
+  });
+
+  // Exam, 10 Oct (#4, #20): the early read had none of these, and the turn's call with them read the page again.
+  it('reads the filters a person would press on the offers page from their words: the bank, the product, the journey', () => {
+    expect(read('offers', '@Go any ICICI offer on flights for this trip?')?.given).toEqual({ product: 'flights', bank: 'ICICI Bank' });
+    expect(read('offers', '@Go any coupon on these? HDFC card hai mere paas')?.given).toEqual({ bank: 'HDFC Bank' });
+    expect(read('offers', 'Go international flights pe axis ka offer?')?.given).toEqual({ product: 'flights', journey: 'international', bank: 'Axis Bank' });
+    expect(read('offers', 'Go hotel offers with sbi card?', { dates: null })?.given).toEqual({ product: 'hotels', bank: 'SBI' });
+    expect(read('offers', '@Go any offers this weekend?')?.given).toEqual({});
+    // Two banks, or none plainly: no bank, and the turn asks or reads them all.
+    expect(read('offers', 'Go HDFC or ICICI, which has a better offer?')?.given).toEqual({});
+    expect(bankIn('my credit card')).toBeNull();
+    expect(bankIn('pay by UPI')).toBe('UPI');
+    expect(bankIn('J&K bank card')).toBe('J&K Bank');
   });
 
   it("reads a shown stay's rooms and reviews only for the stay the line points at", () => {

@@ -110,7 +110,11 @@ export function describeNoticed(c: Candidate, pack: TripPack, tz: string, now: D
       );
     case 'vote_closed': {
       const winner = str('winner');
-      return `The vote ${quote(str('question') || 'on the table')} closed${winner ? `; ${quote(winner)} won` : ' without a clear winner'}. The group may want the next step.`;
+      // The App posts the result line itself (the Server team's GO-TEAM-FINAL §8): Go never says it again.
+      return (
+        `The vote ${quote(str('question') || 'on the table')} closed${winner ? `; ${quote(winner)} won` : ' without a clear winner'}. ` +
+        'The App already posted the result: never say who won or the counts again. The group may want the next step.'
+      );
     }
     case 'booking_cancelled': {
       const by = str('by');

@@ -17,9 +17,11 @@ export const VOTE_ACTION = { action_id: 'vote', label: 'Put it to a vote', style
 export const OPEN_ACTION = { action_id: 'open', label: 'See on ixigo', style: 'secondary', per_option: true } as const;
 /** On a card of stays that shows a few of a longer list: the whole list on ixigo.com, one tap away. */
 export const SEE_ALL_ACTION = { action_id: 'see_all', label: 'See all on ixigo', style: 'secondary' } as const;
-/** On a stays card while nobody in the trip has a budget band: opens the App's budget sheet (contract 1.1 A4, a go:// link). */
-export const ADD_BUDGET_ACTION = { action_id: 'add_budget', label: 'Add my budget', style: 'secondary' } as const;
-/** The App's budget sheet for a trip, from the App team's route table (docs/guide/11-contract-1-1.md). */
+/**
+ * The App's budget sheet for a trip, from the App team's route table (docs/guide/11-contract-1-1.md): since rev 4 the
+ * group's one budget. No card asks for a budget any more (rev 4: nobody gives a private one); a stays card from before
+ * still opens it from its "Add my budget" (taps.ts).
+ */
 export const budgetSheet = (tripId: string): string => `go://trips/${encodeURIComponent(tripId)}/sheet/budget`;
 
 /**
@@ -305,15 +307,11 @@ const KIND_WORDS: Record<OptionKind, [string, string]> = {
 /** The options card, checked against the contract: a bug here throws instead of posting a card the App cannot draw. */
 /**
  * seeAll: the card's last button opens the whole list on ixigo.com instead of each option's page (stays, three shown).
- * askBudget (stays, while nobody has a budget band): "Add my budget" takes the place of "See all on ixigo", after the
- * group's own buttons; each option's "See on ixigo" stays only if there is still room in the three.
- */
-/**
- * An options card. forPersonIds: a card for those people alone (each person's own flights, flights-each.ts): the room
- * sees it, and only they act on it, each tap their own.
+ * forPersonIds: a card for those people alone (each person's own flights, flights-each.ts): the room sees it, and only
+ * they act on it, each tap their own.
  */
 export function buildOptionsCard(i: {
-  cardId: string; title: string; optionKind: OptionKind; checkedAt: string; picks: CardPick[]; seeAll?: boolean; askBudget?: boolean; forPersonIds?: string[];
+  cardId: string; title: string; optionKind: OptionKind; checkedAt: string; picks: CardPick[]; seeAll?: boolean; forPersonIds?: string[];
 }): OptionsCardT {
   const priced = i.picks.filter((p) => p.option.priceMinor !== undefined);
   const cheapest = [...priced].sort((a, b) => (a.option.priceMinor ?? 0) - (b.option.priceMinor ?? 0))[0];
@@ -333,11 +331,10 @@ export function buildOptionsCard(i: {
   });
 }
 
-function optionsActions(i: { optionKind: OptionKind; picks: CardPick[]; seeAll?: boolean; askBudget?: boolean }) {
+function optionsActions(i: { optionKind: OptionKind; picks: CardPick[]; seeAll?: boolean }) {
   // A ticket is its traveller's own: picked, never voted (PERSONAL_KINDS).
   const group = [PICK_ACTION, ...(i.picks.length >= 2 && !PERSONAL_KINDS.has(i.optionKind) ? [VOTE_ACTION] : [])];
   const open = i.picks.some((p) => ixigoPage(p.option.sourceUrl)) ? [OPEN_ACTION] : [];
-  if (i.askBudget) return [...group, ADD_BUDGET_ACTION, ...open].slice(0, 3);
   return [...group, ...(i.seeAll ? [SEE_ALL_ACTION] : open)];
 }
 

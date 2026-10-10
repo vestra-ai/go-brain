@@ -159,6 +159,14 @@ describe('the wake text', () => {
     expect(text).not.toContain('Priya');
   });
 
+  // The Server team's GO-TEAM-FINAL §8: Go repeated the result after the App's own "Villa Sol won · 3 votes".
+  it('a closed vote: the App posted the result, so the note never asks for it again, only the next step', () => {
+    const c = candidate({ source: 'opening', topic: 'vote_closed', personIds: [], facts: { question: 'Where do we stay?', winner: 'Villa Sol' } });
+    const text = describeNoticed(c, goaPack(), 'Asia/Kolkata', NOW);
+    expect(text).toContain('"Villa Sol" won');
+    expect(text).toContain('The App already posted the result: never say who won or the counts again.');
+  });
+
   it('says how much is at stake when free cancellation ends', () => {
     const c = candidate({ source: 'timer', topic: 'free_cancel', personIds: ['p_rahul'], facts: { booking_id: 'b_villa', refundable_until: '2026-11-01T18:29:59Z' } });
     expect(describeNoticed(c, goaPack(), 'Asia/Kolkata', NOW)).toContain('₹54,200');

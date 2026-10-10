@@ -195,6 +195,10 @@ export function checkLine(p: LineProposal, env: CheckEnv): Checked<CheckedLine> 
       downgraded = true;
     }
   }
+  // Nobody is asked for a budget (rev 4, the Server team's GO-TEAM-FINAL §2: production Go opened a line about collecting
+  // everyone's): the trip's one budget is set in the App, or kept with set_budget once the group agrees one. So no line
+  // about one is opened, nor left open when its agreement fell short. A line Go opened before can still be closed.
+  if (kind === 'open' && !p.line_id && /\bbudgets?\b/i.test(text)) return no("the trip's budget is the group's, set in the App or with set_budget: never an open question");
   if (kind === 'doing') {
     // "@Go find flights Friday" is an ask: Go does it, so it is never "Rahul is finding flights". A promise said to Go in
     // the same breath ("@Go I'll sort the cab, you do flights") goes too: code cannot tell it from the ask beside it, and a
