@@ -6,13 +6,13 @@ import type { CardStore } from './cards.js';
 import type { ToGoHandler } from './handlers.js';
 import type { CardTapParams, CardTapResult } from './methods.js';
 
-export type GoCardKind = 'options' | 'working' | 'call' | 'pay' | 'notice';
-const GO_CARD_KINDS: ReadonlySet<string> = new Set<GoCardKind>(['options', 'working', 'call', 'pay', 'notice']);
+export type GoCardKind = 'options' | 'working' | 'call' | 'pay' | 'notice' | 'rooms';
+const GO_CARD_KINDS: ReadonlySet<string> = new Set<GoCardKind>(['options', 'working', 'call', 'pay', 'notice', 'rooms']);
 
 type TapHandler = (tap: CardTapParams, card: C.Card) => Promise<CardTapResult>;
 
 export interface TapRouter {
-  /** Go cards only: options, working, call, pay, notice. One answer per tap_id: a repeat gets the first answer back. */
+  /** Go cards only: options, working, call, pay, notice, rooms. One answer per tap_id: a repeat gets the first answer back. */
   on(kind: GoCardKind, actionId: string, h: TapHandler): void;
   /** Runs a tap as if the Server sent it (the admin page's "Decline the waiting pay card"); same once-per-tap_id rule. */
   dispatch(tap: CardTapParams): Promise<CardTapResult>;

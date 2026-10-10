@@ -29,6 +29,7 @@ import { optionOnCard } from './recipes/option-on-card.js';
 import { createPlaceFor } from './place-for.js';
 import { createGroupStay } from './group-stay.js';
 import { createResultsStore } from './results.js';
+import { createRoomsCards, ROOMS_PICK, roomsCardOnClose, roomsTap } from './rooms-card.js';
 import { createRunLog } from './runs.js';
 import { createScreenFeed } from './screen-feed.js';
 import { renderSearchWake, searchWakeAnswer } from './search-wake.js';
@@ -265,6 +266,12 @@ export const registerTravel: RegisterLane = async (brain) => {
   const stopWatchChecks = (): void => clearInterval(watchEvery);
   brain.onStop(stopWatchChecks);
   registerTravelTaps(brain.taps, { results, link: brain.door.link, desk: brain.desk, now: brain.now, log: brain.log });
+  // The Server's REV4 B5: once a vote picks a stay, its rooms card (the ways to take its rooms, who shares, what each pays)
+  // on the turn that says so; a tap keeps the way picked, for the expense per room (B6, chosenArrangement).
+  const roomsCards = createRoomsCards(brain.pool);
+  const rooms = { engine, results, store: roomsCards, link: brain.door.link, packs: brain.packs, log: brain.log };
+  brain.context.addTurnCard(roomsCardOnClose(rooms));
+  brain.taps.on('rooms', ROOMS_PICK, roomsTap(rooms));
   const early = createEarlyStart({
     travel: () => brain.travel, switches: brain.switches, today: tripToday(brain.pool, brain.now), now: brain.now, log: brain.log,
     warmForTravel: warm,
