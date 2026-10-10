@@ -20,7 +20,7 @@ import { evaluate } from './expr.js';
 import type { RecipeFile, Step } from './format.js';
 import { clip } from '../cards.js';
 import { boxFetches, pickSuggestion, readSuggestions, type End, type Suggestion } from './lookup.js';
-import { readFacts, readOptions, shapeOf, unreadBecause } from './read.js';
+import { readFacts, readOptions, shapeOf, unreadBecause, unwrapped } from './read.js';
 import { labelOf, pathOf, runLine, whyOf, type OnRun, type RunLine } from './run-event.js';
 import { fill } from './template.js';
 
@@ -486,6 +486,14 @@ export function createEngine(d: EngineDeps) {
         const shown: string[] = [];
         for (const [i, e] of ends.entries()) {
           const list = await readSuggestions(lookup, captures, e.words);
+          // A box that answered and read as nothing is said in the log as a page is (saidUnread): its calls, never a body.
+          // ("[]" is ixigo knowing no place, not a shape.)
+          if (list.length === 0 && captures.some((c) => c.status >= 200 && c.status < 300 && c.body.trim().length > 2)) {
+            d.log?.warn({
+              recipe: lookup.id, speed: 'box', check: 'shape',
+              caps: captures.map((c) => ({ match: c.match.slice(0, 60), status: c.status, bytes: c.body.length, truncated: c.truncated })),
+            }, "book: a page answered, and its answer didn't read");
+          }
           const picked = pickSuggestion(e.words, list);
           if (!picked) throw new TravelError('unknown_place', `ixigo's ${lookup.keeps} box knows no place for "${e.words.slice(0, 60)}".`);
           if ('choose' in picked) {
@@ -558,11 +566,31 @@ export function createEngine(d: EngineDeps) {
     if (!offers || !call || site.key === null) return;
     try {
       const body: unknown = JSON.parse(call.body);
-      const list = asOffers(await evaluate(offers.list, body, {}));
+      // As it is first; then without what a logged-in answer may wrap it in (read.ts unwrapped).
+      let list: Offer[] = [];
+      for (const inner of [body, ...unwrapped(body)]) {
+        list = asOffers(await evaluate(offers.list, inner, {}).catch(() => undefined));
+        if (list.length > 0) break;
+      }
       d.offers?.keep(recipe.id, site.key, await fill(offers.about, inputs, { url: false }), list, tripId);
     } catch (err) {
       d.log?.warn({ recipe: recipe.id, err: String(err).slice(0, 200) }, "book: the site's list of what it offers did not read");
     }
+  }
+
+  /**
+   * Why a page (or the fast speed's page call) that answered still didn't read: which check, each capture's status, size
+   * and cut, and for a shape refusal what the reader made of the body, in counts. Never a body. Every recipe's read comes
+   * here, page or fast.
+   */
+  async function saidUnread(err: unknown, read: RecipeFile, captures: Capture[], bindings: Record<string, unknown>, speed: 'page' | 'fast'): Promise<void> {
+    if (!(err instanceof TravelError) || err.code !== 'refused') return;
+    const check = unreadBecause(read, captures);
+    d.log?.warn({
+      recipe: read.id, speed, check,
+      caps: captures.map((c) => ({ match: c.match.slice(0, 60), status: c.status, bytes: c.body.length, truncated: c.truncated })),
+      ...(check === 'shape' ? { shape: await shapeOf(read, captures, bindings).catch(() => null) } : {}),
+    }, "book: a page answered, and its answer didn't read");
   }
 
   /** $conditions, the site's own filters and sort ($site, $site_sort) and the recipe's let, worked out once. */
@@ -703,7 +731,10 @@ export function createEngine(d: EngineDeps) {
               ...(recipe.fast.each && (recipe.answer.as === 'options' || recipe.answer.as === 'facts') ? { answer: { ...recipe.answer, each: recipe.fast.each } } : {}),
             }
           : { ...filled, read: { ...filled.read!, rows: { ...filled.read!.rows, format: recipe.fast.format } } };
-        const answer = await answerFrom([{ ...got, url: absolute }], fastRead, started);
+        const answer = await answerFrom([{ ...got, url: absolute }], fastRead, started).catch(async (err: unknown) => {
+          await saidUnread(err, fastRead, [{ ...got, url: absolute }], { inputs, page, ...bindings }, 'fast');
+          throw err;
+        });
         took('fast');
         return answer;
       } catch (err) {
@@ -742,16 +773,7 @@ export function createEngine(d: EngineDeps) {
       o.onProgress?.({ type: 'captured', ms: d.now().getTime() - started });
       await keepOffers(recipe, site, inputs, got.captures, o.tripId);
       const answer = await answerFrom(got.captures, filled, started).catch(async (err: unknown) => {
-        // Why a page that answered still didn't read: which check, each capture's status, size and cut, and for a shape
-        // refusal what the reader made of the body, in counts. Never a body.
-        if (err instanceof TravelError && err.code === 'refused') {
-          const check = unreadBecause(filled, got.captures);
-          d.log?.warn({
-            recipe: recipe.id, check,
-            caps: got.captures.map((c) => ({ match: c.match.slice(0, 60), status: c.status, bytes: c.body.length, truncated: c.truncated })),
-            ...(check === 'shape' ? { shape: await shapeOf(filled, got.captures, { inputs, page, ...bindings }).catch(() => null) } : {}),
-          }, "book: a page answered, and its answer didn't read");
-        }
+        await saidUnread(err, filled, got.captures, { inputs, page, ...bindings }, 'page');
         throw err;
       });
       if (!recipe.offers || answer.as !== 'options') return answer;

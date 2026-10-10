@@ -29,10 +29,13 @@ answer:
       $mins := $minutes(timings.travelTime);
       $arrive := $exists($mins) ? $istPlus(timings.startTimeDateFormat, $mins) : (timings.arriveTimestamp ? $istFromWallSeconds(timings.arriveTimestamp));
       $operator := $trim(travelerAgentName);
-      $seats := $type(seatStats.availableSeats) = "number" ? seatStats.availableSeats;
+      $seats := $num(seatStats.availableSeats);
+      $offer := $num(fares.offerPrice);
+      $rating := $num(rating);
+      $ratings := $num(noOfRatings);
       $exists($arrive) ? {
         "title": $operator,
-        "priceMinor": $paise(fares.offerPrice ? fares.offerPrice : fares.fare),
+        "priceMinor": $paise($offer ? $offer : $num(fares.fare)),
         "currency": "INR",
         "priceNote": "per seat, from",
         "journey": {
@@ -43,9 +46,9 @@ answer:
           "arrive_at": $arrive,
           "carrier_name": $substring($operator, 0, 60)
         },
-        "rating": ($type(rating) = "number" and ($type(noOfRatings) = "number" ? noOfRatings : 1) > 0) ? rating,
+        "rating": ($exists($rating) and ($exists($ratings) ? $ratings : 1) > 0) ? $rating,
         "highlights": $highlights(busTypeName, $exists($mins) ? $hoursMinutes($mins), ($exists($seats) and $seats <= 5) ? $string($seats) & " seat" & ($seats = 1 ? "" : "s") & " left"),
-        "facts": { "bus_type": busTypeName, "seats_left": $seats, "duration_min": $mins, "reviews": noOfRatings },
+        "facts": { "bus_type": busTypeName, "seats_left": $seats, "duration_min": $mins, "reviews": $ratings },
         "sourceUrl": $page
       }
     )

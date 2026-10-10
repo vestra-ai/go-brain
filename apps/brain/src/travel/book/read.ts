@@ -91,12 +91,62 @@ export async function shapeOf(recipe: RecipeFile, captures: Capture[], bindings:
   }
   let rows = 0;
   try {
-    const listed = await evaluate(read.rows.list, read.rows.format === 'sse' ? values : values.length === 1 ? values[0] : values, bindings);
+    const listed = await readPath(read.rows.list, read.rows.format === 'sse' ? values : values.length === 1 ? values[0] : values, bindings);
     rows = Array.isArray(listed) ? listed.length : listed === undefined ? 0 : 1;
   } catch {
     rows = 0;
   }
   return { ...(events !== undefined ? { events } : {}), values: values.length, rows };
+}
+
+const isObject = (v: unknown): v is Record<string, unknown> => !!v && typeof v === 'object' && !Array.isArray(v);
+/** An object's values that are objects or lists: what a wrapper holds. */
+const held = (v: unknown): unknown[] => (isObject(v) ? Object.values(v).filter((x) => isObject(x) || Array.isArray(x)) : []);
+const nothingRead = (v: unknown): boolean =>
+  v === undefined || v === null || (Array.isArray(v) && v.length === 0) || (isObject(v) && Object.keys(v).length === 0);
+
+/**
+ * The body without what a logged-in or personalised answer may wrap it in, for a reader whose path finds nothing in it as
+ * it is: each object value of an object (a "response", a "payload", a second "data"), and for a list (a stream's events,
+ * a call's two pages) every item's, as one list; two levels down. (Staging, 10 Oct: a logged-in browser's flights answer
+ * came in a shape the logged-out reader refused; the next personalised shape is anyone's guess.)
+ */
+export function unwrapped(body: unknown, depth = 2): unknown[] {
+  const out: unknown[] = [];
+  let level: unknown[] = [body];
+  for (let i = 0; i < depth && level.length > 0; i++) {
+    const next: unknown[] = [];
+    for (const v of level) {
+      if (Array.isArray(v)) {
+        const items = v.flatMap(held);
+        if (items.length > 0) next.push(items);
+      } else {
+        next.push(...held(v));
+      }
+    }
+    out.push(...next);
+    level = next;
+  }
+  return out;
+}
+
+/**
+ * A reader's path on a body, or, when it finds nothing there, on the body unwrapped (unwrapped), the first that finds
+ * something: the logged-out shape first, always.
+ */
+export async function readPath(path: string, body: unknown, bindings: Record<string, unknown> = {}): Promise<unknown> {
+  const found = await evaluate(path, body, bindings);
+  if (!nothingRead(found)) return found;
+  for (const inner of unwrapped(body)) {
+    let got: unknown;
+    try {
+      got = await evaluate(path, inner, bindings);
+    } catch {
+      continue;
+    }
+    if (!nothingRead(got)) return got;
+  }
+  return found;
 }
 
 /** One response body a recipe reads, by its capture's match. */
@@ -117,9 +167,9 @@ async function rowsOf(recipe: RecipeFile, captures: Capture[], bindings: Record<
   const rowsBody = body(captures, read.rows.from, read.rows.format, true, what);
   for (const [name, also] of Object.entries(read.also ?? {})) {
     const b = body(captures, also.from, also.format, false, name);
-    bindings[name] = b === undefined ? undefined : await evaluate(also.value, b, bindings);
+    bindings[name] = b === undefined ? undefined : await readPath(also.value, b, bindings);
   }
-  const listed = await evaluate(read.rows.list, rowsBody, bindings);
+  const listed = await readPath(read.rows.list, rowsBody, bindings);
   let rows: unknown[] = Array.isArray(listed) ? listed : listed === undefined ? [] : [listed];
   if (read.rows.unique) {
     const seen = new Set<string>();
