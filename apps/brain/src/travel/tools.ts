@@ -10,7 +10,7 @@ import type { Desk } from '../desk/desk.js';
 import { dateAs } from './book/expr.js';
 import { buildFlightsLinkCard, buildIxigoPageCard, buildOptionsCard, clip, formatInr, IXIGO_SEARCH_PAGES, ixigoPage, placeKindNotAll, subtitleFor } from './cards.js';
 import { localDay } from '../proactive/clock.js';
-import { answerLine, answerTitle, directPicks, ledBy, leftOff, linkLine, plainAsk } from './answer.js';
+import { answerLine, answerTitle, directPicks, droppedWords, ledBy, leftOff, linkLine, plainAsk } from './answer.js';
 import { flightDetails, stayDetails, trainDetails } from './details.js';
 import { DEFAULT_TRIP_TZ } from './dates.js';
 import { asked } from './filters.js';
@@ -120,7 +120,10 @@ export const StaysArgs = z.object({
     .describe("pool, beach (10 minutes or less), breakfast, free_cancellation. When ixigo's own filters for the place are in your context, use them in site_filters instead, and must_have only for the beach"),
   min_rating: z.number().min(0).max(5).optional(),
   site_filters: z.array(z.string().min(1).max(80)).max(8).optional()
-    .describe("ixigo's own filters the ask means, by their names on ixigo's list for the place (in your context), the nearest one for what they said: ixigo filters the stays itself"),
+    .describe(
+      "ixigo's own filters the ask means, by their names on ixigo's list for the place (in your context), the nearest one for what they said: ixigo filters " +
+        'the stays itself. "A pool" is the ordinary Swimming Pool; Private Pool only when they say private',
+    ),
   site_sort: z.string().min(1).max(80).optional().describe("ixigo's own sort the ask means, by its name on that list"),
   wants: z.array(z.string().min(1).max(80)).max(8).optional()
     .describe("Anything else the group asked for that no filter covers, in their words: you pick it from the results' amenities and details"),
@@ -475,7 +478,10 @@ export function leftToPick(q: TravelQuery, found: TravelSearch): string[] {
 }
 
 /** What goes before the card's line of a search ixigo left filters off: "ixigo's pool filter didn't load in time, …: ". */
-const leftOffLead = (found: TravelSearch): string | undefined => (found.unapplied?.length ? `${leftOff(found.unapplied)}: ` : undefined);
+const leftOffLead = (found: TravelSearch): string | undefined => {
+  const said = [...(found.unapplied?.length ? [leftOff(found.unapplied)] : []), ...(found.dropped?.length ? [droppedWords(found.dropped)] : [])];
+  return said.length > 0 ? `${said.join('; ')}: ` : undefined;
+};
 
 /** The loop waits this long for a search tool: the search's own wait (TRAVEL_WAIT_MS) and its answer fit inside. */
 const SEARCH_TOOL_MS = TRAVEL_WAIT_MS + 2_000;
@@ -652,6 +658,7 @@ export interface SearchAnswer {
 export async function searchAnswer(kind: TravelKind, ask: TravelQuery, found: TravelSearch, tripId: string, d: { results: Pick<ResultsStore, 'save'>; now: () => Date }): Promise<SearchAnswer> {
   const q = answeredAs(ask, found);
   const left = found.unapplied?.length ? leftOff(found.unapplied) : null;
+  const dropped = found.dropped?.length ? droppedWords(found.dropped) : null;
   const pick = leftToPick(ask, found);
   // The site's own list, when the ask named filters the site couldn't apply for want of it, and this read brought it;
   // never after a filtered page that didn't load (unapplied): searching with it again would wait on it again.
@@ -729,6 +736,7 @@ export async function searchAnswer(kind: TravelKind, ask: TravelQuery, found: Tr
     `${prices ? `: ${prices}` : ''}${areas.length ? `, in ${listOf(areas)}` : ''}.` +
     `${fit > options.length ? ` The best ${options.length} are below.` : ''}` +
     `${left ? ` ${left}.` : ''}` +
+    `${dropped ? ` ${upperFirst(dropped)}.` : ''}` +
     `${found.cut ? ` ixigo's list came cut short: these are from the first ${before} it sent, not all of them.` : ''}` +
     `${found.notes?.length ? ` ${found.notes.join(' ')}` : ''}` +
     `${pick.length ? ` Not filtered by ixigo, for you to pick from each option's amenities and details: ${listOf(pick)}.` : ''}` +
@@ -755,6 +763,7 @@ export async function searchAnswer(kind: TravelKind, ask: TravelQuery, found: Tr
       "Each option's area, time and price are as given here: name no other, and say no count the summary does not give. " +
       'If someone asked for a place an option is not in, say the option\'s own area: asked for Calangute, a villa in Vagator is in Vagator. ' +
       `${left ? `Say in the line that ${left}. ` : ''}` +
+      `${dropped ? `Say in the line that ${dropped}: they are the nearest, never a fit for it. ` : ''}` +
       `${found.cut ? `Say in the line that these are from the first ${before} ixigo sent, and the whole list is on ixigo's page. ` : ''}` +
       `${found.notes?.length ? "What ixigo itself offers for this list is in the summary: say it in one short line when it helps the ask (holding a fare while the group decides, a budget), as ixigo's to set, never Go's. " : ''}` +
       (pick.length

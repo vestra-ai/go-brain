@@ -50,7 +50,7 @@ offers:
       $append(
         [$m.filterCriteriaMap.*.(
           $g := title;
-          data[$type(name) = "string" and $type(code) = "string"].{ "kind": "filter", "group": $g, "name": name, "code": code }
+          data[$type(name) = "string" and $type(code) = "string"].{ "kind": "filter", "group": $g, "name": name, "code": code, "count": $num(count) }
         )],
         [$m.sortCriteriaMap.*.data[$type(name) = "string" and $type(code) = "string"].{
           "kind": "sort", "group": "Sort", "name": subTitle ? name & " (" & subTitle & ")" : name, "code": code
