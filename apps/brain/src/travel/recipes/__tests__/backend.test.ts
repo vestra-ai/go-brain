@@ -201,11 +201,12 @@ describe('the ixigo_web backend', () => {
     nowMs += 20_000;
     expect(await b.waitMs!('trains', TRAINS, { tripId: 't_goa' })).toBe(0);
     e.release();
-    expect(await b.waitMs!('flights', FLIGHTS, { tripId: 't_goa' })).toBeNull();
+    // Flights read their page too (flights.results), unless the page is paced: then the link answers at once.
+    expect(await b.waitMs!('flights', FLIGHTS, { tripId: 't_goa' })).toBe(TRAVEL_WAIT_MS);
     expect(await b.waitMs!('trains', TRAINS)).toBeNull();
   });
 
-  it("answers flights with ixigo's page, set as asked, loading nothing and posting no card", async () => {
+  it("answers flights ixigo's page can't give (no computer here) with ixigo's page, set as asked, posting no card", async () => {
     const cards: string[] = [];
     const b = createIxigoWebBackend({
       book, engine: linkEngine(4, []), now,
@@ -217,6 +218,55 @@ describe('the ixigo_web backend', () => {
       link: 'https://www.ixigo.com/search/result/flight?from=DEL&to=GOI&date=06112026&returnDate=&adults=4&children=0&infants=0&class=e&source=Search%20Form&stops=0&takeOff=NIGHT&sort_type=cheapest',
     });
     expect(cards).toEqual([]);
+  });
+
+  // Flights read ixigo's page now (flights.results, 9 Oct: 145 fares, Delhi to Goa), paced, as ixigo refuses our boxes'
+  // shared address under a burst; a page held back, refused, or with nothing on it answers with the link instead.
+  describe('flights', () => {
+    const FLIGHT: RecipeOption = { ...OPTION, kind: 'flight', title: 'IndiGo 6E357', priceNote: 'per person' };
+    function flightsEngine(o: { results?: 'options' | 'empty' | 'refused' | 'unknown_place' } = {}) {
+      const real = linkEngine(4, []);
+      const runs: string[] = [];
+      const state = { paced: false, results: o.results ?? 'options' };
+      const engine = {
+        answer: (async (id, given, r) => {
+          runs.push(id);
+          if (id === 'flights.search') return real.answer(id, given, r);
+          if (state.results === 'refused') throw new TravelError('refused', "ixigo's page did not send flights between two airports on a date.");
+          if (state.results === 'unknown_place') throw new TravelError('unknown_place', 'ixigo knows no airport for "Atlantis".');
+          return { as: 'options', options: state.results === 'empty' ? [] : [FLIGHT], page: 'https://www.ixigo.com/x', checkedAt: '2026-10-07T12:00:03.000Z', ms: 4_100 };
+        }) as Answer,
+        pacedOut: (id: string) => id === 'flights.results' && state.paced,
+      };
+      return { backend: createIxigoWebBackend({ book, engine, now }), runs, state };
+    }
+
+    it("reads flights from their page, and keeps them: asked again while the page is paced, the kept flights answer", async () => {
+      const f = flightsEngine();
+      expect((await f.backend.search('flights', FLIGHTS, { tripId: 't_goa' })).results.map((r) => r.title)).toEqual(['IndiGo 6E357']);
+      f.state.paced = true;
+      expect((await f.backend.search('flights', FLIGHTS, { tripId: 't_goa' })).results.map((r) => r.title)).toEqual(['IndiGo 6E357']);
+      expect(f.runs).toEqual(['flights.results']);
+    });
+
+    it('answers a page held back, refused, or with nothing on it with the link, set as asked: never "no flights"', async () => {
+      for (const way of ['paced', 'refused', 'empty'] as const) {
+        const f = flightsEngine(way === 'paced' ? {} : { results: way });
+        f.state.paced = way === 'paced';
+        const err = (await f.backend.search('flights', { ...FLIGHTS, departAfter: '18:00' }, { tripId: 't_goa' }).catch((e: unknown) => e)) as TravelError;
+        expect(err, way).toMatchObject({ code: 'link_only', link: expect.stringContaining('from=DEL&to=GOI&date=06112026&') });
+        expect(err.link, way).toContain('takeOff=NIGHT');
+        // Held back, no page loads: the link alone.
+        expect(f.runs, way).toEqual(way === 'paced' ? ['flights.search'] : ['flights.results', 'flights.search']);
+      }
+    });
+
+    it('says a place ixigo does not know as before, and waits for nothing while the page is paced', async () => {
+      const f = flightsEngine({ results: 'unknown_place' });
+      await expect(f.backend.search('flights', { ...FLIGHTS, from: 'Atlantis' }, { tripId: 't_goa' })).rejects.toMatchObject({ code: 'unknown_place' });
+      f.state.paced = true;
+      expect(await f.backend.waitMs!('flights', FLIGHTS, { tripId: 't_goa' })).toBeNull();
+    });
   });
 
   it("leaves out of a flight link's adults the members who live by another airport", async () => {

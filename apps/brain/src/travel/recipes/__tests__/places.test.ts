@@ -3,7 +3,7 @@ import { TravelError } from '../../mcp-travel.js';
 import { airportOf, busCityOf, goaHalfOf, stationOf, stayPlaceOf } from '../places.js';
 import { loadBook } from '../../book/book.js';
 import { dateAs, istAt, istOf } from '../../book/expr.js';
-import { SEARCH_RECIPES } from '../backend.js';
+import { LINK_FALLBACK, SEARCH_RECIPES } from '../backend.js';
 import { bodiesFor, matches } from '../recipe.js';
 import { capture } from './fixtures.js';
 
@@ -86,8 +86,16 @@ describe('the recipe helpers', () => {
       // Stays: the trip's stays head start (warm.ts) runs before anyone asks, so its search is kept long enough for the
       // first ask to come; the options card says when ixigo was checked.
       expect(r.ttl_minutes, id).toBe(id === 'hotels.search' ? 30 : 10);
-      // Flights are a link: ixigo answers flight pages with a 403 from the boxes' shared egress.
-      expect(r.answer.as, id).toBe(id === 'flights.search' ? 'link' : 'options');
+      // Every search reads its page; flights' is paced (ixigo refuses our shared address under a burst).
+      expect(r.answer.as, id).toBe('options');
+      expect(r.pace, id).toEqual(id === 'flights.results' ? { gap_seconds: 20, quiet_minutes: 10 } : undefined);
+    }
+    // The link that answers in flights' place opens the same page, its inputs, conditions and words the page's.
+    for (const [kind, linkId] of Object.entries(LINK_FALLBACK)) {
+      const page = book.get(SEARCH_RECIPES[kind as keyof typeof SEARCH_RECIPES])!;
+      const link = book.get(linkId)!;
+      expect(link.answer.as, linkId).toBe('link');
+      expect({ inputs: link.inputs, conditions: link.conditions, let: link.let, page: link.page }).toEqual({ inputs: page.inputs, conditions: page.conditions, let: page.let, page: page.page });
     }
   });
 });

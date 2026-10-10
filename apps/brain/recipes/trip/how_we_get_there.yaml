@@ -15,8 +15,12 @@ steps:
   run:
     - { recipe: trains.between, given: { from: $home, to: to, date: date } }
     - { recipe: buses.between, given: { from: $home, to: to, date: date } }
+    # Its flights: the page when ixigo shows it (paced, one across every trip in 20 s: the first city's, most people's),
+    # and always the link to ixigo's own page, set for the city's people.
+    - { recipe: flights.results, given: { from: $home, to: to, date: date } }
     - { recipe: flights.search, given: { from: $home, to: to, date: date } }
 answer: { as: compare }
 notes: >-
-  The group showcase: each home city's trains and buses on the day, read side by side on the trip's computer (as many at
-  once as Bash runs), and its flights as a link. Go puts each city's cheapest and fastest on one card (travel/ways-there.ts).
+  The group showcase: each home city's trains, buses and flights on the day, read side by side on the trip's computer
+  (as many at once as Bash runs), and its flights' link. Go puts each city's cheapest and fastest, across all three, on
+  one card (travel/ways-there.ts), so a 2 h flight is the fastest from Delhi, never a 25 h train.

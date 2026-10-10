@@ -27,7 +27,7 @@ export interface EarlyStartDeps {
   log: { warn(obj: object, msg: string): void };
   /** Wakes the trip's computer for a search of this kind and holds it two minutes (travel/register.ts); absent in tests. */
   warmForTravel?: (tripId: string, kind: TravelKind) => void;
-  /** Kinds that answer with ixigo's link and load nothing (the backend's linkOnly): nothing to start early. */
+  /** Kinds never started early (the backend's LINK_ONLY_KINDS: flights, whose page is paced and else a link). */
   linkOnly?: (kind: TravelKind) => boolean;
 }
 
