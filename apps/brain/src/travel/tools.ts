@@ -15,6 +15,7 @@ import { flightDetails, stayDetails, trainDetails } from './details.js';
 import { DEFAULT_TRIP_TZ } from './dates.js';
 import { asked } from './filters.js';
 import { stableId } from './ids.js';
+import { nearStay, type GroupStay } from './group-stay.js';
 import type { Images } from './images.js';
 import { guestsIn } from './recipes/ask.js';
 import { TRAVEL_WAIT_MS } from './recipes/backend.js';
@@ -48,6 +49,8 @@ export interface TravelToolDeps {
    * it (Keshav, 10 Oct: the group sees Go act on ixigo). Absent, nothing opens.
    */
   showPick?: (tripId: string, pick: { page: string; name: string; kind?: 'stay' | 'bus' }) => void;
+  /** Where the group stays, with its position (group-stay.ts): each bus's nearest drop to it. Absent, none is said. */
+  groupStay?: (tripId: string) => Promise<GroupStay | null>;
 }
 
 const todayOf = (d: Pick<TravelToolDeps, 'today' | 'now'>, tripId: string): Promise<string> =>
@@ -309,7 +312,9 @@ async function runSearch(kind: TravelKind, given: TravelQuery, ctx: TurnCtx, d: 
   // over kept, and the search without them when they hold nothing: backend.ts). Never a guessed budget.
   const decided = kind === 'stays' ? (given.maxShareMinor ?? (d.stayBudget ? await d.stayBudget(ctx.tripId).catch(() => null) : null)) : null;
   const q: TravelQuery = decided ? { ...given, budgetMinor: decided } : given;
-  const pending = d.travel.search(kind, q, { tripId: ctx.tripId, turnId: ctx.turnId });
+  // Buses: each one's nearest drop to the group's stay, for this trip only (the read itself is shared across trips).
+  const stay = kind === 'buses' && d.groupStay ? d.groupStay(ctx.tripId).catch(() => null) : null;
+  const pending = d.travel.search(kind, q, { tripId: ctx.tripId, turnId: ctx.turnId }).then(async (f) => (stay ? nearStay(f, await stay) : f));
   // Handled at once, so a refusal that lands while the wait is worked out is never an unhandled rejection; it is read below.
   pending.catch(() => undefined);
   // A search that can't answer in time (an ixigo.com page on a slow box, or the agent job) goes on without the turn.
@@ -709,6 +714,9 @@ export async function searchAnswer(kind: TravelKind, ask: TravelQuery, found: Tr
     card: { results_id: set.resultsId, option_numbers: saved.slice(0, 3).map((_, i) => i + 1), title: suggestTitle(kind, q) },
     note:
       wasNote +
+      (found.nearStay
+        ? `Each bus's first highlight is its nearest drop to ${found.nearStay}, in a straight line: say it with the stay and whose it is ("about 3 km from Casa Anjuna, the villa you voted for"), never a drive time. `
+        : '') +
       (besides.length
         ? `Only ${counted(options.length, 'stay fits', 'stays fit')}: show ${options.length === 1 ? 'it' : 'them'} first and the nearest after on the same card, and say plainly which fit and what the others miss, as the summary says. `
         : '') +

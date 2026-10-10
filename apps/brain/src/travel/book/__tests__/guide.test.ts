@@ -114,13 +114,13 @@ describe('flights.fare_calendar', () => {
 describe('the ixigo tool', () => {
   const turn = { tripId: 't_goa', turnId: 'turn_1', cards: [], stableId: (p: string) => `${p}_1` } as unknown as TurnCtx;
 
-  it("offers the book's facts recipes, never a search, a lookup or one that changes something", () => {
+  it("offers the book's facts and link recipes, never a search, a lookup or one that changes something", () => {
     expect(toolRecipes(book).map((r) => r.id)).toEqual([
       'buses.offers', 'buses.points', 'buses.stops', 'flights.fare_calendar', 'help.downtime', 'help.faq', 'help.services',
       'hotels.details', 'hotels.offers', 'hotels.reviews', 'hotels.rooms', 'hotels.search_filters', 'hotels.similar',
       'offers.campaign', 'offers.details', 'offers.list', 'plan.destination', 'plan.explore', 'plan.top_locations',
       'trains.alternate_dates', 'trains.alternate_travel_plan', 'trains.alternates', 'trains.boarding_stations', 'trains.by_name', 'trains.coach_position', 'trains.confirm_chance', 'trains.offers',
-      'trains.platform_locator', 'trains.running_status', 'trains.schedule', 'trains.station_status', 'trains.tatkal',
+      'trains.platform_locator', 'trains.pnr_status', 'trains.route', 'trains.running_status', 'trains.schedule', 'trains.station_status', 'trains.tatkal', 'trains.train_calendar',
     ]);
     const tool = ixigoTool({ book, engine: { answer: async () => { throw new Error('unused'); } }, live: () => true })!;
     expect(tool.description).toContain("- plan.destination (place): A destination's guide on ixigo.");
@@ -154,6 +154,24 @@ describe('the ixigo tool', () => {
     // With no live card here (a test, another mode), the run is as before: no progress, so off the stage.
     await ixigoTool({ book, engine: engine as never, live: () => true })!.run({ recipe: 'plan.destination', inputs: { place: 'Goa' } }, turn);
     expect(seen.at(-1)!.onProgress).toBeUndefined();
+  });
+
+  // PNR, parked (10 Oct): ixigo's enquiry adds the PNR to a logged-in account's trips, so the person checks it on ixigo's
+  // page on their own phone. The number the model passes anyway reaches nothing: not the engine, the card or the answer.
+  it("answers a link recipe with a card to its ixigo page, opened by the person, and passes on no input the recipe doesn't take", async () => {
+    const given: Array<Record<string, unknown>> = [];
+    const real = createEngine({ book, runner: () => null, trip: async () => ({ people: 4, homes: [] }), now: () => new Date() });
+    const engine = { answer: (id: string, g: Record<string, unknown>, o: { tripId: string }) => { given.push(g); return real.answer(id, g, o); } };
+    const ctx = { ...turn, cards: [] } as unknown as TurnCtx;
+    const out = (await ixigoTool({ book, engine: engine as never, live: () => true })!.run({ recipe: 'trains.pnr_status', inputs: { pnr: '4512873690' } }, ctx)) as Record<string, unknown>;
+    expect(given).toEqual([{}]);
+    expect(ctx.cards).toHaveLength(1);
+    expect(ctx.cards[0]).toMatchObject({
+      kind: 'notice', title: 'Check a PNR on ixigo', source: { name: 'ixigo', url: 'https://www.ixigo.com/trains/pnr-status' }, actions: [{ action_id: 'see_on_ixigo' }],
+    });
+    expect(out).toMatchObject({ recipe: 'trains.pnr_status', link: 'https://www.ixigo.com/trains/pnr-status' });
+    expect(out['tell_the_room']).toMatch(/never write a number they gave/i);
+    expect(JSON.stringify([out, ctx.cards])).not.toContain('4512873690');
   });
 
   it("joins a read the early start began for this turn's message on that read's own card, and keys its own card otherwise", async () => {

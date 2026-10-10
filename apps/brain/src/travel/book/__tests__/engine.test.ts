@@ -195,6 +195,47 @@ describe("ixigo's price bands for the group's decided budget", () => {
     expect(night.as === 'options' && night.site?.priced).toBe(16000);
     expect(reads[4]).toContain('DP_8000_9000');
   });
+
+  // p1-a's review of #357: Jev's early read of a place is often its first, before its list (and so its bands) is known.
+  // The same run opens the page again with the bands once the first read brought the list, so the composer's search that
+  // joins it gets the banded list; the first read answers when the banded one holds nothing.
+  it("opens a place's first budgeted read again with its bands, in the same run, and keeps the first when they hold nothing", async () => {
+    const offers = createOffers({ now: () => new Date('2026-10-10T05:00:00Z') });
+    const reads: string[] = [];
+    let bandsEmpty = false;
+    const runner = {
+      read: async (_trip: string, url: string) => {
+        reads.push(url);
+        const empty = bandsEmpty && url.includes('DP_');
+        return {
+          captures: [
+            capture(SEARCH, 'https://www.ixigo.com/accommodation-search/api/v3/accommodations/search', empty ? '{"data":{}}' : fixture('stays-goa-page1.json')),
+            capture('/accommodation-search/api/v2/accommodations/search/metadata$', META, sample('hotels.search_filters.json')),
+          ],
+          finalUrl: url,
+        };
+      },
+    };
+    const engine = createEngine({ book, runner: () => runner, pool: db.pool, trip: async () => ({ people: 4, homes: [] }), now: () => new Date('2026-10-10T05:00:00Z'), offers });
+    const goa = { place: 'Goa', check_in: '2026-11-06', check_out: '2026-11-09' };
+    const got = await engine.answer('hotels.search', goa, { tripId: 't_first', budgetMinor: 450_000 });
+    expect(reads).toHaveLength(2);
+    expect(reads[0]).not.toContain('DP_');
+    expect(reads[1]).toContain(encodeURIComponent('DP_2500_3000,DP_3000_3500'));
+    expect(got.as === 'options' && got.site).toMatchObject({ priced: 3000, listed: true });
+    expect(got.as === 'options' && got.page).toBe(reads[1]);
+    // Kept now: the next budgeted read of the place opens with its bands at once.
+    await engine.answer('hotels.search', { ...goa, check_out: '2026-11-08' }, { tripId: 't_first', budgetMinor: 450_000 });
+    expect(reads).toHaveLength(3);
+    expect(reads[2]).toContain('DP_');
+    // Bands that hold nothing: the first read answers, unbanded.
+    const fresh = createEngine({ book, runner: () => runner, pool: db.pool, trip: async () => ({ people: 4, homes: [] }), now: () => new Date('2026-10-10T05:00:00Z'), offers: createOffers({ now: () => new Date('2026-10-10T05:00:00Z') }) });
+    bandsEmpty = true;
+    const plain = await fresh.answer('hotels.search', goa, { tripId: 't_first', budgetMinor: 450_000 });
+    expect(reads).toHaveLength(5);
+    expect(plain.as === 'options' && plain.options.length).toBeGreaterThan(0);
+    expect(plain.as === 'options' && plain.page).toBe(reads[3]);
+  });
 });
 
 describe('a place Go has not searched before', () => {
