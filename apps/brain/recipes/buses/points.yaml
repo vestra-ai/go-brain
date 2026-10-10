@@ -36,7 +36,7 @@ answer:
         "how_many": $count($points)
       }
     )
-ttl_minutes: 720
+ttl_minutes: 60
 samples: { bangalore: buses.city_lookup.bangalore.json }
 measured: { fast_ms: null, page_ms: null, flow_ms: null }
 notes: >-
