@@ -43,21 +43,24 @@ export const IDENTITY = '/api/profile/secure/booking/with-identity';
 /** ixigo's userinfo call: refused (401 or 403), the login the page holds is gone. */
 export const USERINFO = '/api/v2/oauth/userinfo';
 /**
- * A call ixigo's page makes as it loads whether or not it is logged in, in the same moment as the login's own calls
- * (2349 to 2351 ms into the 08:40 load), so once it is in, theirs are under way. A logged-out load (08:41) made it alone.
+ * Calls ixigo's page makes as it loads whether or not it is logged in: its content service, behind every block of the
+ * home page (six calls, 1.4 to 2.0 s into a load; staging, 10 Oct 04:31), in the same burst as the login's own calls, so
+ * once the first is in, theirs are under way. It was the nearby flights call until ixigo's home stopped making it (10
+ * Oct): every read waited for it, timed out and said unknown, a logged-in browser too.
  */
-const NEARBY = '/api/flights/locations/nearby';
+const PAGE_CONTENT = '/action/content';
 /** How long the page may take to show its log in box; past it the tab stays in front for the person all the same. */
 export const HANDOFF_PAGE_MS = 12_000;
 /**
  * Whether the browser is logged in, from ixigo's own calls as its home page loads, one byte each, by their status only.
  * None of the login's calls is waited for (a logged-in page never calls userinfo, a logged-out one calls none of them):
- * the page's NEARBY is, as the one required capture, then up to Bash's most (3 s) for the login's calls. Bash refuses a
- * fetch with no required capture and no page_fetch step (400 invalid_request; staging, 9 Oct 13:24, every hand-off).
+ * the page's content is, as the one required capture, then up to Bash's most (3 s) for the login's calls. Bash refuses a
+ * fetch with no required capture and no page_fetch step (400 invalid_request; staging, 9 Oct 13:24, every hand-off). A
+ * page_fetch of a login call of Go's own can't stand in: it is 403 logged in or out (WALLET).
  */
 export const LOGIN_CALLS: FetchPlan = {
   capture: [
-    { match: NEARBY, required: true, max_bytes: 1 },
+    { match: PAGE_CONTENT, required: true, max_bytes: 1 },
     ...[WALLET, IDENTITY, USERINFO].map((match) => ({ match, required: false, max_bytes: 1 })),
   ],
   steps: [],
@@ -464,10 +467,10 @@ export function createIxigoLogin(d: LoginDeps): IxigoLogin {
     const runner = d.runner();
     if (runner) {
       try {
-        // The home page's nearby call is the one capture Bash waits for: it refuses a fetch with none required and no
+        // The home page's content is the one capture Bash waits for: it refuses a fetch with none required and no
         // page_fetch step (400 invalid_request), so a plan of clicks alone never ran.
         await runner.read(row.tripId, `${IXIGO}/`, {
-          capture: [{ match: NEARBY, required: true, max_bytes: 1 }],
+          capture: [{ match: PAGE_CONTENT, required: true, max_bytes: 1 }],
           steps: [{ op: 'click', text: 'Hey' }, { op: 'click', role: 'link', name: 'Log out' }],
           timeoutMs: 15_000,
         });
