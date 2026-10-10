@@ -81,11 +81,12 @@ function askedBack(text: string, items: DeskItem[], pack: TripPack, readUpTo: nu
 
 /**
  * The first message Go's words cited ("Meher said so in #6"), when it is a real message in this trip. The number leaves
- * the words, and the post replies to that message instead, so people see the proof itself.
+ * the words, and the post replies to that message instead, so people see the proof itself. Never one of the App's own
+ * lines: those are a record, and Go never replies to one (the Server team, 10 Oct).
  */
 function citedMessageId(text: string, pack: TripPack): string | null {
   for (const seq of stripMessageRefs(text).refs) {
-    const m = pack.messages.find((x) => x.seq === seq && !x.deleted && !x.withheld);
+    const m = pack.messages.find((x) => x.seq === seq && !x.deleted && !x.withheld && x.author.kind !== 'system');
     if (m) return m.message_id;
   }
   return null;

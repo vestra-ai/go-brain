@@ -24,10 +24,11 @@ Good to know:
 | A9 | A vote taken back | The Server | `decision.voted` `retracted` |
 | A10 | The `claim` card action: the first claim wins | Go | a card's `actions` |
 | A11 | A place's time zone | Both | `Place.timezone` |
-| B1 | A payback someone recorded, once the one paid confirmed it | The Server | the `settlement.recorded` event |
+| B1 | A payback someone recorded (it counts at once since 10 Oct) | The Server | the `settlement.recorded` event |
 | B2 | A checklist card; a vault link to add documents | Go; the Server asks | the `checklist` card; `vault_link` `start: "add_documents"` and `context` |
 | B3a | A call's recording and length | Go | `CallCard.recording_url`, `duration_s` |
-| B4 | Whether the people an expense is split between agreed to it; the vault payment an expense was paid with | The Server; Go | `Expense.status`, `confirmations`; `expense.changed` `approved`, `disputed` and `by_person_id`; `add_expense.approval_id` |
+| B4 | The vault payment an expense was paid with; a fixed split (`updated`). Whether people agreed to an expense was withdrawn on 10 Oct | The Server; Go | `add_expense.approval_id`; `expense.changed` `updated`; withdrawn: `Expense.status`, `confirmations`, `expense.changed` `approved`, `disputed`, `by_person_id` |
+| 10 Oct A3, B1 | The group's one budget per person, in place of private budget answers | The Server; Go | `BudgetSummary.per_person_minor`; `update_trip.budget_per_person_minor` |
 
 Not in 1.1: listening to a call live (B3b), `request_task` (B3c), and the check-in methods (Group C). They come after the hackathon.
 
@@ -102,9 +103,9 @@ An itinerary item can name the people it is for (`person_ids`) and who sees it (
 
 ## Paybacks (B1)
 
-The Server sends `settlement.recorded` when someone paid someone back and the one paid confirmed it. Only confirmed paybacks are sent, so `status` is always `confirmed`, and Go never sees a pending or disputed one. `method` is `upi`, `cash`, `bank_transfer` or `other`. `note` and `recorded_at` (when the payer recorded it) are optional. `read_trip`'s `money.transfers` already counts confirmed paybacks, so Go reads the money again.
+The Server sends `settlement.recorded` when someone records that they paid someone back. Since 10 Oct a payback counts as soon as it is recorded: nobody confirms it, and it cannot be undone. So `status` is always `confirmed`, `confirmed_at` is when it was recorded, and Go never sees a pending or disputed one. `method` is `upi`, `cash`, `bank_transfer` or `other`. `note` and `recorded_at` are optional. `read_trip`'s `money.transfers` already counts it, so Go reads the money again.
 
-Aarav paid Rahul back ₹5,800 by UPI for the villa and groceries, and Rahul confirmed it:
+Aarav paid Rahul back ₹5,800 by UPI for the villa and groceries:
 
 <!-- schema: SettlementRecorded -->
 ```json
@@ -124,10 +125,10 @@ Aarav paid Rahul back ₹5,800 by UPI for the villa and groceries, and Rahul con
       "method": "upi",
       "note": "villa + groceries",
       "status": "confirmed",
-      "recorded_at": "2026-10-10T09:02:00Z",
+      "recorded_at": "2026-10-10T09:15:00Z",
       "confirmed_at": "2026-10-10T09:15:00Z"
     },
-    "by": { "kind": "person", "person_id": "p_rahul" }
+    "by": { "kind": "person", "person_id": "p_aarav" }
   }
 }
 ```
@@ -160,11 +161,11 @@ A `checklist` card shows who in the group has something ready, one row a person 
 
 A finished call's card can carry its `recording_url` (Go's own signed link, which stops working after a while) and `duration_s`.
 
-An expense can say whether the people it is split between agreed to it: `status` is `pending`, `approved` or `disputed`, and `confirmations` has one entry for each person in `split_person_ids` other than the payer, with their `state` (`pending`, `approved` or `disputed`), when they answered (`at`), and a `reason` for a dispute. When someone answers, the Server sends `expense.changed` with `change` `approved` or `disputed`, and `by_person_id` says who answered.
+Every expense counts from the moment it is added until it is removed. Nobody approves or disputes one: that was withdrawn on 10 Oct, so the Server no longer sends `Expense.status` or `confirmations`, nor `expense.changed` with `approved` or `disputed`. The schemas keep them, so what an older Server sends still reads, and Go says nothing of them.
 
-`add_expense` gains `approval_id`, the spend approval a vault payment used (the same id as on its booking). With it, the Server records the expense as approved at once. Without it, the Server records it pending, for the people it is split between to answer. A `booking_id` alone does not approve an expense.
+`add_expense` gains `approval_id`, the spend approval a vault payment used (the same id as on its booking): the vault payment the expense belongs to.
 
-Priya disputed the cab, because she took the bus:
+A person can fix an expense's split. The Server then sends `expense.changed` with `change` `updated`, carrying the whole expense, and Go reads the trip again. Priya took Aarav off the airport cab:
 
 <!-- schema: ExpenseChanged -->
 ```json
@@ -177,31 +178,46 @@ Priya disputed the cab, because she took the bus:
   "data": {
     "expense": {
       "expense_id": "e_cab",
-      "paid_by_person_id": "p_kabir",
-      "amount_minor": 340000,
+      "paid_by_person_id": "p_priya",
+      "amount_minor": 170000,
       "currency": "INR",
       "note": "Airport cab",
       "category": "getting_around",
-      "split_person_ids": ["p_rahul", "p_priya", "p_arjun", "p_meher", "p_kabir"],
-      "added_by_person_id": "p_kabir",
-      "created_at": "2026-10-09T13:20:00Z",
-      "status": "disputed",
-      "confirmations": [
-        { "person_id": "p_rahul", "state": "approved", "at": "2026-10-10T08:10:00Z" },
-        { "person_id": "p_priya", "state": "disputed", "at": "2026-10-10T08:40:00Z", "reason": "I took the bus" },
-        { "person_id": "p_arjun", "state": "pending" },
-        { "person_id": "p_meher", "state": "pending" }
-      ]
+      "split_person_ids": ["p_rahul", "p_priya", "p_kabir"],
+      "added_by_person_id": "p_priya",
+      "created_at": "2026-10-09T13:20:00Z"
     },
-    "change": "disputed",
-    "by": { "kind": "person", "person_id": "p_priya" },
-    "by_person_id": "p_priya"
+    "change": "updated",
+    "by": { "kind": "person", "person_id": "p_priya" }
   }
 }
 ```
 
+## The group's budget (10 Oct: A3, B1)
+
+People no longer answer a private budget question. A trip has one optional budget per person, the same for everyone, set in the App or by Go. `read_trip`'s `budget` then carries it as `per_person_minor`, and the rest of it reads as everyone answering that one amount, so a reader that does not know the field still sees the right band. With none set, `budget` is `{ "answered": 0, "of": 4 }`. A change comes as `trip.updated` with `changed: ["budget"]`, by the person who set it, or by Go. This replaces what chapters 3 and 4 say about budget answers being private and changes coming by `system`.
+
+The group set ₹20,000 each:
+
+<!-- schema: BudgetSummary -->
+```json
+{
+  "lowest": { "min_minor": 2000000, "max_minor": 2000000, "currency": "INR" },
+  "answered": 4,
+  "of": 4,
+  "per_person_minor": 2000000
+}
+```
+
+When the group settles one in the chat (the organizer says it, or two people agree), Go sets it with `update_trip`. It is a whole number of at least 1 in the trip's currency. Missing or `null` leaves it as it is, so Go cannot clear it: a person clears it in the App. Go sends only a budget for the whole trip; one the group set only for the stay or for getting there stays Go's own.
+
+<!-- schema: UpdateTrip -->
+```json
+{ "request_id": "go_budget_01J9XG", "trip_id": "t_goa", "budget_per_person_minor": 2000000 }
+```
+
 ## What Go tolerates
 
-- A message from the Server itself (author `system`) in an event, `read_messages` or a catch-up is kept, and Go never answers it as if a person spoke.
+- A message from the Server itself (author `system`) in an event, `read_messages` or a catch-up is kept, and Go never answers it as if a person spoke. That covers the money lines the Server posts for every expense and payback ("Priya added Airport cab · ₹1,700 · split 4 ways"): Go reads them as the App's record, never wakes for one, never replies or reacts to one, and never comments on one.
 - `replace_card` is not a change, but a Server that moves a message's `updated_seq` when Go replaces its card may hand it back from `read_messages`. That wakes nobody, and Go never answers a message twice.
 - An `expense.changed` with a change value Go does not know is answered `422 invalid`, as above, and the socket goes on.

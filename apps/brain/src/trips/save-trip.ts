@@ -19,6 +19,8 @@ export interface TripChange {
   dates?: { start: string; end: string } | undefined;
   vibe?: string[] | undefined;
   stay?: string | undefined;
+  /** 1.1: the group's budget per person, in minor units (set_budget, travel/trip-budget.ts). */
+  budgetPerPersonMinor?: number | undefined;
 }
 
 export interface SaveTripDeps {
@@ -59,8 +61,9 @@ export async function saveTrip(
   at: { link: Pick<ServerLink, 'request'>; tripId: string; pack: TripPack; requestId: () => string },
   a: TripChange,
 ): Promise<Saved> {
-  const fields: { title?: string; destination?: Place; dates?: { start: string; end: string }; vibe?: string[]; stay?: string } = {
+  const fields: { title?: string; destination?: Place; dates?: { start: string; end: string }; vibe?: string[]; stay?: string; budget_per_person_minor?: number } = {
     ...(a.title ? { title: a.title } : {}),
+    ...(a.budgetPerPersonMinor ? { budget_per_person_minor: a.budgetPerPersonMinor } : {}),
     ...(a.dates ? { dates: a.dates } : {}),
     ...(a.vibe ? { vibe: a.vibe } : {}),
     ...(a.stay ? { stay: a.stay } : {}),

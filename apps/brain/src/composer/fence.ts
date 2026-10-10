@@ -156,7 +156,7 @@ function roomLabel(
 ): string | null {
   if (m.deleted || m.withheld) return null;
   const a = m.author;
-  const who = a.kind === 'go' ? 'Go (you)' : a.kind === 'system' ? 'Trip' : nameOf(a.person_id);
+  const who = a.kind === 'go' ? 'Go (you)' : a.kind === 'system' ? 'App' : nameOf(a.person_id);
   const parts: string[] = [];
   const replyTo = m.reply_to ? seqOf(m.reply_to) : undefined;
   if (replyTo !== undefined) parts.push(`(reply to #${replyTo})`);

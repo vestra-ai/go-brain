@@ -11,13 +11,16 @@ const picks = [flight('IndiGo 6E 2134', '18:10', '20:45', 592000), flight('Air I
   .map((option, i) => ({ optionId: `opt_${i + 1}`, option, imageUrl: null }));
 
 describe('the options card', () => {
-  it('is a valid contract card with checked prices, subtitles and both buttons', () => {
+  it('is a valid contract card with checked prices, subtitles and its pick (a ticket is never put to a vote)', () => {
     const card = buildOptionsCard({ cardId: 'c_flights_1', title: 'Friday flights, Delhi to Goa', optionKind: 'flight', checkedAt: '2026-10-07T12:00:00.000Z', picks });
     expect(C.OptionsCard.safeParse(card).success).toBe(true);
     expect(card.options[0]).toMatchObject({ option_id: 'opt_1', title: 'IndiGo 6E 2134', subtitle: '6:10 pm to 8:45 pm, non-stop', price_minor: 592000, currency: 'INR', price_note: 'per person' });
     expect(card.fallback_text).toBe('3 flights: Friday flights, Delhi to Goa, from ₹5,640 per person');
-    expect(card.actions?.map((a) => a.action_id)).toEqual(['pick', 'vote']);
+    expect(card.actions?.map((a) => a.action_id)).toEqual(['pick']);
     expect(card.actions?.[0]).toMatchObject({ per_option: true });
+    // A shared thing still goes to the group.
+    const stays = buildOptionsCard({ cardId: 'c_stays', title: 'Stays', optionKind: 'stay', checkedAt: '2026-10-07T12:00:00.000Z', picks: picks.map((p) => ({ ...p, option: { ...p.option, kind: 'stay' as const } })) });
+    expect(stays.actions?.map((a) => a.action_id)).toEqual(['pick', 'vote']);
   });
 
   it('offers no vote for a single option, and never shows an em dash', () => {
@@ -31,10 +34,10 @@ describe('the options card', () => {
     const onIxigo = picks.map((p, i) => ({ ...p, option: { ...p.option, ...(i === 1 ? { sourceUrl: 'https://www.ixigo.com/search/result/flight?from=DEL&to=GOI' } : {}) } }));
     const card = buildOptionsCard({ cardId: 'c_ix', title: 'Flights', optionKind: 'flight', checkedAt: '2026-10-07T12:00:00.000Z', picks: onIxigo });
     expect(C.OptionsCard.safeParse(card).success).toBe(true);
-    expect(card.actions?.map((a) => a.action_id)).toEqual(['pick', 'vote', 'open']);
-    expect(card.actions?.[2]).toEqual({ action_id: 'open', label: 'See on ixigo', style: 'secondary', per_option: true });
+    expect(card.actions?.map((a) => a.action_id)).toEqual(['pick', 'open']);
+    expect(card.actions?.[1]).toEqual({ action_id: 'open', label: 'See on ixigo', style: 'secondary', per_option: true });
     const elsewhere = picks.map((p) => ({ ...p, option: { ...p.option, sourceUrl: 'https://www.airbnb.co.in/rooms/1' } }));
-    expect(buildOptionsCard({ cardId: 'c_web', title: 'Flights', optionKind: 'flight', checkedAt: '2026-10-07T12:00:00.000Z', picks: elsewhere }).actions?.map((a) => a.action_id)).toEqual(['pick', 'vote']);
+    expect(buildOptionsCard({ cardId: 'c_web', title: 'Flights', optionKind: 'flight', checkedAt: '2026-10-07T12:00:00.000Z', picks: elsewhere }).actions?.map((a) => a.action_id)).toEqual(['pick']);
   });
 
   it('with seeAll, its last button opens the whole list on ixigo instead of each option\'s page (stays, three shown)', () => {

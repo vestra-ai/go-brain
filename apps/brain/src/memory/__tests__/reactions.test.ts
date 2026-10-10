@@ -27,6 +27,14 @@ describe('a ✅ and taking it back, on one message', () => {
     expect(calls).toHaveLength(2);
   });
 
+  // GO-TEAM-ASKS-REV4 A4: the App's own lines are a record. Go never answers one, with words or a reaction.
+  it("never reacts to one of the App's own lines", async () => {
+    const { link, calls } = fakeLink({ add_reaction: () => ({ seq: 4 }) });
+    const line = msg(8, null, 'Priya added Airport cab · ₹1,700 · split 4 ways', { author: { kind: 'system' } });
+    expect(await reactOnce(db.pool, link, 't_rx', line, '👍')).toBe('skipped');
+    expect(calls).toEqual([]);
+  });
+
   it('holds a message with no ✅ yet without a call, and a ✅ the Server no longer has counts as taken back', async () => {
     const { link, calls } = fakeLink({
       add_reaction: () => ({ seq: 3 }),

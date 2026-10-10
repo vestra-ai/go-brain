@@ -138,7 +138,10 @@ export const Booking = z
   .meta({ id: 'Booking' });
 export type Booking = z.infer<typeof Booking>;
 
-/** 1.1: where one person stands on an expense they share: one for each person in split_person_ids other than the payer. */
+/**
+ * 1.1, withdrawn on 10 Oct (the Server no longer asks anyone to agree to an expense): where one person stood on an
+ * expense they share. Kept so an older Server's answer still reads.
+ */
 export const ExpenseConfirmation = z
   .object({
     person_id: Id,
@@ -164,17 +167,17 @@ export const Expense = z
     /** Null when Go added it. */
     added_by_person_id: Id.nullish(),
     created_at: IsoDateTime,
-    /** 1.1: whether the people it is split between have agreed to it. Absent: the Server asks nobody (1.0). */
+    /** 1.1, withdrawn: the Server no longer sends it, and every expense counts from when it is added. */
     status: z.enum(['pending', 'approved', 'disputed']).nullish(),
-    /** 1.1: one for each person it is split between, other than the payer. */
+    /** 1.1, withdrawn, as status. */
     confirmations: z.array(ExpenseConfirmation).max(30).nullish(),
   })
   .meta({ id: 'Expense' });
 export type Expense = z.infer<typeof Expense>;
 
 /**
- * 1.1: a payback someone recorded between two people. The Server sends it only once the one paid confirmed it, so its
- * status is always confirmed. read_trip's money.transfers already counts it.
+ * 1.1: a payback someone recorded between two people. It counts once recorded (there is no confirming step since 10 Oct),
+ * so its status is always confirmed and confirmed_at is when it was recorded. read_trip's money.transfers already counts it.
  */
 export const Settlement = z
   .object({

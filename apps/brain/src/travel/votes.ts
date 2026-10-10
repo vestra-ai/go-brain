@@ -7,14 +7,14 @@
  */
 import type * as C from '@go/contract';
 import type { ServerLink } from '../door/server-link.js';
-import { clip, formatInr, ixigoPage, placeKindNotAll } from './cards.js';
+import { clip, formatInr, ixigoPage, PERSONAL_KINDS, placeKindNotAll } from './cards.js';
 import type { OptionKind, ResultsStore } from './results.js';
 import type { StoredOffer } from './travel.js';
 
 export type VoteCard = Extract<C.Card, { kind: 'vote' }>;
 export type VoteOutcome =
   | { ok: true; decisionId: string; voteCard: VoteCard }
-  | { ok: false; reason: 'unknown_card' | 'already_voting' | 'too_few_options'; decisionId?: string };
+  | { ok: false; reason: 'unknown_card' | 'already_voting' | 'too_few_options' | 'personal'; decisionId?: string };
 
 const QUESTIONS: Record<OptionKind, string> = {
   stay: 'Where do we stay?', flight: 'Which flight?', train: 'Which train?', bus: 'Which bus?', place: 'Where do we go?', food: 'Where do we eat?', activity: 'What do we do?',
@@ -63,6 +63,8 @@ export async function openVoteFromCard(
 ): Promise<VoteOutcome> {
   const row = await d.results.card(o.tripId, o.cardId);
   if (!row) return { ok: false, reason: 'unknown_card' };
+  // A ticket is its traveller's own (PERSONAL_KINDS): confirmed by them alone, never put to the group.
+  if (PERSONAL_KINDS.has(row.optionKind)) return { ok: false, reason: 'personal' };
   const offers = await d.results.offersOnCard(o.cardId);
   const shown = new Map(row.card.options.map((op) => [op.option_id, op]));
   // A card with one option is put to the group as that option or keep looking: still a choice vote on the offer

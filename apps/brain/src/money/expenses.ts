@@ -1,7 +1,6 @@
 import * as C from '@go/contract';
 import type { Pool } from 'pg';
 import { z } from 'zod';
-import { inlineData } from '../composer/fence.js';
 import type { QuickTool, TurnCtx } from '../composer/tools.js';
 import type { Message, Trip } from '../door/methods.js';
 import { reactOnce } from '../memory/reactions.js';
@@ -103,9 +102,7 @@ export async function recordExpense(ctx: Pick<TurnCtx, 'tripId' | 'link' | 'pack
   // The same path as every ✅ Go sends: one that the reflex already put on this line is joined, never sent twice. A ✅
   // that did not go through leaves the expense recorded either way.
   if ((await reactOnce(pool, ctx.link, ctx.tripId, m, '✅')) === 'sent') ctx.outcome.reactions += 1;
-  // 1.1 B4: with no vault payment behind it, the Server records it pending, for the people it is split between to
-  // approve or dispute in the App: never final, and never something Go chases.
-  return { recorded: true, expense_id: r.expense_id, pending: true, tell_the_room: QUIET };
+  return { recorded: true, expense_id: r.expense_id, tell_the_room: QUIET };
 }
 
 /** Who paid what and who owes whom, read from the Server's expenses and balances, never from the chat. */
@@ -123,31 +120,11 @@ export async function readExpenses(ctx: Pick<TurnCtx, 'tripId' | 'link'>): Promi
     owes: trip.money.transfers.map((t) => ({ from: nameOf(t.from_person_id), to: nameOf(t.to_person_id), amount: money(t.amount_minor, t.currency) })),
     expenses: trip.expenses.slice(-15).map((e) => ({
       for: e.note, paid_by: nameOf(e.paid_by_person_id), amount: money(e.amount_minor, e.currency), shared_by: shared(e.split_person_ids),
-      ...answersOf(e, nameOf),
     })),
     tell_the_room:
       trip.expenses.length === 0
         ? 'Nothing is recorded yet. Say so in one short line.'
-        : 'Answer from these numbers only, in one or two short lines. You never move money between people; the App settles up. ' +
-          'An expense still pending is not final until the people it is split between approve it in the App. ' +
-          'Never press anyone about one they disputed: you may say who disputed it and why, when it matters.',
-  };
-}
-
-/**
- * Where an expense stands with the people it is split between (1.1 B4): pending until they approve it in the App, or
- * disputed by someone, with their reason in their words (fenced). Nothing for a 1.0 Server, which asks nobody.
- */
-function answersOf(e: Trip['expenses'][number], nameOf: (id: string) => string): Record<string, unknown> {
-  if (!e.status) return {};
-  const waiting = (e.confirmations ?? []).filter((c) => c.state === 'pending').map((c) => nameOf(c.person_id));
-  const disputed = (e.confirmations ?? [])
-    .filter((c) => c.state === 'disputed')
-    .map((c) => ({ by: nameOf(c.person_id), ...(c.reason ? { why: inlineData(c.reason, 200) } : {}) }));
-  return {
-    status: e.status,
-    ...(e.status === 'pending' && waiting.length ? { waiting_on: waiting } : {}),
-    ...(disputed.length ? { disputed } : {}),
+        : 'Answer from these numbers only, in one or two short lines. You never move money between people; the App settles up.',
   };
 }
 

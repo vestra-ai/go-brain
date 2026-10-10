@@ -38,6 +38,7 @@ function expressionsOf(r: RecipeFile): Array<[where: string, source: string]> {
   if (a.as === 'options') {
     out.push(['answer.each', a.each]);
     if (a.keep) out.push(['answer.keep', a.keep]);
+    for (const [i, n] of (a.notes ?? []).entries()) out.push([`answer.notes.${i}`, n]);
   } else if (a.as === 'facts') {
     out.push(['answer.each', a.each]);
     templates.push(['answer.title', a.title]);

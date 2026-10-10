@@ -195,7 +195,8 @@ interface Site {
 }
 
 export type EngineAnswer =
-  | { as: 'options'; options: RecipeOption[]; page: string; checkedAt: string; ms: number; site?: SiteSaid }
+  /** notes: the recipe's lines about the whole list (ixigo's Smart Lock for the route), for the model. */
+  | { as: 'options'; options: RecipeOption[]; page: string; checkedAt: string; ms: number; site?: SiteSaid; notes?: string[] }
   | { as: 'facts'; title: string; rows: Array<Record<string, unknown>>; page: string; checkedAt: string; ms: number }
   | { as: 'link'; link: string; title: string; who: string | null }
   /** A composite's: its inputs as filled, and each entry (a home city) with each step's answer, or why it has none. */
@@ -770,9 +771,10 @@ export function createEngine(d: EngineDeps) {
         const at = d.now();
         return { as: 'facts', title: await fill(recipe.answer.title, inputs, { url: false, bindings: b }), rows, page: opened, checkedAt: at.toISOString(), ms: at.getTime() - started };
       }
-      const options = await readOptions(recipeRead, caps, inputs, opened, b);
+      const notes: string[] = [];
+      const options = await readOptions(recipeRead, caps, inputs, opened, b, notes);
       const at = d.now();
-      return { as: 'options', options, page: opened, checkedAt: at.toISOString(), ms: at.getTime() - started };
+      return { as: 'options', options, page: opened, checkedAt: at.toISOString(), ms: at.getTime() - started, ...(notes.length > 0 ? { notes } : {}) };
     };
     // Fast first: the page's own call from the trip's warm tab, read as its answer. Any failure falls to the page.
     if (recipe.fast && fastOn(runner) && runner.pageFetch && !o.background && !watched(o)) {
