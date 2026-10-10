@@ -11,6 +11,9 @@ create table if not exists rooms_cards (
   chosen_id text,
   chosen_by text,
   chosen_at timestamptz,
+  -- Set when the stay's payment starts: the way picked holds from then (no tap changes it), so a retried finish reads it
+  -- the same.
+  closed_at timestamptz,
   created_at timestamptz not null default now()
 );
 create index if not exists rooms_cards_option on rooms_cards (trip_id, option_ref, created_at desc);

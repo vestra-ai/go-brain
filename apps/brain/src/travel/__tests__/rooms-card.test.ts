@@ -4,7 +4,7 @@ import { withSchema } from '../../db/test-db.js';
 import type { DeskItem } from '../../desk/desk.js';
 import { goaPack } from '../../tasks/testing/goa.js';
 import type { TripPack } from '../../trips/pack.js';
-import { createRoomsCards, ROOMS_PICK, roomsCardOnClose, roomsTap, type RoomsCards } from '../rooms-card.js';
+import { closeRooms, createRoomsCards, ROOMS_PICK, ROOMS_SET, roomsCardOnClose, roomsTap, type RoomsCards } from '../rooms-card.js';
 
 // The Server's REV4 B5 (10 Oct): once a vote picks a stay, its rooms card, so everyone sees their amount before anyone
 // pays (the lead's call); a tap keeps the way picked, for the expense per room (B6).
@@ -128,5 +128,45 @@ describe('a tap on the rooms card', () => {
     const tap = roomsTap(t.d);
     expect(await tap({ tap_id: 'tp_2', trip_id: 't_goa', card_id: r!.card.card_id, action_id: ROOMS_PICK, person_id: 'p_priya', option_id: 'ar_nope' })).toEqual({ result: 'refused', toast: 'That way is not on the card any more.' });
     expect(await tap({ tap_id: 'tp_3', trip_id: 't_goa', card_id: 'c_nope', action_id: ROOMS_PICK, person_id: 'p_priya', option_id: 'ar_1' })).toEqual({ result: 'refused', toast: 'That card is not active any more.' });
+  });
+});
+
+// The lead's ruling, 10 Oct: the rooms card closes when the stay's payment starts. The way picked then holds, so a
+// retried finish reads the same; a later tap is refused, and the card is final, with no button.
+describe('the rooms card when the stay is paid', () => {
+  async function opened(tripId: string) {
+    const t = deps();
+    const r = await roomsCardOnClose(t.d)({ tripId, turnId: `turn_${tripId}`, wake: [closed], pack: packWith(0) });
+    const card = C.Card.parse(r!.card);
+    if (card.kind !== 'rooms') throw new Error(card.kind);
+    return { t, card };
+  }
+
+  it('holds the way picked, refuses a later tap, and shows the card final; closing again changes nothing', async () => {
+    const { t, card } = await opened('t_paid1');
+    const way = card.arrangements[2]!;
+    await roomsTap(t.d)({ tap_id: 'tp_p1', trip_id: 't_paid1', card_id: card.card_id, action_id: ROOMS_PICK, person_id: 'p_kabir', option_id: way.arrangement_id });
+    // The tap's own card update has gone; what follows is the close's.
+    await vi.waitFor(() => expect(t.requests.filter((x) => x.method === 'replace_card')).toHaveLength(1));
+    const held = await closeRooms(t.d, 't_paid1', 'opt_stay_1');
+    expect(held!.arrangementId).toBe(way.arrangement_id);
+    const final = C.Card.parse(t.requests.filter((x) => x.method === 'replace_card').at(-1)!.params['card']);
+    expect(final).toMatchObject({ title: `Rooms at High Five Hotels Phase 2: ${way.label}`, actions: [] });
+    const later = await roomsTap(t.d)({ tap_id: 'tp_p2', trip_id: 't_paid1', card_id: card.card_id, action_id: ROOMS_PICK, person_id: 'p_rahul', option_id: card.arrangements[0]!.arrangement_id });
+    expect(later).toEqual({ result: 'refused', toast: ROOMS_SET });
+    // A retried finish closes again: the same way, and no second update of the card.
+    expect((await closeRooms(t.d, 't_paid1', 'opt_stay_1'))!.arrangementId).toBe(way.arrangement_id);
+    expect(t.requests.filter((x) => x.method === 'replace_card')).toHaveLength(2);
+    expect((await store.chosenArrangement('t_paid1', 'opt_stay_1'))!.arrangementId).toBe(way.arrangement_id);
+  });
+
+  it('with no way picked: nothing held (one expense, split evenly), and the card says so, final', async () => {
+    const { t, card } = await opened('t_paid2');
+    expect(await closeRooms(t.d, 't_paid2', 'opt_stay_1')).toBeNull();
+    const final = C.Card.parse(t.requests.find((x) => x.method === 'replace_card')!.params['card']);
+    expect(final).toMatchObject({ title: 'Rooms at High Five Hotels Phase 2: split evenly', actions: [] });
+    expect(await roomsTap(t.d)({ tap_id: 'tp_p3', trip_id: 't_paid2', card_id: card.card_id, action_id: ROOMS_PICK, person_id: 'p_rahul', option_id: card.arrangements[0]!.arrangement_id })).toEqual({ result: 'refused', toast: ROOMS_SET });
+    // A stay with no rooms card has nothing to close.
+    expect(await closeRooms(t.d, 't_paid2', 'opt_other')).toBeNull();
   });
 });

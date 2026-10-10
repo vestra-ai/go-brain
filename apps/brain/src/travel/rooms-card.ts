@@ -3,7 +3,8 @@
  * shares with whom, and what each person pays, so everyone sees their amount before anyone pays (the lead's call). It
  * rides on the turn that says the vote closed; when the stay's rooms take longer to read than that turn waits, it posts on
  * its own once they are read. A tap keeps the way picked, for the expense per room (B6, chosenArrangement), and the card
- * says it in place.
+ * says it in place. The card closes when the stay's payment starts (closeRooms, the lead's ruling): the way picked then
+ * holds, a later tap is refused, and the card shows it with no button; with none picked, the stay is one expense.
  */
 import type * as C from '@go/contract';
 import type pg from 'pg';
@@ -32,20 +33,30 @@ export interface RoomsCardRow {
   arrangements: Arrangement[];
   chosenId: string | null;
   chosenBy: string | null;
+  closed: boolean;
 }
 
 export interface RoomsCards {
-  save(row: Omit<RoomsCardRow, 'chosenId' | 'chosenBy'>): Promise<void>;
+  save(row: Omit<RoomsCardRow, 'chosenId' | 'chosenBy' | 'closed'>): Promise<void>;
   get(cardId: string): Promise<RoomsCardRow | null>;
-  choose(cardId: string, arrangementId: string, personId: string): Promise<void>;
+  /** The stay's newest rooms card (its vote option's option_ref); null when it has none. */
+  latest(tripId: string, optionRef: string): Promise<RoomsCardRow | null>;
+  /** False when the card is closed: the way picked holds. */
+  choose(cardId: string, arrangementId: string, personId: string): Promise<boolean>;
+  /** True when this call closed it; false when it was closed already. */
+  close(cardId: string): Promise<boolean>;
   /** The way the group picked to take a stay's rooms (its vote option's option_ref), from its newest rooms card; null when none was picked. */
   chosenArrangement(tripId: string, optionRef: string): Promise<Arrangement | null>;
 }
 
-interface Db { card_id: string; trip_id: string; decision_id: string; option_ref: string; stay: string; arrangements: Arrangement[]; chosen_id: string | null; chosen_by: string | null }
+interface Db {
+  card_id: string; trip_id: string; decision_id: string; option_ref: string; stay: string; arrangements: Arrangement[]; chosen_id: string | null; chosen_by: string | null;
+  closed_at: Date | null;
+}
 
 const rowOf = (r: Db): RoomsCardRow => ({
   cardId: r.card_id, tripId: r.trip_id, decisionId: r.decision_id, optionRef: r.option_ref, stay: r.stay, arrangements: r.arrangements, chosenId: r.chosen_id, chosenBy: r.chosen_by,
+  closed: r.closed_at !== null,
 });
 
 export function createRoomsCards(pool: pg.Pool): RoomsCards {
@@ -61,8 +72,17 @@ export function createRoomsCards(pool: pg.Pool): RoomsCards {
       const { rows } = await pool.query<Db>('select * from rooms_cards where card_id = $1', [cardId]);
       return rows[0] ? rowOf(rows[0]) : null;
     },
+    async latest(tripId, optionRef) {
+      const { rows } = await pool.query<Db>('select * from rooms_cards where trip_id = $1 and option_ref = $2 order by created_at desc limit 1', [tripId, optionRef]);
+      return rows[0] ? rowOf(rows[0]) : null;
+    },
     async choose(cardId, arrangementId, personId) {
-      await pool.query('update rooms_cards set chosen_id = $2, chosen_by = $3, chosen_at = now() where card_id = $1', [cardId, arrangementId, personId]);
+      const r = await pool.query('update rooms_cards set chosen_id = $2, chosen_by = $3, chosen_at = now() where card_id = $1 and closed_at is null', [cardId, arrangementId, personId]);
+      return (r.rowCount ?? 0) > 0;
+    },
+    async close(cardId) {
+      const r = await pool.query('update rooms_cards set closed_at = now() where card_id = $1 and closed_at is null', [cardId]);
+      return (r.rowCount ?? 0) > 0;
     },
     async chosenArrangement(tripId, optionRef) {
       const { rows } = await pool.query<Db>(
@@ -75,7 +95,10 @@ export function createRoomsCards(pool: pg.Pool): RoomsCards {
   };
 }
 
-/** The card for a stay's ways to take its rooms; with a way picked, it says which and who picked it. */
+/**
+ * The card for a stay's ways to take its rooms; with a way picked, it says which and who picked it. closed: the stay's
+ * payment started, so the card is final, with no button (none picked: the stay is one expense, split evenly).
+ */
 export function roomsCard(o: {
   cardId: string;
   stay: string;
@@ -83,12 +106,16 @@ export function roomsCard(o: {
   arrangements: Arrangement[];
   forPersonIds: string[];
   picked?: { label: string; by: string };
+  closed?: boolean;
 }): C.Card {
-  const title = clip(o.picked ? `Rooms at ${o.stay}: ${o.picked.label}` : `Rooms at ${o.stay}`, 80);
+  const title = clip(o.picked ? `Rooms at ${o.stay}: ${o.picked.label}` : o.closed ? `Rooms at ${o.stay}: split evenly` : `Rooms at ${o.stay}`, 80);
+  const said = o.picked
+    ? `${o.picked.by} picked ${o.picked.label} at ${o.stay}`
+    : o.closed ? `No split picked at ${o.stay}: the stay is split evenly` : `Pick how you split the rooms at ${o.stay}`;
   return {
     card_id: o.cardId,
     kind: 'rooms',
-    fallback_text: clip(o.picked ? `${o.picked.by} picked ${o.picked.label} at ${o.stay}` : `Pick how you split the rooms at ${o.stay}`, 300),
+    fallback_text: clip(said, 300),
     title,
     option_id: o.optionRef,
     for_person_ids: o.forPersonIds,
@@ -99,7 +126,7 @@ export function roomsCard(o: {
       total_minor: a.totalMinor,
       per_person: a.perPerson.map((p) => ({ person_id: p.personId, amount_minor: p.amountMinor })),
     })),
-    actions: [{ action_id: ROOMS_PICK, label: o.picked ? 'Change' : 'Choose', style: 'primary', per_option: true }],
+    actions: o.closed ? [] : [{ action_id: ROOMS_PICK, label: o.picked ? 'Change' : 'Choose', style: 'primary', per_option: true }],
   };
 }
 
@@ -165,9 +192,11 @@ export function roomsTap(d: Pick<RoomsCardDeps, 'store' | 'link' | 'packs' | 'lo
   return async (tap: CardTapParams): Promise<CardTapResult> => {
     const row = await d.store.get(tap.card_id);
     if (!row || row.tripId !== tap.trip_id) return { result: 'refused', toast: 'That card is not active any more.' };
+    if (row.closed) return { result: 'refused', toast: ROOMS_SET };
     const picked = row.arrangements.find((a) => a.arrangementId === tap.option_id);
     if (!picked) return { result: 'refused', toast: 'That way is not on the card any more.' };
-    await d.store.choose(row.cardId, picked.arrangementId, tap.person_id);
+    // The payment may have closed the card since it was read: the way picked then holds.
+    if (!(await d.store.choose(row.cardId, picked.arrangementId, tap.person_id))) return { result: 'refused', toast: ROOMS_SET };
     const pack = await d.packs.get(tap.trip_id);
     const by = pack.trip.people.find((p) => p.person_id === tap.person_id)?.name ?? 'Someone';
     // The tap answers now; the card says the pick in place behind it.
@@ -179,4 +208,39 @@ export function roomsTap(d: Pick<RoomsCardDeps, 'store' | 'link' | 'packs' | 'lo
       .catch((err: unknown) => d.log.warn({ tripId: tap.trip_id, err: String(err).slice(0, 200) }, "travel: the rooms card didn't update"));
     return { result: 'done', toast: clip(`${picked.label}: saved`, 120) };
   };
+}
+
+export const ROOMS_SET = 'Rooms are set: the stay is paid.';
+
+/**
+ * The stay's payment started (the lead's ruling, 10 Oct): its rooms card closes, the way picked holds for the expense per
+ * room (B6) however often the finish runs, and the card shows it with no button. Gives the way picked, or null when none
+ * was (the stay is then one expense, split evenly) or the stay has no rooms card. Closing again gives the same, with no
+ * second update of the card.
+ */
+export async function closeRooms(d: Pick<RoomsCardDeps, 'store' | 'link' | 'packs' | 'log'>, tripId: string, optionRef: string): Promise<Arrangement | null> {
+  const row = await d.store.latest(tripId, optionRef);
+  if (!row) return null;
+  const chosen = row.chosenId ? (row.arrangements.find((a) => a.arrangementId === row.chosenId) ?? null) : null;
+  if (!(await d.store.close(row.cardId))) {
+    // Closed already: what it held when it closed (a tap since was refused).
+    const now = await d.store.get(row.cardId);
+    return now?.chosenId ? (now.arrangements.find((a) => a.arrangementId === now.chosenId) ?? null) : null;
+  }
+  // A tap that landed between the read and the close was kept: read the card as it closed.
+  const closed = (await d.store.get(row.cardId)) ?? row;
+  const held = closed.chosenId ? (closed.arrangements.find((a) => a.arrangementId === closed.chosenId) ?? null) : chosen;
+  const pack = await d.packs.get(tripId);
+  const by = held && closed.chosenBy ? (pack.trip.people.find((p) => p.person_id === closed.chosenBy)?.name ?? 'Someone') : null;
+  await d.link
+    .request('replace_card', {
+      trip_id: tripId,
+      card: roomsCard({
+        cardId: row.cardId, stay: row.stay, optionRef: row.optionRef, arrangements: row.arrangements, forPersonIds: [pack.trip.organizer_person_id],
+        ...(held && by ? { picked: { label: held.label, by } } : {}),
+        closed: true,
+      }),
+    })
+    .catch((err: unknown) => d.log.warn({ tripId, err: String(err).slice(0, 200) }, "travel: the closed rooms card didn't update"));
+  return held;
 }
