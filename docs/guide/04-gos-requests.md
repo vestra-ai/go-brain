@@ -827,6 +827,7 @@ The result:
 | `card` | A card, as described in [Cards](06-cards.md). |
 | `reply_to` | The message Go is answering, if any. |
 | `mentions` | People Go names in the text. Each one gets a push. |
+| `visible_to_person_ids` | Contract 1.2: only these people see the message (1 to 30, all in the trip). Leave it out for everyone. See [A message only some people see](#a-message-only-some-people-see-contract-12). |
 
 What the server does:
 1. Stores the message with Go as the author (`{"kind": "go"}`), the next change number as both `seq` and `updated_seq`, and the card exactly as it arrived.
@@ -839,6 +840,7 @@ What the server does:
 |---|---|
 | The params have text, a card, or both. | `422` `invalid` |
 | Every person in `mentions` is in the trip. | `422` `invalid` |
+| Every person in `visible_to_person_ids` is in the trip. | `422` `invalid` |
 | `reply_to`, if set, is a message in this trip. | `422` `invalid` |
 | A record card's id (`decision_id`, `booking_id` or `expense_id`) is in this trip. | `422` `invalid` |
 | A mandate card's vote has a mandate. | `409` `conflict` |
@@ -849,6 +851,34 @@ Good to know:
 - Send the pushes and the live update once, after the transaction commits, and not again for a repeated `request_id`.
 - `mentions_go` is `false` on Go's own messages.
 - The server pins an open vote and a mandate waiting for its payer from its own rows, so Go leaves `for_person_ids` out of vote and mandate cards.
+
+#### A message only some people see (contract 1.2)
+
+Some of what Go says is for one person only: a traveller's own flight options, their booking steps, or a note about their own account ("your ixigo money applies here"). Go posts it with `visible_to_person_ids`:
+
+<!-- schema: PostMessage -->
+```json
+{
+  "request_id": "rq_flights_priya_1",
+  "trip_id": "t_goa",
+  "text": "Your flights from Pune, Priya",
+  "visible_to_person_ids": ["p_priya"],
+  "card": {
+    "card_id": "c_flights_priya",
+    "kind": "notice",
+    "tone": "info",
+    "title": "3 flights from Pune on Fri 6 Nov",
+    "body": "IndiGo 6E 2134 from ₹4,890, the cheapest. All three land in Goa before 2 pm.",
+    "fallback_text": "3 flights from Pune on Fri 6 Nov",
+    "for_person_ids": ["p_priya"]
+  }
+}
+```
+
+- The app shows the message only to those people: in the room, live, in their "needs you" list and on the cards screen. To everyone else it doesn't exist, so nobody else can tap, reply to or react to it.
+- It still takes a change number and its `message.created` event. `read_messages` returns it to Go with the field set.
+- Visibility is fixed when the message is posted. `replace_card` keeps it.
+- A card that should stay visible to the room, with buttons only one person can press, leaves `visible_to_person_ids` out and uses the card's `for_person_ids` and each action's `only_for_person_ids` instead.
 
 ### `replace_card`: replace a card in place
 
@@ -1470,6 +1500,7 @@ The params are a `RequestSpendApproval`:
 | `merchant` | Who is paid, as the payer will see it in the vault. |
 | `purpose` | What the payment is for, as the payer will see it in the vault. |
 | `refundable_until` | When free cancellation ends. Required when the mandate is refundable only. |
+| `kind`, `for_person_id` | Contract 1.2, a traveller's own ticket: `kind: "ticket"` and the traveller in place of `decision_id`. The traveller is the payer. See [A traveller's own ticket](08-money-and-the-vault.md#a-travellers-own-ticket-contract-12). |
 
 #### The approved result
 

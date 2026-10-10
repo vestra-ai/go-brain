@@ -1,3 +1,4 @@
+import { MAX_APPROVAL_TTL_SECONDS } from '@go/contract';
 import type { TurnCtx } from '../composer/tools.js';
 import type { ToServerResult, Trip } from '../door/methods.js';
 import { ixigoPage } from '../travel/cards.js';
@@ -6,11 +7,13 @@ import { payCard, type PayCard, type PayCardLook } from './cards.js';
 import type { MoneyDeps } from './deps.js';
 import { paymentIdFor, rid } from './ids.js';
 import type { Room } from './rooms.js';
-import { getPayment, insertAsking, openForDecision, paidForDecision, patchPayment, transition, type PaymentRow } from './store.js';
+import { EXPIRY_GRACE_MS, getPayment, insertAsking, openForDecision, openTicket, paidForDecision, patchPayment, transition, type PaymentRow } from './store.js';
+import { payLinkInput } from './taps.js';
 import type { PaymentKind } from './vault-client.js';
 import { clip, money, plain, refusalWords, type RefusalCode } from './words.js';
 
-export type AskResult = { cardId: string; paymentId: string } | { refused: string; code: RefusalCode; say: boolean };
+export type AskResult = { cardId: string; paymentId: string } | Refused;
+type Refused = { refused: string; code: RefusalCode; say: boolean };
 
 /** The ids one ask writes with. The spend request id also names the payments row. */
 export interface AskIds {
@@ -60,7 +63,7 @@ interface Words {
   link?: string;
 }
 
-function refuse(d: MoneyDeps, code: RefusalCode, words: Words, err?: unknown): AskResult {
+function refuse(d: MoneyDeps, code: RefusalCode, words: Words, err?: unknown): Refused {
   const said = refusalWords(code, words);
   d.log.info({ code, ...(err instanceof Error ? { err: err.message } : {}) }, 'ask to pay refused');
   return { refused: said.text, code, say: said.say };
@@ -69,7 +72,7 @@ function refuse(d: MoneyDeps, code: RefusalCode, words: Words, err?: unknown): A
 const CODES: ReadonlySet<string> = new Set<RefusalCode>([
   'decision_not_found', 'decision_not_closed', 'no_mandate', 'payer_has_not_confirmed', 'payer_declined', 'over_cap',
   'currency_mismatch', 'not_refundable', 'approval_outstanding', 'no_vote', 'wrong_offer', 'not_bookable', 'not_bookable_yet', 'already_paid',
-  'no_travel', 'hold_failed', 'rail_not_ready', 'vault_refused', 'server_down', 'closed',
+  'no_travel', 'hold_failed', 'rail_not_ready', 'vault_refused', 'server_down', 'closed', 'not_in_trip', 'already_booked',
 ]);
 
 /** Fares Go does not book for the whole group this week (master §9 "Cut now"): they are per person. */
@@ -233,6 +236,9 @@ export async function askToPay(
 /** Takes a payments row as far as it can go: the Server's approval, the vault's link, the pay card. Safe to repeat. */
 async function advance(d: MoneyDeps, row: PaymentRow, ids: AskIds, deliver: Deliver): Promise<AskResult> {
   const words: Words = { payer: row.payer_name, what: row.label };
+  // A traveller's ticket goes through askForTicket, never a vote's pay card.
+  const decisionId = row.decision_id;
+  if (decisionId === null) return refuse(d, 'closed', words);
   switch (row.state) {
     case 'paid':
       return refuse(d, 'already_paid', words);
@@ -272,7 +278,7 @@ async function advance(d: MoneyDeps, row: PaymentRow, ids: AskIds, deliver: Deli
       answer = await d.link.request('request_spend_approval', {
         request_id: ids.spend,
         trip_id: row.trip_id,
-        decision_id: row.decision_id,
+        decision_id: decisionId,
         amount_minor: amountMinor,
         currency: row.currency,
         merchant: row.merchant,
@@ -347,4 +353,175 @@ async function advance(d: MoneyDeps, row: PaymentRow, ids: AskIds, deliver: Deli
     return refuse(d, 'server_down', words, e);
   }
   return { cardId, paymentId: row.payment_id };
+}
+
+/** A traveller's own ticket (contract 1.2, REV4 B7: never voted on): what is paid, for whom, and what asked. */
+export interface TicketAsk {
+  /** The traveller, who is the payer. */
+  personId: string;
+  amountMinor: number;
+  currency: string;
+  /** Shown on the vault's page and signed into the approval, e.g. "IndiGo 6E2150, Fri 6 Nov, for Meher". */
+  purpose: string;
+  /** What is paid for, such as the flight booking that asked: one open payment per key and trip. */
+  key: string;
+  /** What asked, such as a tap's tap_id: the same trigger asks once. */
+  trigger: string;
+}
+
+export type TicketLink = { url: string; expiresAt: string; approvalId: string; paymentId: string } | Refused;
+
+/** A ticket's price is held for the payment as long as its approval may last: the caller's page holds the real fare. */
+const TICKET_HOLD_MS = MAX_APPROVAL_TTL_SECONDS * 1000;
+
+/** Words for a ticket's payment that is on its way or settled, as a toast on the caller's own card. */
+const TICKET_TOASTS = {
+  preparing: 'Getting your payment ready. Tap Pay again in a moment.',
+  confirming: 'Your bank is still confirming the last payment for this ticket.',
+  paid: 'This ticket is already paid.',
+  closed: 'That payment is closed. Tap Pay again for a fresh one.',
+} as const;
+const toast = (text: string): TicketLink => ({ refused: text, code: 'closed', say: false });
+
+/**
+ * A traveller's own ticket: the Server's ticket approval for that person (no vote; they are the payer), then the vault's
+ * pay page for them alone, where they pay with Face ID. From there it is a stay's payment: the vault's two keys, the rail,
+ * the callbacks. No pay card is posted: the caller's own card opens the page. A second ask while one is open gets that
+ * one's page; one whose approval ran out is let go and a fresh one asked.
+ */
+export async function askForTicket(d: MoneyDeps, tripId: string, o: TicketAsk): Promise<TicketLink> {
+  const spend = rid('go_spend_ticket', o.key, o.trigger);
+  const paymentId = paymentIdFor(tripId, spend);
+  const mine = await getPayment(d.pool, paymentId);
+  if (mine) return ticketLinkOf(d, mine, spend);
+  const open = await openTicket(d.pool, tripId, o.key);
+  if (open && !(await letGoIfRunOut(d, open))) return ticketLinkOf(d, open, null);
+
+  let trip: Trip;
+  try {
+    trip = await d.link.request('read_trip', { trip_id: tripId });
+  } catch (e) {
+    return refuse(d, 'server_down', { payer: 'The traveller', what: 'the ticket' }, e);
+  }
+  const person = trip.people.find((p) => p.person_id === o.personId);
+  const words: Words = { payer: person?.name ?? 'The traveller', what: clip(plain(o.purpose), 80) };
+  if (!person) return refuse(d, 'not_in_trip', words);
+  const now = d.now();
+  const inserted = await insertAsking(
+    d.pool,
+    {
+      payment_id: paymentId,
+      trip_id: tripId,
+      kind: 'ticket',
+      decision_id: null,
+      option_ref: o.key,
+      purpose: clip(plain(o.purpose), 200),
+      label: words.what,
+      payer_person_id: o.personId,
+      payer_name: words.payer,
+      for_person_ids: [o.personId],
+      hold_id: o.key,
+      amount_minor: o.amountMinor,
+      currency: o.currency,
+      merchant: 'ixigo',
+      payment_kind: d.payRail(),
+      hold_expires_at: new Date(now.getTime() + TICKET_HOLD_MS),
+      refundable_until: null,
+    },
+    now,
+  );
+  const row = (await getPayment(d.pool, paymentId)) ?? (inserted === 'busy' ? await openTicket(d.pool, tripId, o.key) : null);
+  if (!row) return refuse(d, 'server_down', words);
+  return ticketLinkOf(d, row, row.payment_id === paymentId ? spend : null);
+}
+
+/** A waiting ticket whose approval ran out is let go (the sweep releases it): true when it was. */
+async function letGoIfRunOut(d: MoneyDeps, row: PaymentRow): Promise<boolean> {
+  if (row.state !== 'waiting' || !row.approval_expires_at) return false;
+  if (row.approval_expires_at.getTime() + EXPIRY_GRACE_MS > d.now().getTime()) return false;
+  return transition(d.pool, row.payment_id, ['waiting'], 'expired', { release_reason: 'expired' }, d.now());
+}
+
+/**
+ * Takes a ticket's row as far as it goes: the Server's approval, then the vault's page. `spend` is the row's own spend
+ * request id, null for a row another ask started (its first ask is still on its way, or the answer is its page).
+ */
+async function ticketLinkOf(d: MoneyDeps, row: PaymentRow, spend: string | null): Promise<TicketLink> {
+  const words: Words = { payer: row.payer_name, what: row.label };
+  switch (row.state) {
+    case 'paid':
+      return toast(TICKET_TOASTS.paid);
+    case 'confirming':
+      return toast(TICKET_TOASTS.confirming);
+    case 'declined':
+    case 'expired':
+    case 'failed':
+      return toast(TICKET_TOASTS.closed);
+    case 'refused':
+      return refuse(d, codeOf(row.refused_reason), words);
+    case 'waiting':
+      return pageOf(d, row, words);
+    case 'asking':
+      break;
+  }
+  // Another ask's first try is still on its way: its page comes on the next tap.
+  if (spend === null) return toast(TICKET_TOASTS.preparing);
+  if (row.amount_minor === null || !row.currency || !row.merchant) return refuse(d, 'server_down', words);
+  const fail = async (reason: string, code: RefusalCode, err?: unknown): Promise<TicketLink> => {
+    await transition(d.pool, row.payment_id, ['asking'], 'refused', { refused_reason: reason, release_reason: 'other' }, d.now());
+    return refuse(d, code, words, err);
+  };
+
+  // 1. The Server's key: the ticket form names the traveller, who is the payer, in place of a vote.
+  if (!row.approval_id || !row.approval_token || !row.approval_expires_at) {
+    let answer: ToServerResult<'request_spend_approval'>;
+    try {
+      answer = await d.link.request('request_spend_approval', {
+        request_id: spend,
+        trip_id: row.trip_id,
+        kind: 'ticket',
+        for_person_id: row.payer_person_id,
+        amount_minor: row.amount_minor,
+        currency: row.currency,
+        merchant: row.merchant,
+        purpose: row.purpose,
+      });
+    } catch (e) {
+      return fail('server_down', 'server_down', e);
+    }
+    if (answer.status === 'denied') {
+      await transition(d.pool, row.payment_id, ['asking'], 'refused', { refused_reason: answer.reason }, d.now());
+      return refuse(d, answer.reason, words);
+    }
+    const patch = { approval_id: answer.approval_id, approval_token: answer.approval, approval_expires_at: new Date(answer.expires_at) };
+    await patchPayment(d.pool, row.payment_id, patch, d.now());
+    Object.assign(row, patch);
+  }
+
+  // 2. The vault checks the approval and opens the traveller's page; then the payment waits on them.
+  const page = await pageOf(d, row, words);
+  if ('refused' in page) {
+    await transition(d.pool, row.payment_id, ['asking'], 'refused', { refused_reason: page.code === 'rail_not_ready' ? 'vault_rail_not_ready' : 'vault_refused', release_reason: 'other' }, d.now());
+    return page;
+  }
+  await transition(d.pool, row.payment_id, ['asking'], 'waiting', {}, d.now());
+  return page;
+}
+
+/** The traveller's vault page for a ticket's approval: the one already open while it lasts, else a fresh one. */
+async function pageOf(d: MoneyDeps, row: PaymentRow, words: Words): Promise<TicketLink> {
+  const now = d.now().getTime();
+  if (!row.approval_id) return refuse(d, 'closed', words);
+  if (row.pay_link_url && row.pay_link_expires_at && row.pay_link_expires_at.getTime() > now + 30_000) {
+    return { url: row.pay_link_url, expiresAt: row.pay_link_expires_at.toISOString(), approvalId: row.approval_id, paymentId: row.payment_id };
+  }
+  const input = payLinkInput(row);
+  if (!input) return refuse(d, 'closed', words);
+  const link = await d.vault.payLink(input);
+  if (!link.ok) {
+    d.log.warn({ payment_id: row.payment_id, approval_id: row.approval_id, reason: link.reason, detail: link.detail ?? null }, 'the vault refused a ticket\'s approval');
+    return refuse(d, link.reason === 'rail_not_ready' ? 'rail_not_ready' : 'vault_refused', words);
+  }
+  await patchPayment(d.pool, row.payment_id, { pay_link_url: link.url, pay_link_expires_at: new Date(link.expiresAt) }, d.now());
+  return { url: link.url, expiresAt: link.expiresAt, approvalId: row.approval_id, paymentId: row.payment_id };
 }

@@ -19,6 +19,8 @@ const DETAIL: Record<DenialReason, string> = {
   over_cap: "the amount is above the mandate's cap",
   not_refundable: 'the mandate is refundable only, and refundable_until is missing or past',
   approval_outstanding: 'another approval for this vote is still waiting',
+  not_in_trip: 'the person the ticket is for is not in this trip',
+  already_booked: 'this vote is already booked: a second payment would charge twice (cancel the booking first)',
 };
 
 /** Copies the fields that are set, so a missing field stays missing (never undefined). */
@@ -36,7 +38,11 @@ export function addBooking(s: TripState, p: Params<typeof C.AddBooking>): Change
   const approval = p.approval_id != null ? s.approvals.get(p.approval_id) : undefined;
   if (p.approval_id != null) {
     if (!approval) throw fail('conflict', `approval ${p.approval_id} is not for this trip`);
-    if (approval.decision_id !== p.decision_id) throw fail('conflict', `approval ${p.approval_id} is for another vote`);
+    // A ticket's approval (1.2) has no vote: its booking has none either, and its payer is the ticket's traveller.
+    if (approval.decision_id !== (p.decision_id ?? null)) throw fail('conflict', `approval ${p.approval_id} is for another vote`);
+    if (approval.for_person_id !== null && p.payer_person_id !== approval.for_person_id) {
+      throw fail('conflict', `approval ${p.approval_id} is ${approval.for_person_id}'s ticket`);
+    }
     if (approval.used || approval.cancelled) throw fail('conflict', `approval ${p.approval_id} is already used or cancelled`);
     if (p.amount_minor > approval.amount_minor || p.currency !== approval.currency) {
       throw fail('conflict', `the booking is more than approval ${p.approval_id} allows`);
@@ -164,8 +170,11 @@ export function recomputeMoney(s: TripState): void {
   m.transfers = transfers.slice(0, 60);
 }
 
+type GroupAsk = Params<typeof C.RequestGroupSpendApproval>;
+type TicketAsk = Params<typeof C.RequestTicketSpendApproval>;
+
 /** The spend check in the guide's order (docs/guide/08-money-and-the-vault.md): the first rule that fails gives the reason. */
-export function spendCheck(s: TripState, p: Params<typeof C.RequestSpendApproval>): DenialReason | null {
+export function spendCheck(s: TripState, p: GroupAsk): DenialReason | null {
   const d = s.decision(p.decision_id);
   if (!d) return 'decision_not_found';
   if (d.status !== 'closed') return 'decision_not_closed';
@@ -177,13 +186,64 @@ export function spendCheck(s: TripState, p: Params<typeof C.RequestSpendApproval
   if (p.amount_minor > m.cap_minor) return 'over_cap';
   const now = s.now().getTime();
   if (m.refundable_only && !(p.refundable_until != null && Date.parse(p.refundable_until) > now)) return 'not_refundable';
+  if (s.trip.bookings.some((b) => b.decision_id === d.decision_id && b.status === 'confirmed')) return 'already_booked';
   for (const a of s.approvals.values()) {
     if (a.decision_id === d.decision_id && !a.used && !a.cancelled && a.expires_at.getTime() > now) return 'approval_outstanding';
   }
   return null;
 }
 
+/**
+ * 1.2, a traveller's own ticket (never voted on): granted when that person is in the trip. The payer is always that
+ * person, and the approval signs the amount Go asked, with for_person_id in place of a vote.
+ */
+function ticketApproval(s: TripState, p: TicketAsk, privateKeyPem: string): Change<SpendResult> {
+  if (!s.trip.people.some((x) => x.person_id === p.for_person_id)) {
+    return { result: { status: 'denied', reason: 'not_in_trip', detail: DETAIL.not_in_trip }, events: [] };
+  }
+  const iat = Math.floor(s.now().getTime() / 1000);
+  const exp = iat + MAX_APPROVAL_TTL_SECONDS;
+  const approvalId = s.mint('ap_sim_');
+  const approval = signSpendApproval(
+    {
+      iss: 'server',
+      aud: 'go-vault',
+      jti: approvalId,
+      trip_id: s.id,
+      for_person_id: p.for_person_id,
+      kind: 'ticket',
+      payer_person_id: p.for_person_id,
+      amount_minor: p.amount_minor,
+      currency: p.currency,
+      merchant: p.merchant,
+      purpose: p.purpose,
+      ...(p.refundable_until != null ? { refundable_until: p.refundable_until } : {}),
+      iat,
+      exp,
+    },
+    privateKeyPem,
+  );
+  const expiresAt = new Date(exp * 1000);
+  s.approvals.set(approvalId, {
+    approval_id: approvalId,
+    decision_id: null,
+    for_person_id: p.for_person_id,
+    payer_person_id: p.for_person_id,
+    amount_minor: p.amount_minor,
+    currency: p.currency,
+    expires_at: expiresAt,
+    used: false,
+    cancelled: false,
+  });
+  return { result: { status: 'approved', approval_id: approvalId, approval, expires_at: expiresAt.toISOString() }, events: [] };
+}
+
 export function requestSpendApproval(s: TripState, p: Params<typeof C.RequestSpendApproval>, privateKeyPem: string): Change<SpendResult> {
+  if ('kind' in p && p.kind === 'ticket') return ticketApproval(s, p, privateKeyPem);
+  return groupApproval(s, p as GroupAsk, privateKeyPem);
+}
+
+function groupApproval(s: TripState, p: GroupAsk, privateKeyPem: string): Change<SpendResult> {
   const reason = spendCheck(s, p);
   if (reason) return { result: { status: 'denied', reason, detail: DETAIL[reason] }, events: [] };
   const d = s.decision(p.decision_id)!;
@@ -213,6 +273,7 @@ export function requestSpendApproval(s: TripState, p: Params<typeof C.RequestSpe
   s.approvals.set(approvalId, {
     approval_id: approvalId,
     decision_id: d.decision_id,
+    for_person_id: null,
     payer_person_id: m.payer_person_id,
     amount_minor: p.amount_minor,
     currency: p.currency,
