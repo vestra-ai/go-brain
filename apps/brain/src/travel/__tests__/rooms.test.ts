@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { arrangementsFor, MAX_ARRANGEMENTS, shareRange, type Arrangement, type RoomType } from '../rooms.js';
+import { arrangementsFor, MAX_ARRANGEMENTS, roomTypesOf, shareRange, stayRoomFields, type Arrangement, type RoomType } from '../rooms.js';
 
 // The Server's REV4 B5 (10 Oct): after a stay is picked, the ways the group can take its rooms, who shares with whom, and
 // what each person pays. The rooms here are the test's own; their shapes are what ixigo's rooms call gives (a name, how
@@ -80,5 +80,37 @@ describe("a stay's price a person", () => {
   it('runs from the cheapest way the group can take its rooms to the dearest, for the whole stay', () => {
     expect(shareRange(arrangementsFor([deluxe, standard, family], FOUR), 4)).toEqual({ minMinor: 900_001, maxMinor: 1_600_000 });
     expect(shareRange([], 4)).toBeNull();
+  });
+});
+
+// B4: a stay's kinds of room, as the read of its page gives them (hotels.details' room_types), on its option.
+describe("a stay's kinds of room on its option", () => {
+  // High Five's two rooms (its page's rooms call, 7 Oct sample): each one's cheapest rate a night with taxes.
+  const row = {
+    name: 'High Five Hotels Phase 2',
+    room_types: [
+      { room_type_id: 'rt_1422089396', label: 'Executive Suite', sleeps: 2, night_minor: 618_300 },
+      { room_type_id: 'rt_1422089395', label: 'Family Room', sleeps: 2, night_minor: 315_000 },
+      { room_type_id: 'rt_9', label: 'Mystery room', night_minor: 100_000 },
+    ],
+  };
+
+  it('prices each room for the whole stay, cheapest first, and leaves out a room with no number of beds', () => {
+    expect(roomTypesOf(row, 3).map((t) => [t.label, t.sleeps, t.priceMinor])).toEqual([['Executive Suite', 2, 1_854_900], ['Family Room', 2, 945_000]]);
+    expect(stayRoomFields(row, FOUR, 3)).toEqual({
+      room_types: [
+        { room_type_id: 'rt_1422089395', label: 'Family Room', sleeps: 2, price_minor: 945_000 },
+        { room_type_id: 'rt_1422089396', label: 'Executive Suite', sleeps: 2, price_minor: 1_854_900 },
+      ],
+      // From the cheapest way the card offers (four in two Family Rooms: ₹4,725 each) to the dearest (three Executive
+      // Suites: ₹13,911.75 each, rounded).
+      price_min_minor: 472_500,
+      price_max_minor: 1_391_175,
+    });
+  });
+
+  it('gives nothing for a page with no rooms Go can count beds in', () => {
+    expect(stayRoomFields({ room_types: [{ room_type_id: 'rt_9', label: 'Mystery room', night_minor: 100_000 }] }, FOUR, 3)).toBeNull();
+    expect(stayRoomFields({}, FOUR, 3)).toBeNull();
   });
 });

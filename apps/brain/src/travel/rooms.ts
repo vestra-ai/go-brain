@@ -128,11 +128,45 @@ function arranged(rooms: RoomType[], total: number, people: string[], together: 
 }
 
 /**
- * A stay's price per person for the whole stay, from the cheapest to the dearest way the group can take its rooms (B4's
+ * A stay's price per person for the whole stay, from the cheapest to the dearest of the ways the rooms card offers (B4's
  * price_min_minor and price_max_minor); null with no arrangement.
  */
 export function shareRange(arrangements: Arrangement[], people: number): { minMinor: number; maxMinor: number } | null {
   if (arrangements.length === 0 || people === 0) return null;
   const totals = arrangements.map((a) => a.totalMinor);
   return { minMinor: Math.round(Math.min(...totals) / people), maxMinor: Math.round(Math.max(...totals) / people) };
+}
+
+/**
+ * A stay's kinds of room as the read of its page gives them (hotels.details' room_types: each one's cheapest rate a
+ * night with taxes), priced for the whole stay. A room without a whole number of beds is left out.
+ */
+export function roomTypesOf(row: Record<string, unknown>, nights: number): RoomType[] {
+  const list: unknown[] = Array.isArray(row['room_types']) ? row['room_types'] : [];
+  return list.flatMap((entry) => {
+    const r = (entry ?? {}) as Record<string, unknown>;
+    const { room_type_id: id, label, sleeps, night_minor: night } = r;
+    return typeof id === 'string' && typeof label === 'string' && typeof sleeps === 'number' && Number.isInteger(sleeps) && sleeps >= 1 && typeof night === 'number' && night > 0
+      ? [{ roomTypeId: id, label, sleeps, priceMinor: Math.round(night * Math.max(1, nights)) }]
+      : [];
+  });
+}
+
+/**
+ * The contract's B4 fields for a stay (on an option and a vote's option): its kinds of room priced for the whole stay,
+ * the cheapest first, at most 10; and what one person pays for the whole stay, from the cheapest way the group can take
+ * them to the dearest. Null when the page gave no room Go can count beds in.
+ */
+export function stayRoomFields(
+  row: Record<string, unknown>,
+  people: string[],
+  nights: number,
+): { room_types: Array<{ room_type_id: string; label: string; sleeps: number; price_minor: number }>; price_min_minor?: number; price_max_minor?: number } | null {
+  const types = roomTypesOf(row, nights).sort((a, b) => a.priceMinor - b.priceMinor);
+  if (types.length === 0) return null;
+  const range = shareRange(arrangementsFor(types, people), people.length);
+  return {
+    room_types: types.slice(0, 10).map((t) => ({ room_type_id: t.roomTypeId, label: t.label, sleeps: t.sleeps, price_minor: t.priceMinor })),
+    ...(range ? { price_min_minor: range.minMinor, price_max_minor: range.maxMinor } : {}),
+  };
 }
