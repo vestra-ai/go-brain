@@ -52,6 +52,23 @@ describe('createJevReflex', () => {
     expect(r!.whole).not.toContain('hahaha');
   });
 
+  it("logs each read at info for drills: every question's choice and Jev's confidence, and what acts, never the text", async () => {
+    const m = msg(30, 'p_arjun', 'does the second one have free cancellation?');
+    const lines: Array<{ obj: object; msg?: string }> = [];
+    const log = { ...silentLog, info: (obj: object, line?: string) => { lines.push({ obj, ...(line ? { msg: line } : {}) }); } };
+    const q10 = { type: 'choice', choice: 'hotel_rooms', confidence: 0.71, probabilities: { hotel_rooms: 0.71, none: 0.2 } } as const;
+    const jev = fakeJev(okAnswers({ q1_addressed: n(0.91), q10_recipe: q10 }));
+    const reflex = createJevReflex({
+      jev, pool: db.pool, liveValue: () => 'q1,q10', deadlineMs: 450, dailyCapPerTrip: 0, now: () => new Date('2026-10-06T10:00:00Z'), log, passed: [1, 10],
+    });
+    await reflex.read(m, one(m));
+    await reflex.settled();
+    const read = lines.find((l) => l.msg === 'jev: read');
+    expect(read?.obj).toMatchObject({ message: m.message_id, ms: 160, answers: { q1_addressed: '0.91', q10_recipe: 'hotel_rooms@0.71' } });
+    expect(Object.keys((read?.obj as { acts: object }).acts)).toEqual(['forGo', 'banter', 'actionable', 'recipe', 'complete', 'fact', 'opening', 'reaction']);
+    expect(JSON.stringify(lines)).not.toContain('cancellation');
+  });
+
   it('reads every question as unsure when Jev times out, and logs the fault', async () => {
     const m = msg(11, 'p_arjun', 'flights?');
     const reflex = reflexWith(fakeJev({ ok: false, fault: 'timeout', totalMs: 450 }), 'q1,q2,q3', [1, 2, 3]);

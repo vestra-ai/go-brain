@@ -8,7 +8,7 @@ import type { Pool } from 'pg';
 import type { Message } from '../door/methods.js';
 import { plainlyNamesGo } from '../trips/names-go.js';
 import type { TripPack } from '../trips/pack.js';
-import type { JevClient, JevResult } from './jev.js';
+import type { JevAnswer, JevClient, JevResult } from './jev.js';
 import { parseLive } from './live.js';
 import { looksLikeMoney } from './money-line.js';
 import type { Log } from '../log.js';
@@ -45,6 +45,27 @@ export function codeFacts(msg: Message, pack: TripPack, runningTasks: Array<{ id
     answersGo: before?.author.kind === 'go',
   };
 }
+
+const two = (x: number): string => (Number.isFinite(x) ? x.toFixed(2) : '?');
+
+/** Each answer as the log line says it: a choice and Jev's confidence ("hotel_rooms@0.71"), or a 0 to 1 score. */
+function answersLine(answers: Record<string, JevAnswer>): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const [key, x] of Object.entries(answers)) {
+    out[key] = x.type === 'noul' ? two(x.noul) : x.type === 'choice' ? `${x.choice}@${two(x.confidence)}` : `${two(x.score)}@${two(x.confidence)}`;
+  }
+  return out;
+}
+
+/** The questions that steer a turn, as they act: the sure value, or ? when unsure. */
+const ACTS = ['forGo', 'banter', 'actionable', 'recipe', 'complete', 'fact', 'opening', 'reaction'] as const;
+const actsLine = (r: ReflexRead): Record<string, unknown> =>
+  Object.fromEntries(
+    ACTS.map((k) => {
+      const s = r[k];
+      return [k, s?.sure ? s.value : '?'];
+    }),
+  );
 
 export function createJevReflex(d: JevReflexDeps): JevReflex {
   const pending = new Set<Promise<void>>();
@@ -96,6 +117,11 @@ export function createJevReflex(d: JevReflexDeps): JevReflex {
       const { would, p } = readAnswers(result.ok ? result.answers : null, facts, taskKeys);
       const readId = `rr_${randomUUID()}`;
       const acted: ReflexRead = { ...applyLive(would, mode.live, facts), readId };
+      // The read as a drill sees it in the log: each question's choice and Jev's confidence, and what acts. Never the text.
+      d.log.info(
+        { tripId, message: msg.message_id, ms: Math.round(result.totalMs), ...(result.ok ? { answers: answersLine(result.answers) } : { fault: result.fault }), acts: actsLine(acted) },
+        'jev: read',
+      );
       logRead([
         readId,
         tripId,

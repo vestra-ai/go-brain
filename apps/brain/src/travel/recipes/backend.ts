@@ -386,7 +386,17 @@ export function createIxigoWebBackend(d: IxigoWebDeps): IxigoWebBackend {
     const ttl = recipe.ttl_minutes * 60_000 || RECIPE_TTL_MS;
     const key = link ? `${id}|${keyOf(given, conditions, site)}` : await keyFor(id, given, conditions, tripId, site);
     const plain = conditions.length === 0 && site.filters.length === 0 && !site.sort && site.budget === undefined;
-    return { tripId, id, given, conditions, site, link, ttl, key, page: !plain && !link ? await keyFor(id, given, [], tripId) : key };
+    return {
+      tripId, id, given, conditions, site, link, ttl, key, page: !plain && !link ? await keyFor(id, given, [], tripId) : key,
+      words: link ? key : wordsKey(id, given, conditions, site),
+    };
+  }
+
+  /** A search's key by its words: its key while a place in it still needs ixigo's box (keyFor). */
+  function wordsKey(id: string, given: Record<string, unknown>, conditions: string[], site: SiteAsk = NO_SITE): string {
+    const { budget, ...unbudgeted } = site;
+    const key = `${id}|${keyOf(given, conditions, unbudgeted)}`;
+    return budget !== undefined ? `${key}|budget:${budget}` : key;
   }
 
   /**
@@ -400,7 +410,8 @@ export function createIxigoWebBackend(d: IxigoWebDeps): IxigoWebBackend {
   async function keyFor(id: string, given: Record<string, unknown>, conditions: string[], tripId: string, site: SiteAsk = NO_SITE): Promise<string> {
     const { budget, ...unbudgeted } = site;
     const request = (await d.engine.requestOf?.(id, given, { tripId, conditions, ...siteRun(unbudgeted) })) ?? null;
-    const key = request ? `${id}|${createHash('sha256').update(request).digest('hex').slice(0, 24)}` : `${id}|${keyOf(given, conditions, unbudgeted)}`;
+    if (!request) return wordsKey(id, given, conditions, site);
+    const key = `${id}|${createHash('sha256').update(request).digest('hex').slice(0, 24)}`;
     return budget !== undefined ? `${key}|budget:${budget}` : key;
   }
 
@@ -410,7 +421,7 @@ export function createIxigoWebBackend(d: IxigoWebDeps): IxigoWebBackend {
    * left for that answer to end (answered), never "Didn't work" first.
    */
   async function searchPage(kind: TravelKind, q: TravelQuery, o?: SearchFor, anotherWay = false): Promise<TravelSearch> {
-    const { tripId, id, given, conditions, site, link, ttl, key, page } = await plan(kind, q, o?.tripId);
+    const { tripId, id, given, conditions, site, link, ttl, key, page, words } = await plan(kind, q, o?.tripId);
     // Never "no flights" when ixigo refuses Go's computer: the group gets the page itself, set as they asked.
     if (link) {
       const a = await d.engine.answer(id, given, { tripId, conditions });
@@ -420,7 +431,14 @@ export function createIxigoWebBackend(d: IxigoWebDeps): IxigoWebBackend {
     const cardKey = `${tripId}|${key}`;
     const nowMs = d.now().getTime();
     const fresh = (k: Kept | undefined): k is Kept => k !== undefined && nowMs - k.at < k.ttl;
-    let hit = kept.get(key);
+    // A search that began while a place in it still needed ixigo's box is kept under its words (keyFor). Once the box has
+    // answered, the same words key by the page they open: they join that search by its words (an early start from a
+    // city no table knew, then the composer's call for it, 10 Oct), its card with it.
+    const keptNow = (): [Kept | undefined, string] => {
+      const own = kept.get(key);
+      return fresh(own) || words === key ? [own, key] : [kept.get(words), words];
+    };
+    let [hit, hitKey] = keptNow();
     // The search itself kept and done answers as it is; until then, a kept search of the same page with no conditions
     // answers from its rows, and the search itself runs in the background (unless it is running already). Only an ask
     // that can be narrowed waits here, so every other search reads what is kept and keeps its own with no wait between.
@@ -429,7 +447,7 @@ export function createIxigoWebBackend(d: IxigoWebDeps): IxigoWebBackend {
     if (byPage && site.filters.length === 0 && !site.sort && site.budget === undefined && !(fresh(hit) && hit.done)) {
       const narrowed = await fromKept(id, given, byPage, tripId);
       // The wait let another search of this key start, or finish: what is kept is read again.
-      hit = kept.get(key);
+      [hit, hitKey] = keptNow();
       if (narrowed && !(fresh(hit) && hit.done)) {
         if (!fresh(hit)) void runKept(key, page, id, given, { tripId, conditions, background: true }, ttl);
         return narrowed;
@@ -437,7 +455,7 @@ export function createIxigoWebBackend(d: IxigoWebDeps): IxigoWebBackend {
     }
     if (fresh(hit)) {
       // The composer joining a run its early start began takes the card: if that run fails, nothing retries it.
-      const running = cards.get(cardKey);
+      const running = cards.get(`${tripId}|${hitKey}`);
       if (running?.running && owner?.kind === 'turn') running.owner = owner;
       return hit.search.then((found) => forAsk(found, site));
     }
@@ -699,7 +717,7 @@ export function createIxigoWebBackend(d: IxigoWebDeps): IxigoWebBackend {
       }
       // A paced page held back answers with its link at once (flights).
       if (p.link || (LINK_FALLBACK[kind] && d.engine.pacedOut?.(p.id))) return null;
-      const started = kept.get(p.key)?.at ?? d.now().getTime();
+      const started = kept.get(p.key)?.at ?? kept.get(p.words)?.at ?? d.now().getTime();
       return Math.max(0, TRAVEL_WAIT_MS - (d.now().getTime() - started));
     },
     turnEnded(t) {

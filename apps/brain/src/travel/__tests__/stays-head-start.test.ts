@@ -15,7 +15,7 @@ const GOA = { destination: 'Goa', start: '2026-11-06', end: '2026-11-09' };
  * A head start over a scripted Go: the trip (Goa, 6 to 9 Nov), its today, and Go's searches. `share` records each call
  * and, unless a search is kept (joined), runs the given run; `run` is the stays page, 9 s on the clock.
  */
-function rig(o: { mode?: string; trip?: { destination: string | null; start: string | null; end: string | null }; today?: string; joined?: boolean; fails?: boolean; gaveUp?: boolean; noComputer?: boolean; gate?: Promise<void>; onChangedKept?: StaysHeadStartDeps['onChangedKept']; staysKept?: StaysHeadStartDeps['staysKept'] } = {}) {
+function rig(o: { mode?: string; trip?: { destination: string | null; start: string | null; end: string | null }; today?: string; joined?: boolean; fails?: boolean; gaveUp?: boolean; noComputer?: boolean; gate?: Promise<void>; onChangedKept?: StaysHeadStartDeps['onChangedKept']; staysKept?: StaysHeadStartDeps['staysKept']; asksStays?: StaysHeadStartDeps['asksStays'] } = {}) {
   const switches = new FakeSwitches();
   void switches.set('TRAVEL_MODE', o.mode ?? 'ixigo_web');
   let nowMs = Date.parse('2026-10-08T10:00:00Z');
@@ -46,6 +46,7 @@ function rig(o: { mode?: string; trip?: { destination: string | null; start: str
     computerSetUp: () => !o.noComputer,
     ...(o.onChangedKept ? { onChangedKept: o.onChangedKept } : {}),
     ...(o.staysKept ? { staysKept: o.staysKept } : {}),
+    ...(o.asksStays ? { asksStays: o.asksStays } : {}),
   };
   return { hs: createStaysHeadStart(deps), shares, loads, log, advance: (ms: number) => (nowMs += ms) };
 }
@@ -167,6 +168,24 @@ describe(`createStaysHeadStart (${STAYS_HEAD_START_STEP}): the trip's likely fir
     r.hs.onEvent(said('person'));
     await vi.waitFor(() => expect(r.loads).toHaveLength(2));
     expect(r.log.info).toHaveBeenCalledWith(expect.objectContaining({ why: 'message' }), expect.any(String));
+  });
+
+  it('loads nothing on a line that asks for stays itself, whatever its place: its own search is the one load, and the hour is used', async () => {
+    const asked = new Set(['m_villas']);
+    const r = rig({ asksStays: (tripId, messageId) => tripId === 't_goa' && asked.has(messageId) });
+    const line = (id: string): TripEvent =>
+      ({ event_id: `e_${id}`, trip_id: 't_goa', seq: 4, type: 'message.created', data: { message: { message_id: id, author: { kind: 'person', person_id: 'p_priya' } } } }) as never;
+    r.hs.onEvent(line('m_villas'));
+    await quiet();
+    expect(r.shares).toEqual([]);
+    expect(r.log.info).toHaveBeenCalledWith({ tripId: 't_goa', why: 'message' }, expect.stringContaining('asks for stays itself'));
+    // The next line in the hour runs none either: the ask has set what the group looks at.
+    r.hs.onEvent(line('m_haha'));
+    await quiet();
+    expect(r.shares).toEqual([]);
+    r.advance(HEAD_START_ON_MESSAGE_MS);
+    r.hs.onEvent(line('m_later'));
+    await vi.waitFor(() => expect(r.loads).toEqual(['t_goa']));
   });
 
   it(`a line runs it at most once in ${HEAD_START_ON_MESSAGE_MS / 60_000} minutes, even while each one fails`, async () => {

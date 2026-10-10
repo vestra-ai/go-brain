@@ -50,6 +50,11 @@ export function learnPlace<K extends TravelKind>(kind: K, text: string, place: L
   }
 }
 
+/** Whether ixigo resolved these words for this kind of search before: a cache, so no lookup is needed for them. */
+export function isLearned(kind: TravelKind, text: string): boolean {
+  return learned[kind].has(wordsOf(text));
+}
+
 /** For tests: forgets every place ixigo resolved. */
 export function forgetLearnedPlaces(): void {
   for (const map of Object.values(learned)) map.clear();

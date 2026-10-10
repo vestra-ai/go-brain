@@ -63,6 +63,20 @@ describe('the early start', () => {
     expect(w.searches).toEqual([{ kind: 'stays', q: expect.objectContaining({ area: 'North Goa', mustHave: ['pool'] }), tripId: 't_goa' }]);
   });
 
+  it("starts a search from any city when Jev is sure of its kind: the places as written, for ixigo's box to resolve (10 Oct: Bangalore)", async () => {
+    const line = '@Go buses from Bangalore to Goa on Friday night, AC sleeper';
+    const buses: ReflexRead = { ...UNSURE_READ, recipe: { value: 'buses', sure: true } };
+    const w = world();
+    expect(await w.hook(msg(60, 'p_arjun', line), buses, goaPack())).toEqual({ dueNow: true });
+    expect(w.searches).toEqual([{ kind: 'buses', q: expect.objectContaining({ from: 'bangalore', to: 'goa', date: '2026-11-06' }), tripId: 't_goa' }]);
+    // Jev unsure: only the places the tables know, so nothing starts and the composer searches.
+    expect(await w.hook(msg(61, 'p_arjun', line), UNSURE_READ, goaPack())).toBeUndefined();
+    // Off ixigo.com, no box resolves a city as written: nothing starts.
+    const fake = world('fake');
+    expect(await fake.hook(msg(62, 'p_arjun', line), buses, goaPack())).toBeUndefined();
+    expect([w.searches.length, fake.searches.length]).toEqual([1, 0]);
+  });
+
   it('starts the search in every travel mode, so a search ask is one model call wherever the list comes from', async () => {
     for (const mode of ['fake', 'ixigo']) {
       const w = world(mode);
@@ -142,6 +156,19 @@ describe('the early start', () => {
     expect(w.early.searchFor('t_other', 'm_48')).toBeNull();
     w.advance(10 * 60_000);
     expect(w.early.searchFor('t_goa', 'm_48')).toBeNull();
+  });
+
+  it("knows a line that asks for stays, so the stays head start loads nothing beside it: Jev sure of stays, or a stays search it starts", async () => {
+    const w = world();
+    // A stays search it starts, for any place.
+    await w.hook(msg(70, 'p_priya', '@Go a villa with a pool for our dates'), UNSURE_READ, goaPack());
+    // Jev sure it asks for stays, though nobody named Go: the turn may search, so it is the line's own load too.
+    await w.hook(msg(71, 'p_kabir', 'villas in Anjuna dekhte hain'), { ...UNSURE_READ, recipe: { value: 'stays', sure: true } }, goaPack());
+    // Another kind, and chatter.
+    await w.hook(msg(72, 'p_rahul', '@Go flights Delhi to Goa Friday evening'), UNSURE_READ, goaPack());
+    await w.hook(msg(73, 'p_arjun', 'haha'), UNSURE_READ, goaPack());
+    expect(['m_70', 'm_71', 'm_72', 'm_73'].map((id) => w.early.asksStays('t_goa', id))).toEqual([true, true, false, false]);
+    expect(w.early.asksStays('t_other', 'm_70')).toBe(false);
   });
 
   it('never fails the message: a search that fails is logged, and the composer searches again', async () => {

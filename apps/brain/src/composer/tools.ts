@@ -35,6 +35,11 @@ export interface QuickTool<A = unknown> {
    * a tally the model reads once, in code, instead of counting results itself.
    */
   summarizeRound?(results: Array<{ content: string; isError: boolean }>): string | null;
+  /**
+   * The model called a tool that doesn't exist, named after something of this tool's own (a recipe id for the ixigo
+   * tool): what to call instead, as the call's error. Undefined for any other name.
+   */
+  misnamed?(name: string): string | undefined;
 }
 
 /** A 1.1 quick reply: the contract exports its schema only. */

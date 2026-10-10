@@ -324,6 +324,26 @@ const EARLY = { tripId: 't_goa', messageId: 'm_41' };
 const COMPOSER = { tripId: 't_goa', turnId: 'turn_1' };
 
 describe("a live card belongs to its search's turn", () => {
+  it("joins a search begun while its city needed ixigo's box by its words, once the box has answered: one load, one card", async () => {
+    const s = scripted('ok', 'ok');
+    s.hold();
+    // Before the box answers, the words key the search; after, the page they open does (keyFor).
+    let boxAnswered = false;
+    const engine = { answer: s.engine.answer, requestOf: async () => (boxAnswered ? 'the buses page from Hubballi' : null) };
+    const c = carded(engine);
+    const BUSES = { from: 'hubli', to: 'goa', date: '2026-11-06' };
+    const early = c.b.search('buses', BUSES, EARLY);
+    await tick();
+    boxAnswered = true;
+    // The composer's call for the same ask, as the model words it.
+    const composer = c.b.search('buses', { ...BUSES, from: 'Hubli' }, COMPOSER);
+    await tick();
+    s.release();
+    await expect(Promise.all([early, composer])).resolves.toHaveLength(2);
+    expect(s.runs).toHaveLength(1);
+    expect(c.made()).toBe(1);
+  });
+
   it("keeps a failed early start's card open, and the composer's search in that turn carries on in it: one card, done once", async () => {
     const c = carded(scripted('fail', 'ok').engine);
     await expect(c.b.search('trains', TRAINS, EARLY)).rejects.toMatchObject({ code: 'unreachable' });

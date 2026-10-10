@@ -1,5 +1,5 @@
 /**
- * The person's browser: the Chrome a trip reads ixigo.com in, one per Server instance and trip organizer, so one ixigo
+ * The person's browser: the Chrome a trip reads ixigo.com in, one per Server and trip organizer, so one ixigo
  * login serves every trip of theirs (Keshav, 9 Oct: "I dont want to login again and again"). A computer per trip made
  * each new trip ask again, and ixigo keeps one session an account: a login on a new trip's computer ended the last
  * one's (staging, 9 Oct: the morning box's token 401 by 17:43, after a 14:52 login elsewhere).
@@ -7,6 +7,9 @@
  * Everything that uses the browser comes here: recipe reads, the login hand-off and its Watch, the live view, the keep
  * awake while people talk and the warm for travel. Jobs stay on the trip's own user (computer.ts): their conversations,
  * TRIP_TOKEN and MCP token are the trip's alone, and a job never books or pays, so it never needs the login.
+ *
+ * A Server is known by the name its socket gives (?server=), the same on every replica, so all of its replicas share the
+ * person's browser; a Server that gives none is known by the instance that brought the trip (?instance=), as before.
  *
  * A trip's browser is fixed the first time the trip uses one (trip_browsers), so an organizer who changes later never
  * moves it. Whether the browser is logged in to ixigo is kept here, by status only (in or out, and when ixigo said so):
@@ -26,12 +29,15 @@ const WARM_COOLDOWN_MS = 60_000;
 const SEEN_UP_MAX = 500;
 /** The instance the door gives a socket that names none. */
 const NO_INSTANCE = 'default';
-/** One organizer under two Server instances within this long is said in the log: their Server's replicas name themselves apart. */
+/** One organizer under two Server names within this long is said in the log: their Server's replicas name themselves apart. */
 const TWO_NAMES_MS = 24 * 3600_000;
 
-/** /v1 user ids allow letters, digits and ._:@- only, so the instance and the person are hashed. */
-export function browserUserIdFor(instance: string, personId: string): string {
-  return `gobrowser-${createHash('sha256').update(`${instance}:${personId}`).digest('hex').slice(0, 32)}`;
+/**
+ * /v1 user ids allow letters, digits and ._:@- only, so the Server's name (its ?server=, else the instance) and the
+ * person are hashed.
+ */
+export function browserUserIdFor(name: string, personId: string): string {
+  return `gobrowser-${createHash('sha256').update(`${name}:${personId}`).digest('hex').slice(0, 32)}`;
 }
 
 /** Where the browser's ixigo login stands, as ixigo last said it: in or out, and when. Null before it ever said. */
@@ -88,7 +94,10 @@ export function createBrowsers(d: BrowsersDeps): Browsers {
     warmsIssued.push(nowMs);
   }
 
-  /** The trip's browser, stored the first time: its instance (the Server's socket that brought the trip) and organizer. */
+  /**
+   * The trip's browser, stored the first time: its organizer's under the Server's own name, or under the instance (the
+   * Server's socket that brought the trip) when the Server gives no name.
+   */
   async function idFor(tripId: string): Promise<{ userId: string; readyAt: Date | null }> {
     const mapped = async () => (await d.pool.query<{ v1_user_id: string; user_ready_at: Date | null }>(
       'select b.v1_user_id, b.user_ready_at from trip_browsers t join browsers b using (v1_user_id) where t.trip_id = $1',
@@ -96,35 +105,63 @@ export function createBrowsers(d: BrowsersDeps): Browsers {
     )).rows[0];
     const known = await mapped();
     if (known) return { userId: known.v1_user_id, readyAt: known.user_ready_at };
-    const trip = await d.pool.query<{ server_instance: string | null }>('select server_instance from trips where trip_id = $1', [tripId]);
+    const trip = await d.pool.query<{ server_instance: string | null; server_name: string | null }>(
+      'select server_instance, server_name from trips where trip_id = $1',
+      [tripId],
+    );
     const instance = trip.rows[0]?.server_instance ?? NO_INSTANCE;
+    const server = trip.rows[0]?.server_name ?? null;
     const personId = (await d.packs.get(tripId)).trip.organizer_person_id;
-    const userId = browserUserIdFor(instance, personId);
+    const userId = server ? ((await adopt(server, personId)) ?? browserUserIdFor(server, personId)) : browserUserIdFor(instance, personId);
     await d.pool.query(
-      'insert into browsers (v1_user_id, server_instance, person_id, created_at) values ($1, $2, $3, $4) on conflict (v1_user_id) do nothing',
-      [userId, instance, personId, d.now()],
+      `insert into browsers (v1_user_id, server_instance, server_name, person_id, created_at) values ($1, $2, $3, $4, $5)
+       on conflict (v1_user_id) do nothing`,
+      [userId, instance, server, personId, d.now()],
     );
     const made = await d.pool.query('insert into trip_browsers (trip_id, v1_user_id, created_at) values ($1, $2, $3) on conflict (trip_id) do nothing', [tripId, userId, d.now()]);
-    if ((made.rowCount ?? 0) > 0) await sayTwoNames(personId, instance);
+    if ((made.rowCount ?? 0) > 0) await sayTwoNames(personId, server ?? instance);
     // Two first uses at once store one: the one stored is the trip's.
     const stored = await mapped();
     return { userId: stored!.v1_user_id, readyAt: stored!.user_ready_at };
   }
 
   /**
-   * One organizer under two Server instances within a day: the Server must use one instance name across its restarts
-   * and replicas, or the person gets one browser, and one ixigo login, per name. Said once a new trip maps, never acted on.
+   * The organizer's browser under a Server that gives its name: the one it already has, or, the first time, the one they
+   * had under that Server's instances before it gave a name (the one logged in most recently), which becomes the
+   * Server's. So nobody logs in again when their Server starts sending ?server=. Null when they have neither.
    */
-  async function sayTwoNames(personId: string, instance: string): Promise<void> {
-    const { rows } = await d.pool.query<{ server_instance: string }>(
-      `select distinct b.server_instance from trip_browsers t join browsers b using (v1_user_id)
-       where b.person_id = $1 and b.server_instance <> $2 and t.created_at > $3`,
-      [personId, instance, new Date(d.now().getTime() - TWO_NAMES_MS)],
+  async function adopt(server: string, personId: string): Promise<string | null> {
+    const { rows } = await d.pool.query<{ v1_user_id: string; server_name: string | null }>(
+      `select v1_user_id, server_name from browsers
+       where person_id = $1
+         and (server_name = $2 or (server_name is null and server_instance in (select server_instance from trips where server_name = $2)))
+       order by server_name is null, logged_in_at desc nulls last, created_at, v1_user_id
+       limit 1`,
+      [personId, server],
+    );
+    const found = rows[0];
+    if (!found) return null;
+    if (found.server_name === null) {
+      await d.pool.query('update browsers set server_name = $2 where v1_user_id = $1 and server_name is null', [found.v1_user_id, server]);
+    }
+    return found.v1_user_id;
+  }
+
+  /**
+   * One organizer under two Server names within a day: the Server must keep one name across its restarts and replicas
+   * (its ?server=, or its ?instance= when it sends no server), or the person gets one browser, and one ixigo login, per
+   * name. Said once a new trip maps, never acted on.
+   */
+  async function sayTwoNames(personId: string, name: string): Promise<void> {
+    const { rows } = await d.pool.query<{ name: string }>(
+      `select distinct coalesce(b.server_name, b.server_instance) as name from trip_browsers t join browsers b using (v1_user_id)
+       where b.person_id = $1 and coalesce(b.server_name, b.server_instance) <> $2 and t.created_at > $3`,
+      [personId, name, new Date(d.now().getTime() - TWO_NAMES_MS)],
     );
     if (rows.length > 0) {
       d.log.warn(
-        { personId, instance, others: rows.map((r) => r.server_instance) },
-        'browsers: one organizer under two Server instances within a day: each name gets its own browser and its own ixigo login',
+        { personId, name, others: rows.map((r) => r.name) },
+        'browsers: one organizer under two Server names within a day: each name gets its own browser and its own ixigo login',
       );
     }
   }

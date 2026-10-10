@@ -29,6 +29,8 @@ export interface IntakeDeps {
   runningTasks: (tripId: string) => Promise<Array<{ id: string; brief: string }>>;
   /** The wait after a message for Go, unless it is a whole thought (dueAtOnce). */
   waitMs?: number;
+  /** The trip's own Server has been away for minutes (the link's away): the minute refresh reads nothing for it. */
+  away?: (tripId: string) => Promise<boolean>;
 }
 
 /**
@@ -193,8 +195,14 @@ export function createIntake(d: IntakeDeps) {
     // People's text is screened before it is written anywhere: from here on, every copy holds the masked text.
     const ev = screenEvent(raw);
     const r = await d.tripLog.append(ev);
-    // The Server instance that brought the trip, the first time: half of the key of the person's browser (tasks/browsers.ts).
-    if (r === 'new') await d.pool.query('update trips set server_instance = $2 where trip_id = $1 and server_instance is null', [ev.trip_id, meta.instance]);
+    // The Server instance (and the Server's own name, if it gives one) that brought the trip, the first time: half of the
+    // key of the person's browser (tasks/browsers.ts).
+    if (r === 'new') {
+      await d.pool.query(
+        'update trips set server_instance = $2, server_name = $3 where trip_id = $1 and server_instance is null',
+        [ev.trip_id, meta.instance, meta.server ?? null],
+      );
+    }
     // Answered as soon as the event is written; the work happens after, in seq order per trip.
     if (r === 'new') void enqueue(ev.trip_id, () => processEvent(ev));
     return { accepted: true, duplicate: r === 'duplicate' };
@@ -221,6 +229,8 @@ export function createIntake(d: IntakeDeps) {
           refreshing.delete(tripId);
           // Marked gone while this waited (its pack went with the mark): it is not read again.
           if (!d.packs.peek(tripId)) return;
+          // Its Server has been away for minutes (a closed drill): another Server would only answer 404.
+          if (await d.away?.(tripId)) return;
           try {
             const fresh = await d.packs.refill(tripId);
             for (const m of fresh.sort((a, b) => a.seq - b.seq)) await onMessage(tripId, m);
