@@ -73,7 +73,7 @@ const postedSince = (from: number): Posted[] =>
   lb.link.requests.slice(from).filter((r) => r.method === 'post_message' && (r.params['card'] as C.Card | undefined)?.kind !== 'working').map((r) => ({ text: String(r.params['text']), card: r.params['card'] as C.Card }));
 
 describe("each person's own flights, from their home city", () => {
-  it('groups the trip by home city and leaving window: one card for those who share both', () => {
+  it('gives every traveller a card of their own, by their home city and leaving window', () => {
     const plan = planEach(goaPack().trip.people, 'North Goa', '2026-11-06');
     expect(plan.groups.map((g) => [g.home, g.people.map((p) => p.name), g.window?.words ?? null])).toEqual([
       ['Delhi', ['Rahul'], 'after 6 pm'],
@@ -87,7 +87,8 @@ describe("each person's own flights, from their home city", () => {
     const people = goaPack().trip.people.map((p) =>
       p.name === 'Priya' ? { ...p, from_city: null } : p.name === 'Arjun' ? { ...p, earliest_leave: 'not sure yet' } : p.name === 'Meher' ? { ...p, from_city: 'North Goa' } : { ...p, earliest_leave: 'Fri after 6 pm' });
     const other = planEach(people, 'North Goa', '2026-11-06');
-    expect(other.groups.map((g) => [g.home, g.people.map((p) => p.name)])).toEqual([['Delhi', ['Rahul', 'Kabir']], ['Bangalore', ['Arjun']]]);
+    // Rahul and Kabir, both Delhi after 6 pm: still a card each (the Server team's final round: one card per traveller).
+    expect(other.groups.map((g) => [g.home, g.people.map((p) => p.name)])).toEqual([['Delhi', ['Rahul']], ['Bangalore', ['Arjun']], ['Delhi', ['Kabir']]]);
     expect([other.noHome, other.unread]).toEqual([['Priya'], [{ name: 'Arjun', text: 'not sure yet' }]]);
   });
 
@@ -126,10 +127,34 @@ describe("each person's own flights, from their home city", () => {
     // Bangalore's page didn't come: Arjun gets ixigo's own page, pinned to him.
     const arjun = byTitle.get('Flights for Arjun, Bangalore to North Goa')!;
     expect(arjun.card).toMatchObject({ kind: 'notice', for_person_ids: ['p_arjun'], source: { url: expect.stringContaining('from=BLR') } });
+    expect((arjun.card as { actions: Array<{ only_for_person_ids?: string[] }> }).actions.map((a) => a.only_for_person_ids)).toEqual([['p_arjun']]);
     expect(arjun.text).toMatch(/^Arjun, Go couldn't read the flights from Bangalore just now/);
     // Rahul's pick on his card is his own: his confirm, never a vote.
     expect(await lb.taps.tap('options', 'pick', { tap_id: 'tap_each1', trip_id: 't_goa', card_id: card.card_id, action_id: 'pick', person_id: 'p_rahul', option_id: card.options[0]!.option_id }, card))
       .toEqual({ result: 'done', toast: "It's yours to confirm" });
+  });
+
+  it('four travellers from four cities get four cards, each theirs alone to act on, none with a vote (the Server team, 10 Oct)', async () => {
+    const pack = goaPack();
+    const homes: Record<string, string> = { Rahul: 'Delhi', Priya: 'Pune', Arjun: 'Bengaluru', Meher: 'Mumbai' };
+    const people = pack.trip.people.filter((p) => homes[p.name]).map((p) => ({ ...p, from_city: homes[p.name]!, earliest_leave: null }));
+    const ctx = lb.ctx({ turnId: 'turn_each6', pack: { ...pack, trip: { ...pack.trip, people } } });
+    const from = lb.link.requests.length;
+    const cities = ['Delhi', 'Pune', 'Bengaluru', 'Mumbai'];
+    await toolWith(async (run) => {
+      run.onSteps?.({ type: 'entries', entries: cities });
+      for (const entry of cities) {
+        run.onSteps?.({ type: 'step', entry, recipe: 'flights.results', ok: true, answer: options(DELHI) });
+        run.onSteps?.({ type: 'step', entry, recipe: 'flights.search', ok: true, answer: link('X') });
+      }
+      return COMPARE;
+    }).run({}, ctx);
+    const cards = postedSince(from).map((p) => C.OptionsCard.parse(p.card));
+    expect(cards.map((c) => c.for_person_ids).sort()).toEqual([['p_arjun'], ['p_meher'], ['p_priya'], ['p_rahul']]);
+    for (const c of cards) {
+      expect(c.actions?.every((a) => JSON.stringify(a.only_for_person_ids) === JSON.stringify(c.for_person_ids))).toBe(true);
+      expect(c.actions?.map((a) => a.action_id)).not.toContain('vote');
+    }
   });
 
   it("asks who hasn't said where they fly from, says words that aren't a time, and ends the turn on that line", async () => {

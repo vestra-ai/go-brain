@@ -5,9 +5,10 @@
  *
  * The composite trip.flights_each (recipes/trip/) reads one flights page per home city on the trip's computer (paced:
  * one flights page across every trip in 20 s), and each person's leaving time (Person.earliest_leave, leave-window.ts)
- * narrows their city's flights in Go, with no second load. People from one city with one window share a card that names
- * them all, each tap their own. Each city's cards go up as its page lands, the first in about 5 s, behind a live card
- * ticking off the cities; a city whose page doesn't come gets its people's ixigo link instead.
+ * narrows their city's flights in Go, with no second load. Every traveller gets a card of their own (the Server team's
+ * final round, 10 Oct: one card per traveller, theirs alone to act on, no vote), even two from one city. Each city's
+ * cards go up as its page lands, the first in about 5 s, behind a live card ticking off the cities; a city whose page
+ * doesn't come gets its people's ixigo link instead, each their own.
  */
 import { z } from 'zod';
 import type * as C from '@go/contract';
@@ -41,7 +42,7 @@ export function eachDeadlineMs(cities: number): number {
 type Person = C.Person;
 type Window = Extract<LeaveWindow, { kind: 'window' }>;
 
-/** People from one home city with one leaving window: one card for them all. */
+/** One traveller's card: their home city and leaving window (people holds them alone). */
 export interface EachGroup {
   home: string;
   people: Array<{ personId: string; name: string }>;
@@ -56,9 +57,9 @@ export interface EachPlan {
   unread: Array<{ name: string; text: string }>;
 }
 
-/** Who gets which card: each member by home city and leaving window; nobody whose home is the trip's own place. */
+/** Who gets which card: each member their own, by home city and leaving window; nobody whose home is the trip's own place. */
 export function planEach(people: Person[], to: string, date: string): EachPlan {
-  const groups = new Map<string, EachGroup>();
+  const groups: EachGroup[] = [];
   const noHome: string[] = [];
   const unread: EachPlan['unread'] = [];
   for (const p of people) {
@@ -70,13 +71,9 @@ export function planEach(people: Person[], to: string, date: string): EachPlan {
     if (norm(home) === norm(to)) continue;
     const w = leaveWindow(p.earliest_leave, date);
     if (w.kind === 'unread') unread.push({ name: p.name, text: w.text });
-    const window = w.kind === 'window' ? w : null;
-    const key = `${norm(home)}|${window?.departAfter ?? ''}|${window?.departBefore ?? ''}`;
-    const g = groups.get(key) ?? { home, people: [], window };
-    g.people.push({ personId: p.person_id, name: p.name });
-    groups.set(key, g);
+    groups.push({ home, people: [{ personId: p.person_id, name: p.name }], window: w.kind === 'window' ? w : null });
   }
-  return { groups: [...groups.values()], noHome, unread };
+  return { groups, noHome, unread };
 }
 
 const listOf = (words: string[]): string => (words.length < 2 ? (words[0] ?? '') : `${words.slice(0, -1).join(', ')} and ${words.at(-1)}`);
@@ -121,7 +118,7 @@ export function flightsEachTool(d: FlightsEachDeps): QuickTool<z.infer<typeof Ar
     const who = namesOf(g);
     const when = g.window ? `, ${g.window.words}` : '';
     if (shown.length === 0) return { card: null, line: `${who}, no flight from ${g.home} on ${dayText(at.date)}${when} has seats on ixigo.` };
-    const cardId = stableId('c_each', turnId, norm(g.home), g.window?.departAfter ?? '', g.window?.departBefore ?? '');
+    const cardId = stableId('c_each', turnId, ...g.people.map((p) => p.personId));
     const options: ResultOption[] = shown.map((o) => toResultOption(o));
     const ids = g.people.map((p) => p.personId);
     const set = await d.results.save({
@@ -138,10 +135,9 @@ export function flightsEachTool(d: FlightsEachDeps): QuickTool<z.infer<typeof Ar
     // A rerun of the same turn finds this card saved already, and posts that one.
     const saved = (await d.results.card(tripId, cardId))?.card ?? card;
     const cheapest = shown[0]!;
-    const many = g.people.length > 1;
     const line =
       `${who}, your flights from ${g.home} on ${dayText(at.date)}${when}: ${fit} ${fit === 1 ? 'fits' : 'fit'}, from ${formatInr(cheapest.priceMinor)} a person. ` +
-      `${many ? "Each of you taps \"I'll take this\" on your own." : "Tap \"I'll take this\" on yours."}`;
+      `Tap "I'll take this" on yours.`;
     return { card: saved, line };
   }
 
@@ -197,7 +193,7 @@ export function flightsEachTool(d: FlightsEachDeps): QuickTool<z.infer<typeof Ar
           for (const g of groupsOf(e.entry)) {
             posts.push(
               groupCard(ctx.tripId, ctx.turnId, g, at, got)
-                .then((made) => post(`${norm(g.home)}|${g.window?.words ?? ''}`, made.card, made.line))
+                .then((made) => post(g.people.map((p) => p.personId).join(','), made.card, made.line))
                 .catch((err: unknown) => d.log?.warn({ err: String(err).slice(0, 200), tripId: ctx.tripId }, "travel: a person's flights card could not be made")),
             );
           }
@@ -212,8 +208,11 @@ export function flightsEachTool(d: FlightsEachDeps): QuickTool<z.infer<typeof Ar
               said.push(`Flights from ${g.home} didn't come back from ixigo.`);
               continue;
             }
-            const card = { ...buildFlightsLinkCard({ cardId: stableId('c_each_link', ctx.turnId, norm(g.home), g.window?.words ?? ''), title, url: city.link }), for_person_ids: g.people.map((p) => p.personId) };
-            post(`${norm(g.home)}|${g.window?.words ?? ''}|link`, card, `${namesOf(g)}, Go couldn't read the flights from ${g.home} just now, so here they are on ixigo${g.window ? `; yours leave ${g.window.words}` : ''}.`);
+            const only = g.people.map((p) => p.personId);
+            const link = buildFlightsLinkCard({ cardId: stableId('c_each_link', ctx.turnId, ...only), title, url: city.link });
+            // Theirs alone to act on, as their options card would be.
+            const card = { ...link, for_person_ids: only, actions: (link.actions ?? []).map((a) => ({ ...a, only_for_person_ids: only })) };
+            post(`${only.join(',')}|link`, card, `${namesOf(g)}, Go couldn't read the flights from ${g.home} just now, so here they are on ixigo${g.window ? `; yours leave ${g.window.words}` : ''}.`);
           }
         }
       };
