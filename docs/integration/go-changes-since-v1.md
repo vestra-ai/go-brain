@@ -192,6 +192,10 @@ Switches are read on every use, and a value set on the admin page wins over the 
 ## Other changes you may notice
 
 - For a plain search ask, Go now posts the options card and its line with no extra model round (#194). In the drills that was about 15 seconds sooner, and the messages have the same shape as before.
+- **The live search card's live view** (the Server team's R7, 11 Oct): the card (a `working` card posted with "On it.") carries `live_url` while it runs, a view-only page of Go's screen as it works on ixigo (Bash's screen page, WebRTC; the token rides in the url's `#fragment`). Open it in an in-app panel or an iframe while `state` is `running` or `needs_you`; it frames from the App's origins (`https://go-frontend-three.vercel.app`, `http://localhost:3000`, `http://localhost:3002`).
+  - Go makes it as the card starts (the post waits for it at most 1.5 s; a later one rides the next step change), and makes it again at the first step change after 10 minutes, since one works for 15. When the card is done, Go ends it and the card's `live_url` is `null`.
+  - The card changes in the room at step changes only, never for a picture: `screenshot_url` (with `page_url`) rides the next step change, and the done card keeps the last frame.
+  - A person signing in on the same computer (the ixigo login) is never in it: Bash pauses a view-only page from the sign-in's start until it ends ("Someone is signing in on this computer. The view comes back when they're done.").
 - The live search card (a `working` card posted with "On it.") can start with a step like "Choosing between Udaipur City (UDZ) and Udaipur Junction (UDPU)" (#207). A card that a finished turn left open now ends as `failed` (#177). These cards have no buttons, and their `task_id` is not a job.
 - For a place Go has no ixigo code for, Go posts a notice card that opens ixigo's own search page (#179). Go never names another booking site (`composer/rules.ts`).
 - A question put to Go now gets Go's answer instead of a ✅ or an open record line (#174). A quiet 👍 or 🙌 from Go now comes 3 seconds after the line it answers.
