@@ -176,6 +176,7 @@ export function recipeInputs(kind: TravelKind, q: TravelQuery): { given: Record<
       given: {
         from: q.from, to: q.to, date: q.date, adults: q.guests,
         depart_after: q.departAfter, depart_before: q.departBefore, arrive_before: q.arriveBefore, max_price: q.maxPriceMinor,
+        children: q.children, infants: q.infants, cabin: q.cabin, special_fare: q.specialFare,
       },
       conditions,
       // ixigo's own flight filters, by their names on its list for the route: Go applies them to the stream's flights.

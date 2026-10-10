@@ -81,7 +81,12 @@ export const FlightsArgs = z.object({
   because: Because,
   max_price_per_person: Rupees.optional().describe('In rupees'),
   non_stop: z.boolean().optional(),
-  travellers: z.int().min(1).max(9).optional().describe('Only when the ask says how many fly ("for 3 of us"). Leave it out otherwise: Go counts who lives near the origin.'),
+  travellers: z.int().min(1).max(9).optional().describe('Only when the ask says how many fly ("for 3 of us"). Leave it out otherwise: Go counts who lives near the origin. With children or infants, the adults alone.'),
+  children: z.int().min(1).max(8).optional().describe('Children 2 to 11 who fly, only when the ask says so ("2 adults and 2 kids").'),
+  infants: z.int().min(1).max(4).optional().describe('Infants under 2, on a lap, only when the ask says so.'),
+  cabin: z.enum(['economy', 'premium_economy', 'business']).optional().describe('Only when the ask names one. ixigo sells economy, premium economy and business, and no first class.'),
+  special_fare: z.enum(['student', 'senior_citizen', 'armed_forces', 'doctor']).optional()
+    .describe("ixigo's special fares, only when the ask says who flies: students, senior citizens, the armed forces, doctors and nurses. ixigo then lists only the flights that sell it, it is not always cheaper than the regular fare, and each takes an ID at check-in."),
   site_filters: z.array(z.string().min(1).max(80)).max(8).optional()
     .describe("ixigo's own flight filters the ask means, by their names on ixigo's list for the route (in your context once a search of it ran): an airline, an airport (Mopa for North Goa), a layover city, bags, a free meal, hiding non-refundable fares. Go applies them to the flights and ixigo's page shows them ticked"),
   wants: z.array(z.string().min(1).max(80)).max(8).optional()
@@ -131,6 +136,10 @@ export function flightsQuery(a: z.infer<typeof FlightsArgs>): TravelQuery {
     ...(a.max_price_per_person ? { maxPriceMinor: toPaise(a.max_price_per_person) } : {}),
     ...(a.non_stop ? { mustHave: ['non_stop' as const] } : {}),
     ...(a.travellers ? { guests: a.travellers } : {}),
+    ...(a.children ? { children: a.children } : {}),
+    ...(a.infants ? { infants: a.infants } : {}),
+    ...(a.cabin ? { cabin: a.cabin } : {}),
+    ...(a.special_fare ? { specialFare: a.special_fare } : {}),
     ...(a.site_filters?.length ? { siteFilters: a.site_filters } : {}),
     ...(a.wants?.length ? { wants: a.wants } : {}),
   };
