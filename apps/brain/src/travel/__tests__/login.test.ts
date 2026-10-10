@@ -44,6 +44,8 @@ let trips = 0;
  *  on Cloudflare's check through the runner's tries. statuses: how it loads after, in turn: for "I'm logged in" (its page
  *  loaded again) and for a check in the background. */
 function world(o: {
+  /** A Bash that predates desktop hand-offs (front_device): its hand-off opens the phone page however asked. */
+  phoneOnly?: boolean;
   live?: boolean; greeted?: boolean; paused?: string[]; statuses?: Array<number | 'timeout' | 'challenged' | 'dead' | 'quiet'>; opened?: number | 'timeout' | 'refused' | 'challenged'; taps?: 'fail';
   /** The person's browser (tasks/browsers.ts), shared by every world given the same one: one login for all their trips. */
   browser?: FakeBrowser;
@@ -72,14 +74,15 @@ function world(o: {
       if (s === 'challenged') throw new ChallengedError();
       return { captures: load(s), finalUrl: url };
     },
-    handOff: async (_trip: string, url: string, plan: FetchPlan, ho: { keepOpenMs: number; tab: string }) => {
+    handOff: async (_trip: string, url: string, plan: FetchPlan, ho: { keepOpenMs: number; tab: string; device?: 'desktop' }) => {
       handOffs.push({ url, plan, o: ho });
       await hooks.onHandOff?.();
       // "I'm logged in" loads the log in page again: ixigo's answers to it come in turn, as for any later check.
       const s = checking ? (statuses.shift() ?? 'timeout') : (o.opened ?? 403);
       if (s === 'refused') throw new TravelError('refused', 'Bash would not open the page.');
       if (s === 'challenged') return { captures: [], challenged: true as const };
-      return { captures: s === 'timeout' ? [] : load(s) };
+      const device = ho.device === 'desktop' && !o.phoneOnly ? ('desktop' as const) : ('phone' as const);
+      return { captures: s === 'timeout' ? [] : load(s), device };
     },
     release: async (_trip: string, tab: string) => {
       releases.push(tab);
@@ -352,10 +355,11 @@ describe('logging in', () => {
       timeoutMs: HANDOFF_PAGE_MS,
       graceMs: 3_000,
     });
-    expect(w.handOffs).toEqual([{ url: LOGIN_URL, plan: LOGIN_CALLS, o: { keepOpenMs: HANDOFF_MS, tab: LOGIN_TAB } }]);
+    // ixigo's DESKTOP page (10 Oct): a login made on its phone page is its phone client's, which its desktop pages refuse.
+    expect(w.handOffs).toEqual([{ url: LOGIN_URL, plan: LOGIN_CALLS, o: { keepOpenMs: HANDOFF_MS, tab: LOGIN_TAB, device: 'desktop' } }]);
     // Then, with Watch on the card, ixigo's own Login and the cursor in its mobile number box, on the page he watches.
     expect(w.tabStepCalls).toEqual([{
-      tab: LOGIN_TAB, steps: [{ op: 'click', role: 'button', name: 'Login' }, { op: 'click', role: 'textbox', text: 'mobile' }],
+      tab: LOGIN_TAB, steps: [{ op: 'click', role: 'button', name: 'Log in/Sign up' }, { op: 'click', role: 'textbox', text: 'mobile' }],
       o: { keepOpenMs: HANDOFF_MS, timeoutMs: HANDOFF_PAGE_MS }, cardActions: ['ixigo_watch', 'ixigo_logged_in', 'ixigo_not_now'],
     }]);
     expect(await w.state()).toBe('logging_in');
@@ -551,13 +555,13 @@ describe('logging in', () => {
     // makes (with its own token and keys) are what answer: a call of Go's own is 403 even logged in. Their status is read
     // (one byte), the account never is.
     expect(w.handOffs).toHaveLength(2);
-    expect(w.handOffs[1]).toEqual({ url: LOGIN_URL, plan: LOGIN_CALLS, o: { keepOpenMs: HANDOFF_MS, tab: LOGIN_TAB } });
+    expect(w.handOffs[1]).toEqual({ url: LOGIN_URL, plan: LOGIN_CALLS, o: { keepOpenMs: HANDOFF_MS, tab: LOGIN_TAB, device: 'desktop' } });
     expect(w.reads).toHaveLength(reads);
     // An early tap, still waiting for the code: the window stays in front, its log in box open again for them.
     expect(await w.state()).toBe('logging_in');
     expect(w.releases).toEqual([]);
     expect(w.tabStepCalls).toHaveLength(2);
-    expect(w.tabStepCalls[1]).toMatchObject({ tab: LOGIN_TAB, steps: [{ op: 'click', role: 'button', name: 'Login' }, { op: 'click', role: 'textbox', text: 'mobile' }] });
+    expect(w.tabStepCalls[1]).toMatchObject({ tab: LOGIN_TAB, steps: [{ op: 'click', role: 'button', name: 'Log in/Sign up' }, { op: 'click', role: 'textbox', text: 'mobile' }] });
     expect(w.last()).toMatchObject({ tone: 'heads_up', body: 'Not logged in yet. Finish on Watch, then tap again.' });
 
     // ixigo's own calls work (Keshav's Google log in, 9 Oct): logged in, the page closes.
@@ -1105,5 +1109,23 @@ describe("ixigo's login, watched: when it ends, Go asks again", () => {
     expect(browser.state?.login).toBe('in');
     expect(await w.state()).toBe('logged_in');
     expect(w.link.of('post_message').slice(posts)).toEqual([]);
+  });
+});
+
+// Staging, 10 Oct: his login, made on ixigo's phone page in the hand-off (its client iximweb), was gone within the hour of
+// Go reading ixigo's desktop pages (client ixiweb). The hand-off now logs in on the desktop page; an older Bash, the phone.
+describe("the ixigo login's hand-off, on ixigo's desktop page", () => {
+  it("asks for the desktop page and taps its Log in/Sign up; a Bash without it opens the phone page, and its Login is tapped", async () => {
+    const desk = world({ statuses: [] });
+    await desk.setup();
+    await desk.tap('ixigo_login', 'p_rahul');
+    expect(desk.handOffs[0]!.o).toMatchObject({ device: 'desktop' });
+    expect(desk.tabStepCalls[0]!.steps[0]).toEqual({ op: 'click', role: 'button', name: 'Log in/Sign up' });
+    const phone = world({ statuses: [], phoneOnly: true });
+    await phone.setup();
+    await phone.tap('ixigo_login', 'p_rahul');
+    expect(phone.tabStepCalls[0]!.steps[0]).toEqual({ op: 'click', role: 'button', name: 'Login' });
+    // The mobile box is the same words on both pages.
+    expect(desk.tabStepCalls[0]!.steps[1]).toEqual({ op: 'click', role: 'textbox', text: 'mobile' });
   });
 });
