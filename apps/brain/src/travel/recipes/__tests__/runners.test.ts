@@ -119,6 +119,27 @@ describe("the browser fetch: how the recipe engine reads a page in the trip's br
     ]);
   });
 
+  // The lead, 10 Oct: the trip account's own pages (My Trips, the help centre's bookings) list its person's other trips. Such
+  // a read is private: a tab Bash's browser watch never shows, stage or not, and no picture of it. A Bash that predates
+  // private refuses it, and the read fails rather than run where the room could see it.
+  it('reads an account page private, with no pictures; a Bash that predates private gets no read at all', async () => {
+    const BOOKINGS = '/support/helpcenter/api/v1/booking$';
+    const page = 'https://www.ixigo.com/support';
+    const w = world(() => fetched([capture(BOOKINGS, 'https://www.ixigo.com/support/helpcenter/api/v1/booking', '{"data":[]}')], page));
+    await createBrowserFetchRunner(w.deps).read('t1', page, { capture: [{ match: BOOKINGS, required: true }] }, { private: true, tag: 'run_1' });
+    const body = w.calls[0]!.opts['body'] as Record<string, unknown>;
+    expect(body).toMatchObject({ url: page, private: true, tag: 'run_1' });
+    expect(body).not.toHaveProperty('frames');
+    expect(body).not.toHaveProperty('stage');
+    expect(body).not.toHaveProperty('keep_open_ms');
+    // An older Bash: its 400 names no param (an unknown key at the body's top). Never asked again without private.
+    const older = world(() => {
+      throw new V1Error(400, 'invalid_request', 'Invalid input', null, { code: 'invalid_request' });
+    });
+    await fails(createBrowserFetchRunner(older.deps).read('t1', page, { capture: [{ match: BOOKINGS, required: true }] }, { private: true }), 'refused', /nobody else can see it/);
+    expect(older.calls).toHaveLength(1);
+  });
+
   // ixigo's hotel popup shows 1 s after the page mounts, so the recipe's first click looks for it up to 3 s (Bash's
   // within_ms). A Bash from before within_ms takes no unknown field in a step: its 400 names the step (param), and Go
   // asks the same fetch again with that click looking once, as it did before, and sends none for a while.

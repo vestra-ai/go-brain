@@ -823,8 +823,10 @@ export function createEngine(d: EngineDeps) {
         // The page stays open as the warm tab, so the live view sees ixigo draw it; never for a check nobody waits on. A
         // live card takes one more picture of it once ixigo has drawn it (the runner's look).
         ...(o.background || account ? {} : { keepOpen: true, ...(o.onProgress ? { look: true } : {}) }),
-        // A run a person watches acts on the stage, the one front tab the room's live view follows.
+        // A run a person watches acts on the stage, the one front tab the room's live view follows. An account's page is
+        // private: a tab the browser watch never shows, with no picture taken (runners.ts).
         ...(watched(o) && !account ? { stage: true } : {}),
+        ...(account ? { private: true } : {}),
         // The pictures go to the live card as before, and to the run strip's browser pane, the drawn page's too.
         onProgress: (e) => {
           if (e.type === 'frames' || e.type === 'drawn') {

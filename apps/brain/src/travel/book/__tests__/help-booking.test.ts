@@ -107,6 +107,8 @@ describe('help.booking', () => {
     expect(runs[0]!.read).not.toHaveProperty('stage');
     expect(runs[0]!.read).not.toHaveProperty('keepOpen');
     expect(runs[0]!.read).not.toHaveProperty('look');
+    // Private: a tab Bash's browser watch never shows, stage or not (runners.ts).
+    expect(runs[0]!.read).toMatchObject({ private: true });
     expect(seen).not.toContain('frames');
     expect(seen).not.toContain('drawn');
     expect(seen).toContain('opening');
