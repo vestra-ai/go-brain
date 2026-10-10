@@ -201,11 +201,12 @@ export const registerTravel: RegisterLane = async (brain) => {
     placeFor: createPlaceFor({ pool: brain.pool, engine, images, log: brain.log }),
   });
   const today = tripToday(brain.pool, brain.now);
-  // A stays card's top pick, its own page opened on the stage (a watched read: a progress to follow puts it there), its
-  // details kept by the engine for "tell me about this villa". Only where Go reads ixigo.com itself.
-  const showPick = (tripId: string, pageUrl: string): void => {
+  // A stays card's top pick opened on the stage, as a person opens it: its card clicked on the results by its name, its
+  // page by its address if the click brings nothing (a watched read: a progress to follow puts it on the stage). Its
+  // details are kept by the engine for "tell me about this villa". Only where Go reads ixigo.com itself.
+  const showPick = (tripId: string, pick: { page: string; name: string }): void => {
     if (brain.switches.get('TRAVEL_MODE') !== 'ixigo_web') return;
-    void engine.answer('hotels.details', { hotel: pageUrl }, { tripId, onProgress: () => undefined }).catch((err: unknown) => {
+    void engine.answer('hotels.details', { hotel: pick.page }, { tripId, onProgress: () => undefined, clickFrom: pick.name }).catch((err: unknown) => {
       brain.log.warn({ tripId, err: String(err).slice(0, 200) }, "travel: the top pick's page didn't open on the stage");
     });
   };

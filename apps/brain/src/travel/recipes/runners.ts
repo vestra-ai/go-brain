@@ -90,6 +90,12 @@ export interface RecipeRunner {
   handOff?(tripId: string, url: string, plan: FetchPlan, o: { keepOpenMs: number; tab: string; check?: PageCall }): Promise<{ captures: Capture[]; challenged?: true }>;
   /** Closes a hand-off's tab, so the person's own window is on top again; nothing when it is already gone. */
   release?(tripId: string, tab: string): Promise<void>;
+  /**
+   * Steps on the page the stage already holds (Bash's url-less fetch on the stage tab), with the calls the page they lead
+   * to makes caught as for a read: a person's click on what the room is watching, a stay's card on the results opening its
+   * page in the same tab. What Bash answers, as read() gives it; a stage with no page open is a TravelError.
+   */
+  onStage?(tripId: string, plan: FetchPlan, o?: ReadOptions): Promise<{ captures: Capture[]; finalUrl: string }>;
   /** When a page this trip's computer opened last met Cloudflare's check (CLOUDFLARE), in ms; null when none has. */
   lastChallenge?(tripId: string): number | null;
   /**
@@ -750,6 +756,35 @@ export function createBrowserFetchRunner(d: RunnerDeps): RecipeRunner {
     }
   }
 
+  async function onStage(tripId: string, plan: FetchPlan, o: ReadOptions): Promise<{ captures: Capture[]; finalUrl: string }> {
+    const body = {
+      tab: STAGE_TAB,
+      stage: true,
+      keep_open_ms: STAGE_MS,
+      capture: plan.capture.map((c) => ({
+        match: c.match,
+        ...(plan.graceMs ? { required: c.required } : c.besides ? { required: false } : {}),
+        ...(c.max_bytes ? { max_bytes: c.max_bytes } : {}),
+        ...(c.min_count ? { min_count: c.min_count } : {}),
+        ...(c.max_count ? { max_count: c.max_count } : {}),
+      })),
+      steps: plan.steps ?? [],
+      timeout_ms: plan.timeoutMs ?? FETCH_TIMEOUT_MS,
+      ...(plan.graceMs ? { grace_ms: plan.graceMs } : {}),
+      frames: { width: FRAME_WIDTH, ...(plan.settleMs ? { settle_ms: plan.settleMs } : {}) },
+      ...(o.tag ? { tag: o.tag } : {}),
+    };
+    try {
+      const userId = await d.browser.userFor(tripId);
+      const answer = await patient(() => d.v1.call<FetchAnswer>('POST', `/v1/users/${userId}/browser/fetch`, { body, ...(o.signal ? { signal: o.signal } : {}) }), o.signal);
+      if (Array.isArray(answer.frames) && answer.frames.length > 0) o.onProgress?.({ type: 'frames', frames: answer.frames });
+      return { captures: answer.captures, finalUrl: typeof answer.final_url === 'string' ? answer.final_url : '' };
+    } catch (err) {
+      if (err instanceof V1Error && err.status === 409 && err.code === 'no_open_tab') throw new TravelError('unreachable', 'The stage has no page open.');
+      throw err instanceof V1Error ? new TravelError('unreachable', `The stage's step did not answer (${err.status}).`) : err;
+    }
+  }
+
   async function tabSteps(tripId: string, tab: string, steps: Step[], o: { keepOpenMs: number; timeoutMs: number }): Promise<void> {
     // A fetch is its steps and a call: one byte of the home page closes it.
     const done = { op: 'page_fetch', url: '/', method: 'GET', capture_as: 'steps_done', max_bytes: 1 };
@@ -789,6 +824,7 @@ export function createBrowserFetchRunner(d: RunnerDeps): RecipeRunner {
     tabCall: (tripId, tab, call, keepOpenMs) => inSlot(tripId, {}, () => tabCall(tripId, tab, call, keepOpenMs)),
     tabSteps: (tripId, tab, steps, o) => inSlot(tripId, {}, () => tabSteps(tripId, tab, steps, o)),
     lastChallenge: (tripId) => checkedAt.get(tripId) ?? null,
+    onStage: (tripId, plan, o = {}) => inSlot(tripId, o, () => onStage(tripId, plan, o)),
   };
 }
 
