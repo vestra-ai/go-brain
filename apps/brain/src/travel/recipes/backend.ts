@@ -388,11 +388,15 @@ export function createIxigoWebBackend(d: IxigoWebDeps): IxigoWebBackend {
    * A search's key. The page is ixigo's public results, the same in any trip's browser: the trip runs it, and the request
    * it makes keys it (the page and its fetch), so two asks that open the same page are one search whatever their words
    * (8 Oct: an early "with a pool" and the composer's "sleeping 4, with a pool" ran twice). A place that still needs
-   * ixigo's box has no request until it loads: the words key that one.
+   * ixigo's box has no request until it loads: the words key that one. A decided budget keys by its amount, not by the
+   * bands it picks: those depend on whether the place's list is known yet, so Jev's early read (often the place's first)
+   * and the composer's search of the same budget would open two pages for one ask.
    */
   async function keyFor(id: string, given: Record<string, unknown>, conditions: string[], tripId: string, site: SiteAsk = NO_SITE): Promise<string> {
-    const request = (await d.engine.requestOf?.(id, given, { tripId, conditions, ...siteRun(site) })) ?? null;
-    return request ? `${id}|${createHash('sha256').update(request).digest('hex').slice(0, 24)}` : `${id}|${keyOf(given, conditions, site)}`;
+    const { budget, ...unbudgeted } = site;
+    const request = (await d.engine.requestOf?.(id, given, { tripId, conditions, ...siteRun(unbudgeted) })) ?? null;
+    const key = request ? `${id}|${createHash('sha256').update(request).digest('hex').slice(0, 24)}` : `${id}|${keyOf(given, conditions, unbudgeted)}`;
+    return budget !== undefined ? `${key}|budget:${budget}` : key;
   }
 
   /** One search on ixigo's page: kept, joined or run, its live card from start to end. */

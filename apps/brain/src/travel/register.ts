@@ -27,6 +27,7 @@ import { earlyAnswer, earlyReadNow, earlySearchNow } from './recipes/now.js';
 import { loadLearnedPlaces } from './recipes/places-store.js';
 import { optionOnCard } from './recipes/option-on-card.js';
 import { createPlaceFor } from './place-for.js';
+import { createGroupStay } from './group-stay.js';
 import { createResultsStore } from './results.js';
 import { createRunLog } from './runs.js';
 import { createScreenFeed } from './screen-feed.js';
@@ -89,7 +90,7 @@ export const registerTravel: RegisterLane = async (brain) => {
   // The browsers are the tasks lane's, which registers after this one: read when a pass runs, none without them.
   const keepAlive = createLoginKeepAlive({
     loggedInSince: async (before) => (await brain.recipeRunners?.login?.loggedInSince(before)) ?? [],
-    status: (tripId) => login.status(tripId),
+    status: (tripId, o) => login.keepAlive(tripId, o),
     live: () => brain.switches.get('TRAVEL_MODE') === 'ixigo_web',
     now: brain.now,
     log: brain.log,
@@ -218,12 +219,14 @@ export const registerTravel: RegisterLane = async (brain) => {
       brain.log.warn({ tripId, err: String(err).slice(0, 200) }, "travel: the top pick's page didn't open on the stage");
     });
   };
+  // Where the group stays (booked, else the vote's winner, else the latest stays card's top pick): each bus's nearest drop.
+  const groupStay = createGroupStay({ trip: async (tripId) => (await brain.packs.get(tripId)).trip, results });
   // The budget the group decided: the group's in the App, or one kept with set_budget, and in "Right now" for every turn,
   // as strong context. The App's, or a stay budget, also picks ixigo's own price bands for a stays search (one band over
   // kept), never Go dropping a stay.
   const budgets = createTripBudgets({ pool: brain.pool, now: brain.now });
   const stayBudget = async (tripId: string): Promise<number | null> => stayCap(await budgets.get(tripId, (await brain.packs.get(tripId)).trip));
-  for (const t of travelTools({ travel, results, images, now: brain.now, desk: brain.desk, log: brain.log, warmForTravel: warm, today, showPick, stayBudget })) brain.tools.register(t);
+  for (const t of travelTools({ travel, results, images, now: brain.now, desk: brain.desk, log: brain.log, warmForTravel: warm, today, showPick, stayBudget, groupStay })) brain.tools.register(t);
   brain.tools.register(budgetTool({ budgets, pool: brain.pool, now: brain.now, log: brain.log }));
   brain.context.addNow(budgetNow({ budgets, trip: async (tripId) => (await brain.packs.get(tripId)).trip }));
   // A recipe's live card: its runs on the stage, as a search's are, so the room watches every page Go opens.
@@ -273,6 +276,8 @@ export const registerTravel: RegisterLane = async (brain) => {
       run: (id, given, o) => runOnStage({ engine, card: recipeCard }, o.tripId, o.runKey, book.get(id) ?? { id, title: id }, given),
     },
     optionFor: (tripId, text, kind) => optionOnCard(brain.pool, results, tripId, text, kind),
+    // The decided stays budget the search tool takes: a stays read early is the one the composer's search joins.
+    stayBudget,
   });
   brain.hooks.onRead((msg, read, pack) => early.onRead(msg, read, pack));
   brain.context.addNow(earlySearchNow({ early, results, travel, now: brain.now }));

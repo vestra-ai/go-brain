@@ -1,0 +1,57 @@
+id: trains.train_calendar
+title: One train's seats day by day for about two months, class by class, by ixigo's seat availability page
+asks:
+  - which day is best for 10103 in 3a
+  - mandovi express mein kis din seat milegi
+  - 12015 seat availability for the next two months
+  - when does 10103 have sleeper seats after 20 nov
+inputs:
+  train: { kind: text, about: "the train's 5-digit number (trains.by_name finds it from a name)" }
+  class: { kind: text, optional: true, about: "a class code people asked about, such as 3A or SL" }
+  date: { kind: date, optional: true, about: "the first day people could travel; the calendar's first day when not given" }
+auth: none
+changes_state: false
+# ixigo's seat availability page for a train keeps about two months of its seats in its own data (html_inputs,
+# "dataBE"): by day ("10112026"), each class's General quota figure: its status ("AVL 27", "WL 9", "RAC 29", "Regret",
+# "Train Departed", "CURR_AVL 7" for current booking after the chart), ixigo's chance it confirms (p, 100 when there are
+# seats, 0 when ixigo gives none) and when ixigo read it. The figures are for the train's whole run (orgnCode to
+# dstnCode); the page takes no stations.
+page: /trains/{train}/seat-availability
+capture:
+  - { match: "/trains/{train}/seat-availability$", max_bytes: 1000000 }
+read:
+  rows:
+    from: "/trains/{train}/seat-availability$"
+    format: html_inputs
+    list: |
+      (
+        $data := inputs.dataBE;
+        $from := $inputs.date ? $replace($inputs.date, "-", "") : "";
+        $days := $each($data.availability, function($seats, $day) {
+          { "ymd": $substring($day, 4, 4) & $substring($day, 2, 2) & $substring($day, 0, 2), "seats": $seats, "run": $data.orgnCode & " to " & $data.dstnCode }
+        });
+        $sort($days[ymd >= $from], function($a, $b) { $a.ymd > $b.ymd })
+      )
+answer:
+  as: facts
+  title: "Train {train} seats by day"
+  max: 50
+  each: |
+    (
+      $want := $uppercase($trim($string($inputs.class)));
+      $lines := $each(seats, function($s, $key) {(
+        $class := $substringBefore($key, "|");
+        ($want ? $class = $want : true) ? $class & ": " & $replace($s.a, "CURR_AVL", "current booking, AVL")
+          & (($contains($s.a, "WL") and $s.p > 0) ? ", " & $string($s.p) & "% chance to confirm" : "")
+      )});
+      $count($lines) > 0 ? {
+        "day": $dateAs($substring(ymd, 0, 4) & "-" & $substring(ymd, 4, 2) & "-" & $substring(ymd, 6, 2), "D Mon"),
+        "run": run,
+        "seats": [$lines]
+      }
+    )
+ttl_minutes: 60
+samples: { page: trains.train_calendar.html }
+notes: >-
+  ixigo's last reading of each day, hours or days old, General quota only (Tatkal is trains.between's, the day before);
+  the live figure is on the booking. The whole run's seats: a shorter part of the route can differ.

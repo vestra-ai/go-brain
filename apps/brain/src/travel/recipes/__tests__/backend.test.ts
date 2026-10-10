@@ -803,4 +803,27 @@ describe("a stays search by the group's decided budget", () => {
     expect(found.results.map((r) => r.title)).toEqual(['Stay 1', 'Stay 2']);
     expect(runs.map((r) => r.budgetMinor)).toEqual([450_000, undefined]);
   });
+
+  // Jev's early read of a place is often its first, before ixigo's list (and so its bands) is known; the composer's
+  // search of the same budget comes after it is. Keyed by the bands, they were two pages for one ask.
+  it('keys a budgeted search by its amount, not the bands it picks: the early read and the composer\'s search are one', async () => {
+    const runs: RunFor[] = [];
+    const answer: Answer = async (_id, _given, ro) => {
+      runs.push(ro);
+      return { as: 'options', options: [stay(1, true), stay(2, false)], page: 'https://www.ixigo.com/hotels/search/result', checkedAt: '2026-10-10T05:00:00.000Z', ms: 900 };
+    };
+    // A page whose request would change once the list is known: the bands join it.
+    let listKnown = false;
+    const requestOf: Engine['requestOf'] = async (_id, _given, ro) => (ro.budgetMinor && listKnown ? 'the page with bands' : 'the page');
+    const b = createIxigoWebBackend({ book, engine: { answer, requestOf }, now });
+    const goa = { to: 'Goa', checkIn: '2026-11-06', checkOut: '2026-11-09' };
+    await b.search('stays', { ...goa, budgetMinor: 450_000 }, { tripId: 't_band', messageId: 'm_early' });
+    listKnown = true;
+    await b.search('stays', { ...goa, budgetMinor: 450_000 }, { tripId: 't_band', turnId: 'turn_1' });
+    expect(runs.map((r) => r.budgetMinor)).toEqual([450_000]);
+    // Another budget, and no budget, are their own searches.
+    await b.search('stays', { ...goa, budgetMinor: 800_000 }, { tripId: 't_band', turnId: 'turn_2' });
+    await b.search('stays', goa, { tripId: 't_band', turnId: 'turn_3' });
+    expect(runs.map((r) => r.budgetMinor)).toEqual([450_000, 800_000, undefined]);
+  });
 });
