@@ -114,7 +114,14 @@ describe('set_budget: the group\'s word only', () => {
     expect(await budgets.get('t_set', NO_APP_BAND)).toMatchObject({ perPersonMinor: 2_000_000, covers: 'whole_trip' });
     expect(await tool().run({ clear: true, proof_message_ids: ['m_5'] }, ctxWith([msg('m_5', 'p_rahul')]))).toMatchObject({ cleared: true });
     expect(await budgets.get('t_set', NO_APP_BAND)).toBeNull();
-    // Proof must be a person's message in the trip.
+    // Proof must hold a person's message in the trip.
     expect(await tool().run({ amount_rupees: 1_000, proof_message_ids: ['m_missing'] }, ctxWith([]))).toMatchObject({ tell_the_room: SAY_NOTHING });
+    // Go's own estimate cited beside the organizer's yes is passed over, not a refusal (staging drill, 10 Oct).
+    const goMsg = { message_id: 'm_go', author: { kind: 'go' }, reactions: [], deleted: false, text: 'about 18k to 26k each' };
+    const withGo = await tool().run({ amount_rupees: 26_000, proof_message_ids: ['m_go', 'm_6'] }, ctxWith([goMsg, msg('m_6', 'p_rahul')]));
+    expect(withGo).toMatchObject({ saved: 'up to ₹26,000 per person for the whole trip' });
+    expect(await budgets.get('t_set', NO_APP_BAND)).toMatchObject({ messageId: 'm_6' });
+    // Go's message alone is no one's word.
+    expect(await tool().run({ amount_rupees: 26_000, proof_message_ids: ['m_go'] }, ctxWith([goMsg]))).toMatchObject({ tell_the_room: SAY_NOTHING });
   });
 });

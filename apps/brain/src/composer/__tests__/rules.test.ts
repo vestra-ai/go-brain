@@ -82,6 +82,7 @@ describe("Go's rules", () => {
     // Private bands stay private, and a yes goes into the plan through the record tool.
     expect(rule).toContain('never whose band it is');
     expect(rule).toContain('keep it with set_budget (the top of your range) and save it with record as one agreed line');
+    expect(rule).toContain('with their yes as the proof (their own message, never yours).');
     // The rules it sits beside no longer forbid it: live prices only, and a person's own budget only.
     expect(section).toContain('No check, no live number. A budget to plan for is not a live price');
     expect(section).toContain("Never guess a person's own budget. Suggesting what the group could plan for, when someone asks, is not guessing anyone's.");
@@ -102,6 +103,8 @@ describe("Go's rules", () => {
     expect(decided).toContain('a standout a little over, shown and said plainly');
     expect(decided).toContain('when nothing good fits, say so and show the closest');
     expect(decided).toContain("One person's number alone is their wish");
+    // Staging drill, 10 Oct: "picked to sit inside Rahul's 7.5k a head". The group's budget is never named for who said it.
+    expect(decided).toContain('Say it as the group\'s ("your 7.5k a head"), never by who said it ("Rahul\'s 7.5k")');
     const none = section.split('\n').find((l) => l.startsWith('- With no budget decided'))!;
     expect(none).toContain('never ask the group for one');
     expect(none).toContain('the vibe');
