@@ -25,7 +25,7 @@ import { offersNow } from './recipes/offers-now.js';
 import { createEarlyStart } from './recipes/early.js';
 import { earlyAnswer, earlyReadNow, earlySearchNow } from './recipes/now.js';
 import { loadLearnedPlaces } from './recipes/places-store.js';
-import { stayOnCard } from './recipes/stay-on-card.js';
+import { optionOnCard } from './recipes/option-on-card.js';
 import { createPlaceFor } from './place-for.js';
 import { createResultsStore } from './results.js';
 import { createRunLog } from './runs.js';
@@ -242,7 +242,7 @@ export const registerTravel: RegisterLane = async (brain) => {
     // The asks beyond the searches (a train's status, a guide, the offers...): the facts recipes the ixigo tool offers, so
     // its call for the same inputs joins the read (the engine keeps a facts read in flight).
     recipes: { has: (id) => toolRecipes(book).some((r) => r.id === id), run: (id, given, o) => engine.answer(id, given, o) },
-    stayFor: (tripId, text) => stayOnCard(brain.pool, results, tripId, text),
+    optionFor: (tripId, text, kind) => optionOnCard(brain.pool, results, tripId, text, kind),
   });
   brain.hooks.onRead((msg, read, pack) => early.onRead(msg, read, pack));
   brain.context.addNow(earlySearchNow({ early, results, travel, now: brain.now }));

@@ -74,7 +74,7 @@ function tripsWeekday(weekday: number, today: string, trip: AskContext['dates'])
 }
 
 /** Every date the text names, in the order it names them. */
-function datesIn(lower: string, today: string, trip: AskContext['dates'] = null): Array<Found & { day: string }> {
+export function datesIn(lower: string, today: string, trip: AskContext['dates'] = null): Array<Found & { day: string }> {
   const out: Array<Found & { day: string }> = [];
   const add = (at: number, end: number, day: string | null): void => {
     if (day && !out.some((d) => at < d.end && end > d.at)) out.push({ at, end, day });

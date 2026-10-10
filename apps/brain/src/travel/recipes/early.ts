@@ -9,7 +9,7 @@
  * anyone, to Go or not, and the search this hook starts. Other lines never wake it. Flights answer with ixigo's link.
  *
  * The other ixigo asks Jev picks (a train's running status, its timetable, a waitlist's chance, a place's guide, the
- * offers, a shown stay's rooms or reviews: fast.ts) start the same way where Go searches ixigo.com itself: their recipe
+ * offers, a shown stay's rooms or reviews, and more: fast.ts) start the same way where Go searches ixigo.com itself: their recipe
  * runs at once, and the turn's right-now part hands over its facts (now.ts earlyReadNow). Each acts only once its choice
  * is live (reflex/live-gate.ts LIVE_RECIPES); until then Jev's pick of one acts as none.
  */
@@ -23,7 +23,7 @@ import type { TripPack } from '../../trips/pack.js';
 import type { EngineAnswer } from '../book/engine.js';
 import type { Travel, TravelKind, TravelQuery, TravelSearch } from '../travel.js';
 import { agreedDates, readTravelAsk } from './ask.js';
-import { readFastAsk, STAY_CHOICES, type ShownStay } from './fast.js';
+import { OPTION_KINDS, readFastAsk, type ShownOption } from './fast.js';
 import { RECIPE_TTL_MS } from './recipe.js';
 
 export interface EarlyStartDeps {
@@ -42,8 +42,8 @@ export interface EarlyStartDeps {
     has(id: string): boolean;
     run(id: string, given: Record<string, unknown>, o: { tripId: string }): Promise<EngineAnswer>;
   };
-  /** The shown stay a line points at, for a stay's rooms or reviews (stay-on-card.ts). */
-  stayFor?: (tripId: string, text: string) => Promise<ShownStay | null>;
+  /** The shown option a line points at, on the trip's newest card of its kind (option-on-card.ts). */
+  optionFor?: (tripId: string, text: string, kind: 'stay' | 'flight') => Promise<ShownOption | null>;
 }
 
 /** An ixigo read a message started on intake: a recipe beyond the searches (fast.ts). */
@@ -97,9 +97,10 @@ export function createEarlyStart(d: EarlyStartDeps): EarlyStart {
   async function startRead(choice: FastChoice, msg: Message & { text: string }, pack: TripPack, today: string): Promise<HookAnswer | undefined> {
     if (d.switches.get('TRAVEL_MODE') !== 'ixigo_web' || !d.recipes) return undefined;
     const tripId = pack.trip.trip_id;
-    const stay = STAY_CHOICES.has(choice) ? ((await d.stayFor?.(tripId, msg.text)) ?? null) : null;
+    const card = OPTION_KINDS[choice];
+    const option = card ? ((await d.optionFor?.(tripId, msg.text, card)) ?? null) : null;
     const dates = pack.trip.dates ?? agreedDates(pack.trip.record, today);
-    const ask = readFastAsk(choice, msg.text, { today, destination: pack.trip.destination?.name ?? null, dates, stay });
+    const ask = readFastAsk(choice, msg.text, { today, destination: pack.trip.destination?.name ?? null, dates, option });
     if (!ask || !d.recipes.has(ask.recipe)) return undefined;
     const answer = d.recipes.run(ask.recipe, ask.given, { tripId });
     answer.catch((err: unknown) => {

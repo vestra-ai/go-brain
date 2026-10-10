@@ -105,7 +105,7 @@
 {"id":"r55","lang":"en","speaker":"p_kabir","text":"ok go, what's the best way from the airport, cab or bus?","expect":{"recipe":null}}
 {"id":"r56","lang":"en","speaker":"p_arjun","text":"@Go how far is Mopa airport from Anjuna?","mentions_go":true,"expect":{"recipe":null}}
 {"id":"r57","lang":"en","speaker":"p_priya","text":"what time is check-in usually?","expect":{"recipe":null}}
-{"id":"r58","lang":"en","speaker":"p_rahul","text":"Go is 6E 5341 on time?","mentions_go":true,"expect":{"recipe":null}}
+{"id":"r58","lang":"en","speaker":"p_rahul","text":"Go is 6E 5341 on time?","mentions_go":true,"expect":{"recipe":"flight_status"}}
 {"id":"r59","lang":"hinglish","speaker":"p_meher","text":"Go Mandovi abhi kahan pahunchi?","mentions_go":true,"expect":{"recipe":"train_status"}}
 {"id":"r60","lang":"hinglish","speaker":"p_kabir","text":"Go hamara PNR confirm hua kya? Rahul ke paas hai number","mentions_go":true,"expect":{"recipe":"pnr"}}
 {"id":"r61","lang":"en","speaker":"p_meher","text":"my train leaves CSMT at 7:10, see you all at Madgaon","expect":{"recipe":null}}
@@ -197,3 +197,21 @@
 {"id":"j37","lang":"hinglish","speaker":"p_rahul","text":"Go Casa Azul mein parking hai kya?","mentions_go":true,"before":[{"speaker":"go","text":"Here are 3 stays in Anjuna for 6 to 9 Nov: 1. Casa Azul Villa, 2. Palm Grove Resort, 3. Sea Breeze Homestay"}],"expect":{"recipe":null}}
 {"id":"j38","lang":"en","speaker":"p_meher","text":"my PNR is still waitlisted, so annoying","expect":{"recipe":null}}
 {"id":"j39","lang":"hinglish","speaker":"p_kabir","text":"train 2 ghante late thi last time yaar","expect":{"recipe":null}}
+{"id":"k01","lang":"hinglish","speaker":"p_kabir","text":"Go 6E 2134 kal time pe hai kya?","mentions_go":true,"expect":{"recipe":"flight_status"}}
+{"id":"k02","lang":"en","speaker":"p_priya","text":"@Go is AI 2981 delayed today?","mentions_go":true,"expect":{"recipe":"flight_status"}}
+{"id":"k03","lang":"hinglish","speaker":"p_meher","text":"Go Arjun ki flight 6E 6131 ka gate kya hai?","mentions_go":true,"expect":{"recipe":"flight_status"}}
+{"id":"k04","lang":"en","speaker":"p_rahul","text":"Go which terminal does SG 8723 leave from tomorrow?","mentions_go":true,"expect":{"recipe":"flight_status"}}
+{"id":"k05","lang":"hinglish","speaker":"p_arjun","text":"Go 12051 mein B2 coach platform pe kahan aayega?","mentions_go":true,"expect":{"recipe":"coach_position"}}
+{"id":"k06","lang":"en","speaker":"p_priya","text":"@Go where does coach S5 stop for the Mandovi Express?","mentions_go":true,"expect":{"recipe":"coach_position"}}
+{"id":"k07","lang":"en","speaker":"p_meher","text":"Go how many coaches does 10103 have?","mentions_go":true,"expect":{"recipe":"coach_position"}}
+{"id":"k08","lang":"hinglish","speaker":"p_kabir","text":"Go 12133 ka coach position bata do","mentions_go":true,"expect":{"recipe":"coach_position"}}
+{"id":"k09","lang":"hinglish","speaker":"p_rahul","text":"Go 12779 mein Thivim se chadh sakte hain kya?","mentions_go":true,"expect":{"recipe":"boarding_stations"}}
+{"id":"k10","lang":"en","speaker":"p_arjun","text":"@Go can Arjun board 12051 at Panvel instead of CSMT?","mentions_go":true,"expect":{"recipe":"boarding_stations"}}
+{"id":"k11","lang":"en","speaker":"p_priya","text":"Go what are the boarding stations for the Konkan Kanya Express?","mentions_go":true,"expect":{"recipe":"boarding_stations"}}
+{"id":"k12","lang":"hinglish","speaker":"p_meher","text":"Go 10111 ke boarding stations kaunse hain?","mentions_go":true,"expect":{"recipe":"boarding_stations"}}
+{"id":"k13","lang":"hinglish","speaker":"p_kabir","text":"Go free cancellation kitna extra lagega IndiGo wali pe?","mentions_go":true,"before":[{"speaker":"go","text":"Here are 3 flights Delhi to Goa on 6 Nov: 1. IndiGo 6E 5341, 2. Air India AI 2981, 3. Akasa QP 1427"}],"expect":{"recipe":"fare_review"}}
+{"id":"k14","lang":"en","speaker":"p_rahul","text":"@Go what's the cancellation fee on the second flight?","mentions_go":true,"before":[{"speaker":"go","text":"Here are 3 flights Delhi to Goa on 6 Nov: 1. IndiGo 6E 5341, 2. Air India AI 2981, 3. Akasa QP 1427"}],"expect":{"recipe":"fare_review"}}
+{"id":"k15","lang":"en","speaker":"p_arjun","text":"Go how much check-in baggage does the Akasa one allow?","mentions_go":true,"before":[{"speaker":"go","text":"Here are 3 flights Delhi to Goa on 6 Nov: 1. IndiGo 6E 5341, 2. Air India AI 2981, 3. Akasa QP 1427"}],"expect":{"recipe":"fare_review"}}
+{"id":"k16","lang":"hinglish","speaker":"p_priya","text":"Go pehli flight ka total kitna padega sab milake?","mentions_go":true,"before":[{"speaker":"go","text":"Here are 3 flights Delhi to Goa on 6 Nov: 1. IndiGo 6E 5341, 2. Air India AI 2981, 3. Akasa QP 1427"}],"expect":{"recipe":"fare_review"}}
+{"id":"k17","lang":"en","speaker":"p_meher","text":"my flight got delayed last time too lol","expect":{"recipe":null}}
+{"id":"k18","lang":"hinglish","speaker":"p_kabir","text":"Go IndiGo wali book kar do","mentions_go":true,"before":[{"speaker":"go","text":"Here are 3 flights Delhi to Goa on 6 Nov: 1. IndiGo 6E 5341, 2. Air India AI 2981, 3. Akasa QP 1427"}],"expect":{"recipe":null}}

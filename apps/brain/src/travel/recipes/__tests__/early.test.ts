@@ -153,7 +153,7 @@ describe('the early start', () => {
 
 describe('the early start of an ixigo read beyond the searches', () => {
   const BOOK = new Set(['trains.running_status', 'trains.schedule', 'plan.destination', 'offers.list', 'hotels.reviews']);
-  function readWorld(mode = 'ixigo_web', o: { fail?: boolean; stay?: { ref: string; page: string } | null; book?: Set<string> } = {}) {
+  function readWorld(mode = 'ixigo_web', o: { fail?: boolean; option?: { ref: string; page: string } | null; book?: Set<string> } = {}) {
     const runs: Array<{ id: string; given: Record<string, unknown>; tripId: string }> = [];
     const switches = new FakeSwitches();
     void switches.set('TRAVEL_MODE', mode);
@@ -171,7 +171,7 @@ describe('the early start of an ixigo read beyond the searches', () => {
           return facts;
         },
       },
-      stayFor: async () => o.stay ?? null,
+      optionFor: async (_tripId, _text, kind) => (kind === 'stay' ? (o.option ?? null) : null),
     });
     return { early, runs, log, warmed, facts };
   }
@@ -188,7 +188,7 @@ describe('the early start of an ixigo read beyond the searches', () => {
   });
 
   it("reads a guide for the trip's own place, and a shown stay's reviews by its option", async () => {
-    const w = readWorld('ixigo_web', { stay: { ref: 'r_ab12#2', page: 'https://www.ixigo.com/hotels/palm-grove/details?x=1' } });
+    const w = readWorld('ixigo_web', { option: { ref: 'r_ab12#2', page: 'https://www.ixigo.com/hotels/palm-grove/details?x=1' } });
     await w.early.onRead(msg(61, 'p_meher', 'Go yahan kya kya ghoomne layak hai?'), picked('guide'), goaPack());
     await w.early.onRead(msg(62, 'p_priya', 'Go Palm Grove ke reviews kaise hain?'), picked('hotel_reviews'), goaPack());
     expect(w.runs.map((r) => [r.id, r.given])).toEqual([

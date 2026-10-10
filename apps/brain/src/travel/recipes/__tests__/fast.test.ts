@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { FAST_CHOICES } from '../../../reflex/questions.js';
-import { classIn, FAST_ASKS, pnrIn, readFastAsk, trainNumberIn, type FastContext } from '../fast.js';
-import { pickStay } from '../stay-on-card.js';
+import { classIn, coachIn, FAST_ASKS, flightIn, pnrIn, readFastAsk, trainNumberIn, type FastContext } from '../fast.js';
+import { pickOption } from '../option-on-card.js';
 
 const ctx: FastContext = { today: '2026-10-07', destination: 'North Goa', dates: { start: '2026-11-06', end: '2026-11-09' } };
 const read = (choice: Parameters<typeof readFastAsk>[0], text: string, more: Partial<FastContext> = {}) => readFastAsk(choice, text, { ...ctx, ...more });
@@ -64,9 +64,29 @@ describe('the slots of an ixigo ask beyond the searches', () => {
 
   it("reads a shown stay's rooms and reviews only for the stay the line points at", () => {
     const stay = { ref: 'r_ab12#2', page: 'https://www.ixigo.com/hotels/palm-grove/details?x=1' };
-    expect(read('hotel_rooms', 'Go does the second one have free cancellation?', { stay })).toEqual({ recipe: 'hotels.rooms', given: { hotel: stay.page }, asked: { hotel: 'r_ab12#2' } });
-    expect(read('hotel_reviews', 'Go Palm Grove ke reviews kaise hain?', { stay })?.recipe).toBe('hotels.reviews');
-    expect(read('hotel_reviews', 'Go reviews?', { stay: null })).toBeNull();
+    expect(read('hotel_rooms', 'Go does the second one have free cancellation?', { option: stay })).toEqual({ recipe: 'hotels.rooms', given: { hotel: stay.page }, asked: { hotel: 'r_ab12#2' } });
+    expect(read('hotel_reviews', 'Go Palm Grove ke reviews kaise hain?', { option: stay })?.recipe).toBe('hotels.reviews');
+    expect(read('hotel_reviews', 'Go reviews?', { option: null })).toBeNull();
+    const fare = { ref: 'r_fl01#1', page: 'https://www.ixigo.com/search/result/flight?x=1' };
+    expect(read('fare_review', 'Go free cancellation kitna extra lagega IndiGo wali pe?', { option: fare })).toEqual({ recipe: 'flights.review', given: { option: fare.page }, asked: { option: 'r_fl01#1' } });
+  });
+
+  it("reads a flight's status by its carrier and number, on today unless the line names a day", () => {
+    expect(flightIn('Go is 6E 5341 on time?')).toEqual({ carrier: '6E', number: '5341' });
+    expect(flightIn('qp-1402 kal')).toEqual({ carrier: 'QP', number: '1402' });
+    expect(flightIn('6E 5341 or AI 2981?')).toBeNull();
+    expect(read('flight_status', 'Go is 6E 5341 on time?')).toMatchObject({ recipe: 'flights.status', given: { carrier: '6E', number: '5341', date: '2026-10-07' } });
+    expect(read('flight_status', 'Go UK 827 kal late hai kya?')?.given).toEqual({ carrier: 'UK', number: '827', date: '2026-10-08' });
+    expect(read('flight_status', 'Go Kabir ki flight ka terminal kaunsa hai?')).toBeNull();
+  });
+
+  it("reads a train's coach position and boarding stations by its number, with the coach and station when named", () => {
+    expect(coachIn('12051 mein B2 coach kahan aayega')).toBe('B2');
+    expect(coachIn('B2 or B3?')).toBeNull();
+    expect(read('coach_position', 'Go 12051 mein B2 coach platform pe kahan aayega?')?.given).toEqual({ train: '12051', coach: 'B2' });
+    expect(read('coach_position', 'Go how many coaches does 10103 have?')?.given).toEqual({ train: '10103' });
+    expect(read('boarding_stations', 'Go 12779 mein Thivim se chadh sakte hain kya?')?.given).toEqual({ train: '12779', station: 'thivim' });
+    expect(read('boarding_stations', 'Go what are the boarding stations for the Konkan Kanya Express?')).toBeNull();
   });
 
   it('never reads a watch the group asks for as a read now', () => {
@@ -75,26 +95,26 @@ describe('the slots of an ixigo ask beyond the searches', () => {
   });
 });
 
-describe('the stay a line points at', () => {
+describe('the option a line points at', () => {
   const card = [
     { n: 1, title: 'Casa Azul Villa' },
     { n: 2, title: 'Palm Grove Resort' },
     { n: 3, title: 'Sea Breeze Homestay' },
   ];
   it('by its place on the card, in English or Hinglish', () => {
-    expect(pickStay('does the second one have free cancellation?', card)).toBe(2);
-    expect(pickStay('pehle wale hotel mein pay at hotel ka option hai?', card)).toBe(1);
-    expect(pickStay('log kya bol rahe hain teesre wale ke baare mein?', card)).toBe(3);
-    expect(pickStay('option #2 ke rooms', card)).toBe(2);
+    expect(pickOption('does the second one have free cancellation?', card)).toBe(2);
+    expect(pickOption('pehle wale hotel mein pay at hotel ka option hai?', card)).toBe(1);
+    expect(pickOption('log kya bol rahe hain teesre wale ke baare mein?', card)).toBe(3);
+    expect(pickOption('option #2 ke rooms', card)).toBe(2);
   });
   it('by a word of its name only it has, never a word many stays share', () => {
-    expect(pickStay('Palm Grove ke reviews kaise hain?', card)).toBe(2);
-    expect(pickStay('what do guests say about Sea Breeze?', card)).toBe(3);
-    expect(pickStay('which villa has the best reviews?', card)).toBeNull();
+    expect(pickOption('Palm Grove ke reviews kaise hain?', card)).toBe(2);
+    expect(pickOption('what do guests say about Sea Breeze?', card)).toBe(3);
+    expect(pickOption('which villa has the best reviews?', card)).toBeNull();
   });
   it('the only stay on the card, or none when the line is not plain', () => {
-    expect(pickStay('reviews kaise hain?', [card[0]!])).toBe(1);
-    expect(pickStay('reviews kaise hain?', card)).toBeNull();
-    expect(pickStay('the first one or Palm Grove?', card)).toBeNull();
+    expect(pickOption('reviews kaise hain?', [card[0]!])).toBe(1);
+    expect(pickOption('reviews kaise hain?', card)).toBeNull();
+    expect(pickOption('the first one or Palm Grove?', card)).toBeNull();
   });
 });
