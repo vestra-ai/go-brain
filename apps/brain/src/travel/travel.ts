@@ -190,7 +190,7 @@ export interface StoredOffer {
   kind: string;
   title: string;
   priceMinor: number | null;
-  /** Stays: the whole stay, which is what a vote and a payment use. */
+  /** Stays: the whole stay, which is the price its card, a vote and a payment carry (never priceMinor, a night's). */
   totalMinor: number | null;
   currency: string | null;
   priceNote: string | null;

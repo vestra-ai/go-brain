@@ -11,7 +11,7 @@ import type { ServerLink } from '../../door/server-link.js';
 import type { Confirmed, Hold, Travel } from '../../travel/travel.js';
 import { askToPay, idsFrom, postCard, type AskResult } from '../ask.js';
 import type { MoneyDeps } from '../deps.js';
-import type { PayLinkInput, PayLinkRefusal, VaultClient } from '../vault-client.js';
+import type { PayLinkInput, PayLinkRefusal, TravelDetails, VaultClient } from '../vault-client.js';
 
 /** The contract's spend approval test key (TEST KEY ONLY), so the fake Server signs real approvals. */
 export const SPEND_VECTOR = JSON.parse(
@@ -483,7 +483,17 @@ export class FakeVaultClient implements VaultClient {
 
   constructor(private readonly now: () => Date) {}
 
-  async homeLink(i: { personId: string; start: 'home' | 'add_card' | 'add_login' }): Promise<{ url: string; expiresAt: string }> {
+  /** Each person's travel details, as their vault keeps them; and who was read for which booking (never the values). */
+  readonly travel = new Map<string, TravelDetails>();
+  readonly travelReads: Array<{ personId: string; ref: string }> = [];
+
+  async travelDetails(i: { tripId: string; personId: string; booking: { ref: string; travellerPersonId: string; purpose: string } }): Promise<TravelDetails | null> {
+    if (i.personId !== i.booking.travellerPersonId) throw new Error("the vault reads a person's travel details only for a ticket of their own");
+    this.travelReads.push({ personId: i.personId, ref: i.booking.ref });
+    return this.travel.get(i.personId) ?? null;
+  }
+
+  async homeLink(i: { personId: string; start: 'home' | 'add_card' | 'add_login' | 'add_travel' }): Promise<{ url: string; expiresAt: string }> {
     this.homeLinks.push(i);
     return { url: `https://vault.test/l/home_${this.homeLinks.length}`, expiresAt: new Date(this.now().getTime() + 300_000).toISOString() };
   }

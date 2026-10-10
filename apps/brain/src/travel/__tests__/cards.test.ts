@@ -85,9 +85,49 @@ describe('the options card', () => {
     expect(card.actions?.map((a) => [a.action_id, a.label])).toEqual([['see_on_ixigo', 'See stays on ixigo']]);
   });
 
-  it('describes a stay by its area and whole-stay price', () => {
+  it("describes a stay by its area and its night's price, the card's price being the whole stay", () => {
     const stay: ResultOption = { kind: 'stay', title: 'Villa Sol', priceMinor: 1280000, totalMinor: 3840000, priceNote: 'per night', highlights: [], facts: { nights: 3, area: 'Anjuna' } };
-    expect(subtitleFor(stay)).toBe('Anjuna, ₹38,400 for 3 nights');
+    expect(subtitleFor(stay)).toBe('Anjuna, ₹12,800 per night');
+  });
+
+  // The Server team, 10 Oct (§6c): a card said ₹11,800 (a night) while the vote built from it said ₹35,400 (the stay).
+  it("prices a stay on its card by the whole stay, saying for how long, and its night in the subtitle; other kinds as before", () => {
+    const sol: ResultOption = {
+      kind: 'stay', title: 'Villa Sol', priceMinor: 1_180_000, totalMinor: 3_540_000, currency: 'INR', priceNote: 'per night', highlights: [], facts: { nights: 3, area: 'Anjuna' },
+    };
+    const card = (option: ResultOption) => buildOptionsCard({ cardId: 'c_whole', title: 'Stays', optionKind: 'stay', checkedAt: '2026-10-07T12:00:00.000Z', picks: [{ optionId: 'opt_w', option, imageUrl: null }] }).options[0]!;
+    expect(card(sol)).toMatchObject({ price_minor: 3_540_000, currency: 'INR', price_note: 'for 3 nights', subtitle: 'Anjuna, ₹11,800 per night' });
+    // Two rooms, ixigo's own coupon: the note says the rooms, the subtitle the night as ixigo priced it.
+    const two: ResultOption = { ...sol, priceMinor: 900_000, totalMinor: 5_400_000, priceNote: 'per night, per room, IXIFIRST applied', facts: { nights: 3, rooms: 2, area: 'Candolim' } };
+    expect(card(two)).toMatchObject({ price_minor: 5_400_000, price_note: 'for 3 nights, 2 rooms', subtitle: 'Candolim, ₹9,000 per night, per room, IXIFIRST applied' });
+    expect(card({ ...sol, facts: { area: 'Anjuna' } })).toMatchObject({ price_minor: 3_540_000, price_note: 'for the whole stay' });
+    // No whole-stay total: no price at all, never the night's; the night still shows in the subtitle.
+    const nightOnly = card({ kind: 'stay', title: 'Villa Sol', priceMinor: 1_180_000, currency: 'INR', priceNote: 'per night', highlights: [], facts: { nights: 3, area: 'Anjuna' } });
+    expect(nightOnly).not.toHaveProperty('price_minor');
+    expect(nightOnly).not.toHaveProperty('price_note');
+    expect(nightOnly.subtitle).toBe('Anjuna, ₹11,800 per night');
+    // A flight keeps its own price and note.
+    expect(buildOptionsCard({ cardId: 'c_f2', title: 'Flights', optionKind: 'flight', checkedAt: '2026-10-07T12:00:00.000Z', picks: [picks[0]!] }).fallback_text).toBe('1 flight: Flights, from ₹5,920 per person');
+    expect(buildOptionsCard({ cardId: 'c_f', title: 'Flights', optionKind: 'flight', checkedAt: '2026-10-07T12:00:00.000Z', picks: [picks[0]!] }).options[0]).toMatchObject({ price_minor: 592000, price_note: 'per person' });
+  });
+
+  // The exam, 10 Oct (#5): a stays card for five said "from ₹621 per night, per room, IXIFIRST applied".
+  it("says a stays card's from as its cheapest whole stay and each person's share, never a night's", () => {
+    const stay = (title: string, night: number, rooms: number): ResultOption => ({
+      kind: 'stay', title, priceMinor: night, totalMinor: night * 3 * rooms, currency: 'INR', priceNote: 'per night, per room, IXIFIRST applied', highlights: [],
+      facts: { nights: 3, rooms, guests: 5, area: 'Arambol' },
+    });
+    const cheap = [stay('Dorm by the Sea', 50_000, 5), stay('Sea Breeze Rooms', 62_100, 3), stay('Arambol Huts', 250_000, 1)].map((option, i) => ({ optionId: `opt_c${i + 1}`, option, imageUrl: null }));
+    const card = buildOptionsCard({ cardId: 'c_cheap', title: 'Cheap sleeps near the beach', optionKind: 'stay', checkedAt: '2026-10-07T12:00:00.000Z', picks: cheap });
+    // The cheapest night (₹500 a room, five rooms: ₹7,500) is not the cheapest stay: three rooms at ₹621 are (₹5,589).
+    expect(card.fallback_text).toBe('3 stays: Cheap sleeps near the beach, from ₹5,589 for 3 nights, 3 rooms, about ₹1,100 each');
+    expect(card.options[1]).toMatchObject({
+      price_minor: 558_900, price_note: 'for 3 nights, 3 rooms', subtitle: 'Arambol, ₹621 per night, per room, IXIFIRST applied, about ₹1,100 each',
+    });
+    // No stay with a total (a job's web finds): the night's, as it was.
+    const nightOnly = { kind: 'stay' as const, title: 'Casa Lua', priceMinor: 150_000, currency: 'INR', priceNote: 'per night', highlights: [], facts: {} };
+    expect(buildOptionsCard({ cardId: 'c_n', title: 'Web finds', optionKind: 'stay', checkedAt: '2026-10-07T12:00:00.000Z', picks: [{ optionId: 'opt_n', option: nightOnly, imageUrl: null }] }).fallback_text)
+      .toBe('1 stay: Web finds, from ₹1,500 per night');
   });
 
   it("adds each person's share, worked out in code, when ixigo priced it for a head count: the demo's \"under 8k a head\" for five", () => {
@@ -95,10 +135,10 @@ describe('the options card', () => {
       kind: 'stay', title: 'Lotus & Orchid Villas', priceMinor: 2394400, totalMinor: 7183200, priceNote: 'per night, per room', highlights: [],
       facts: { nights: 3, rooms: 1, guests: 5, area: 'Candolim' },
     };
-    expect(subtitleFor(villa)).toBe('Candolim, ₹71,832 for 3 nights, about ₹14,400 each');
-    expect(subtitleFor({ ...villa, totalMinor: 3_840_000 })).toBe('Candolim, ₹38,400 for 3 nights, about ₹7,700 each');
-    // One person: the share is the total, so it is not said twice.
-    expect(subtitleFor({ ...villa, facts: { ...villa.facts, guests: 1 } })).toBe('Candolim, ₹71,832 for 3 nights');
+    expect(subtitleFor(villa)).toBe('Candolim, ₹23,944 per night, per room, about ₹14,400 each');
+    expect(subtitleFor({ ...villa, totalMinor: 3_840_000 })).toBe('Candolim, ₹23,944 per night, per room, about ₹7,700 each');
+    // One person: the share is the whole price, already on the card, so it is not said.
+    expect(subtitleFor({ ...villa, facts: { ...villa.facts, guests: 1 } })).toBe('Candolim, ₹23,944 per night, per room');
   });
 });
 

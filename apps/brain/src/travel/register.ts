@@ -25,7 +25,7 @@ import { createIxigoWebBackend, LINK_ONLY_KINDS, searchKindOf } from './recipes/
 import { createOffers } from './recipes/offers.js';
 import { offersNow } from './recipes/offers-now.js';
 import { createEarlyStart } from './recipes/early.js';
-import { earlyAnswer, earlyReadNow, earlySearchNow } from './recipes/now.js';
+import { earlyAnswer, earlyReadNow, earlySearchNow, jevPickNow } from './recipes/now.js';
 import { loadLearnedPlaces } from './recipes/places-store.js';
 import { optionOnCard } from './recipes/option-on-card.js';
 import { createPlaceFor } from './place-for.js';
@@ -332,6 +332,11 @@ export const registerTravel: RegisterLane = async (brain) => {
   brain.hooks.onRead((msg, read, pack) => early.onRead(msg, read, pack));
   brain.context.addNow(earlySearchNow({ early, results, travel, now: brain.now }));
   brain.context.addNow(earlyReadNow({ early, now: brain.now }));
+  // Jev's sure pick for a line nothing started early for: the tool that reads it on ixigo, never memory (EXAM, 10 Oct).
+  brain.context.addNow(jevPickNow({
+    early,
+    canRead: (recipe) => brain.switches.get('TRAVEL_MODE') === 'ixigo_web' && toolRecipes(book).some((r) => r.id === recipe),
+  }));
   // The sites' own filter lists the trip's searches brought: the model maps the ask onto them (site_filters).
   brain.context.addNow(offersNow({ offers }));
   // A plain search ask whose early search found options answers with no model call: the card and a line from its data.

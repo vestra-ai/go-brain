@@ -196,7 +196,7 @@ describe('a stays search past its 12 s (staging pass, 8 Oct: a cold box took 13 
     expect(next.cards).toEqual([]);
   });
 
-  it('wakes nothing for a run whose options a card in the room already showed, and leaves a failure or nothing found to the model', async () => {
+  it("wakes nothing for a run whose options a card in the room already showed, unless it stands in for a later ask's page, and leaves a failure or nothing found to the model", async () => {
     const results = store();
     const puts: DeskItem[] = [];
     const desk = { put: async (item: Omit<DeskItem, 'id'> & { id?: string }) => { puts.push({ ...item, id: item.id! }); } };
@@ -210,6 +210,12 @@ describe('a stays search past its 12 s (staging pass, 8 Oct: a cold box took 13 
     handOver('stays', query, Promise.resolve(found), { tripId: 't_goa', fallbackId: 'early:m_1' }, { desk, now, results });
     await new Promise((r) => setTimeout(r, 20));
     expect(puts).toEqual([]);
+    // The same read standing in for a later ask's page that failed (backend.ts staysFallback, earlier) answers that ask:
+    // it wakes, the model's to say it is Go's earlier read (the exam, 10 Oct: the second stays ask got the first one's read
+    // back, already shown, and the room stayed on "On it.").
+    handOver('stays', query, Promise.resolve({ ...found, earlier: true }), { tripId: 't_goa', fallbackId: 'turn_w9:stays' }, { desk, now, results });
+    await vi.waitFor(() => expect(puts).toHaveLength(1));
+    expect(puts[0]!.payload).toMatchObject({ source: 'travel_search', pick: true, error: null });
     // A wake with nothing found or a failure is the model's, which says so in one line.
     const pack = goaPack();
     const failed: DeskItem = { id: 'search:t_goa:x:failed', tripId: 't_goa', kind: 'search', ref: 'stays', dueAt: now(), payload: { source: 'travel_search', search: 'stays', count: 0, resultsId: null, summary: '', error: 'unreachable' } };

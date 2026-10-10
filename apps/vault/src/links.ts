@@ -3,7 +3,7 @@ import type { Db } from './store/people.js';
 
 export const LINK_TTL_MS = 5 * 60_000;
 /** Where the vault home opens. No add_login: logins are not stored this week (master §9). */
-export type LinkStart = 'home' | 'add_card';
+export type LinkStart = 'home' | 'add_card' | 'add_travel';
 
 export interface LinkRow {
   link_id: string;

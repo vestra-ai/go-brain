@@ -4,7 +4,8 @@ import type { DeskItem } from '../../../desk/desk.js';
 import type { TravelOption, TravelQuery, TravelSearch } from '../../travel.js';
 import type { EngineAnswer } from '../../book/engine.js';
 import type { EarlyRead, EarlySearch } from '../early.js';
-import { EARLY_WAIT_MS, earlyAnswer, earlyReadNow, earlySearchNow } from '../now.js';
+import { EARLY_WAIT_MS, earlyAnswer, earlyReadNow, earlySearchNow, jevPickNow } from '../now.js';
+import type { RecipeChoice } from '../../../reflex/questions.js';
 import { searchWakeAnswer } from '../../search-wake.js';
 import { msg } from '../../../__tests__/fixtures/goa.js';
 import { makeTurnCtx } from '../../../composer/tools.js';
@@ -414,5 +415,37 @@ describe('the early ixigo read block', () => {
     const text = (await readWorld(Promise.resolve(big)).block.render('t_goa', [wakeFor('m_57', 57)]))!;
     expect(text).toMatch(/\(\d+ more: the ixigo tool gives them\)/);
     expect(text.length).toBeLessThan(6_500);
+  });
+});
+
+describe("Jev's sure pick reaches the turn (EXAM, 10 Oct: travel facts were answered from memory)", () => {
+  function pickWorld(picks: Record<string, RecipeChoice>, started: { read?: string; search?: string } = {}, inBook = ['trains.boarding_stations']) {
+    return jevPickNow({
+      early: {
+        pickFor: (_tripId, messageId) => picks[messageId] ?? null,
+        readFor: (_tripId, messageId) => (messageId === started.read ? ({ recipe: 'trains.running_status' } as unknown as EarlyRead) : null),
+        searchFor: (_tripId, messageId) => (messageId === started.search ? ({ kind: 'trains' } as unknown as EarlySearch) : null),
+      },
+      canRead: (recipe) => inBook.includes(recipe),
+    });
+  }
+
+  it("names the ixigo tool's recipe, or the search tool, for a pick nothing started for", async () => {
+    const block = pickWorld({ m_10: 'boarding_stations', m_14: 'trains' });
+    const text = await block.render('t_goa', [wakeFor('m_10', 10), wakeFor('m_14', 14)]);
+    expect(text).toBe(
+      "ixigo can read #10: the ixigo tool's recipe trains.boarding_stations. Read it there, asking first for the one thing missing if one is (which train, which stay); never answer it from memory.\n" +
+        'ixigo can read #14: search_trains searches it. Search there, asking first for the one thing missing if one is; never answer it from memory.',
+    );
+  });
+
+  it('says nothing for a read or a search that started early (their own blocks), or a line with no pick', async () => {
+    const block = pickWorld({ m_57: 'train_status', m_58: 'trains' }, { read: 'm_57', search: 'm_58' });
+    expect(await block.render('t_goa', [wakeFor('m_57', 57), wakeFor('m_58', 58), wakeFor('m_59', 59)])).toBeNull();
+  });
+
+  it('says what no recipe reads yet is general advice', async () => {
+    const text = await pickWorld({ m_12: 'coach_position' }, {}, []).render('t_goa', [wakeFor('m_12', 12)]);
+    expect(text).toBe('No ixigo recipe reads #12 yet: what you say about it is from what you know, so say it is ("usually", "from what I know").');
   });
 });

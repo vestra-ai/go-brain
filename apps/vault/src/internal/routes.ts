@@ -2,25 +2,40 @@ import { Id } from '@go/contract';
 import type { FastifyPluginAsync } from 'fastify';
 import { z } from 'zod';
 import type { VaultDeps } from '../app.js';
+import { masterKeyOf } from '../crypto/envelope.js';
 import { rawBody } from '../http/security.js';
 import { createHomeLink } from '../links.js';
 import { ensurePerson } from '../store/people.js';
+import { travelForBooking } from '../store/travel.js';
+import { logUnlock } from '../store/unlock-log.js';
 import { checkInternal } from './auth.js';
 import { PayLinkBody, openPayLink, voidPayLinks } from './pay-links.js';
 
 const LinkBody = z.object({
   person_id: Id,
   // The contract's CreateLink allows add_login; the vault takes it and opens the home, which offers a card only.
-  start: z.enum(['home', 'add_card', 'add_login']).nullish(),
+  // add_travel opens it at the person's travel details.
+  start: z.enum(['home', 'add_card', 'add_login', 'add_travel']).nullish(),
   display_name: z.string().min(1).max(80).nullish(),
 });
 
 const VoidBody = z.object({ approval_id: Id });
 
+/**
+ * A ticket Go is booking for one person: whose details it asks for, the traveller that booking is for, and what for (the
+ * person's page shows it). The vault answers only for the traveller themselves.
+ */
+const TravelBody = z.object({
+  trip_id: Id,
+  person_id: Id,
+  booking: z.object({ ref: Id, traveller_person_id: Id, purpose: z.string().trim().min(1).max(120) }),
+});
+
 const invalid = (error: z.ZodError) => ({ error: { code: 'invalid', message: z.prettifyError(error).slice(0, 500) } });
 
 /** The only calls Go makes to the vault. Each one is signed with VAULT_SHARED_SECRET. */
 export const internalRoutes: FastifyPluginAsync<{ deps: VaultDeps }> = async (app, { deps }) => {
+  const master = masterKeyOf(deps.env.VAULT_MASTER_KEY);
   app.addHook('preHandler', async (req, reply) => {
     const check = await checkInternal(deps.pool, deps.env.VAULT_SHARED_SECRET, req, rawBody(req), deps.now());
     if (!check.ok) return reply.code(401).send({ error: { code: 'bad_signature', message: 'signature refused' } });
@@ -32,7 +47,8 @@ export const internalRoutes: FastifyPluginAsync<{ deps: VaultDeps }> = async (ap
     if (!body.success) return reply.code(422).send(invalid(body.error));
     const now = deps.now();
     await ensurePerson(deps.pool, body.data.person_id, now, body.data.display_name ?? undefined);
-    const link = await createHomeLink(deps.pool, now, { personId: body.data.person_id, start: body.data.start === 'add_card' ? 'add_card' : 'home' });
+    const start = body.data.start === 'add_card' || body.data.start === 'add_travel' ? body.data.start : 'home';
+    const link = await createHomeLink(deps.pool, now, { personId: body.data.person_id, start });
     return { url: `${deps.env.VAULT_PUBLIC_URL}/l/${link.token}`, expires_at: link.expiresAt.toISOString() };
   });
 
@@ -59,6 +75,22 @@ export const internalRoutes: FastifyPluginAsync<{ deps: VaultDeps }> = async (ap
   });
 
   // Payments without both keys, counted from the vault's own records. Always 0 by construction.
+  // A person's travel details for a ticket of their own Go is booking (store/travel.ts): their values, or none. The answer
+  // is never logged; the read is, without a value.
+  app.post('/internal/travel-details', async (req, reply) => {
+    const body = TravelBody.safeParse(req.body);
+    if (!body.success) return reply.code(422).send(invalid(body.error));
+    const { trip_id: tripId, person_id: personId, booking } = body.data;
+    if (personId !== booking.traveller_person_id) {
+      return reply.code(403).send({ error: { code: 'not_the_traveller', message: "a person's travel details are read only for a ticket of their own" } });
+    }
+    const now = deps.now();
+    const details = await travelForBooking(deps.pool, master, now, { personId, travellerPersonId: booking.traveller_person_id });
+    if (!details) return reply.code(404).send({ error: { code: 'none', message: 'no travel details kept' } });
+    await logUnlock(deps.pool, now, { personId, kind: 'travel_read', tripId, bookingRef: booking.ref, reason: booking.purpose });
+    return { first_name: details.first_name, last_name: details.last_name, gender: details.gender, dob: details.dob };
+  });
+
   app.get('/internal/both-keys', async () => {
     const charged = await deps.pool.query<{ approval_id: string }>(
       "select distinct approval_id from unlock_log where kind = 'pay_ok' and approval_id is not null order by approval_id",

@@ -69,7 +69,8 @@ describe('a filtered stays read whose caller falls back (backend.ts)', () => {
     await engine.answer('hotels.search', goa, { tripId: 't_pool', conditions: ['pool'], fallsBack: true });
     await engine.answer('hotels.search', goa, { tripId: 't_pool' });
     expect(asked).toEqual([
-      { url: expect.stringContaining('&filters=FL_HF_29'), fallsBack: true, about: { recipe: 'hotels.search', conditions: ['pool'], site: [], wide: true } },
+      // Filtered, all of Goa is page 1 alone (hotels.search's wide): what the read is for still says so.
+      { url: expect.stringContaining('&filters=FL_HF_29'), fallsBack: true, about: { recipe: 'hotels.search', conditions: ['pool'], site: [], wide: false } },
       { url: expect.not.stringContaining('filters='), about: { recipe: 'hotels.search', conditions: [], site: [], wide: true } },
     ]);
   });
@@ -146,9 +147,11 @@ describe("the site's own list of what it offers (hotels.search: ixigo's filters 
     expect(reads[0]).toContain('&adultCount=5&roomCount=3&');
     expect(reads[1]).toContain('&adultCount=5&roomCount=1&');
     expect(reads[1]).toContain(`&filters=${encodeURIComponent('AT_EH,FL_HF_29')}`);
-    // All of Goa is read as a careful person would, both pages, filtered or not.
+    // All of Goa with nothing filtered is read as a careful person would, both pages; filtered, page 1 holds ixigo's best
+    // matches, and a filter that leaves none answers at once (the exam, 10 Oct: six scrolls on an empty page ran to 20 s).
     expect(plans[0]!.capture[0]).toMatchObject({ min_count: 2 });
-    expect(plans[1]!.capture[0]).toMatchObject({ min_count: 2 });
+    expect(plans[1]!.capture[0]).not.toHaveProperty('min_count');
+    expect(plans[1]!.steps?.some((s) => s.op === 'scroll')).toBe(false);
     if (villas.as !== 'options') throw new Error('not options');
     const first = villas.options[0]!;
     expect(first.facts).toMatchObject({ nights: 3, rooms: 1, guests: 5 });

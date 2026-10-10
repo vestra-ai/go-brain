@@ -33,7 +33,19 @@ export interface FastContext extends Omit<AskContext, 'kind'> {
 
 type Reader = (text: string, ctx: FastContext) => FastAsk | null;
 
+/** A fast kind: the recipe it reads (named to the turn when the words don't give its slots, now.ts), and its slots' reader. */
+export interface FastKind {
+  recipe: string;
+  read: Reader;
+}
+
 const plain = (recipe: string, inputs: Record<string, string>): FastAsk => ({ recipe, given: inputs, asked: inputs });
+
+/** A kind of one recipe whose reader gives its inputs: `ask` makes the recipe's FastAsk of them. */
+const kind = (recipe: string, read: (text: string, ctx: FastContext, ask: (inputs: Record<string, string>) => FastAsk) => FastAsk | null): FastKind => ({
+  recipe,
+  read: (text, ctx) => read(text, ctx, (inputs) => plain(recipe, inputs)),
+});
 
 /** A train's 5-digit number, when the line gives exactly one: "12051", never a price ("₹12,000", "15000.50") or a PNR's digits. */
 export function trainNumberIn(text: string): string | null {
@@ -109,48 +121,50 @@ function offersAsk(text: string, ctx: FastContext): FastAsk {
 }
 
 /** A recipe of one shown option: its page for the engine, its results_id#n for the tool. */
-const optionAsk = (recipe: string, input: string) => (_text: string, ctx: FastContext): FastAsk | null =>
-  ctx.option ? { recipe, given: { [input]: ctx.option.page }, asked: { [input]: ctx.option.ref } } : null;
+const optionAsk = (recipe: string, input: string): FastKind => ({
+  recipe,
+  read: (_text, ctx) => (ctx.option ? { recipe, given: { [input]: ctx.option.page }, asked: { [input]: ctx.option.ref } } : null),
+});
 
 /** A recipe of one train by its number, with the station (and coach) the line names, when it names one. */
-const byTrain = (recipe: string, more: { station?: boolean; coach?: boolean } = {}): Reader => (text) => {
-  const train = trainNumberIn(text);
-  if (!train) return null;
-  const station = more.station ? stationIn(text) : null;
-  const coach = more.coach ? coachIn(text) : null;
-  return plain(recipe, { train, ...(station ? { station } : {}), ...(coach ? { coach } : {}) });
-};
+const byTrain = (recipe: string, more: { station?: boolean; coach?: boolean } = {}): FastKind =>
+  kind(recipe, (text, _ctx, ask) => {
+    const train = trainNumberIn(text);
+    if (!train) return null;
+    const station = more.station ? stationIn(text) : null;
+    const coach = more.coach ? coachIn(text) : null;
+    return ask({ train, ...(station ? { station } : {}), ...(coach ? { coach } : {}) });
+  });
 
 /** Each fast kind's recipe and how its slots are read. */
-export const FAST_ASKS: Record<FastChoice, Reader> = {
+export const FAST_ASKS: Record<FastChoice, FastKind> = {
   train_status: byTrain('trains.running_status'),
   schedule: byTrain('trains.schedule'),
   // Not in the book yet (p5): where a coach stops, and the stations a train can be boarded at.
   coach_position: byTrain('trains.coach_position', { station: true, coach: true }),
   boarding_stations: byTrain('trains.boarding_stations', { station: true }),
   // A card to ixigo's PNR page, where the person checks it on their own phone (p5): the number stays in the message.
-  pnr: (text) => (pnrIn(text) ? { recipe: 'trains.pnr_status', given: {}, asked: {} } : null),
-  confirm_chance: (text, ctx) => {
+  pnr: kind('trains.pnr_status', (text, _ctx, ask) => (pnrIn(text) ? ask({}) : null)),
+  confirm_chance: kind('trains.confirm_chance', (text, ctx, ask) => {
     const journey = readTravelAsk(text, { ...ctx, kind: 'trains' });
     if (!journey?.query.from || !journey.query.to || !journey.query.date) return null;
     const train = trainNumberIn(text);
     const cls = classIn(text);
-    return plain('trains.confirm_chance', {
-      from: journey.query.from, to: journey.query.to, date: journey.query.date, ...(train ? { train } : {}), ...(cls ? { class: cls } : {}),
-    });
-  },
+    return ask({ from: journey.query.from, to: journey.query.to, date: journey.query.date, ...(train ? { train } : {}), ...(cls ? { class: cls } : {}) });
+  }),
   // Not in the book yet (p0): a flight's status on its day, today unless the line names another.
-  flight_status: (text, ctx) => {
+  flight_status: kind('flights.status', (text, ctx, ask) => {
     const flight = flightIn(text);
     if (!flight) return null;
     const date = datesIn(text.toLowerCase(), ctx.today, ctx.dates ?? null)[0]?.day ?? ctx.today;
-    return plain('flights.status', { ...flight, date });
-  },
-  guide: (text, ctx) => {
+    return ask({ ...flight, date });
+  }),
+  guide: kind('plan.destination', (text, ctx, ask) => {
     const place = guidePlace(text, ctx);
-    return place ? plain('plan.destination', { place }) : null;
-  },
-  offers: offersAsk,
+    return place ? ask({ place }) : null;
+  }),
+  // The general list; a product the line names reads its own (offersAsk).
+  offers: { recipe: 'offers.list', read: offersAsk },
   hotel_rooms: optionAsk('hotels.rooms', 'hotel'),
   hotel_reviews: optionAsk('hotels.reviews', 'hotel'),
   // Not in the book yet (p0): the shown fare's review page, read only.
@@ -163,5 +177,5 @@ export const OPTION_KINDS: Partial<Record<FastChoice, 'stay' | 'flight'>> = { ho
 /** The recipe a fast ask runs and its inputs, or null when the words don't give them plainly. A watch is never one. */
 export function readFastAsk(choice: FastChoice, text: string, ctx: FastContext): FastAsk | null {
   if (A_WATCH.test(text)) return null;
-  return FAST_ASKS[choice](text, ctx);
+  return FAST_ASKS[choice].read(text, ctx);
 }
