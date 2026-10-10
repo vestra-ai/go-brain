@@ -240,6 +240,11 @@ export const STAGE_TAB = 'stage';
 /** How long the stage stays on its last page after a read, on screen for the room, until the next one takes it. */
 export const STAGE_MS = 300_000;
 /**
+ * The most a fetch on the stage waits for the one before it on the same browser (stageTurn): a page's own time and then
+ * some. Past it, it goes anyway, as before the queue.
+ */
+export const STAGE_WAIT_MS = 30_000;
+/**
  * How long Go stops trying page calls after Bash refused one as a request it doesn't take (a 400: a Bash with no
  * page_fetch yet), or answered with no page call in it. Once Bash has page_fetch, they resume within this, with no deploy
  * of Go's.
@@ -516,6 +521,47 @@ export function createBrowserFetchRunner(d: RunnerDeps): RecipeRunner {
     }
   }
 
+  /**
+   * The stage, one fetch at a time on each browser: a stage read, a look at the stage and the steps on the stage's page each
+   * wait their turn, at most STAGE_WAIT_MS. Bash takes a kept tab out of use while a fetch has it, and answers another
+   * fetch with no url for it 409 no_open_tab (the 10 Oct drill: the live card's look had the stage when the top pick's
+   * click came, and its fallback opened a second stage window). A look gives way to a real one: when a read or a step on
+   * the stage is waiting, or one has gone since the look's own read (the page is another), it is skipped, and the card
+   * keeps the pictures it has. Keyed by the browser, which the trips of one organizer share with their one stage tab.
+   */
+  const stages = new Map<string, { tail: Promise<void>; waiting: number; gen: number }>();
+  const stageOf = async (tripId: string): Promise<{ tail: Promise<void>; waiting: number; gen: number }> => {
+    const key = await d.browser.userFor(tripId);
+    const q = stages.get(key) ?? { tail: Promise.resolve(), waiting: 0, gen: 0 };
+    stages.set(key, q);
+    return q;
+  };
+  /** since: a look's, the stage's turn count when its read had the stage (stageGen). */
+  async function stageTurn<T>(tripId: string, kind: 'real' | 'look', run: () => Promise<T>, since?: number): Promise<T | null> {
+    const q = await stageOf(tripId);
+    const gaveWay = (): boolean => kind === 'look' && (q.waiting > 0 || (since !== undefined && q.gen !== since));
+    if (gaveWay()) return null;
+    if (kind === 'real') q.waiting += 1;
+    const before = q.tail;
+    let done!: () => void;
+    q.tail = before.then(() => new Promise<void>((r) => { done = r; }));
+    try {
+      let timer: NodeJS.Timeout | undefined;
+      await Promise.race([before, new Promise<void>((r) => { timer = setTimeout(r, STAGE_WAIT_MS); timer.unref?.(); })]);
+      clearTimeout(timer);
+      if (kind === 'real') {
+        q.waiting -= 1;
+        q.gen += 1;
+      } else if (gaveWay()) return null;
+      return await run();
+    } finally {
+      // The next one's turn once this one's own turn came and it ended, whichever way.
+      void before.then(() => done());
+    }
+  }
+  /** The stage's turn count now: a look takes it while its read has the stage, to give way to any real fetch after. */
+  const stageGen = async (tripId: string): Promise<number> => (await stageOf(tripId)).gen;
+
   /** A fetch on the trip's computer, once one of its slots is free; the slot frees when the fetch ends, however it ends. */
   async function inSlot<T>(tripId: string, o: Pick<ReadOptions, 'signal' | 'priority'>, run: () => Promise<T>): Promise<T> {
     const free = await slot(await d.browser.userFor(tripId), o.signal, o.priority);
@@ -699,15 +745,19 @@ export function createBrowserFetchRunner(d: RunnerDeps): RecipeRunner {
       // The stage's page, looked at where it is, and left there.
       ...(stage ? { stage: true, tab: STAGE_TAB, keep_open_ms: STAGE_MS } : { keep_open_ms: WARM_TAB_MS }),
     };
+    // Taken while the read still has the stage: a look gives way to any real fetch there after it.
+    const since = stage ? stageGen(tripId) : Promise.resolve(undefined);
+    const take = async (): Promise<void> => {
+      const lookStarted = d.now().getTime();
+      const answer = await d.v1.call<FetchAnswer>('POST', `/v1/users/${await d.browser.userFor(tripId)}/browser/fetch`, { body });
+      const frames = (Array.isArray(answer.frames) ? answer.frames.filter(isFrame) : [])
+        .filter((f) => f.page_url === pageUrl)
+        .map((f) => ({ ...f, at_ms: lookStarted - fetchStarted + f.at_ms }));
+      if (frames.length > 0) onProgress({ type: 'drawn', frames });
+    };
+    // On the stage it waits its turn, and gives way to a real fetch there (stageTurn).
     void sleep(LOOK_AFTER_MS)
-      .then(() => inSlot(tripId, {}, async () => {
-        const lookStarted = d.now().getTime();
-        const answer = await d.v1.call<FetchAnswer>('POST', `/v1/users/${await d.browser.userFor(tripId)}/browser/fetch`, { body });
-        const frames = (Array.isArray(answer.frames) ? answer.frames.filter(isFrame) : [])
-          .filter((f) => f.page_url === pageUrl)
-          .map((f) => ({ ...f, at_ms: lookStarted - fetchStarted + f.at_ms }));
-        if (frames.length > 0) onProgress({ type: 'drawn', frames });
-      }))
+      .then(async () => (stage ? stageTurn(tripId, 'look', () => inSlot(tripId, {}, take), await since) : inSlot(tripId, {}, take)))
       .catch((err: unknown) => d.log.warn({ tripId, err: String(err instanceof Error ? err.message : err).slice(0, 200) }, 'travel: a look at the drawn page found nothing'));
   }
 
@@ -938,7 +988,9 @@ export function createBrowserFetchRunner(d: RunnerDeps): RecipeRunner {
   return {
     name: 'browser_fetch',
     async read(tripId, url, plan, o = {}) {
-      return inSlot(tripId, o, () => fetchPage(tripId, url, plan, { id: new URL(url).pathname, capture: plan.capture }, o));
+      const read = () => inSlot(tripId, o, () => fetchPage(tripId, url, plan, { id: new URL(url).pathname, capture: plan.capture }, o));
+      // A read on the stage waits its turn there (stageTurn); a real one is never skipped.
+      return o.stage ? ((await stageTurn(tripId, 'real', read)) as Awaited<ReturnType<typeof read>>) : read();
     },
     pageFetch: (tripId, call, o = {}) => inSlot(tripId, o, () => pageFetch(tripId, call, o)),
     canPageFetch: () => d.now().getTime() >= unsupportedUntil,
@@ -949,7 +1001,7 @@ export function createBrowserFetchRunner(d: RunnerDeps): RecipeRunner {
     tabCall: (tripId, tab, call, keepOpenMs) => inSlot(tripId, {}, () => tabCall(tripId, tab, call, keepOpenMs)),
     tabSteps: (tripId, tab, steps, o) => inSlot(tripId, {}, () => tabSteps(tripId, tab, steps, o)),
     lastChallenge: (tripId) => checkedAt.get(tripId) ?? null,
-    onStage: (tripId, plan, o = {}) => inSlot(tripId, o, () => onStage(tripId, plan, o)),
+    onStage: async (tripId, plan, o = {}) => (await stageTurn(tripId, 'real', () => inSlot(tripId, o, () => onStage(tripId, plan, o))))!,
   };
 }
 

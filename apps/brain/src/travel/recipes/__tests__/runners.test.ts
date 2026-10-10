@@ -624,6 +624,65 @@ describe("the browser fetch: how the recipe engine reads a page in the trip's br
     expect(STAGE_MS).toBeGreaterThan(WARM_TAB_MS);
   });
 
+  // The 10 Oct drill (Go trip t_p4c3_07fc6fc6): the live card's look had the stage tab when the top pick's click on the stage
+  // came, and Bash, which takes a kept tab out of use while a fetch has it, answered the click 409 no_open_tab ("0 kept");
+  // its fallback then opened a second stage window. Bash's own rule here: a fetch with no url finds no tab while another has it.
+  function bashStage() {
+    let busy = 0;
+    const gates: Array<() => void> = [];
+    const order: string[] = [];
+    const w = world(async (c) => {
+      const body = c.opts['body'] as { url?: string; tab?: string; steps?: Array<{ capture_as?: string }> };
+      const what = body.url ? `read ${body.url.includes('/Delhi/') ? 'Delhi' : 'Mumbai'}` : body.steps?.[0]?.capture_as === 'look' ? 'look' : 'step';
+      if (!body.url && body.tab === STAGE_TAB && busy > 0) {
+        order.push(`${what}: 409`);
+        throw new V1Error(409, 'no_open_tab', 'No tab is kept open under the name stage.');
+      }
+      busy += 1;
+      order.push(`${what} starts`);
+      // Each fetch on the stage holds its tab until the test lets it go.
+      await new Promise<void>((r) => gates.push(r));
+      busy -= 1;
+      order.push(`${what} ends`);
+      return body.url ? fetched([busCapture]) : fetched([capture(body.steps?.[0]?.capture_as === 'look' ? 'look' : '/wap/GetSeatLayout$', 'https://www.ixigo.com/x', '')]);
+    });
+    const next = async (): Promise<void> => {
+      await vi.waitFor(() => expect(gates.length).toBeGreaterThan(0));
+      gates.shift()!();
+    };
+    return { w, order, next };
+  }
+
+  it("never steps on the stage while the live card's look has it: the click waits its turn, with no 409 and no second window", async () => {
+    const { w, order, next } = bashStage();
+    const runner = createBrowserFetchRunner(w.deps);
+    const read = runner.read('t1', BUSES, busPlan, { keepOpen: true, stage: true, look: true, onProgress: () => undefined });
+    await next();
+    await read;
+    // The look goes LOOK_AFTER_MS after the read's answer, and has the stage tab now.
+    await vi.waitFor(() => expect(order).toContain('look starts'));
+    const click = runner.onStage!('t1', { capture: [{ match: '/wap/GetSeatLayout$', required: true }], steps: [{ op: 'click', role: 'button', name: 'Select Seats' }] });
+    await next();
+    await next();
+    await expect(click).resolves.toMatchObject({ captures: [expect.objectContaining({ match: '/wap/GetSeatLayout$' })] });
+    expect(order).toEqual(['read Mumbai starts', 'read Mumbai ends', 'look starts', 'look ends', 'step starts', 'step ends']);
+  });
+
+  it('reads on the stage one at a time, in the order asked; a look gives way to one waiting', async () => {
+    const { w, order, next } = bashStage();
+    const runner = createBrowserFetchRunner(w.deps);
+    const DELHI = BUSES.replace('Mumbai/4', 'Delhi/1');
+    const first = runner.read('t1', BUSES, busPlan, { keepOpen: true, stage: true, look: true, onProgress: () => undefined });
+    const second = runner.read('t1', DELHI, busPlan, { keepOpen: true, stage: true });
+    await next();
+    await first;
+    // The second read was waiting when the first one's look came: the look never takes the stage from it.
+    await next();
+    await second;
+    for (let i = 0; i < 10; i++) await new Promise((resolve) => setImmediate(resolve));
+    expect(order).toEqual(['read Mumbai starts', 'read Mumbai ends', 'read Delhi starts', 'read Delhi ends']);
+  });
+
   it("looks at a kept page once ixigo has drawn it, for a live card: one tiny call in the tab, its pictures of the same page", async () => {
     const OTHER = 'https://www.ixigo.com/buses/bus_search/Delhi/1/Goa/102/06-11-2026/O';
     const pic = (page_url: string, jpeg_base64: string) => ({ label: 'done', at_ms: 120, page_url, jpeg_base64 });
