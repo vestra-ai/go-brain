@@ -53,6 +53,9 @@ describe("a stay's details sheet", () => {
     const d = stayDetails(four, { maxShareMinor: 1_500_000 }, 5, [])!;
     expect(d.why).toEqual(['₹14,856 each for the stay, within ₹15,000 a head']);
     expect(d.costs).toEqual([{ label: '3 nights, each of 4', emoji: '🛏️', amount_minor: 1_485_600, currency: 'INR' }]);
+    // A share that isn't whole rupees is said to the rupee (staging, 10 Oct: "₹14,366.40 each" for ₹71,832 between five).
+    const villa = { ...RIVA, totalMinor: 7_183_200, facts: { ...RIVA.facts, guests: 5 } };
+    expect(stayDetails(villa, { maxShareMinor: 1_500_000 }, 5, [])?.why).toEqual(['₹14,366 each for the stay, within ₹15,000 a head']);
   });
 
   it('says free cancellation only when ixigo did, with a date only when Go has one, and leaves out what ixigo left out', () => {
