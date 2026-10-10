@@ -392,6 +392,12 @@ const partialCaptures = (err: V1Error): Capture[] => {
   const captures = (err.detail?.['partial'] as { captures?: unknown } | undefined)?.captures;
   return Array.isArray(captures) ? captures.filter(isCapture) : [];
 };
+/**
+ * A timed-out page that showed Cloudflare's Turnstile: its document said 200 (staging, 10 Oct 05:02Z, ixigo's flight status
+ * page), so challenged() can't see it, and its calls never came. Bash says the page called the check's host. Read as a
+ * check: opened again after a wait, never read, never handed to the person.
+ */
+const turnstiled = (err: V1Error): boolean => (err.detail?.['partial'] as { challenge?: unknown } | undefined)?.challenge === 'turnstile';
 
 /**
  * A failed fetch as Go says it; on a timeout, the captures it did get when every required one is among them. A read that
@@ -568,7 +574,7 @@ export function createBrowserFetchRunner(d: RunnerDeps): RecipeRunner {
           continue;
         }
         // CLOUDFLARE: a page still on the check when its time ran out, opened again; never its pictures.
-        if (err.status === 504 && challenged(partialCaptures(err), url)) {
+        if (err.status === 504 && (challenged(partialCaptures(err), url) || turnstiled(err))) {
           o.onTrace?.(failedTrace(startedAt, d.now().getTime(), err));
           await againAfterCheck();
           continue;
@@ -713,6 +719,7 @@ export function createBrowserFetchRunner(d: RunnerDeps): RecipeRunner {
     let inUse = 0;
     for (let checks = 0; ; checks++) {
       let captures: Capture[];
+      let turnstile = false;
       try {
         const answer = await d.v1.call<FetchAnswer>('POST', `/v1/users/${await d.browser.userFor(tripId)}/browser/fetch`, { body });
         captures = Array.isArray(answer.captures) ? answer.captures : [];
@@ -727,8 +734,9 @@ export function createBrowserFetchRunner(d: RunnerDeps): RecipeRunner {
         // Bash keeps a timed-out tab: the page is in front for the person, with what it caught.
         if (!(err instanceof V1Error) || err.status !== 504) throw pageCallFailed(err);
         captures = partialCaptures(err);
+        turnstile = turnstiled(err);
       }
-      if (!challenged(captures, url)) return { captures: captures.filter((c) => c.match !== doc) };
+      if (!challenged(captures, url) && !turnstile) return { captures: captures.filter((c) => c.match !== doc) };
       metCheck(tripId);
       // CLOUDFLARE: never handed to the person. Opened again after a wait, a new page in front, with the time left for
       // it; still on it when no load fits, the caller closes it and says so.
