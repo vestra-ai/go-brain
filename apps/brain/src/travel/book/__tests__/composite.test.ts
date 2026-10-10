@@ -101,6 +101,22 @@ describe('a composite: the same recipes for each entry of a list, at once', () =
     expect(events.at(-1)).toMatchObject({ type: 'run_end', run_id: composite.run_id, ok: true, rows: 6 });
   });
 
+  // The room's live view shows the comparison: its first city's first step (most people's trains) reads on the stage,
+  // the rest behind, as many at once would fight over one stage (10 Oct, Jev and stage review, gap 3).
+  it("reads the first city's first step on the stage, and every other step behind", async () => {
+    const reads: string[] = [];
+    const runner = {
+      read: async (_trip: string, url: string, _plan: FetchPlan, o?: { stage?: boolean }) => {
+        reads.push(`${url.includes('/train/NDLS/') ? 'Delhi trains' : url.includes('/train/CSMT/') ? 'Mumbai trains' : url.includes('/bus_search/') ? 'buses' : url.includes('/flight?') ? 'flights' : 'box'}${o?.stage ? ' (stage)' : ''}`);
+        return { captures: pageFor(url) ?? [], finalUrl: url };
+      },
+    };
+    const engine = createEngine({ book, runner: () => runner, trip: async () => trip, now: () => new Date('2026-10-08T12:00:00Z') });
+    await engine.answer(WAYS, {}, { tripId: 't_goa' });
+    expect(reads.filter((r) => r.endsWith('(stage)'))).toEqual(['Delhi trains (stage)']);
+    expect(reads).toContain('Mumbai trains');
+  });
+
   it("puts every city's trains ahead of its buses in the computer's queue, and tells each step as it ends", async () => {
     const asked = new Set<string>();
     const said: StepsEvent[] = [];
