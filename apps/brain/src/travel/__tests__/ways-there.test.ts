@@ -163,8 +163,8 @@ describe("each home city's ways to the trip", () => {
     expect(card.title).toBe('Ways to North Goa from Delhi and Mumbai, Fri 6 Nov');
     expect(card.options.map((o) => [o.title, o.highlights[0], o.price_minor])).toEqual([
       ['From Delhi: Goa Express 12779', 'Cheapest, 26 h 10 m', 64_500],
-      ['From Delhi: Rajdhani 22413', 'Fastest by train or bus, 15 h 30 m', 214_000],
-      ['From Mumbai: Konkan Kanya 10111', 'Cheapest and fastest by train or bus, 11 h 40 m', 42_000],
+      ['From Delhi: Rajdhani 22413', 'Fastest by land, 15 h 30 m', 214_000],
+      ['From Mumbai: Konkan Kanya 10111', 'Cheapest and fastest by land, 11 h 40 m', 42_000],
     ]);
     expect(card.actions?.map((a) => a.action_id)).toEqual(['open', 'flights_home']);
     // "See on ixigo" on a row opens that train's own page.
@@ -224,7 +224,7 @@ describe("each home city's ways to the trip", () => {
     expect(card.options.map((o) => o.highlights)).toEqual([
       ['The only bus, 40 h 30 m', 'A/C Sleeper'],
       ['Cheapest, 14 h 30 m', 'A/C Sleeper'],
-      ['Fastest by train or bus, 9 h 55 m', 'A/C Sleeper'],
+      ['Fastest by land, 9 h 55 m', 'A/C Sleeper'],
     ]);
   });
 

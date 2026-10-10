@@ -110,7 +110,9 @@ const modeOf = (o: ResultOption): string => (o.kind === 'train' ? 'train' : o.ki
 
 /** A row as the card shows it: its city in its title, and which it is with its time first among its highlights, once. */
 function rowOption(r: Row): ResultOption {
-  const tag = r.way.only ? `The only ${modeOf(r.option)}` : { cheapest: 'Cheapest', fastest: `Fastest${byLand(r.way)}`, both: `Cheapest and fastest${byLand(r.way)}` }[r.is];
+  // A card's highlight holds 40 characters, the time included: "by land" fits where "by train or bus" cut the time off.
+  const land = r.way.flown ? '' : ' by land';
+  const tag = r.way.only ? `The only ${modeOf(r.option)}` : { cheapest: 'Cheapest', fastest: `Fastest${land}`, both: `Cheapest and fastest${land}` }[r.is];
   const took = hoursMinutes(minutesOf(r.option));
   return {
     ...r.option,
