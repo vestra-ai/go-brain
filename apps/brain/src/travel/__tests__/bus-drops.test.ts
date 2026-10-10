@@ -45,6 +45,8 @@ describe("the top bus's own drops on its card", () => {
     const before = await busCard('t_drops', 'c_drops');
     expect(before.options[0]!.subtitle).toBe('8:00 pm to 7:20 am next day, VE AC Seater/Sleeper (2 + 1)');
     const link = new FakeLink();
+    // The replace is for a card already in the room, as Go's own post put it there.
+    await link.request('post_message', { request_id: 'go_post_drops', trip_id: 't_drops', card: before });
     const drops = [{ name: 'Cuncolim', at: '07:50' }, { name: 'Panjim', at: '09:20' }, { name: 'Mapusa', at: '10:30' }];
     expect(await showBusDrops({ results, link }, 't_drops', { cardId: 'c_drops', optionId: 'opt_c_drops_1' }, layout(drops))).toBe(true);
     const replaced = C.OptionsCard.parse(link.sent('replace_card')[0]!['card']);
@@ -54,8 +56,9 @@ describe("the top bus's own drops on its card", () => {
   });
 
   it('say one drop as one, and change nothing for a layout with no drop times or an option not kept', async () => {
-    await busCard('t_drops2', 'c_drops2');
+    const card = await busCard('t_drops2', 'c_drops2');
     const link = new FakeLink();
+    await link.request('post_message', { request_id: 'go_post_drops2', trip_id: 't_drops2', card });
     const pick = { cardId: 'c_drops2', optionId: 'opt_c_drops2_2' };
     expect(await showBusDrops({ results, link }, 't_drops2', pick, layout([{ name: 'Madgaon', at: '07:00' }]))).toBe(true);
     expect(C.OptionsCard.parse(link.sent('replace_card')[0]!['card']).options[1]!.subtitle).toBe('6:00 pm, drops Madgaon 7:00 am next day, Eicher AC Sleeper');
