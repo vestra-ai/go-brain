@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { askToPay, inTurn } from '../ask.js';
-import { amountsSaid, marginCap, nightsOf, setMandate } from '../mandate.js';
+import { amountsSaid, marginCap, nightsOf, nothingToPay, setMandate } from '../mandate.js';
 import { AskToPayInput, SetMandateInput, askToPayTool, setMandateTool } from '../tools.js';
 import type { Travel } from '../../travel/travel.js';
 import { goaTrip, moneyKit, runToolCalls, say, turnCtx, type MoneyKit } from './kit.js';
@@ -184,6 +184,16 @@ describe('set_mandate refuses, in code, what Go cannot book', () => {
     expect(k.server.writesOf('set_mandate')).toEqual([]);
   });
 
+  // Ankur, 12 Oct 00:14 IST: a place vote (where the trip goes) won, and Go said "I found this one on the web, so it can't
+  // be booked through me". Nothing anyone pays for: nothing is set, and the model hears to say nothing about booking it.
+  it('a place the trip goes: nothing anyone pays for, so nothing set and no words about booking it', async () => {
+    const offer = k.travel.offer.bind(k.travel);
+    Object.assign(k.travel, { offer: async (id: string) => ({ ...(await offer(id))!, offerId: null, kind: 'place' as never, title: 'Denpasar' }) });
+    expect(await setMandate(k.deps, ctxWith(), mandate)).toEqual({ refused: nothingToPay('Villa Sol'), unbookable: true, notPaid: true });
+    expect(nothingToPay('Villa Sol')).not.toMatch(/found this one on the web|can't be booked through me/);
+    expect(k.server.writesOf('set_mandate')).toEqual([]);
+  });
+
   it('a place a job found on the web: no offer to hold, so nothing to set', async () => {
     winnerIs(null);
     expect(await setMandate(k.deps, ctxWith(), mandate)).toMatchObject({ refused: expect.stringContaining('found this one on the web'), unbookable: true });
@@ -202,13 +212,13 @@ describe('set_mandate refuses, in code, what Go cannot book', () => {
     expect(k.server.writesOf('set_mandate')).toEqual([]);
   });
 
-  it('an option Go never found (no option_ref), or no travel layer at all', async () => {
+  it('an option Go never found (no option_ref: a vote of plain words, nothing anyone pays for), or no travel layer at all', async () => {
     const trip = goaTrip('closed');
     const d = trip.decisions[0];
     if (!d) throw new Error('no vote');
     d.options = d.options.map(({ option_ref: _ref, ...rest }) => rest);
     k.server.trips.set('t_goa', trip);
-    expect(await setMandate(k.deps, ctxWith(), mandate)).toMatchObject({ refused: "Villa Sol isn't something I can book here, so there's nothing to set up for paying.", unbookable: true });
+    expect(await setMandate(k.deps, ctxWith(), mandate)).toEqual({ refused: nothingToPay('Villa Sol'), unbookable: true, notPaid: true });
     k.server.trips.set('t_goa', goaTrip('closed'));
     expect(await setMandate({ ...k.deps, travel: () => undefined }, ctxWith(), mandate)).toMatchObject({ unbookable: true });
     expect(k.server.writesOf('set_mandate')).toEqual([]);

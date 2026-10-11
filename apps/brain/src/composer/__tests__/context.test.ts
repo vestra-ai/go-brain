@@ -475,6 +475,21 @@ describe('why Go woke, and the trip block', () => {
     expect(quietNote(mixed.items, mixed.pack)).not.toContain('#3');
   });
 
+  // Ankur, 12 Oct 00:14 IST: a place vote won, and Go answered with money's "can't be booked through me".
+  it('a place vote that closed: the trip goes there, and its next step is the dates or its stays, never booking or paying it', () => {
+    const where = vote({
+      decision_id: 'd_where', question: 'Where do we go?', options: [{ label: 'Denpasar, Bali, Indonesia' }, { label: 'Tumkur, Karnataka' }],
+      status: 'closed', voted: 1, tally: [1, 0], result_index: 0, closed_at: '2026-10-05T12:00:00Z',
+    });
+    const card = { kind: 'options', card_id: 'c_where', option_kind: 'place', decision_id: 'd_where', title: 'November ideas', options: [], checked_at: '2026-10-05T11:00:00Z' };
+    const p = packOf([...chatOf(3), { ...msg(5, null, 'Here are some ideas.'), card: card as never }], goaSnapshot({ decisions: [where] }));
+    const text = context().renderWake(wake({ kind: 'trip_change', ref: 'decision:d_where', payload: { type: 'decision.closed', decisionId: 'd_where' } }), p);
+    expect(text).toContain("It picked where the trip goes, and Go saves it as the trip's place itself");
+    expect(text).toContain('never set_mandate or ask_to_pay, and never a word about booking or paying it');
+    expect(text).toContain("with the trip's dates set, put up its stays (search_stays); without them, ask for the dates in one question with offer_replies date buttons");
+    expect(text).not.toMatch(/I'll book it|save the winner as the stay/);
+  });
+
   it('a dates vote that closed tells Go to save the dates on the trip: an option is only a label, so the model reads it', () => {
     const dates = vote({
       decision_id: 'd_dates', question: 'Which dates work?', options: [{ label: '6-9 Nov' }, { label: '13-16 Nov' }],

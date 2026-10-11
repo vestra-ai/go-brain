@@ -166,6 +166,20 @@ describe('the payments block of right now', () => {
     );
   });
 
+  // Ankur, 12 Oct 00:14 IST: a place vote won, and Go said "I found this one on the web, so it can't be booked through
+  // me", read off this block. A place, a thing to do or a vote of plain words is nothing anyone pays for.
+  it('says nothing about a winner nobody pays for: a place, or a vote of plain words (dates)', async () => {
+    const offer = k.travel.offer.bind(k.travel);
+    Object.assign(k.travel, { offer: async (id: string) => ({ ...(await offer(id))!, offerId: null, kind: 'place' as never, title: 'Denpasar' }) });
+    const place = await paymentsNow({ pool: k.pool, packs: packs(goaTrip('closed')), now: k.now, travel: () => k.travel }).render('t_goa', []);
+    expect(place ?? '').not.toContain('d_villa');
+    expect(place ?? '').not.toMatch(/can't be booked|found this one on the web|can't book it|set_mandate/);
+    const dates = goaTrip('closed');
+    const plain = { ...dates, decisions: dates.decisions.map((x) => ({ ...x, options: x.options.map((o) => ({ ...o, option_ref: null })) })) };
+    const words = await paymentsNow({ pool: k.pool, packs: packs(plain), now: k.now, travel: () => k.travel }).render('t_goa', []);
+    expect(words ?? '').not.toContain('d_villa');
+  });
+
   it('a check that failed just now does not mark the winner unbookable: the usual set_mandate line', async () => {
     k.travel.failOffer = true;
     const text = await paymentsNow({ pool: k.pool, packs: packs(goaTrip('closed')), now: k.now, travel: () => k.travel }).render('t_goa', []);

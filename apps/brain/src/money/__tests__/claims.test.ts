@@ -207,6 +207,18 @@ describe('the card on the closed vote', () => {
     expect(await rider({ tripId: 't_goa', turnId: 'turn_msg', wake: [], pack: pack() })).toBeNull();
   });
 
+  // Ankur, 12 Oct 00:14 IST: a place vote won and money's words came out. A place is the trip's place, never a booking.
+  it('never for a place: no claim card, and the closed vote goes to the model for its next step', async () => {
+    const offer = k.travel.offer.bind(k.travel);
+    Object.assign(k.travel, { offer: async (id: string) => ({ ...(await offer(id))!, offerId: null, kind: 'place' as never, title: 'Denpasar' }) });
+    const rider = claimCardOnClose({ d, claims, packs: packs(), later: new Later() });
+    expect(await rider({ tripId: 't_goa', turnId: 'turn_close', wake: [closed], pack: pack() })).toBeNull();
+    const ctx = turnCtx('t_goa', k.server, k.server.trip('t_goa'));
+    expect(await stayClosedAnswer({ d, claims, packs: packs(), later: new Later() })({ tripId: 't_goa', wake: [closed], pack: pack(), ctx })).toBe(false);
+    expect(k.server.writesOf('set_mandate')).toEqual([]);
+    expect(k.server.writesOf('post_message')).toEqual([]);
+  });
+
   it('never for a winner Go cannot book (a flight), or a vote that already has its payer', async () => {
     k.travel.options.set('opt_villa_sol', 'ixigo:flight:6e-2134');
     k.travel.offers.set('ixigo:flight:6e-2134', { amountMinor: 592000, currency: 'INR', merchant: 'ixigo: IndiGo 6E 2134', refundableUntil: null, title: 'IndiGo 6E 2134', kind: 'flight' });

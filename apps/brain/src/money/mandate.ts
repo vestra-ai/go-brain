@@ -60,6 +60,17 @@ export function amountsSaid(messages: Message[], group: { heads: number; nights:
 export const checkFailed = (label: string): string => `ixigo didn't answer when I checked ${label}, so nothing is set up or charged. Want me to check again now?`;
 
 /**
+ * What a group pays for: a stay Go books, and a fare (each traveller books their own, said so). A place, food, a thing to
+ * do or a cab the group picked is nothing anyone pays for, and a vote of plain words (dates, a name, yes or no) is none
+ * either: money says nothing about those (Ankur, 12 Oct 00:14 IST: a place vote won, and Go said "I found this one on the
+ * web, so it can't be booked through me", from money's own note on the closed vote).
+ */
+const PAID_KINDS: ReadonlySet<string> = new Set(['stay', ...GROUP_FARES]);
+/** For the model alone, never the room's words: nothing to pay for or book. */
+export const nothingToPay = (label: string): string =>
+  `${label} is nothing anyone pays for or books: never say it can't be booked, and say nothing about booking or paying it.`;
+
+/**
  * Why Go cannot book an option for the group, in the words to say, or null when it can: Go books only an offer the travel
  * layer can hold for the whole group. A place found on the web has no offer; a flight, train or bus fare is per person
  * (booking those for a group is cut this week); an option with no option_ref is not one Go found at all. Those are
@@ -70,10 +81,12 @@ export async function whyNotBookable(
   option: Trip['decisions'][number]['options'][number],
   /** The trip: where Go books each person's own flight (BOOKING), a group flight says how they book theirs. */
   tripId?: string,
-): Promise<{ refused: string; unbookable?: true } | null> {
+): Promise<{ refused: string; unbookable?: true; notPaid?: true } | null> {
   const words = { payer: 'The payer', what: option.label };
   const travel = d.travel();
-  if (!option.option_ref || !travel) return { refused: `${option.label} isn't something I can book here, so there's nothing to set up for paying.`, unbookable: true };
+  // A vote of plain words: nothing to pay for.
+  if (!option.option_ref) return { refused: nothingToPay(option.label), unbookable: true, notPaid: true };
+  if (!travel) return { refused: `${option.label} isn't something I can book here, so there's nothing to set up for paying.`, unbookable: true };
   let offer: Awaited<ReturnType<Travel['offer']>>;
   try {
     offer = await travel.offer(option.option_ref);
@@ -85,6 +98,8 @@ export async function whyNotBookable(
       return { refused: checkFailed(option.label) };
     }
   }
+  // A place, food, a thing to do: the group picked it, and nobody pays for it.
+  if (offer && !PAID_KINDS.has(offer.kind)) return { refused: nothingToPay(option.label), unbookable: true, notPaid: true };
   // The option's own page, said only when it is on ixigo.com.
   const link = ixigoPage(offer?.link);
   if (offer && GROUP_FARES.has(offer.kind)) {
@@ -110,7 +125,7 @@ export async function setMandate(
   o: { decisionId: string; choiceIndex: number; capMinor?: number; refundableOnly: boolean; payerPersonId: string },
 ): Promise<
   | { cardId: string; capMinor: number; byMargin: boolean; note: string | null; booking: string }
-  | { refused: string; unbookable?: true; parked?: true; claim?: true; line?: string }
+  | { refused: string; unbookable?: true; notPaid?: true; parked?: true; claim?: true; line?: string }
 > {
   const vague = { payer: 'The payer', what: 'it' };
   let trip: Trip;
