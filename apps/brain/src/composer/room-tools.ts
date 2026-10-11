@@ -5,7 +5,7 @@ import type { Message } from '../door/methods.js';
 import { SocketCallError } from '../door/rpc.js';
 import { reactOnce } from '../memory/reactions.js';
 import type { Travel } from '../travel/travel.js';
-import type { TripPack } from '../trips/pack.js';
+import { messageByRef } from '../trips/pack.js';
 import { isSmallTalk } from '../reflex/small-talk.js';
 import { saveTrip } from '../trips/save-trip.js';
 import { inlineData } from './fence.js';
@@ -42,12 +42,6 @@ export function unansweredAsk(ctx: TurnCtx): Message | null {
     return m;
   }
   return null;
-}
-
-/** "#57", "57" or a message id. */
-function findMessage(pack: TripPack, ref: string): Message | undefined {
-  const n = /^#?(\d+)$/.exec(ref.trim());
-  return n ? pack.messages.find((m) => m.seq === Number(n[1])) : pack.messages.find((m) => m.message_id === ref);
 }
 
 const codeOf = (e: unknown): number => (e instanceof SocketCallError ? e.code : 0);
@@ -91,21 +85,19 @@ const CloseVoteInput = z.object({
 });
 
 const UpdateTripInput = z.object({
-  title: z.string().min(1).max(80).optional(),
+  title: z.string().min(1).max(80).optional().describe("The trip's name, the one the group sees for its trip and chat: renaming the group is this."),
   destination: z
     .string()
     .min(1)
     .max(120)
     .optional()
-    .describe('Where the trip goes: a city or region, like "Goa". Never an area to stay in or a hotel: that is the stay.'),
+    .describe(
+      'Where the trip goes: a city or state, like "Goa". A country or region is its main city for visitors (Morocco: Marrakech). ' +
+        'Never an area to stay in or a hotel: that is the stay.',
+    ),
   dates: z.object({ start: z.iso.date(), end: z.iso.date() }).optional(),
   vibe: z.array(z.string().min(1).max(40)).max(12).optional(),
-  proof_message_ids: z
-    .array(z.string().min(1).max(64))
-    .max(10)
-    .optional()
-    .describe("For a title, place or dates: the people's own messages that decided it (the organizer's, or two people agreeing)."),
-  decision_id: z.string().min(1).max(64).optional().describe('For a title, place or dates: the closed vote that decided it.'),
+  decision_id: z.string().min(1).max(64).optional().describe('For a title, place or dates: the closed vote that decided it, like d_place (the record shows it).'),
   stay: z
     .string()
     .min(1)
@@ -143,7 +135,7 @@ export function roomTools(o: { now: () => Date; pool: Pool; travel?: () => Trave
       'Quieter than a message, so prefer it when words are not needed.',
     input: ReactInput,
     async run(a, ctx) {
-      const m = findMessage(ctx.pack, a.message_id);
+      const m = messageByRef(ctx.pack.messages, a.message_id);
       if (!m) return { ok: false, error: `There is no message ${a.message_id} in this trip.` };
       // The same path as the reflex's quiet ✅: Go's own record of the reactions it sent (go_reactions) and one request
       // id per message and emoji, so a reaction Go already holds, or is sending right now, is not sent again.
@@ -211,24 +203,26 @@ export function roomTools(o: { now: () => Date; pool: Pool; travel?: () => Trave
   const updateTrip: QuickTool<z.infer<typeof UpdateTripInput>> = {
     name: 'update_trip',
     description:
-      "Change the trip's title, place, dates, vibe or the stay the group wants. A title, place or dates change only on the organizer's word, " +
-      'two people agreeing in words (proof_message_ids), or a closed vote (decision_id). One person asking is a wish: offer a vote instead.',
+      "Change the trip's title (its name), place, dates, vibe or the stay the group wants: you change them yourself, never send anyone to the App for it. " +
+      "The title, place and dates change by the group's vote (decision_id), applied the moment it closes; anyone asking to change one gets " +
+      "the vote opened at once (open_vote), never a refusal. A trip of one has no vote: their word is the decision, applied at once.",
     input: UpdateTripInput,
     async run(a, ctx) {
       // The trip's one writer: the checks (who decided it, a stay or place a vote decided, days before today) and the request are there.
-      const { proof_message_ids: proof, decision_id: decisionId, ...change } = a;
+      const { decision_id: decisionId, ...change } = a;
       const r = await saveTrip(
         o,
         { link: ctx.link, tripId: ctx.tripId, pack: ctx.pack, requestId: () => ctx.stableId('go_trip') },
-        { ...change, ...(proof ? { proof } : {}), ...(decisionId ? { decisionId } : {}) },
+        { ...change, ...(decisionId ? { decisionId } : {}) },
       );
       if (!r.ok && r.notDecided) {
         return {
           ok: false,
           error: r.error,
           tell_the_room:
-            "Say in one short line that the organizer or the group decides that, and offer to put it to a vote (open_vote), or point at the vote already open on it. " +
-            'Never say it changed, and never say who said or picked what unless their own message says it.',
+            "When a closed vote in the record decided it, call update_trip again with the vote's id. Otherwise open the vote on it now " +
+            '(open_vote, one tap each) and say so in one short line, or point at the vote already open on it: never a refusal or a ' +
+            'lecture. Never say it changed, and never say who said or picked what unless their own message says it.',
         };
       }
       if (!r.ok) return { ok: false, error: r.error, ...(r.quiet ? { tell_the_room: SAY_NOTHING } : {}) };

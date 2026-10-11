@@ -18,9 +18,10 @@ beforeAll(async () => {
 afterAll(() => db.drop());
 
 const pack = () => ({
-  trip: goaSnapshot(),
+  trip: goaSnapshot({
+    decisions: [vote({ decision_id: VOTED, question: 'Change the trip?', status: 'closed', result_index: 0, options: [{ label: 'Change it' }, { label: 'Keep it' }] })],
+  }),
   messages: [
-    // The organizer's word: what a title, place or dates change cites (save-trip.ts groupDecided).
     msg(55, 'p_rahul', "let's lock it in"),
     msg(56, 'p_priya', "I'm veg btw"),
     msg(57, 'p_arjun', 'can someone book?'),
@@ -34,8 +35,8 @@ function ctxWith(answers: FakeAnswers = {}, turnId = 'turn_T') {
   const ctx = makeTurnCtx({ tripId: 't_goa', turnId, link: f.link, pack: pack(), wake: [], signal: new AbortController().signal });
   return { ctx, ...f };
 }
-/** The organizer's message in pack(), cited for a title, place or dates change. */
-const ORG = ['m_55'];
+/** A closed vote in pack(), cited for a title, place or dates change (save-trip.ts groupDecided). */
+const VOTED = 'd_voted';
 const tool = (name: string) => {
   const t = roomTools({ now: () => new Date('2026-10-06T09:00:00Z'), pool: db.pool }).find((x) => x.name === name);
   if (!t) throw new Error(`no ${name}`);
@@ -166,49 +167,63 @@ describe('the room\'s tools', () => {
   it('update_trip sends only what changes, in the contract\'s shape', async () => {
     const { ctx, calls } = ctxWith({ update_trip: () => ({ seq: 62 }) });
     expect(await tool('update_trip').run({}, ctx)).toEqual({ ok: false, error: 'Nothing to change.' });
-    expect(await tool('update_trip').run({ proof_message_ids: ORG, dates: { start: '2026-11-09', end: '2026-11-06' } }, ctx)).toMatchObject({ ok: false });
+    expect(await tool('update_trip').run({ decision_id: VOTED, dates: { start: '2026-11-09', end: '2026-11-06' } }, ctx)).toMatchObject({ ok: false });
     // The trip is already North Goa: only the dates change.
-    expect(await tool('update_trip').run({ proof_message_ids: ORG, destination: 'North Goa', dates: { start: '2026-11-06', end: '2026-11-09' } }, ctx)).toEqual({
+    expect(await tool('update_trip').run({ decision_id: VOTED, destination: 'North Goa', dates: { start: '2026-11-06', end: '2026-11-09' } }, ctx)).toEqual({
       ok: true, changed: ['dates'],
     });
     expect(calls[0]?.params).toEqual({ request_id: 'go_trip_turn_T_1', trip_id: 't_goa', dates: { start: '2026-11-06', end: '2026-11-09' } });
   });
 
-  // p2's re-audit of Keshav's Varkala trip, 11 Oct: South Goa was set from one member's quick-reply tap while the group
-  // was split three ways, and the dates twice from single members; Go then claimed two people had said South Goa.
-  it("changes the title, place or dates only on the organizer's word, two people agreeing in words, or a closed vote", async () => {
+  // Keshav, 11 Oct, after the Varkala trip: "for change of place voting was right move but remove the organizer stuff".
+  // Nobody's word moves a group's title, place or dates, the organizer's neither: the vote does, and an ask opens one.
+  it("changes the title, place or dates by the group's closed vote, and a trip of one on their word", async () => {
     const dates = { start: '2026-12-01', end: '2026-12-07' };
-    const withLines = (extra: ReturnType<typeof msg>[], decisions: ReturnType<typeof vote>[] = []) => {
+    const at = (extra: ReturnType<typeof msg>[], decisions: ReturnType<typeof vote>[] = [], people?: number) => {
       const f = fakeLink({ update_trip: () => ({ seq: 80 }) });
       const p = pack();
       p.messages.push(...extra);
       p.trip.decisions = decisions;
+      if (people) p.trip.people = p.trip.people.slice(0, people);
       return { ...f, ctx: makeTurnCtx({ tripId: 't_goa', turnId: 'turn_G', link: f.link, pack: p, wake: [], signal: new AbortController().signal }) };
     };
-    // One member's word, a quick-reply tap too: refused in code, with a vote offered and nothing claimed.
-    const one = withLines([msg(61, 'p_priya', 'South Goa')]);
-    for (const a of [{ dates }, { dates, proof_message_ids: ['m_61'] }, { title: 'Wingardium Leviosa', proof_message_ids: ['m_61'] }]) {
-      expect(await tool('update_trip').run(a, one.ctx)).toMatchObject({
-        ok: false, error: NOT_DECIDED, tell_the_room: expect.stringContaining('offer to put it to a vote'),
+    // A member's ask, the organizer's "Yes switch", two people agreeing: no vote, so the vote is opened, never a refusal.
+    const asked = at([msg(61, 'p_priya', 'switch it to South Goa'), msg(62, 'p_rahul', 'Yes switch'), msg(63, 'p_arjun', 'yes 1 to 7 Dec works')]);
+    for (const a of [{ dates }, { destination: 'South Goa' }, { title: 'Bakchod launde' }]) {
+      expect(await tool('update_trip').run(a, asked.ctx)).toMatchObject({
+        ok: false, error: NOT_DECIDED, tell_the_room: expect.stringContaining('open the vote on it now (open_vote, one tap each)'),
       });
     }
-    expect((await tool('update_trip').run({ dates }, one.ctx) as { tell_the_room: string }).tell_the_room).toContain('never say who said or picked what unless their own message says it');
-    // A bare 👍 is no word: still one person.
-    const thumbs = withLines([msg(61, 'p_priya', 'Dec 1 to 7'), msg(62, 'p_arjun', '👍')]);
-    expect(await tool('update_trip').run({ dates, proof_message_ids: ['m_61', 'm_62'] }, thumbs.ctx)).toMatchObject({ ok: false, error: NOT_DECIDED });
-    expect([...one.calls, ...thumbs.calls]).toEqual([]);
-    // Two people in words, the organizer alone, or a closed vote: saved.
-    const two = withLines([msg(61, 'p_priya', 'Dec 1 to 7'), msg(62, 'p_arjun', 'yes 1 to 7 Dec works')]);
-    expect(await tool('update_trip').run({ dates, proof_message_ids: ['m_61', 'm_62'] }, two.ctx)).toEqual({ ok: true, changed: ['dates'] });
-    const organizer = withLines([]);
-    expect(await tool('update_trip').run({ dates, proof_message_ids: ORG }, organizer.ctx)).toEqual({ ok: true, changed: ['dates'] });
-    const voted = withLines([], [vote({ decision_id: 'd_dates', status: 'closed', result_index: 0 })]);
+    const told = (await tool('update_trip').run({ dates }, asked.ctx)) as { tell_the_room: string };
+    expect(told.tell_the_room).toContain('never a refusal or a lecture');
+    expect(told.tell_the_room).toContain('never say who said or picked what unless their own message says it');
+    expect(told.tell_the_room).not.toContain('organizer');
+    expect(asked.calls).toEqual([]);
+    // A closed vote: applied, the 7 to 0 rename too. An open vote decides nothing yet.
+    const voted = at([], [vote({ decision_id: 'd_dates', status: 'closed', result_index: 0 })]);
     expect(await tool('update_trip').run({ dates, decision_id: 'd_dates' }, voted.ctx)).toEqual({ ok: true, changed: ['dates'] });
-    // An open vote decides nothing yet.
-    const open = withLines([], [vote({ decision_id: 'd_open' })]);
+    const renamed = at([], [vote({ decision_id: 'd_name', question: 'Rename the trip to "Bakchod launde"?', kind: 'yesno', status: 'closed', result_index: 0 })]);
+    expect(await tool('update_trip').run({ title: 'Bakchod launde', decision_id: 'd_name' }, renamed.ctx)).toEqual({ ok: true, changed: ['title'] });
+    expect(renamed.calls[0]?.params).toMatchObject({ title: 'Bakchod launde' });
+    const open = at([], [vote({ decision_id: 'd_open' })]);
     expect(await tool('update_trip').run({ dates, decision_id: 'd_open' }, open.ctx)).toMatchObject({ ok: false, error: NOT_DECIDED });
-    // The stay and the vibe keep their own checks, with no proof needed.
-    expect(await tool('update_trip').run({ vibe: ['beach'] }, one.ctx)).toMatchObject({ ok: true });
+    // A trip of one has no vote: their word is the decision, applied at once.
+    const alone = at([msg(61, 'p_rahul', 'rename it to Bakchod launde')], [], 1);
+    expect(await tool('update_trip').run({ title: 'Bakchod launde' }, alone.ctx)).toEqual({ ok: true, changed: ['title'] });
+    expect(await tool('update_trip').run({ dates }, alone.ctx)).toEqual({ ok: true, changed: ['dates'] });
+    // The stay and the vibe keep their own checks, with no vote needed.
+    expect(await tool('update_trip').run({ vibe: ['beach'] }, asked.ctx)).toMatchObject({ ok: true });
+  });
+
+  it("says the title is the group's name, the vote changes it, nobody is sent to the App, and names no organizer", () => {
+    const t = tool('update_trip');
+    const schema = JSON.stringify(z.toJSONSchema(t.input));
+    expect(t.description).toContain('never send anyone to the App for it');
+    expect(t.description).toContain('anyone asking to change one gets the vote opened at once (open_vote), never a refusal');
+    expect(t.description).toContain('A trip of one has no vote: their word is the decision, applied at once.');
+    expect(schema).toContain('renaming the group is this');
+    expect(schema).toContain('A country or region is its main city for visitors (Morocco: Marrakech)');
+    expect(`${t.description} ${schema}`).not.toMatch(/organizer|proof_message_ids/);
   });
 
   // Prod, 11 Oct: "Goa" and "1 to 7 Dec" were saved, and their ✅ came off two seconds later because the reply ended on
@@ -217,9 +232,9 @@ describe('the room\'s tools', () => {
     const f = fakeLink({ update_trip: () => ({ seq: 62 }) });
     const wake = [{ id: 'd_1', tripId: 't_goa', kind: 'message' as const, ref: 'm_59', dueAt: new Date(), payload: { messageId: 'm_59' } }];
     const ctx = makeTurnCtx({ tripId: 't_goa', turnId: 'turn_T', link: f.link, pack: pack(), wake, signal: new AbortController().signal });
-    expect(await tool('update_trip').run({ proof_message_ids: ORG, destination: 'North Goa' }, ctx)).toMatchObject({ ok: false });
+    expect(await tool('update_trip').run({ decision_id: VOTED, destination: 'North Goa' }, ctx)).toMatchObject({ ok: false });
     expect(ctx.outcome.noted ?? []).toEqual([]);
-    expect(await tool('update_trip').run({ proof_message_ids: ORG, dates: { start: '2026-11-06', end: '2026-11-09' } }, ctx)).toEqual({ ok: true, changed: ['dates'] });
+    expect(await tool('update_trip').run({ decision_id: VOTED, dates: { start: '2026-11-06', end: '2026-11-09' } }, ctx)).toEqual({ ok: true, changed: ['dates'] });
     expect(ctx.outcome.noted).toEqual(['m_59']);
   });
 
@@ -227,7 +242,10 @@ describe('the room\'s tools', () => {
     const sol = { kind: 'stay', title: 'Villa Sol', place: { name: 'Villa Sol', address: 'Anjuna, North Goa' }, area: 'Anjuna' };
     const casa = { kind: 'stay', title: 'Casa Mareia', place: { name: 'Casa Mareia', address: 'Vagator, North Goa' }, area: 'Vagator' };
     const north = { kind: 'place', title: 'North Goa', place: { name: 'North Goa', address: null }, area: null };
-    const options: Record<string, unknown> = { opt_sol: sol, opt_casa: casa, opt_north: north, opt_south: { ...north, title: 'South Goa', place: { name: 'South Goa', address: null } } };
+    const options: Record<string, unknown> = {
+      opt_sol: sol, opt_casa: casa, opt_north: north, opt_south: { ...north, title: 'South Goa', place: { name: 'South Goa', address: null } },
+      opt_morocco: { ...north, title: 'Morocco', place: { name: 'Morocco', address: null } },
+    };
     // The places ixigo resolves (placeFor, p4's travel lane).
     const GOA = { name: 'Goa', place_id: 'ixigo_goa', lat: 15.3, lng: 74.1, photo_url: 'https://images.ixigo.com/goa.jpg' };
     const places: Record<string, unknown> = {
@@ -241,12 +259,14 @@ describe('the room\'s tools', () => {
       'old manali': { kind: 'area', within: ['Manali', 'Himachal Pradesh'] },
       panaji: { kind: 'city', within: ['Goa'] },
       manali: { kind: 'city', within: ['Himachal Pradesh'] },
+      marrakech: { kind: 'city', within: ['Morocco'] },
     };
     Object.assign(places, {
       candolim: { name: 'Candolim', place_id: 'ixigo:1101', lat: 15.52, lng: 73.76 },
       'old manali': { name: 'Old Manali', place_id: 'ixigo:2202', lat: 32.25, lng: 77.18 },
       panaji: { name: 'Panaji', place_id: 'ixigo:3303', lat: 15.49, lng: 73.83 },
       manali: { name: 'Manali', place_id: 'ixigo:2200', lat: 32.24, lng: 77.19 },
+      marrakech: { name: 'Marrakech', place_id: 'ixigo:4462', lat: 31.63, lng: -8.0 },
     });
     const travel = {
       placeOf: async (id: string) => options[id] ?? null,
@@ -263,7 +283,7 @@ describe('the room\'s tools', () => {
     const run = (decisions: ReturnType<typeof vote>[], destination: typeof GOA | null = null) => {
       const f = fakeLink({ update_trip: () => ({ seq: 70 }) });
       const p = pack();
-      p.trip.decisions = decisions;
+      p.trip.decisions = [...decisions, ...p.trip.decisions];
       if (destination) p.trip.destination = destination;
       return { ...f, ctx: makeTurnCtx({ tripId: 't_goa', turnId: 'turn_S', link: f.link, pack: p, wake: [], signal: new AbortController().signal }) };
     };
@@ -285,13 +305,32 @@ describe('the room\'s tools', () => {
     it('saves a place the vote picked as ixigo\'s full Place, refuses another, and changes nothing it cannot resolve', async () => {
       // North vs South as a real place vote stays allowed: saved as the Place ixigo resolves, never a bare name.
       const { ctx, calls } = run([closed('d_area', ['opt_north', 'opt_south'], 0, '2026-10-05T18:00:00Z')], GOA);
-      expect(await updateTrip.run({ proof_message_ids: ORG, destination: 'north goa' }, ctx)).toEqual({ ok: true, changed: ['destination'] });
+      expect(await updateTrip.run({ decision_id: VOTED, destination: 'north goa' }, ctx)).toEqual({ ok: true, changed: ['destination'] });
       expect(calls[0]?.params.destination).toEqual(places['north goa']);
-      expect(await updateTrip.run({ proof_message_ids: ORG, destination: 'South Goa' }, ctx)).toMatchObject({ ok: false, tell_the_room: SAY_NOTHING });
+      expect(await updateTrip.run({ decision_id: VOTED, destination: 'South Goa' }, ctx)).toMatchObject({ ok: false, tell_the_room: SAY_NOTHING });
       // With no resolved Place, nothing changes: the destination is never sent as {name} alone.
       const unresolved = run([closed('d_area', ['opt_north', 'opt_south'], 1, '2026-10-05T18:00:00Z')], GOA);
-      expect(await updateTrip.run({ proof_message_ids: ORG, destination: 'south goa' }, unresolved.ctx)).toMatchObject({ ok: false, error: expect.stringContaining('ixigo knows no place called South Goa'), tell_the_room: SAY_NOTHING });
+      expect(await updateTrip.run({ decision_id: VOTED, destination: 'south goa' }, unresolved.ctx)).toMatchObject({ ok: false, error: expect.stringContaining('ixigo pins no place called South Goa'), tell_the_room: SAY_NOTHING });
       expect(unresolved.calls).toEqual([]);
+    });
+
+    // Varkala, 11 Oct: "Where do we go?" closed Morocco 6 to 0; Go said it can't set a whole country and asked which city.
+    it('a country the vote picked is saved as its main city, which ixigo pins inside it, and a city elsewhere is refused', async () => {
+      const where = vote({
+        decision_id: 'd_where', question: 'Where do we go?', status: 'closed', result_index: 1, closed_at: '2026-10-11T18:27:40Z',
+        options: [{ label: 'Varkala' }, { label: 'Morocco' }], tally: [1, 6],
+      });
+      const { ctx, calls } = run([where]);
+      expect(await updateTrip.run({ destination: 'Morocco', decision_id: 'd_where' }, ctx)).toMatchObject({
+        ok: false, error: expect.stringContaining('its main city for visitors (Morocco: Marrakech) and the same decision_id'), tell_the_room: SAY_NOTHING,
+      });
+      expect(await updateTrip.run({ destination: 'Marrakech', decision_id: 'd_where' }, ctx)).toEqual({ ok: true, changed: ['destination'] });
+      expect(calls.map((c) => c.params.destination)).toEqual([places['marrakech']]);
+      // A place card's Morocco: a city named in it is that decision's pick, no second vote; one in Himachal is not.
+      const card = run([closed('d_card', ['opt_morocco', 'opt_north'], 0, '2026-10-11T18:27:40Z')]);
+      expect(await updateTrip.run({ decision_id: 'd_card', destination: 'Marrakech' }, card.ctx)).toEqual({ ok: true, changed: ['destination'] });
+      expect(await updateTrip.run({ decision_id: 'd_card', destination: 'Manali' }, card.ctx)).toMatchObject({ ok: false, error: 'The group voted for Morocco. Save that, or ask the group before changing the place.' });
+      expect(card.calls).toHaveLength(1);
     });
 
     it('staging 09:32: a vote on where to stay in Goa sets the stay to its winner and leaves Goa the destination, with its place_id', async () => {
@@ -301,8 +340,8 @@ describe('the room\'s tools', () => {
       });
       const { ctx, calls } = run([stayVote], GOA);
       // What the composer sent on staging.
-      const r = await updateTrip.run({ proof_message_ids: ORG, destination: 'Candolim, Goa', stay: 'Villa with a pool in Candolim' }, ctx);
-      expect(r).toMatchObject({ ok: true, changed: ['stay'], stay: 'Candolim', note: expect.stringContaining('ixigo knows no place called Candolim, Goa') });
+      const r = await updateTrip.run({ decision_id: VOTED, destination: 'Candolim, Goa', stay: 'Villa with a pool in Candolim' }, ctx);
+      expect(r).toMatchObject({ ok: true, changed: ['stay'], stay: 'Candolim', note: expect.stringContaining('ixigo pins no place called Candolim, Goa') });
       expect(calls.map((c) => c.params)).toEqual([{ request_id: expect.any(String), trip_id: 't_goa', stay: 'Candolim' }]);
       expect((ctx.pack.trip.destination as typeof GOA)).toEqual(GOA);
     });
@@ -313,43 +352,43 @@ describe('the room\'s tools', () => {
         ok: false, error: expect.stringContaining('no stay the group picked yet'), tell_the_room: SAY_NOTHING,
       });
       // Said with dates, the dates still save and the wish does not.
-      expect(await updateTrip.run({ proof_message_ids: ORG, stay: 'Villa with a pool in Candolim', dates: { start: '2026-11-06', end: '2026-11-09' } }, ctx))
+      expect(await updateTrip.run({ decision_id: VOTED, stay: 'Villa with a pool in Candolim', dates: { start: '2026-11-06', end: '2026-11-09' } }, ctx))
         .toMatchObject({ ok: true, changed: ['dates'], note: expect.stringContaining('no stay the group picked yet') });
       expect(calls.map((c) => c.params.stay)).toEqual([undefined]);
     });
 
     it('sends a new destination as ixigo\'s full Place, never a bare name; one ixigo cannot find changes nothing', async () => {
       const { ctx, calls } = run([], GOA);
-      expect(await updateTrip.run({ proof_message_ids: ORG, destination: 'Kerala' }, ctx)).toEqual({ ok: true, changed: ['destination'] });
+      expect(await updateTrip.run({ decision_id: VOTED, destination: 'Kerala' }, ctx)).toEqual({ ok: true, changed: ['destination'] });
       expect(calls[0]?.params.destination).toEqual(places['kerala']);
-      expect(await updateTrip.run({ proof_message_ids: ORG, destination: 'Atlantis' }, ctx)).toMatchObject({ ok: false, error: expect.stringContaining('ixigo knows no place called Atlantis'), tell_the_room: SAY_NOTHING });
-      expect(await updateTrip.run({ proof_message_ids: ORG, destination: 'goa' }, ctx)).toMatchObject({ ok: false, error: 'The trip already has that.' });
+      expect(await updateTrip.run({ decision_id: VOTED, destination: 'Atlantis' }, ctx)).toMatchObject({ ok: false, error: expect.stringContaining('ixigo pins no place called Atlantis'), tell_the_room: SAY_NOTHING });
+      expect(await updateTrip.run({ decision_id: VOTED, destination: 'goa' }, ctx)).toMatchObject({ ok: false, error: 'The trip already has that.' });
       expect(calls).toHaveLength(1);
     });
 
     it("refuses what ixigo calls an area, or puts inside the trip's destination, by its own data, never the words", async () => {
       const { ctx, calls } = run([], GOA);
       // "Candolim" has no "Goa" in it: ixigo's type and second line say it is an area of Goa.
-      expect(await updateTrip.run({ proof_message_ids: ORG, destination: 'Candolim' }, ctx)).toMatchObject({
+      expect(await updateTrip.run({ decision_id: VOTED, destination: 'Candolim' }, ctx)).toMatchObject({
         ok: false, error: expect.stringContaining('Candolim is an area in Goa: where to stay, never where the trip goes'), tell_the_room: SAY_NOTHING,
       });
       // A city ixigo puts inside Goa is no new destination either.
-      expect(await updateTrip.run({ proof_message_ids: ORG, destination: 'Panaji' }, ctx)).toMatchObject({ ok: false, error: expect.stringContaining('Panaji is a place in Goa') });
+      expect(await updateTrip.run({ decision_id: VOTED, destination: 'Panaji' }, ctx)).toMatchObject({ ok: false, error: expect.stringContaining('Panaji is a place in Goa') });
       // An area is never a destination, whatever the trip is: Old Manali on this Goa trip.
-      expect(await updateTrip.run({ proof_message_ids: ORG, destination: 'Old Manali' }, ctx)).toMatchObject({ ok: false, error: expect.stringContaining('Old Manali is an area in Manali, Himachal Pradesh') });
+      expect(await updateTrip.run({ decision_id: VOTED, destination: 'Old Manali' }, ctx)).toMatchObject({ ok: false, error: expect.stringContaining('Old Manali is an area in Manali, Himachal Pradesh') });
       // Said with dates, the dates still save.
-      expect(await updateTrip.run({ proof_message_ids: ORG, destination: 'Candolim', dates: { start: '2026-11-06', end: '2026-11-09' } }, ctx))
+      expect(await updateTrip.run({ decision_id: VOTED, destination: 'Candolim', dates: { start: '2026-11-06', end: '2026-11-09' } }, ctx))
         .toMatchObject({ ok: true, changed: ['dates'], note: expect.stringContaining('Candolim is an area in Goa') });
       expect(calls.map((c) => c.params.destination)).toEqual([undefined]);
       // A city outside the destination is a real move: Goa to Manali goes as Manali's full Place.
-      expect(await updateTrip.run({ proof_message_ids: ORG, destination: 'Manali' }, ctx)).toEqual({ ok: true, changed: ['destination'] });
+      expect(await updateTrip.run({ decision_id: VOTED, destination: 'Manali' }, ctx)).toEqual({ ok: true, changed: ['destination'] });
       expect(calls[1]?.params.destination).toEqual(places['manali']);
     });
 
     it('changes nothing when ixigo cannot be reached (a TravelError from placeFor), and the rest of the change still saves', async () => {
       const { ctx, calls } = run([], GOA);
-      expect(await updateTrip.run({ proof_message_ids: ORG, destination: 'Unreachable' }, ctx)).toMatchObject({ ok: false, error: expect.stringContaining("ixigo didn't answer when Go looked up Unreachable, twice"), tell_the_room: SAY_NOTHING });
-      expect(await updateTrip.run({ proof_message_ids: ORG, destination: 'Unreachable', dates: { start: '2026-11-06', end: '2026-11-09' } }, ctx))
+      expect(await updateTrip.run({ decision_id: VOTED, destination: 'Unreachable' }, ctx)).toMatchObject({ ok: false, error: expect.stringContaining("ixigo didn't answer when Go looked up Unreachable, twice"), tell_the_room: SAY_NOTHING });
+      expect(await updateTrip.run({ decision_id: VOTED, destination: 'Unreachable', dates: { start: '2026-11-06', end: '2026-11-09' } }, ctx))
         .toMatchObject({ ok: true, changed: ['dates'], note: expect.stringContaining("ixigo didn't answer when Go looked up Unreachable") });
       expect(calls.map((c) => c.params.destination)).toEqual([undefined]);
     });
@@ -358,14 +397,14 @@ describe('the room\'s tools', () => {
   it('update_trip refuses dates before today where the trip is, says nothing in the chat, and names the days it likely meant', async () => {
     const { ctx, calls } = ctxWith({ update_trip: () => ({ seq: 65 }) });
     // 6 Oct 2026, 2:30 pm in Goa. The vote said "6-9 Nov" and the model guessed the year.
-    expect(await tool('update_trip').run({ proof_message_ids: ORG, dates: { start: '2025-11-06', end: '2025-11-09' } }, ctx)).toEqual({
+    expect(await tool('update_trip').run({ decision_id: VOTED, dates: { start: '2025-11-06', end: '2025-11-09' } }, ctx)).toEqual({
       ok: false,
       error: 'Those dates are before today (2026-10-06 where the trip is). Use this year or next: 2026-11-06 to 2026-11-09, if that is what the group meant.',
       tell_the_room: SAY_NOTHING,
     });
-    expect(await tool('update_trip').run({ proof_message_ids: ORG, dates: { start: '2026-10-05', end: '2026-10-09' } }, ctx)).toMatchObject({ ok: false, tell_the_room: SAY_NOTHING });
+    expect(await tool('update_trip').run({ decision_id: VOTED, dates: { start: '2026-10-05', end: '2026-10-09' } }, ctx)).toMatchObject({ ok: false, tell_the_room: SAY_NOTHING });
     expect(calls).toHaveLength(0);
-    expect(await tool('update_trip').run({ proof_message_ids: ORG, dates: { start: '2026-10-06', end: '2026-10-09' } }, ctx)).toMatchObject({ ok: true });
+    expect(await tool('update_trip').run({ decision_id: VOTED, dates: { start: '2026-10-06', end: '2026-10-09' } }, ctx)).toMatchObject({ ok: true });
     expect(calls).toHaveLength(1);
   });
 
@@ -374,15 +413,15 @@ describe('the room\'s tools', () => {
     const late = (name: string) => roomTools({ now: () => new Date('2026-10-05T20:00:00Z'), pool: db.pool }).find((x) => x.name === name)!;
     await db.pool.query(`insert into trips (trip_id, tz) values ('t_la', 'America/Los_Angeles') on conflict do nothing`);
     const goa = ctxWith({ update_trip: () => ({ seq: 66 }) });
-    expect(await late('update_trip').run({ proof_message_ids: ORG, dates: { start: '2026-10-05', end: '2026-10-07' } }, goa.ctx)).toMatchObject({ ok: false });
+    expect(await late('update_trip').run({ decision_id: VOTED, dates: { start: '2026-10-05', end: '2026-10-07' } }, goa.ctx)).toMatchObject({ ok: false });
     const f = fakeLink({ update_trip: () => ({ seq: 67 }) });
     const la = makeTurnCtx({ tripId: 't_la', turnId: 'turn_la', link: f.link, pack: pack(), wake: [], signal: new AbortController().signal });
-    expect(await late('update_trip').run({ proof_message_ids: ORG, dates: { start: '2026-10-05', end: '2026-10-07' } }, la)).toMatchObject({ ok: true });
+    expect(await late('update_trip').run({ decision_id: VOTED, dates: { start: '2026-10-05', end: '2026-10-07' } }, la)).toMatchObject({ ok: true });
     // Under way since 4 Oct: the end may move, the start stays as it is.
     const away = ctxWith({ update_trip: () => ({ seq: 68 }) });
     away.ctx.pack.trip = { ...away.ctx.pack.trip, dates: { start: '2026-10-04', end: '2026-10-08' } };
-    expect(await tool('update_trip').run({ proof_message_ids: ORG, dates: { start: '2026-10-04', end: '2026-10-09' } }, away.ctx)).toMatchObject({ ok: true });
-    expect(await tool('update_trip').run({ proof_message_ids: ORG, dates: { start: '2026-10-03', end: '2026-10-09' } }, away.ctx)).toMatchObject({ ok: false });
+    expect(await tool('update_trip').run({ decision_id: VOTED, dates: { start: '2026-10-04', end: '2026-10-09' } }, away.ctx)).toMatchObject({ ok: true });
+    expect(await tool('update_trip').run({ decision_id: VOTED, dates: { start: '2026-10-03', end: '2026-10-09' } }, away.ctx)).toMatchObject({ ok: false });
   });
 
   it('a "6-9 Nov" decision means 2026-11-06 to 2026-11-09 when today is 6 Oct 2026; days already past this year mean next year', () => {

@@ -21,34 +21,25 @@ export interface TripChange {
   stay?: string | undefined;
   /** 1.1: the group's budget per person, in minor units (set_budget, travel/trip-budget.ts). */
   budgetPerPersonMinor?: number | undefined;
-  /** The people's own messages that decided a title, place or dates change (groupDecided). */
-  proof?: readonly string[] | undefined;
-  /** The closed vote that decided it. */
+  /** The closed vote that decided a title, place or dates change (groupDecided). */
   decisionId?: string | undefined;
-  /** A caller that checked the group's say itself: the notes pass's checked line, a vote's winner. */
+  /** A caller that holds the vote's winner itself: a place card's vote applied on close (placeOnClose). */
   agreed?: true | undefined;
 }
 
 /**
- * Who changes where the trip goes, its dates or its title (p2's re-audit of Keshav's Varkala trip, 11 Oct: South Goa set
- * from one member's quick-reply tap while the group was split three ways, the dates twice from single members, and Go
- * then claimed two people had said South Goa): the organizer's word, two people agreeing in words, or a closed vote.
- * Read from the cited messages and the trip, never from Go's say-so; a reaction or a bare emoji is no word.
+ * Who changes where the trip goes, its dates or its title: the group's vote, applied the moment it closes, and nobody's
+ * word alone, the organizer's neither (Keshav, 11 Oct, after the Varkala trip: "for change of place voting was right
+ * move but remove the organizer stuff"). A trip of one has no vote: their word is the decision.
  */
-export function groupDecided(pack: TripPack, proof: readonly string[], decisionId?: string): boolean {
-  if (decisionId && pack.trip.decisions.some((x) => x.decision_id === decisionId && x.status === 'closed')) return true;
-  const said = new Set<string>();
-  for (const id of proof) {
-    const m = pack.messages.find((x) => x.message_id === id);
-    if (!m || m.deleted || m.author.kind !== 'person' || !/[\p{L}\p{N}]/u.test(m.text ?? '')) continue;
-    said.add(m.author.person_id);
-  }
-  return said.has(pack.trip.organizer_person_id) || said.size >= 2;
+export function groupDecided(pack: TripPack, decisionId?: string): boolean {
+  if (pack.trip.people.length <= 1) return true;
+  return decisionId !== undefined && pack.trip.decisions.some((x) => x.decision_id === decisionId && x.status === 'closed');
 }
 
-/** What Go hears when one person's word would change the trip's title, place or dates. */
+/** What Go hears when a title, place or dates change has no closed vote behind it. */
 export const NOT_DECIDED =
-  "Only the organizer's word, two people agreeing in words, or a closed vote changes the trip's title, place or dates: give their messages (proof_message_ids) or the vote (decision_id).";
+  "The group's vote changes the trip's title, place or dates: give the closed vote (decision_id), or open the vote on it now.";
 
 export interface SaveTripDeps {
   pool: Pool;
@@ -96,7 +87,7 @@ export async function saveTrip(
     ...(a.stay ? { stay: a.stay } : {}),
   };
   if (Object.keys(fields).length === 0 && !a.destination) return { ok: false, error: 'Nothing to change.' };
-  if ((a.title || a.destination || a.dates) && !a.agreed && !groupDecided(at.pack, a.proof ?? [], a.decisionId)) {
+  if ((a.title || a.destination || a.dates) && !a.agreed && !groupDecided(at.pack, a.decisionId)) {
     return { ok: false, error: NOT_DECIDED, notDecided: true };
   }
   let note: string | undefined;
@@ -119,16 +110,15 @@ export async function saveTrip(
     }
   }
   if (a.destination) {
-    let name = a.destination;
     const won = await decided(d, at.pack, 'place');
-    if (won) {
-      const voted = won.place?.name ?? won.title;
-      if (!` ${plain(a.destination)} `.includes(` ${plain(voted)} `)) {
-        return { ok: false, error: `The group voted for ${voted}. Save that, or ask the group before changing the place.`, quiet: true };
-      }
-      name = voted;
+    const voted = won ? (won.place?.name ?? won.title) : null;
+    const named = voted !== null && ` ${plain(a.destination)} `.includes(` ${plain(voted)} `);
+    const place = await destinationOf(d, at, named ? voted : a.destination);
+    // A city in the place the group voted for is that place, pinned: Marrakech for Morocco, by ixigo's own word for
+    // where Marrakech is, since ixigo pins no country (Varkala, 11 Oct).
+    if (voted !== null && !named && !('within' in place && place.within.some((w) => plain(w) === plain(voted)))) {
+      return { ok: false, error: `The group voted for ${voted}. Save that, or ask the group before changing the place.`, quiet: true };
     }
-    const place = await destinationOf(d, at, name);
     if ('error' in place) note = note ? `${note} ${place.error}` : place.error;
     else if (!place.same) fields.destination = place.place;
   }
@@ -172,13 +162,14 @@ async function decided(d: SaveTripDeps, pack: TripPack, kind: 'stay' | 'place'):
  * Where the trip goes, as a full Place, or why not. update_trip never sends a bare {name} (the Server, 6 Oct: "a wrong
  * place saved on update_trip"; staging, 8 Oct: {"name":"Candolim, Goa"} over Goa, dropping its place_id, coordinates and
  * photo). A destination changes only to ixigo's resolved Place (travel.placeFor: place_id, lat/lng, photo, time zone);
- * a name that resolves to nothing leaves the destination as it is, for the organizer to change in the App.
+ * a name that resolves to nothing leaves the destination as it is, and Go saves the city it means instead: a country or
+ * a region (ixigo pins neither) is its main city for visitors.
  */
 async function destinationOf(
   d: SaveTripDeps,
   at: { tripId: string; pack: TripPack },
   name: string,
-): Promise<{ place: Place; same?: false } | { same: true } | { error: string }> {
+): Promise<{ place: Place; within: string[]; same?: false } | { same: true } | { error: string }> {
   const now = at.pack.trip.destination ?? null;
   if (now && plain(now.name) === plain(name)) return { same: true };
   const stays = `the trip's place stays ${now ? now.name : 'unset'}`;
@@ -195,7 +186,12 @@ async function destinationOf(
     }
   }
   if (!resolved) {
-    return { error: `ixigo knows no place called ${name}, so ${stays}. Where to stay goes in stay; if they meant another place, ask which in one short line.` };
+    return {
+      error:
+        `ixigo pins no place called ${name}, so ${stays}. ixigo pins cities and states, never a country or a region: for one, call update_trip ` +
+        `again now with its main city for visitors (Morocco: Marrakech) and the same decision_id, and say in your line which city ` +
+        'the trip is set to. Where to stay goes in stay.',
+    };
   }
   const found = resolved.place;
   if (now && plain(found.name) === plain(now.name)) return { same: true };
@@ -206,7 +202,7 @@ async function destinationOf(
     const where = resolved.within.length ? ` in ${resolved.within.join(', ')}` : '';
     return { error: `${found.name} is ${resolved.kind === 'area' ? 'an area' : 'a place'}${where}: where to stay, never where the trip goes, so ${stays}. Save it as the stay once the group picks it.` };
   }
-  return { place: found };
+  return { place: found, within: resolved.within };
 }
 
 /**

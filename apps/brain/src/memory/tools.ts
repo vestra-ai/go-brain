@@ -3,6 +3,7 @@ import type { Pool } from 'pg';
 import { z } from 'zod';
 import { dataBlock, defuse, inlineData, oneLine, personName } from '../composer/fence.js';
 import { SAY_NOTHING, type QuickTool, type TurnCtx } from '../composer/tools.js';
+import { messageByRef } from '../trips/pack.js';
 import { checkLine } from './checker.js';
 import { closeSettled, decisionOf, linkLine } from './decision-lines.js';
 import { forgottenUpTo } from './facts.js';
@@ -18,7 +19,7 @@ const RecordInput = z
     kind: z.enum(['agreed', 'open', 'doing']),
     text: z.string().min(1).max(200),
     person_ids: z.array(z.string().min(1).max(64)).max(30),
-    proof_message_ids: z.array(z.string().min(1).max(64)).min(1).max(10),
+    proof_message_ids: z.array(z.string().min(1).max(64)).min(1).max(10).describe('The messages it came from, by their numbers in the chat, like "#57".'),
   })
   .strict();
 
@@ -76,19 +77,21 @@ export function memoryTools(d: { pool: Pool; memory: Memory }): QuickTool<any>[]
   const record: QuickTool<z.infer<typeof RecordInput>> = {
     name: 'record',
     description:
-      'Add one line to the trip record: agreed (the group agreed in the chat), open (a question still to settle, person_ids = who is asked) or doing (someone said they will sort it). Give the message ids it came from. Go checks the proof; a thin agreement is saved as open.',
+      'Add one line to the trip record: agreed (the group agreed in the chat), open (a question still to settle, person_ids = who is asked) or doing (someone said they will sort it). Give the messages it came from by number. Go checks the proof; a thin agreement is saved as open.',
     input: RecordInput,
     // What a reply would say if the line were saved: never said when it wasn't (composer/sanitize.ts withoutRefused).
     claims: /\b(?:noted|logged|recorded)\b|\bdown as\b|\b(?:added|saved) (?:it |that |this )?(?:to|in) the (?:record|list)\b/i,
     async run(args, ctx: TurnCtx) {
       await mirrorSnapshot(d.pool, ctx.pack.trip);
       const env = { pack: ctx.pack, forgotten: await forgottenUpTo(d.pool, ctx.tripId), record: await recordLines(d.pool, ctx.tripId) };
-      const c = checkLine({ kind: args.kind, text: args.text, person_ids: args.person_ids, proof: args.proof_message_ids }, env);
+      // The checker reads ids; the model names messages by the numbers the chat shows (trips/pack.ts messageByRef).
+      const proof = args.proof_message_ids.map((ref) => messageByRef(ctx.pack.messages, ref)?.message_id ?? ref);
+      const c = checkLine({ kind: args.kind, text: args.text, person_ids: args.person_ids, proof }, env);
       if (!c.ok) {
         // Someone else's word never puts a job against a person's name ("note that Arjun is bringing the speaker", 8 Oct):
         // only their own does. Go asks them to confirm, and says nothing is noted until they do.
         const authors = new Set(
-          args.proof_message_ids.flatMap((id) => {
+          proof.flatMap((id) => {
             const m = ctx.pack.messages.find((x) => x.message_id === id);
             return m?.author.kind === 'person' ? [m.author.person_id] : [];
           }),
