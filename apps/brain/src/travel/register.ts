@@ -328,11 +328,15 @@ export const registerTravel: RegisterLane = async (brain) => {
   // A place's cover as its card goes up, reading no ixigo page (Keshav, 11 Oct: suggestions need no ixigo): its photo
   // kept from ixigo's guide, else Wikipedia's photo of it through Go's image cache, else none. A card's first three get
   // ixigo's own hero after, in the background (showPlaces).
-  const placeCover = async (_tripId: string, name: string): Promise<string | null> => {
+  const placePhoto = async (_tripId: string, name: string): Promise<{ url: string; credit?: string } | null> => {
     const kept = await keptPhoto(brain.pool, name).catch(() => null);
-    if (kept) return kept;
+    if (kept) return { url: kept };
     const wiki = await wikiPhoto(name);
-    return wiki ? images.rehostUrl(wiki) : null;
+    return wiki ? { url: wiki.url, credit: wiki.page } : null;
+  };
+  const placeCover = async (tripId: string, name: string): Promise<string | null> => {
+    const found = await placePhoto(tripId, name);
+    return found ? images.rehostUrl(found.url) : null;
   };
   const showPlacesOf = (tripId: string, picks: PlacePick[]): void => {
     if (brain.switches.get('TRAVEL_MODE') !== 'ixigo_web') return;
@@ -343,7 +347,7 @@ export const registerTravel: RegisterLane = async (brain) => {
   };
   // When ixigo's own quiet on a search's page ends (it refused one): Go's tries again wait past it (try-again.ts).
   const ixigoQuiet = (kind: TravelKind, q: TravelQuery): number | null => engine.ixigoQuietUntil(searchRecipeOf(kind, q));
-  for (const t of travelTools({ travel, results, images, now: brain.now, desk: brain.desk, ixigoQuiet, log: brain.log, warmForTravel: warm, today, showPick, showPlaces: showPlacesOf, placeCover, stayBudget, groupStay })) brain.tools.register(t);
+  for (const t of travelTools({ travel, results, images, now: brain.now, desk: brain.desk, ixigoQuiet, log: brain.log, warmForTravel: warm, today, showPick, showPlaces: showPlacesOf, placeCover, placePhoto, stayBudget, groupStay })) brain.tools.register(t);
   brain.tools.register(budgetTool({ budgets, pool: brain.pool, now: brain.now, log: brain.log }));
   brain.context.addNow(budgetNow({ budgets, trip: async (tripId) => (await brain.packs.get(tripId)).trip }));
   // A person's own flight booking, in the turns they speak in (the lead, 11 Oct: Ankur's "?" after his stopped).

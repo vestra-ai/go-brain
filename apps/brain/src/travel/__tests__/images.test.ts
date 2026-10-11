@@ -89,6 +89,12 @@ describe("Go's image cache", () => {
     expect((await webp.inject({ method: 'GET', url: new URL(shot!).pathname })).headers['content-type']).toBe('image/webp');
   });
 
+  // A kept place's photo is Go's own image already: it goes on a card as it is, never a copy that fetches Go from Go.
+  it("gives Go's own image back as it is", async () => {
+    const own = await images().putBytes(JPEG, 'image/jpeg');
+    expect(await images().rehostUrl(own)).toBe(own);
+  });
+
   it('never fetches what is not an https image on a public name', async () => {
     expect(isFetchableImageUrl('http://picsum.photos/x')).toBe(false);
     expect(isFetchableImageUrl('https://127.0.0.1/x.jpg')).toBe(false);

@@ -120,6 +120,8 @@ export function createImages(d: { pool: pg.Pool; publicUrl: string }): Images {
       if (id) await d.pool.query('delete from go_images where id = $1 and bytes is not null', [id]);
     },
     async rehostUrl(sourceUrl) {
+      // Go's own image already (a kept place's photo): as it is, never a copy that fetches Go from Go.
+      if (sourceUrl.startsWith(`${base}/img/`)) return sourceUrl;
       if (!isFetchableImageUrl(sourceUrl)) return null;
       const id = `u${createHash('sha256').update(sourceUrl).digest('hex').slice(0, 32)}`;
       await d.pool.query('insert into go_images (id, source_url) values ($1, $2) on conflict (id) do nothing', [id, sourceUrl]);

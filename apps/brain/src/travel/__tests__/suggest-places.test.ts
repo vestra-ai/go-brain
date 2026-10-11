@@ -46,11 +46,20 @@ describe('places Go picks itself', () => {
       },
       saveCard: async () => undefined, shownFrom: async () => [], card: async () => null,
     } as unknown as ResultsStore;
+    // Manali's photo was kept from ixigo's guide (a Go image already); the others come from Wikipedia, with their file's
+    // page for a credit; Kasol has none, and is never looked for twice.
     const deps = {
-      results, images: { rehostUrl: async () => 'https://go.test/img/x.jpg' }, now: () => new Date('2026-10-11T18:30:00Z'),
-      placeCover: async (_trip: string, name: string) => {
+      results, images: { rehostUrl: async (url: string) => (url.startsWith('https://go.test/img/') ? url : `https://go.test/img/of-${url.split('/').at(-1)}`) },
+      now: () => new Date('2026-10-11T18:30:00Z'),
+      placePhoto: async (_trip: string, name: string) => {
         covers.push(name);
-        return name.startsWith('Kasol') ? null : `https://go.test/img/${name.split(',')[0]!.toLowerCase()}.jpg`;
+        const short = name.split(',')[0]!;
+        if (short === 'Kasol') return null;
+        if (short === 'Manali') return { url: 'https://go.test/img/manali.jpg' };
+        return { url: `https://upload.wikimedia.org/wikipedia/commons/a/ab/${short}.jpg`, credit: `https://commons.wikimedia.org/wiki/File:${short}.jpg` };
+      },
+      placeCover: async () => {
+        throw new Error('a place Go picked is never looked for again');
       },
       showPlaces: (_trip: string, picks: unknown[]) => handed.push(picks),
     } as unknown as TravelToolDeps;
@@ -59,12 +68,16 @@ describe('places Go picks itself', () => {
     const out = await tool.run(tool.input.parse({ title: 'Hill escapes from Delhi in December', line: 'Five hill trips for December, vote on your favourite.', places: PLACES }), ctx);
     expect(out).toMatchObject({ card_id: expect.any(String), shown: 5 });
     expect(saved).toEqual([expect.objectContaining({ tripId: 't_goa', optionKind: 'place', source: 'task', checkedAt: '2026-10-11T18:30:00.000Z' })]);
+    // A Wikipedia photo's file page is kept with its place, for its credit.
+    expect(saved[0]!.options.map((o) => o.facts['photo_credit'] ?? null)).toEqual([
+      null, 'https://commons.wikimedia.org/wiki/File:Shimla.jpg', 'https://commons.wikimedia.org/wiki/File:Mussoorie.jpg', 'https://commons.wikimedia.org/wiki/File:Nainital.jpg', null,
+    ]);
     const card = ctx.cards[0] as OptionsCardT;
     expect(card).toMatchObject({ kind: 'options', option_kind: 'place', title: 'Hill escapes from Delhi in December' });
     expect(ctx.lines).toEqual(['Five hill trips for December, vote on your favourite.']);
     expect(card.options.map((o) => [o.title, o.image_url ?? null])).toEqual([
-      ['Manali, Himachal Pradesh', 'https://go.test/img/manali.jpg'], ['Shimla, Himachal Pradesh', 'https://go.test/img/shimla.jpg'],
-      ['Mussoorie, Uttarakhand', 'https://go.test/img/mussoorie.jpg'], ['Nainital, Uttarakhand', 'https://go.test/img/nainital.jpg'], ['Kasol, Himachal Pradesh', null],
+      ['Manali, Himachal Pradesh', 'https://go.test/img/manali.jpg'], ['Shimla, Himachal Pradesh', 'https://go.test/img/of-Shimla.jpg'],
+      ['Mussoorie, Uttarakhand', 'https://go.test/img/of-Mussoorie.jpg'], ['Nainital, Uttarakhand', 'https://go.test/img/of-Nainital.jpg'], ['Kasol, Himachal Pradesh', null],
     ]);
     expect(covers).toHaveLength(5);
     // Its price is "each, rough" on the card, never "from": it is Go's estimate, not a least.

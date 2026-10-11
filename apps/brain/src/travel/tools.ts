@@ -65,6 +65,12 @@ export interface TravelToolDeps {
    * waited for in parallel, up to COVER_WAIT_MS, before its card goes up. Null when ixigo has none: never a made-up one.
    */
   placeCover?: (tripId: string, name: string) => Promise<string | null>;
+  /**
+   * A place's photo for one Go picked itself (suggest_places), read with no ixigo page: the photo kept from ixigo's
+   * guide, else Wikipedia's with its file's page for a credit. Its address as found, put through Go's image cache with
+   * the card. Null when there is none.
+   */
+  placePhoto?: (tripId: string, name: string) => Promise<{ url: string; credit?: string } | null>;
   /** Where the group stays, with its position (group-stay.ts): each bus's nearest drop to it. Absent, none is said. */
   groupStay?: (tripId: string) => Promise<GroupStay | null>;
 }
@@ -430,9 +436,10 @@ export async function cardPicks(set: ResultSet, numbers: number[], cardId: strin
         : set.optionKind === 'train' ? trainDetails(option) : set.optionKind === 'flight' ? flightDetails(option, people) : set.optionKind === 'place' ? placeDetails(option) : null;
       // A place goes up with its real cover (Saket, 11 Oct: never the App's drawing): the explorer's own photo, else its
       // guide's, waited for a little; a place with neither goes up without one.
+      // A place Go picked itself was looked for already (suggest_places): none is none, never a second wait.
       const imageUrl = option.imageUrl
         ? await d.images.rehostUrl(option.imageUrl)
-        : set.optionKind === 'place' && d.placeCover ? await coverWithin(d.placeCover(set.tripId, option.title)) : null;
+        : set.optionKind === 'place' && option.facts['estimate'] !== true && d.placeCover ? await coverWithin(d.placeCover(set.tripId, option.title)) : null;
       return {
         n: i + 1, optionId: stableId('opt', cardId, i + 1), option, imageUrl,
         ...(details ? { details } : {}),
@@ -445,7 +452,7 @@ export async function cardPicks(set: ResultSet, numbers: number[], cardId: strin
 /** How long a place card waits for a place's cover from its guide, every place at once, before it goes up without one. */
 export const COVER_WAIT_MS = 2_500;
 
-const coverWithin = (cover: Promise<string | null>): Promise<string | null> =>
+const coverWithin = <T>(cover: Promise<T | null>): Promise<T | null> =>
   Promise.race([cover.catch(() => null), new Promise<null>((r) => setTimeout(() => r(null), COVER_WAIT_MS).unref())]);
 
 /**
@@ -1106,7 +1113,12 @@ export function travelTools(d: TravelToolDeps): QuickTool<any>[] {
     input: SuggestArgs,
     endsTurn: true,
     async run(a, ctx) {
-      const options = suggestedPlaces(a.places);
+      // Every place's photo at once, within the cover wait, before the card goes up; its credit kept in its facts.
+      const photos = await Promise.all(a.places.map((p) => (d.placePhoto ? coverWithin(d.placePhoto(ctx.tripId, p.name)) : Promise.resolve(null))));
+      const options = suggestedPlaces(a.places).map((o, i) => {
+        const photo = photos[i];
+        return photo ? { ...o, imageUrl: photo.url, facts: { ...o.facts, ...(photo.credit ? { photo_credit: photo.credit } : {}) } } : o;
+      });
       const set = await d.results.save({ tripId: ctx.tripId, optionKind: 'place', source: 'task', query: { suggested: true }, options, checkedAt: d.now().toISOString() });
       const vote: CardVote = {
         ...(a.question ? { question: a.question } : {}),
