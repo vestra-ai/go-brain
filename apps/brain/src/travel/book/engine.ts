@@ -522,7 +522,7 @@ export function createEngine(d: EngineDeps) {
     for (const [lookupId, ends] of unknownByLookup) {
       const lookup = d.book.get(lookupId)!;
       const runner = d.runner(o.tripId);
-      if (!runner?.read) throw new TravelError('unknown_place', `Go can't ask ixigo's box about ${ends.map((e) => `"${e.words}"`).join(' and ')} from here.`);
+      if (!runner?.read) throw new TravelError('unknown_place', `Go couldn't look ${ends.map((e) => `"${e.words}"`).join(' and ')} up on ixigo.`);
       const lookupRun = line(o.tripId, { recipe_id: lookupId, label: ends.map((e) => clip(e.words.trim(), 40)).join(' → '), speed: 'page', ...(parent ? { parent } : {}) });
       try {
         // Each end's suggestion call opened as the page (box.open), at once; or one fetch typing every end into the box.
@@ -558,7 +558,7 @@ export function createEngine(d: EngineDeps) {
             }, "book: a page answered, and its answer didn't read");
           }
           const picked = pickSuggestion(e.words, list);
-          if (!picked) throw new TravelError('unknown_place', `ixigo's ${lookup.keeps} box knows no place for "${e.words.slice(0, 60)}".`);
+          if (!picked) throw new TravelError('unknown_place', `ixigo doesn't know "${e.words.slice(0, 60)}" for ${lookup.keeps}.`);
           if ('choose' in picked) {
             offer(lookup, e.words, picked.choose);
             throw pickPlace(e.input, e.words, picked.choose);

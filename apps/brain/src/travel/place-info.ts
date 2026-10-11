@@ -42,12 +42,20 @@ export function placeInfoHandler(d: { pool: pg.Pool }): ToGoHandler<'place_info'
 
 export const LearnPlaceBody = z.object({ trip_id: z.string().min(1).max(64), name: z.string().min(1).max(120) });
 
+/**
+ * The Server's idea names that ixigo knows by other words (the prod warm, 11 Oct): its place box can't settle on them and
+ * it has no guide under them, but it has one under these (/plan/leh-ladakh, /plan/andaman-and-nicobar). Learned from that
+ * guide, kept under the Server's name. By the words as place_info keys them (norm).
+ */
+export const IXIGO_WORDS: ReadonlyMap<string, string> = new Map([['ladakh', 'Leh Ladakh'], ['andaman', 'Andaman and Nicobar']]);
+
 const errorBody = (code: string, message: string) => ({ error: { code, message } });
 
 /**
  * POST /admin/places/learn { trip_id, name }: the operator's way to learn a place before the Server's ideas ask for it,
  * through that trip's own computer (one box lookup and a guide load or two, as a trip's destination is learned; the guide
- * by the words alone when the box can't settle). It answers what place_info will; a place already learned loads nothing.
+ * by the words alone when the box can't settle, or by ixigo's own words for a name in IXIGO_WORDS). It answers what
+ * place_info will; a place already learned loads nothing.
  * 404 unknown_place: neither the box nor a guide knows the words. Closed unless ADMIN_TOKEN is set; the token comes as a
  * bearer.
  */
@@ -56,8 +64,8 @@ export function registerPlaceLearn(
   d: { adminToken: string | undefined; pool: pg.Pool; placeFor: PlaceFor; guideOf: GuideOf; live: () => boolean },
 ): void {
   /** ixigo's guide for the words alone, kept apart from trip destinations: false when it has no photo and no months. */
-  const learnGuide = async (name: string, tripId: string): Promise<boolean> => {
-    const g = await d.guideOf([name], tripId);
+  const learnGuide = async (name: string, tripId: string, words = name): Promise<boolean> => {
+    const g = await d.guideOf([words], tripId);
     if (g.months === null) throw new Error("ixigo's guide did not load");
     if (!g.photo && g.months.length === 0) return false;
     const place: Place = { name: (g.name ?? name).slice(0, 120), ...(g.photo ? { photo_url: g.photo } : {}), ...(g.photos.length ? { photos: g.photos } : {}) };
@@ -81,7 +89,10 @@ export function registerPlaceLearn(
     const kept = await placeInfo(d.pool, b.name);
     if (kept.complete !== false) return reply.send(kept);
     try {
-      const known = (await d.placeFor(b.name, { tripId: b.trip_id })) !== null || (await learnGuide(b.name, b.trip_id));
+      const words = IXIGO_WORDS.get(norm(b.name));
+      const known = words
+        ? await learnGuide(b.name, b.trip_id, words)
+        : (await d.placeFor(b.name, { tripId: b.trip_id })) !== null || (await learnGuide(b.name, b.trip_id));
       if (!known) return reply.code(404).send(errorBody('unknown_place', "neither ixigo's place box nor its guide knows that place"));
     } catch (err) {
       return reply.code(502).send(errorBody('upstream', String(err).slice(0, 300)));
