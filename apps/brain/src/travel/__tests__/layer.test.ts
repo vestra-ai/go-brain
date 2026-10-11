@@ -282,7 +282,7 @@ describe('ixigo.com through the recipes (TRAVEL_MODE ixigo_web)', () => {
     await switches.set('TRAVEL_MODE', 'ixigo_web');
     const ask = { area: 'Anjuna', checkIn: '2026-11-06', checkOut: '2026-11-09', siteFilters: ['Pet-friendly property', 'beachfront'], siteSort: 'Price (Low to High)', wants: ['quiet'] };
     const found = await layer.search('stays', ask, { tripId: 't_goa' });
-    expect(queries).toEqual([{ area: 'Anjuna', checkIn: '2026-11-06', checkOut: '2026-11-09', siteFilters: ['Pet-friendly property', 'beachfront'], siteSort: 'Price (Low to High)' }]);
+    expect(queries).toEqual([{ area: 'Anjuna', checkIn: '2026-11-06', checkOut: '2026-11-09', siteFilters: ['Pet-friendly property', 'beachfront'], siteSort: 'Price (Low to High)', wants: ['quiet'] }]);
     // ixigo's cheapest first, not Go's best rated first.
     expect(found.results.map((o) => o.title)).toEqual(['Cheap', 'Dear']);
     expect(found).toMatchObject({ site, unapplied: ['beachfront'] });

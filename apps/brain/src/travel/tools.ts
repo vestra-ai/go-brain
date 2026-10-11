@@ -135,7 +135,10 @@ export const StaysArgs = z.object({
     ),
   site_sort: z.string().min(1).max(80).optional().describe("ixigo's own sort the ask means, by its name on that list"),
   wants: z.array(z.string().min(1).max(80)).max(8).optional()
-    .describe("Anything else the group asked for that no filter covers, in their words: you pick it from the results' amenities and details"),
+    .describe(
+      "Anything else the group asked for, in their words (a gym, a jacuzzi): ixigo filters it itself when one of its own filters means it " +
+        "(a gym is its Fitness Centre), and the rest you pick from the results' amenities and details",
+    ),
 });
 
 export function flightsQuery(a: z.infer<typeof FlightsArgs>): TravelQuery {
@@ -521,7 +524,9 @@ function answeredAs(q: TravelQuery, found: TravelSearch): TravelQuery {
 export function leftToPick(q: TravelQuery, found: TravelSearch): string[] {
   const asked = [...(q.siteFilters ?? []), ...(q.siteSort ? [q.siteSort] : [])];
   const notApplied = found.site ? [...found.site.unknown, ...(found.unapplied ?? []).filter((n) => asked.includes(n))] : asked;
-  return [...new Set([...notApplied, ...(q.wants ?? [])])];
+  // A want the site's own filter covered (a gym, as its Fitness Centre) is filtered, never the model's to pick.
+  const wanted = found.site?.wanted ?? [];
+  return [...new Set([...notApplied, ...(q.wants ?? []).filter((w) => !wanted.includes(w))])];
 }
 
 /** What goes before the card's line of a search ixigo left filters off: "ixigo's pool filter didn't load in time, …: ". */
@@ -797,7 +802,7 @@ export async function searchAnswer(kind: TravelKind, ask: TravelQuery, found: Tr
       `${found.notes?.length ? "What ixigo itself offers for this list is in the summary: say it in one short line when it helps the ask (holding a fare while the group decides, a budget), as ixigo's to set, never Go's. " : ''}` +
       (pick.length
         ? `Show the options whose amenities or details fit ${listOf(pick)}, the best three when there are three, best first, and say which part ixigo filtered and which you picked; ` +
-          "a want the data can't show (quiet) is no reason to show fewer: pick on what it does show and say plainly what ixigo doesn't tell. " +
+          "a want the data can't show (quiet) is no reason to show fewer: pick on what it does show and say plainly what ixigo doesn't tell, never that they should check it. " +
           'If none clearly fits, say so and show the closest. ' +
           (list ? "If one of ixigo's own filters is what was asked, you may search again with it in site_filters. " : '')
         : '') +
@@ -839,8 +844,8 @@ const SEARCH_RULE = 'Put every constraint people gave into the arguments: Go app
  * "Meher, does this feel quiet enough?").
  */
 const NO_HOMEWORK =
-  "Never hand the work back to the group: no maths for them to check (each stay's share a head is on the card, worked out by Go) and no " +
-  '"does this work for you?" about whether an option fits: you make that call from the results and say it.';
+  "Never hand the work back to the group: no maths for them to check (each stay's share a head is on the card, worked out by Go), no " +
+  '"does this work for you?" about whether an option fits, and never "check each one\'s amenities": you make that call from the results and say it.';
 
 const ShowArgs = z.object({
   results_id: z.string().min(3).max(64),

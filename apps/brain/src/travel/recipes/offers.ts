@@ -88,15 +88,48 @@ export const sameName = (a: string, b: string): boolean => plain(a) === plain(b)
 export const offerWords = (o: Offer): string => (/^[\d.+]+$/.test(o.name.trim()) ? `${o.group} ${o.name}` : o.name);
 
 /**
+ * The words a site's stay filters use for what people call otherwise, the only words Go keeps of its own here: a gym is
+ * ixigo's Fitness Centre, wifi its Internet access (the Manali room, 11 Oct: "stays that have gym" went unfiltered).
+ */
+const SAID_AS: Readonly<Record<string, string>> = {
+  gym: 'fitness', gymnasium: 'fitness', workout: 'fitness', wifi: 'internet', lift: 'elevator', pets: 'pet', dog: 'pet',
+  dogs: 'pet', bbq: 'barbeque', barbecue: 'barbeque', children: 'kids', pub: 'bar', tv: 'television', wheelchair: 'abled',
+};
+/** Words that say nothing of what a stay has ("a gym", "free wifi", "good parking"). */
+const FILLER = new Set(['a', 'an', 'the', 'with', 'has', 'have', 'having', 'free', 'good', 'nice', 'own', 'some', 'access', 'facility', 'facilities']);
+const wordsOf = (s: string): string[] => plain(s).split(/[^a-z0-9]+/).filter((w) => w.length > 0);
+const sameWord = (a: string, b: string): boolean => a === b || `${a}s` === b || a === `${b}s`;
+
+/**
+ * Whether what was asked is this offer by meaning, by the offer's own words: each word of the ask (or the word the site
+ * uses for it, SAID_AS) is one of the offer's ("pool" is the Swimming Pool, "free wifi" Internet access). Never the
+ * Private Pool unless they said private (the exam's re-run, 10 Oct: "a pool" read as Private Pool left no stay).
+ */
+export function meansOffer(asked: string, name: string): boolean {
+  const own = wordsOf(name);
+  const want = wordsOf(asked).filter((w) => !FILLER.has(w)).map((w) => SAID_AS[w] ?? w);
+  if (want.length === 0 || want.length > 3) return false;
+  if (own.includes('private') && !want.includes('private')) return false;
+  return want.every((w) => own.some((o) => sameWord(o, w)));
+}
+
+/** The filter that means what was asked, the one whose name says least besides ("Parking" before "Parking Available"). */
+const meant = (offers: Offer[], asked: string): Offer | undefined =>
+  offers.filter((o) => o.kind === 'filter' && meansOffer(asked, o.name)).sort((a, b) => wordsOf(a.name).length - wordsOf(b.name).length)[0];
+
+/**
  * The names asked for, as the site lists them: each matches an offer of that kind by its name, its words, or its heading
- * and name ("Star Rating: 5"), case, spacing and punctuation aside. The rest are not the site's (unknown).
+ * and name ("Star Rating: 5"), case, spacing and punctuation aside; else a filter that means it (meansOffer). The rest are
+ * not the site's (unknown).
  */
 export function pickOffers(offers: Offer[], names: string[], kind: Offer['kind']): { picked: Offer[]; unknown: string[] } {
   const picked: Offer[] = [];
   const unknown: string[] = [];
   for (const name of names) {
     const want = plain(name);
-    const hit = offers.find((o) => o.kind === kind && [o.name, offerWords(o), `${o.group} ${o.name}`].some((s) => plain(s) === want));
+    const hit =
+      offers.find((o) => o.kind === kind && [o.name, offerWords(o), `${o.group} ${o.name}`].some((s) => plain(s) === want)) ??
+      (kind === 'filter' ? meant(offers, name) : undefined);
     if (!hit) unknown.push(name);
     else if (!picked.includes(hit)) picked.push(hit);
   }
