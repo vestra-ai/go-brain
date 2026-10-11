@@ -574,6 +574,35 @@ describe('flights.results', () => {
     // Every other recipe is never paced.
     expect(engine.pacedOut('trains.between')).toBe(false);
   });
+
+  // G1, 11 Oct: Go told the room it would try again in a minute. That try asks ixigo itself, through the quiet a refusal
+  // left, never through the gap: one flights page across every trip in 20 s still holds.
+  it("lets a promised try again through the quiet after a refusal, never through the gap", async () => {
+    let nowMs = Date.parse('2026-10-09T18:00:00Z');
+    let refuse = true;
+    const runs: string[] = [];
+    const runner = {
+      read: async (_trip: string, url: string) => {
+        runs.push(url);
+        return { captures: [capture(STREAM, STREAM_URL, refuse ? '{"message":"Forbidden"}' : fixture('flights-del-goi-2026-11-13.sse'), refuse ? 403 : 200)], finalUrl: url };
+      },
+    };
+    const engine = createEngine({ book, runner: () => runner, trip: async () => ({ people: 4, homes: HOMES }), now: () => new Date(nowMs) });
+    await expect(engine.answer('flights.results', GIVEN, { tripId: 't_a' })).rejects.toMatchObject({ code: 'refused' });
+    refuse = false;
+    // 10 s on: in the gap, so even a try again waits for the next minute's.
+    nowMs += 10_000;
+    expect([engine.pacedOut('flights.results'), engine.pacedOut('flights.results', true)]).toEqual([true, true]);
+    await expect(engine.answer('flights.results', GIVEN, { tripId: 't_a', retry: true })).rejects.toMatchObject({ code: 'unreachable' });
+    // A minute on: still quiet for every other search, but the try again loads the page, and its answer lifts the quiet.
+    nowMs += 50_000;
+    expect([engine.pacedOut('flights.results'), engine.pacedOut('flights.results', true)]).toEqual([true, false]);
+    await expect(engine.answer('flights.results', { ...GIVEN, date: '2026-11-14' }, { tripId: 't_b' })).rejects.toMatchObject({ code: 'unreachable' });
+    expect((await engine.answer('flights.results', GIVEN, { tripId: 't_a', retry: true })).as).toBe('options');
+    expect(runs).toHaveLength(2);
+    nowMs += 20_000;
+    expect(engine.pacedOut('flights.results')).toBe(false);
+  });
 });
 
 describe('flights.search', () => {

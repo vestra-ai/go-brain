@@ -7,16 +7,19 @@
  * one flights page across every trip in 20 s), and each person's leaving time (Person.earliest_leave, leave-window.ts)
  * narrows their city's flights in Go, with no second load. Every traveller gets a card of their own (the Server team's
  * final round, 10 Oct: one card per traveller, theirs alone to act on, no vote), even two from one city. Each city's
- * cards go up as its page lands, the first in about 5 s, behind a live card ticking off the cities; a city whose page
- * doesn't come gets its people's ixigo link instead, each their own.
+ * cards go up as its page lands, the first in about 5 s, behind a live card ticking off the cities. A city whose page
+ * doesn't come never gets a link card (G1, 11 Oct): each of its people hears, theirs alone, that Go couldn't load their
+ * flights and will try again in a minute, and Go tries that city again (try-again.ts, eachTryAgain).
  */
 import { z } from 'zod';
 import type * as C from '@go/contract';
 import { SAY_NOTHING, type QuickTool, type TurnCtx } from '../composer/tools.js';
+import type { Desk } from '../desk/desk.js';
 import type { ServerLink } from '../door/server-link.js';
+import type { TripPack } from '../trips/pack.js';
 import { dayText } from './answer.js';
 import type { Engine, EngineAnswer, StepsEvent } from './book/engine.js';
-import { buildFlightsLinkCard, buildOptionsCard, clip, formatInr, type CardPick } from './cards.js';
+import { buildOptionsCard, clip, formatInr, type CardPick } from './cards.js';
 import { flightDetails } from './details.js';
 import { applyConstraints } from './filters.js';
 import { stableId } from './ids.js';
@@ -26,9 +29,12 @@ import { CARD_DELAY_MS, TRAVEL_WAIT_MS } from './recipes/backend.js';
 import { norm } from './recipes/places.js';
 import { toResultOption, type ResultOption, type ResultsStore } from './results.js';
 import type { TravelOption } from './travel.js';
+import { notLoadedLine, stillNotLoadedLine, TRIES, tryAgain, type TryAgainItem } from './try-again.js';
 import { waysLiveCard } from './ways-there.js';
 
 export const FLIGHTS_EACH = 'trip.flights_each';
+/** One home city's flights page, as the composite reads it: a city's try again reads it alone. */
+const CITY_FLIGHTS = 'flights.results';
 /** The flights on a person's card at most: the cheapest that fit their window. */
 const CARD_FLIGHTS = 3;
 /** The tool waits a search's own time; past it, each city's cards still post themselves as they land. */
@@ -102,10 +108,90 @@ export interface FlightsEachDeps {
   /** Where the live card and each city's cards are posted. */
   link: Pick<ServerLink, 'request'>;
   now: () => Date;
+  /** Where a city whose page didn't come waits for its try again (try-again.ts). */
+  desk?: Pick<Desk, 'put'>;
   log?: { warn(obj: object, msg: string): void };
   /** How long the turn waits (TRAVEL_WAIT_MS), and before the live card shows (CARD_DELAY_MS). */
   waitMs?: number;
   cardDelayMs?: number;
+}
+
+/** A group's card and its line, saved before it posts so its taps find their offers. */
+async function groupCard(d: Pick<FlightsEachDeps, 'results'>, tripId: string, turnId: string, g: EachGroup, at: { to: string; date: string }, got: Extract<EngineAnswer, { as: 'options' }>) {
+  const { shown, fit } = flightsFor(g, got.options);
+  const who = namesOf(g);
+  const when = g.window ? `, ${g.window.words}` : '';
+  if (shown.length === 0) return { card: null, line: `${who}, no flight from ${g.home} on ${dayText(at.date)}${when} has seats on ixigo.` };
+  const cardId = stableId('c_each', turnId, ...g.people.map((p) => p.personId));
+  const options: ResultOption[] = shown.map((o) => toResultOption(o));
+  const ids = g.people.map((p) => p.personId);
+  const set = await d.results.save({
+    tripId, optionKind: 'flight', source: 'search', options, checkedAt: got.checkedAt, page: got.page,
+    query: { from: g.home, to: at.to, date: at.date, guests: 1, ...(g.window?.departAfter ? { departAfter: g.window.departAfter } : {}), ...(g.window?.departBefore ? { departBefore: g.window.departBefore } : {}), for_person_ids: ids },
+  });
+  const picks: Array<CardPick & { n: number }> = options.map((option, i) => {
+    const details = flightDetails(option, 1);
+    return { n: i + 1, optionId: stableId('opt', cardId, i + 1), option, imageUrl: null, ...(details ? { details } : {}) };
+  });
+  const title = `Flights for ${who}, ${g.home} to ${at.to}, ${dayText(at.date)}${when}`;
+  const card = buildOptionsCard({ cardId, title: clip(title, 80), optionKind: 'flight', checkedAt: got.checkedAt, picks, forPersonIds: ids });
+  await d.results.saveCard({ cardId, tripId, resultsId: set.resultsId, title: card.title, optionKind: 'flight', card }, picks, got.checkedAt);
+  // A rerun of the same turn finds this card saved already, and posts that one.
+  const saved = (await d.results.card(tripId, cardId))?.card ?? card;
+  const cheapest = shown[0]!;
+  const line =
+    `${who}, your flights from ${g.home} on ${dayText(at.date)}${when}: ${fit} ${fit === 1 ? 'fits' : 'fit'}, from ${formatInr(cheapest.priceMinor)} a person. ` +
+    `Tap "I'll take this" on yours.`;
+  return { card: saved, line };
+}
+
+/**
+ * Each traveller's card and its line are theirs alone to see (1.2 visible_to_person_ids, Keshav, 10 Oct), as well as to
+ * act on. Never throws: a post that fails is logged.
+ */
+function postFor(d: Pick<FlightsEachDeps, 'link' | 'log'>, tripId: string, requestId: string, card: C.Card | null, text: string, only: string[]): Promise<void> {
+  return d.link.request('post_message', { request_id: requestId, trip_id: tripId, text, ...(card ? { card } : {}), visible_to_person_ids: only })
+    .then(() => undefined)
+    .catch((err: unknown) => d.log?.warn({ err: String(err).slice(0, 200), tripId }, "travel: a person's flights card could not be posted"));
+}
+
+/** A traveller's line when their city's page didn't come, or the last try didn't either: "Arjun, I couldn't load…". */
+const notLoadedFor = (g: EachGroup, last = false): string => `${namesOf(g)}, ${(last ? stillNotLoadedLine : notLoadedLine)(`your flights from ${g.home}`)}`;
+
+/**
+ * A home city's try again (try-again.ts): its flights page alone, in the background, through ixigo's quiet. Each
+ * traveller from there now (the trip as it is when the try comes) gets their own card when it lands, the next try goes on
+ * the desk when it doesn't, and after the last each hears Go's last word, theirs alone. Starts and returns at once.
+ */
+export function eachTryAgain(d: Omit<FlightsEachDeps, 'live'>): (t: TryAgainItem, pack: TripPack) => void {
+  return (t, pack) => {
+    const each = t.payload.each;
+    if (!each) return;
+    const groups = planEach(pack.trip.people, each.to, each.date).groups.filter((g) => norm(g.home) === norm(each.home));
+    if (groups.length === 0) return;
+    const at = { to: each.to, date: each.date };
+    const run = async (): Promise<void> => {
+      const got = await d.engine.answer(CITY_FLIGHTS, { from: each.home, to: each.to, date: each.date, ...(each.cabin ? { cabin: each.cabin } : {}) }, { tripId: t.tripId, retry: true })
+        .catch((err: unknown) => {
+          d.log?.warn({ err: String(err).slice(0, 200), tripId: t.tripId, n: t.payload.n }, "travel: a city's flights try again didn't load");
+          return null;
+        });
+      if (got?.as === 'options' && got.options.length > 0) {
+        for (const g of groups) {
+          const ids = g.people.map((p) => p.personId);
+          const made = await groupCard(d, t.tripId, t.id, g, at, got);
+          await postFor(d, t.tripId, stableId('go_each', t.id, ...ids), made.card, made.line, ids);
+        }
+        return;
+      }
+      if (t.payload.n < TRIES && d.desk) return tryAgain({ desk: d.desk, now: d.now }, t.tripId, 'flights', { ...t.payload, n: t.payload.n + 1 });
+      for (const g of groups) {
+        const ids = g.people.map((p) => p.personId);
+        await postFor(d, t.tripId, stableId('go_each', t.id, ...ids, 'gave_up'), null, notLoadedFor(g, true), ids);
+      }
+    };
+    run().catch((err: unknown) => d.log?.warn({ err: String(err).slice(0, 200), tripId: t.tripId }, "travel: a city's flights try again failed"));
+  };
 }
 
 const Args = z.object({
@@ -115,35 +201,6 @@ const Args = z.object({
 });
 
 export function flightsEachTool(d: FlightsEachDeps): QuickTool<z.infer<typeof Args>> {
-  /** A group's card and its line, saved before it posts so its taps find their offers. */
-  async function groupCard(tripId: string, turnId: string, g: EachGroup, at: { to: string; date: string }, got: Extract<EngineAnswer, { as: 'options' }>) {
-    const { shown, fit } = flightsFor(g, got.options);
-    const who = namesOf(g);
-    const when = g.window ? `, ${g.window.words}` : '';
-    if (shown.length === 0) return { card: null, line: `${who}, no flight from ${g.home} on ${dayText(at.date)}${when} has seats on ixigo.` };
-    const cardId = stableId('c_each', turnId, ...g.people.map((p) => p.personId));
-    const options: ResultOption[] = shown.map((o) => toResultOption(o));
-    const ids = g.people.map((p) => p.personId);
-    const set = await d.results.save({
-      tripId, optionKind: 'flight', source: 'search', options, checkedAt: got.checkedAt, page: got.page,
-      query: { from: g.home, to: at.to, date: at.date, guests: 1, ...(g.window?.departAfter ? { departAfter: g.window.departAfter } : {}), ...(g.window?.departBefore ? { departBefore: g.window.departBefore } : {}), for_person_ids: ids },
-    });
-    const picks: Array<CardPick & { n: number }> = options.map((option, i) => {
-      const details = flightDetails(option, 1);
-      return { n: i + 1, optionId: stableId('opt', cardId, i + 1), option, imageUrl: null, ...(details ? { details } : {}) };
-    });
-    const title = `Flights for ${who}, ${g.home} to ${at.to}, ${dayText(at.date)}${when}`;
-    const card = buildOptionsCard({ cardId, title: clip(title, 80), optionKind: 'flight', checkedAt: got.checkedAt, picks, forPersonIds: ids });
-    await d.results.saveCard({ cardId, tripId, resultsId: set.resultsId, title: card.title, optionKind: 'flight', card }, picks, got.checkedAt);
-    // A rerun of the same turn finds this card saved already, and posts that one.
-    const saved = (await d.results.card(tripId, cardId))?.card ?? card;
-    const cheapest = shown[0]!;
-    const line =
-      `${who}, your flights from ${g.home} on ${dayText(at.date)}${when}: ${fit} ${fit === 1 ? 'fits' : 'fit'}, from ${formatInr(cheapest.priceMinor)} a person. ` +
-      `Tap "I'll take this" on yours.`;
-    return { card: saved, line };
-  }
-
   return {
     name: 'search_flights_each',
     description:
@@ -172,52 +229,46 @@ export function flightsEachTool(d: FlightsEachDeps): QuickTool<z.infer<typeof Ar
       let deadline: ReturnType<typeof setTimeout> | undefined;
       const showing = setTimeout(() => live.show(), d.cardDelayMs ?? CARD_DELAY_MS);
       showing.unref?.();
-      // Each city's two steps (its page and its link); its cards post as its page lands, its link when the page didn't.
-      const cities = new Map<string, { steps: number; posted: boolean; link: string | null }>();
+      // Each city's two steps (its page and its link); its cards post as its page lands, and when the page didn't come,
+      // its people hear that Go will try again, and the city's try goes on the desk. The turn's own line, to the room,
+      // names no flight, price or window.
+      const cities = new Map<string, { steps: number; posted: boolean }>();
       const posts: Array<Promise<void>> = [];
-      const said: string[] = [];
-      // Each traveller's card and its line are theirs alone to see (1.2 visible_to_person_ids, Keshav, 10 Oct), as well as
-      // to act on; the turn's own line, to the room, names no flight, price or window.
       const post = (key: string, card: C.Card | null, text: string, only: string[]): void => {
-        posts.push(
-          d.link.request('post_message', { request_id: stableId('go_each', ctx.turnId, key), trip_id: ctx.tripId, text, ...(card ? { card } : {}), visible_to_person_ids: only })
-            .then(() => undefined)
-            .catch((err: unknown) => d.log?.warn({ err: String(err).slice(0, 200), tripId: ctx.tripId }, "travel: a person's flights card could not be posted")),
-        );
+        posts.push(postFor(d, ctx.tripId, stableId('go_each', ctx.turnId, key), card, text, only));
       };
       const groupsOf = (entry: string): EachGroup[] => plan.groups.filter((g) => norm(g.home) === norm(entry));
       const onStep = (e: Extract<StepsEvent, { type: 'step' }>): void => {
-        const city = cities.get(norm(e.entry)) ?? { steps: 0, posted: false, link: null };
+        const city = cities.get(norm(e.entry)) ?? { steps: 0, posted: false };
         cities.set(norm(e.entry), city);
         city.steps += 1;
-        if (e.answer?.as === 'link') city.link = e.answer.link;
         if (e.recipe === 'flights.results') live.step(e.entry, 'flights', e.answer?.as === 'options');
         const got = e.answer;
         if (got?.as === 'options' && got.options.length > 0 && !city.posted) {
           city.posted = true;
           for (const g of groupsOf(e.entry)) {
             posts.push(
-              groupCard(ctx.tripId, ctx.turnId, g, at, got)
+              groupCard(d, ctx.tripId, ctx.turnId, g, at, got)
                 .then((made) => post(g.people.map((p) => p.personId).join(','), made.card, made.line, g.people.map((p) => p.personId)))
                 .catch((err: unknown) => d.log?.warn({ err: String(err).slice(0, 200), tripId: ctx.tripId }, "travel: a person's flights card could not be made")),
             );
           }
           return;
         }
-        // Both steps in and no flights read: the city's people get ixigo's own page, set for them.
+        // Both steps in and no flights read: never a link card. Each of the city's people hears it, theirs alone, and the
+        // city is tried again in a minute.
         if (city.steps >= 2 && !city.posted) {
           city.posted = true;
           for (const g of groupsOf(e.entry)) {
-            const title = clip(`Flights for ${namesOf(g)}, ${g.home} to ${to}`, 80);
-            if (!city.link) {
-              said.push(`Flights from ${g.home} didn't come back from ixigo.`);
-              continue;
-            }
             const only = g.people.map((p) => p.personId);
-            const link = buildFlightsLinkCard({ cardId: stableId('c_each_link', ctx.turnId, ...only), title, url: city.link });
-            // Theirs alone to act on, as their options card would be.
-            const card = { ...link, for_person_ids: only, actions: (link.actions ?? []).map((a) => ({ ...a, only_for_person_ids: only })) };
-            post(`${only.join(',')}|link`, card, `${namesOf(g)}, Go couldn't read the flights from ${g.home} just now, so here they are on ixigo${g.window ? `; yours leave ${g.window.words}` : ''}.`, only);
+            post(`${only.join(',')}|not_loaded`, null, notLoadedFor(g), only);
+          }
+          if (d.desk) {
+            const each = { home: e.entry, to, date, ...(a.cabin ? { cabin: a.cabin } : {}) };
+            posts.push(
+              tryAgain({ desk: d.desk, now: d.now }, ctx.tripId, 'flights', { key: stableId('each', ctx.turnId, norm(e.entry)), what: `flights from ${e.entry}`, n: 1, each })
+                .catch((err: unknown) => d.log?.warn({ err: String(err).slice(0, 200), tripId: ctx.tripId }, "travel: a city's flights try again could not be put on the desk")),
+            );
           }
         }
       };
@@ -271,16 +322,15 @@ export function flightsEachTool(d: FlightsEachDeps): QuickTool<z.infer<typeof Ar
         if (!(first.err instanceof TravelError)) throw first.err;
         return { error: first.err.code, note: clip(first.err.message, 200) };
       }
-      const line = [...said, asks].filter((s) => s !== '').join(' ');
-      if (line) {
-        ctx.lines.push(line);
+      if (asks) {
+        ctx.lines.push(asks);
         ctx.answered = true;
       }
       return {
         cards: facts,
-        answered: !!line,
-        ...(line ? {} : { tell_the_room: SAY_NOTHING }),
-        note: line
+        answered: !!asks,
+        ...(asks ? {} : { tell_the_room: SAY_NOTHING }),
+        note: asks
           ? 'Each person\'s flights card is up, and this turn\'s line asks what is missing: it has said what it needed to.'
           : "Each person's flights card is up, each with its own line: say nothing more about them.",
       };

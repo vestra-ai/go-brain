@@ -63,28 +63,11 @@ export function buildConfirmMineCard(i: { cardId: string; personId: string; opti
 /** On the card of each home city's ways to the trip: ixigo's flights from the tapper's own home city. */
 export const FLIGHTS_HOME_ACTION = { action_id: 'flights_home', label: 'Flights from my city', style: 'secondary' } as const;
 
-/** On the card that links to flights on ixigo, when Go can't read them itself. */
-export const SEE_FLIGHTS_ACTION = { action_id: 'see_on_ixigo', label: 'See flights on ixigo', style: 'primary' } as const;
-export const SEE_STAYS_ACTION = { action_id: 'see_on_ixigo', label: 'See stays on ixigo', style: 'primary' } as const;
-
 /**
- * The flights (or stays) Go couldn't read, as a link: ixigo's results page with what people asked for already set, and
- * who it is set for ("for 3 from Delhi"). It never says there are none: ixigo refused Go's computer, and the page has them.
+ * On a card that opens ixigo's page for a kind of search (buildIxigoPageCard). A search ixigo didn't load never answers
+ * with its results page on a card (G1, 11 Oct): Go says so and tries again (try-again.ts).
  */
-export function buildFlightsLinkCard(i: { cardId: string; title: string; url: string; who?: string | null; kind?: 'flights' | 'stays' }): NoticeCardT {
-  const set = i.who ? `set ${i.who}, with what you asked for` : 'with what you asked for already set';
-  const noun = i.kind === 'stays' ? 'stays' : 'flights';
-  return C.NoticeCard.parse({
-    card_id: i.cardId,
-    kind: 'notice',
-    fallback_text: clip(`${i.title}${i.who ? `, ${i.who}` : ''}: see them on ixigo`, 300),
-    tone: 'info',
-    title: clip(i.title, 80),
-    body: `Go can't read ixigo's ${noun} from its computer right now, so here they are on ixigo, ${set}. Book them there.`,
-    source: { name: 'ixigo', url: i.url },
-    actions: [noun === 'stays' ? SEE_STAYS_ACTION : SEE_FLIGHTS_ACTION],
-  });
-}
+export const SEE_FLIGHTS_ACTION = { action_id: 'see_on_ixigo', label: 'See flights on ixigo', style: 'primary' } as const;
 
 /** On a card that opens one of ixigo's pages for the person to use there themselves. */
 export const OPEN_ON_IXIGO_ACTION = { action_id: 'see_on_ixigo', label: 'Open on ixigo', style: 'primary' } as const;

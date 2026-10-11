@@ -3,7 +3,7 @@ import * as C from '@go/contract';
 import { withSchema } from '../../db/test-db.js';
 import { eventually, makeLaneBrain, type LaneBrain } from '../../tasks/testing/lane-brain.js';
 import { goaPack } from '../../tasks/testing/goa.js';
-import { buildFlightsLinkCard, buildOptionsCard } from '../cards.js';
+import { buildIxigoLinkCard, buildOptionsCard } from '../cards.js';
 import { stableId } from '../ids.js';
 import { picksOf } from '../picks.js';
 import { registerTravel } from '../register.js';
@@ -185,9 +185,10 @@ describe('registerTravel', () => {
     expect(C.CardActionResult.parse(tapIt)).toEqual(tapIt);
   });
 
-  it('"See flights on ixigo" opens the link card\'s own ixigo page', async () => {
+  // A link card already in a room (search link cards before G1, 11 Oct; a PNR's today) opens its own ixigo page.
+  it('"See on ixigo" opens the link card\'s own ixigo page', async () => {
     const page = 'https://www.ixigo.com/search/result/flight?from=DEL&to=GOI&date=06112026';
-    const link = buildFlightsLinkCard({ cardId: 'c_link_r1', title: 'Flights, Delhi to Goa', url: page });
+    const link = buildIxigoLinkCard({ cardId: 'c_link_r1', title: 'Flights, Delhi to Goa', url: page });
     const tapIt = (c: C.Card) => lb.taps.tap('notice', 'see_on_ixigo', { tap_id: 'tap_l1', trip_id: 't_goa', card_id: c.card_id, action_id: 'see_on_ixigo', person_id: 'p_meher' }, c);
     expect(await tapIt(link)).toEqual({ result: 'open', url: page, expires_at: new Date(lb.brain.now().getTime() + 600_000).toISOString() });
     expect(await tapIt({ ...link, source: { name: 'elsewhere', url: 'https://fares.example/x' } })).toEqual({ result: 'refused', toast: 'This card has no ixigo page' });

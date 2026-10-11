@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import * as C from '@go/contract';
-import { arrivalWords, buildFlightsLinkCard, buildOptionsCard, clip, daysLater, formatClock, formatInr, ixigoPage, localClock, plain, stayLine, stayPayWords, subtitleFor } from '../cards.js';
+import { arrivalWords, buildOptionsCard, clip, daysLater, formatClock, formatInr, ixigoPage, localClock, plain, stayLine, stayPayWords, subtitleFor } from '../cards.js';
 import type { ResultOption } from '../results.js';
 
 const flight = (title: string, dep: string, arr: string, price: number): ResultOption => ({
@@ -57,17 +57,6 @@ describe('the options card', () => {
     expect(JSON.stringify([three, one])).not.toMatch(/add_budget|my budget/i);
   });
 
-  it('builds the flights link card as a valid notice with its one button', () => {
-    const card = buildFlightsLinkCard({ cardId: 'c_link_1', title: 'Flights, Delhi to Goa', url: 'https://www.ixigo.com/search/result/flight?from=DEL&to=GOI' });
-    expect(C.NoticeCard.safeParse(card).success).toBe(true);
-    expect(card).toMatchObject({ tone: 'info', fallback_text: 'Flights, Delhi to Goa: see them on ixigo', source: { name: 'ixigo' } });
-    expect(card.body).not.toMatch(/no flights/i);
-    const set = buildFlightsLinkCard({ cardId: 'c_link_2', title: 'Flights, Delhi to Goa', url: 'https://www.ixigo.com/search/result/flight?from=DEL&to=GOI', who: 'for 3 from Delhi' });
-    expect(set.fallback_text).toBe('Flights, Delhi to Goa, for 3 from Delhi: see them on ixigo');
-    expect(set.body).toContain('set for 3 from Delhi');
-    expect(set.body).toContain('Book them there.');
-  });
-
   it('opens only https pages on ixigo.com', () => {
     expect(ixigoPage('https://www.ixigo.com/trains/10103?orgn=CSMT')).toBe('https://www.ixigo.com/trains/10103?orgn=CSMT');
     expect(ixigoPage('https://ixigo.com/hotels/1/details')).toBe('https://ixigo.com/hotels/1/details');
@@ -76,13 +65,6 @@ describe('the options card', () => {
     expect(ixigoPage('https://notixigo.com/x')).toBeNull();
     expect(ixigoPage('javascript:alert(1)')).toBeNull();
     expect(ixigoPage(null)).toBeNull();
-  });
-
-  // p0's golden run, 10 Oct: stays that stayed on Cloudflare's check, with no earlier read, go as ixigo's own page.
-  it("puts ixigo's own stays page on a card, set as asked, when Go can't read it", () => {
-    const card = buildFlightsLinkCard({ cardId: 'c_link_s', title: 'Stays in North Goa', url: 'https://www.ixigo.com/hotels/search/result?locationId=32', kind: 'stays' });
-    expect(card.body).toBe("Go can't read ixigo's stays from its computer right now, so here they are on ixigo, with what you asked for already set. Book them there.");
-    expect(card.actions?.map((a) => [a.action_id, a.label])).toEqual([['see_on_ixigo', 'See stays on ixigo']]);
   });
 
   it("describes a stay by its area and its night's price, the card's price being the whole stay", () => {

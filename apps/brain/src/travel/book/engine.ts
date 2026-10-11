@@ -255,6 +255,11 @@ export interface RunFor {
    * its filters): the page is asked once, and throws NothingCaughtError (runners.ts).
    */
   fallsBack?: boolean;
+  /**
+   * A try again Go promised the room (try-again.ts: ixigo didn't load the search, so Go said it would try in a minute):
+   * the page goes through the quiet after a refusal, never through the gap, so the try asks ixigo itself.
+   */
+  retry?: boolean;
   /** The site's own filters and sort the run asks for, by their names on the list the recipe's page offers (offers.ts). */
   siteFilters?: string[];
   siteSort?: string;
@@ -369,13 +374,16 @@ export function createEngine(d: EngineDeps) {
    */
   const paces = new Map<string, { at: number; quietUntil: number }>();
 
-  /** Whether a paced recipe's page may not load now: within its gap of the last load, or in its quiet after a failure. */
-  function pacedOut(id: string): boolean {
+  /**
+   * Whether a paced recipe's page may not load now: within its gap of the last load, or in its quiet after a failure. A
+   * promised try again (retry) waits out only the gap.
+   */
+  function pacedOut(id: string, retry = false): boolean {
     const pace = d.book.get(id)?.pace;
     const p = paces.get(id);
     if (!pace || !p) return false;
     const now = d.now().getTime();
-    return now < p.quietUntil || now - p.at < pace.gap_seconds * 1_000;
+    return (!retry && now < p.quietUntil) || now - p.at < pace.gap_seconds * 1_000;
   }
 
   /** One run, in the log and the numbers: recipe, speed, how long, and how it ended. */
@@ -956,7 +964,7 @@ export function createEngine(d: EngineDeps) {
     // one held back fails at once, and its caller has another way (the link to ixigo's own page).
     const pace = recipe.pace;
     if (!pace) return readPage();
-    if (pacedOut(recipe.id)) {
+    if (pacedOut(recipe.id, o.retry)) {
       const p = paces.get(recipe.id)!;
       const now = d.now().getTime();
       throw new PacedOutError(recipe.id, now < p.quietUntil ? null : Math.max(0, p.at + pace.gap_seconds * 1_000 - now));
