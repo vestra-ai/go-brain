@@ -69,20 +69,25 @@ describe('a flight anywhere', () => {
 });
 
 describe('a place Go has no ixigo code for', () => {
-  it("answers with ixigo's own page for that kind of search, and never names another site", async () => {
-    for (const [name, args, url, label] of [
-      ['search_flights', { from: 'London', to: 'Delhi', date: '2026-10-20' }, 'https://www.ixigo.com/flights', 'See flights on ixigo'],
-      ['search_trains', { from: 'Kasol', to: 'Delhi', date: '2026-11-06' }, 'https://www.ixigo.com/trains', 'See trains on ixigo'],
-      ['search_buses', { from: 'Manali', to: 'Delhi', date: '2026-11-06' }, 'https://www.ixigo.com/buses', 'See buses on ixigo'],
-      ['search_stays', { area: 'Manali', check_in: '2026-11-06', check_out: '2026-11-09' }, 'https://www.ixigo.com/hotels', 'See hotels on ixigo'],
+  // The lead, 11 Oct (with G1): said in words, the nearest place ixigo knows offered, never ixigo's own search page.
+  it("says which place ixigo doesn't know and offers the nearest it would, with no card, and never names another site", async () => {
+    for (const [name, args, stop] of [
+      ['search_flights', { from: 'London', to: 'Delhi', date: '2026-10-20' }, 'an airport'],
+      ['search_trains', { from: 'Kasol', to: 'Delhi', date: '2026-11-06' }, 'a station'],
+      ['search_buses', { from: 'Manali', to: 'Delhi', date: '2026-11-06' }, 'a stop'],
+      ['search_stays', { area: 'Manali', check_in: '2026-11-06', check_out: '2026-11-09' }, 'a place to stay'],
     ] as const) {
       const t = tool(name);
       const out = await t.run(args);
-      expect(out, name).toMatchObject({ count: 0, link: url });
+      expect(out, name).toMatchObject({ count: 0, unknown_place: expect.stringContaining('Go has no ixigo') });
+      expect(out.tell_the_room, name).toContain(`which place ixigo doesn't know as ${stop}`);
+      expect(out.tell_the_room, name).toContain('Search from there?');
+      expect(out.tell_the_room, name).toContain('Never send them to ixigo');
       expect(out.tell_the_room, name).toContain('Never name or suggest any other travel or booking site or app');
       expect(JSON.stringify(out), name).not.toMatch(OTHER_SITES);
+      expect(JSON.stringify(out), name).not.toContain('ixigo.com');
       expect(out, name).not.toHaveProperty('error');
-      expect(t.cards, name).toEqual([expect.objectContaining({ kind: 'notice', source: { name: 'ixigo', url }, actions: [expect.objectContaining({ action_id: 'see_on_ixigo', label })] })]);
+      expect(t.cards, name).toEqual([]);
     }
   });
 });
