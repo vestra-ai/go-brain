@@ -1423,8 +1423,13 @@ describe("one tap: Go's screen opens with the log in, and Go sees the login land
     await vi.waitFor(() => expect(w.ended).toEqual(['ses_1']));
     expect(w.releases).toEqual([]);
     await w.login.settled();
-    expect(w.timeline.map((e) => e.what)).toEqual(['end:ses_1', `close:${LOGIN_TAB}`]);
-    expect(w.timeline[1]!.at - w.timeline[0]!.at).toBeGreaterThanOrEqual(250);
+    // The Watch ends first; the tab closes once, the delay after (the read of ixigo waits the same delay: the test below).
+    const end = w.timeline.findIndex((e) => e.what === 'end:ses_1');
+    const closes = w.timeline.filter((e) => e.what.startsWith('close:'));
+    expect(closes.map((e) => e.what)).toEqual([`close:${LOGIN_TAB}`]);
+    expect(w.timeline.indexOf(closes[0]!)).toBeGreaterThan(end);
+    expect(end).toBeGreaterThanOrEqual(0);
+    expect(closes[0]!.at - w.timeline[end]!.at).toBeGreaterThanOrEqual(250);
   });
 
   // 11 Oct: Go's read of ixigo right after the login landed opened a window over the person's Watch (a black frame).
