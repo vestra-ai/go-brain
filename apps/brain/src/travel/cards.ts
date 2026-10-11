@@ -14,6 +14,13 @@ type CardOption = OptionsCardT['options'][number];
 /** On a ticket's card (PERSONAL_KINDS) only: each person's own pick. */
 export const PICK_ACTION = { action_id: 'pick', label: "I'll take this", style: 'primary', per_option: true } as const;
 /**
+ * A trip of one (Keshav, 12 Oct: "a trip of one never gets a vote; their word is the decision"): a shared thing's card has
+ * no vote, and each option has this instead. The tap is the trip's choice, at once (choose.ts).
+ */
+export const CHOOSE_ACTION = { action_id: 'choose', label: 'Choose this', style: 'primary', per_option: true } as const;
+/** A card whose options are chosen by its one person (CHOOSE_ACTION), not voted. */
+export const isChooseCard = (card: Pick<OptionsCardT, 'actions'>): boolean => (card.actions ?? []).some((a) => a.action_id === CHOOSE_ACTION.action_id);
+/**
  * Before rev 5 (Server team, 11 Oct, R5) every card had these: "Put it to a vote", "See on ixigo" on each option, and "See
  * all on ixigo" on stays. A shared thing's card is now its vote (decision_id), and each option carries its ixigo page
  * (url), so no card gets them; their taps still answer on the cards already in rooms (taps.ts).
@@ -323,6 +330,8 @@ const KIND_WORDS: Record<OptionKind, [string, string]> = {
  */
 export function buildOptionsCard(i: {
   cardId: string; title: string; optionKind: OptionKind; checkedAt: string; picks: CardPick[]; decisionId?: string; more?: boolean; forPersonIds?: string[];
+  /** A trip of one's card of shared things: Choose this on each option, never a vote (CHOOSE_ACTION). */
+  choose?: boolean;
 }): OptionsCardT {
   const priced = i.picks.filter((p) => p.option.priceMinor !== undefined);
   const cheapest = [...priced].sort((a, b) => (a.option.priceMinor ?? 0) - (b.option.priceMinor ?? 0))[0];
@@ -343,9 +352,11 @@ export function buildOptionsCard(i: {
   });
 }
 
-function optionsActions(i: { optionKind: OptionKind; more?: boolean }) {
+function optionsActions(i: { optionKind: OptionKind; more?: boolean; choose?: boolean }) {
   // A ticket is its traveller's own: picked, never voted (PERSONAL_KINDS).
   if (PERSONAL_KINDS.has(i.optionKind)) return i.more ? [PICK_ACTION, C.MORE_OPTIONS] : [PICK_ACTION];
+  // A trip of one's: their choice, at once.
+  if (i.choose) return i.more ? [CHOOSE_ACTION, C.MORE_OPTIONS] : [CHOOSE_ACTION];
   return i.more ? [C.MORE_OPTIONS] : [];
 }
 

@@ -1,4 +1,5 @@
 import type { RegisterLane } from '../app.js';
+import { stayBookedWake } from '../composer/wakes.js';
 import { statsRegistry } from '../stats/sources.js';
 import { closeRooms, createRoomsCards } from '../travel/rooms-card.js';
 import { askToPay, inTurn } from './ask.js';
@@ -48,10 +49,7 @@ export function registerMoneyWith(o: { fetch?: typeof fetch; sweepEveryMs?: numb
       rooms: async (row) =>
         (await closeRooms(roomsCards, row.trip_id, row.option_ref))?.rooms.map((r) => ({ label: r.label, person_ids: r.personIds, price_minor: r.priceMinor })) ?? null,
       // The stay booked: Go wakes for each person's flights (composer/wakes.ts, stay.booked).
-      stayBooked: (tripId, b) =>
-        brain.desk.put({
-          id: `stay_booked:${b.bookingId}`, tripId, kind: 'trip_change', ref: `booking:${b.bookingId}`, dueAt: brain.now(), payload: { type: 'stay.booked', title: b.title },
-        }),
+      stayBooked: (tripId, b) => brain.desk.put(stayBookedWake(tripId, b, brain.now())),
     };
     const pay = createPay(d);
     brain.pay = pay;

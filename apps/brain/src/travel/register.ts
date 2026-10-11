@@ -55,6 +55,10 @@ import { createWebStays, stayOf } from './web-stays.js';
 import { createWatchRunner, watchesNow } from './recipe-watches.js';
 import { watchTools } from './watch-tools.js';
 import { ProactiveStore } from '../proactive/store.js';
+import { stayBookedWake } from '../composer/wakes.js';
+import { createStayForOne } from './booking/stay-for-one.js';
+import { CHOOSE_ACTION } from './cards.js';
+import { chooseTap } from './choose.js';
 
 /** How often Go looks for watches that are due: each watch's own pace is an hour or half an hour. */
 export const WATCH_TICK_MS = 30_000;
@@ -403,7 +407,14 @@ export const registerTravel: RegisterLane = async (brain) => {
     login,
     results,
   });
+  // A trip of one's stay, chosen on its card (Choose this): booked for them as their own flight is, never voted.
+  const stayForOne = createStayForOne({
+    pool: brain.pool, link: brain.door.link, travel: () => brain.travel, login, pay: () => brain.pay, results, log: brain.log,
+    stayBooked: (tripId, b) => brain.desk.put(stayBookedWake(tripId, b, brain.now())),
+  });
+  brain.onStop(() => stayForOne.settled());
   login.onLoggedIn((tripId) => {
+    stayForOne.resumeWaiting(tripId);
     booking.resumeWaiting(tripId).catch((err: unknown) => brain.log.warn({ err, tripId }, 'travel: carrying on bookings after the login failed'));
     busBooking.resumeWaiting(tripId).catch((err: unknown) => brain.log.warn({ err, tripId }, 'travel: carrying on bus bookings after the login failed'));
   });
@@ -416,6 +427,11 @@ export const registerTravel: RegisterLane = async (brain) => {
     clearInterval(bookingSweep);
   });
   const { seeMore } = registerTravelTaps(brain.taps, { results, pool: brain.pool, link: brain.door.link, desk: brain.desk, now: brain.now, log: brain.log, booking, busBooking, nameOf, images, travel, placeCover });
+  // A trip of one's Choose this: their word is the trip's choice, at once (choose.ts).
+  brain.taps.on('options', CHOOSE_ACTION.action_id, chooseTap({
+    results, packs: brain.packs, link: brain.door.link, desk: brain.desk, now: brain.now, log: brain.log, stays: stayForOne,
+    save: { pool: brain.pool, now: brain.now, travel: () => brain.travel },
+  }));
   // "show more" typed right after an options card: its See more, with no model round (the lead, 11 Oct).
   brain.context.addDirect(typedMoreAnswer({ seeMore, results }));
   // With BOOKING on for a trip, the model is told Go books its people's flights, and books a pick made before by words.

@@ -103,7 +103,8 @@ export async function saveTrip(
   // A stay or place a vote decided is saved from the winning option's own data, never from the words given, and a
   // different one is refused: "Villa Sol, Assagao" for the Villa Sol in Anjuna the group voted for saves "Villa Sol, Anjuna".
   if (a.stay) {
-    const won = await decided(d, at.pack, 'stay');
+    // A trip of one's own choice (agreed: their word is the decision, travel/choose.ts) is the stay as they chose it.
+    const won = a.agreed ? null : await decided(d, at.pack, 'stay');
     if (won) {
       if (!` ${plain(a.stay)} `.includes(` ${plain(won.title)} `)) {
         return { ok: false, error: `The group voted for ${won.title}${won.area ? ` in ${won.area}` : ''}. Save that, or ask the group before changing the stay.`, quiet: true };
@@ -112,6 +113,7 @@ export async function saveTrip(
     } else {
       const picked = pickedStay(at.pack, a.stay);
       if (picked) fields.stay = clip(picked, 60);
+      else if (a.agreed) fields.stay = clip(a.stay, 60);
       else {
         delete fields.stay;
         note = `${a.stay} is no stay the group picked yet (a vote's winner or a booked stay): keep it as a preference, and save the stay once the group picks one.`;

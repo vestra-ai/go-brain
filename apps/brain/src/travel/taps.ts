@@ -18,7 +18,7 @@ import type { DeskItem } from '../desk/desk.js';
 import type { TripPack } from '../trips/pack.js';
 import type { BusBooking } from './booking/bus-booking.js';
 import { PAY_FLIGHT, TRAVEL_DETAILS, TRAVELLER_FEMALE, TRAVELLER_MALE, type FlightBooking } from './booking/flight-booking.js';
-import { BOOK_MINE, budgetSheet, buildConfirmMineCard, CHANGE_MINE, clip, ixigoPage, PERSONAL_KINDS } from './cards.js';
+import { BOOK_MINE, budgetSheet, buildConfirmMineCard, CHANGE_MINE, clip, isChooseCard, ixigoPage, PERSONAL_KINDS } from './cards.js';
 import { stableId } from './ids.js';
 import type { Images } from './images.js';
 import { recordPick, wayOf } from './picks.js';
@@ -63,6 +63,8 @@ export function registerTravelTaps(taps: Brain['taps'], d: TravelTapDeps): { see
   taps.on('options', 'vote', async (tap) => {
     const row = await d.results.card(tap.trip_id, tap.card_id);
     if (!row) return { result: 'refused', toast: 'Those options are no longer here' };
+    // A trip of one's card is theirs to choose (Keshav, 12 Oct): never a vote.
+    if (isChooseCard(row.card)) return { result: 'refused', toast: 'Just you on this trip: tap Choose this' };
     if (row.decisionId) return { result: 'done', toast: 'Already up for a vote' };
     if (PERSONAL_KINDS.has(row.optionKind)) return { result: 'refused', toast: "A ticket is each person's own: tap I'll take this" };
     const failed = () =>
@@ -294,6 +296,17 @@ export function renderOptionsTap(item: DeskItem, pack: TripPack): string | null 
   }
   if (p.action === 'change_mine') {
     return `${who} tapped "Change" on their own ${(p as { kind?: string }).kind ?? 'ticket'}, "${clip(p.title ?? 'an option', 80)}": they want another. Find them other ones from their own city with the search tool and show them; it is their own pick, never a vote.`;
+  }
+  // A trip of one's Choose this (choose.ts): their word is the decision, already applied where Go applies it itself.
+  if (p.action === 'chosen') {
+    const c = p as { kind?: string; saved?: boolean };
+    const title = clip(p.title ?? 'an option', 80);
+    if (c.kind === 'place') {
+      return c.saved
+        ? `${who} chose "${title}" on your card, and it is saved as the trip's place: this trip has one person, so their word is the decision. Say it in one short line and take the next step yourself. Never say vote, poll or everyone.`
+        : `${who} chose "${title}" on your card as the trip's place (one person on this trip: their word is the decision), but saving it failed: save it with update_trip, then take the next step. Never say vote, poll or everyone.`;
+    }
+    return `${who} chose "${title}" on your card (option ${p.optionId}, card ${p.cardId}): this trip has one person, so it is theirs. Confirm it in one short line and take the next step. Never say vote, poll or everyone.`;
   }
   if (p.action === 'vote_failed') {
     return `${who} tapped "Put it to a vote" on card ${p.cardId}, but opening the vote failed. Try put_to_vote with card_id ${p.cardId}, or say in one line that it did not work.`;

@@ -10,6 +10,7 @@ import type { Travel } from '../../travel/travel.js';
 import { NOT_DECIDED } from '../../trips/save-trip.js';
 import { nextDates, roomTools } from '../room-tools.js';
 import { createTools, makeTurnCtx, SAY_NOTHING, type QuickTool } from '../tools.js';
+import { NO_VOTE_FOR_ONE } from '../../trips/votes.js';
 
 let db: Awaited<ReturnType<typeof withSchema>>;
 beforeAll(async () => {
@@ -114,6 +115,17 @@ describe('the room\'s tools', () => {
     expect(ctx.cards).toEqual([{ kind: 'vote', card_id: 'c_vote_turn_T_1', fallback_text: 'Vote: Where do we stay?', decision_id: 'd_new' }]);
     // Its line is the words posted with the card; the Server never sees it.
     expect(ctx.lines).toEqual(['Vote is up, tap your pick.']);
+  });
+
+  // Prod t_12c5fbab40c74f41 (11 Oct): four votes in a trip of one. Keshav, 12 Oct: their word is the decision.
+  it('open_vote opens nothing in a trip of one: the model hears their word is the decision, and how to apply it', async () => {
+    const { ctx, calls } = ctxWith({ open_vote: () => ({ decision_id: 'd_never', seq: 60 }) });
+    ctx.pack = { ...ctx.pack, trip: { ...ctx.pack.trip, people: ctx.pack.trip.people.slice(0, 1) } };
+    const r = await tool('open_vote').run({ question: 'Where do we stay?', options: [{ label: 'Villa Sol' }, { label: 'Casa Azul' }], line: 'Vote is up.' }, ctx);
+    expect(r).toEqual({ ok: false, error: NO_VOTE_FOR_ONE });
+    expect(calls).toEqual([]);
+    expect(ctx.cards).toEqual([]);
+    expect(NO_VOTE_FOR_ONE).toContain('offer_replies');
   });
 
   it('open_vote asks for a secret ballot when the model sets anonymous, and an open one otherwise', async () => {

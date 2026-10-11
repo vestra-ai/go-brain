@@ -27,6 +27,7 @@ import { toResultOption, unseenNumbers, type OptionKind, type ResultOption, type
 import type { SearchWake } from './search-wake.js';
 import { Clock, MUST_HAVES, type Travel, type TravelKind, type TravelOption, type TravelQuery, type TravelSearch } from './travel.js';
 import { notLoadedLine, stillNotLoadedLine, TRIES, tryAgain, waitFor } from './try-again.js';
+import { NO_VOTE_FOR_ONE, tripOfOne } from '../trips/votes.js';
 import { openVoteFromCard, VOTE_MOST } from './votes.js';
 
 export interface TravelToolDeps {
@@ -499,14 +500,21 @@ export async function putUpCard(
   const more = !!set.siteMore || unseenNumbers(set, [...before, ...picks.map((p) => p.option)]).length > 0;
   // A ticket's card has it from the start, with "I'll take this"; a shared thing's once its vote is open, below.
   const personal = PERSONAL_KINDS.has(set.optionKind);
-  const card = buildOptionsCard({ cardId, title, optionKind: set.optionKind, checkedAt: set.checkedAt, picks, ...(personal && more ? { more: true } : {}) });
+  // A trip of one's shared things are theirs to choose, never voted (Keshav, 12 Oct): their own card, Choose this on each
+  // option, See more from the start (prod t_12c5fbab40c74f41: four stays votes in a trip of one).
+  const one = !personal && tripOfOne(ctx.pack?.trip) ? ctx.pack.trip.people[0]!.person_id : null;
+  const card = buildOptionsCard({
+    cardId, title, optionKind: set.optionKind, checkedAt: set.checkedAt, picks,
+    ...((personal || one) && more ? { more: true } : {}),
+    ...(one ? { choose: true, forPersonIds: [one] } : {}),
+  });
   await d.results.saveCard({ cardId, tripId: ctx.tripId, resultsId: set.resultsId, title: card.title, optionKind: set.optionKind, card }, picks, set.checkedAt);
   // A rerun of the same turn finds this card id saved already: it shows the card saved first, which its stored offers match.
   let shown = (await d.results.card(ctx.tripId, cardId))?.card ?? card;
   // A shared thing's card is its vote (rev 5 R5): the vote opens before the card goes up, so the App draws Vote on each
   // option from the start, and the card has "See more" while its search has more to show (R4). A rerun keeps its vote.
   // A vote that can't open leaves the card without one, for put_to_vote after.
-  if (!personal && picks.length >= 2 && !shown.decision_id) {
+  if (!personal && !one && picks.length >= 2 && !shown.decision_id) {
     const voted = await openVoteFromCard(
       { results: d.results, link: ctx.link, now: d.now ?? (() => new Date()) },
       // Its ids from the card, so a rerun that skips an earlier card's vote never gives this one that card's request.
@@ -1015,7 +1023,11 @@ export function travelTools(d: TravelToolDeps): QuickTool<any>[] {
       return {
         card_id: cardId, shown, checked: ageText(set.checkedAt, d.now()),
         ...(decisionId ? { decision_id: decisionId } : {}),
-        note: decisionId ? "The card goes out with your line, as the group's vote: each option has Vote on it." : 'The card goes out with your line.',
+        note: decisionId
+          ? "The card goes out with your line, as the group's vote: each option has Vote on it."
+          : tripOfOne(ctx.pack?.trip) && !PERSONAL_KINDS.has(set.optionKind)
+            ? `The card goes out with your line, with Choose this on each option: their tap is their choice. ${NO_VOTE_FOR_ONE}`
+            : 'The card goes out with your line.',
       };
     },
   };
@@ -1041,6 +1053,7 @@ export function travelTools(d: TravelToolDeps): QuickTool<any>[] {
         }
         cardId = shown[0]!.card_id;
       }
+      if (tripOfOne(ctx.pack?.trip)) return { error: 'one_person', note: NO_VOTE_FOR_ONE };
       // A card that is its vote already (rev 5 R5): nothing to open, and no vote card beside it.
       const onCard = (await d.results.card(ctx.tripId, cardId))?.card.decision_id;
       if (onCard) return { decision_id: onCard, note: "This card is the group's vote already: each option has Vote on it. Say so in one short line only if someone asked for a vote." };

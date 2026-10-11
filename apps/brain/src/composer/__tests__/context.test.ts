@@ -372,6 +372,16 @@ describe('why Go woke, and the trip block', () => {
         'call search_flights_each for everyone who has no flight picked or booked yet, and say it in one short line. Call stay_silent when everyone has theirs.',
     );
     expect(c.renderWake(wake({ kind: 'timer', ref: 'vote_closes', payload: {} }), p)).toBe('timer (vote_closes)');
+    // A trip of one (Keshav, 12 Oct): their word is the decision. Go's hello never offers votes, and their stay booked
+    // brings their own flights, never "everyone's".
+    const one = { ...p, trip: { ...p.trip, people: p.trip.people.slice(0, 1) } };
+    const hello = c.renderWake(wake({ kind: 'setup', ref: 'greet', payload: {} }), one);
+    expect(hello).toContain('which has one person');
+    expect(hello).toContain('never say vote, poll or everyone');
+    expect(hello).not.toMatch(/run votes|the group/);
+    const theirs = c.renderWake(wake({ kind: 'trip_change', ref: 'booking:b_1', payload: { type: 'stay.booked', title: 'Villa Sol' } }), one);
+    expect(theirs).toContain('Their flights are next: call search_flights_each for them');
+    expect(theirs).not.toMatch(/for everyone|group/);
   });
 
   // The lines from goa-300 (bench run 37488230324) after which Go posted with nobody asking: none names Go, and the reflex

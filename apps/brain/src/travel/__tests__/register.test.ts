@@ -106,6 +106,28 @@ describe('registerTravel', () => {
     expect(lb.link.sent('post_message').some((p) => (p.card as { kind?: string } | undefined)?.kind === 'vote')).toBe(false);
   });
 
+  // Keshav, 12 Oct: "a trip of one never gets a vote; their word is the decision" (prod t_12c5fbab40c74f41: four stays
+  // votes for one person, each "won · 1 vote").
+  it("a trip of one's stays card has Choose this, never a vote: its Vote is refused, and Choose this saves the stay at once", async () => {
+    const one = { ...goaPack(), trip: { ...GOA_TRIP, people: GOA_TRIP.people.slice(0, 1) } };
+    const person = GOA_TRIP.people[0]!.person_id;
+    const found = (await lb.tools.run('search_stays', { area: 'North Goa', check_in: '2026-11-06', check_out: '2026-11-09', guests: 1 }, lb.ctx({ turnId: 'turn_one1', pack: one }))) as any;
+    const opened = lb.link.sent('open_vote').length;
+    const ctx = lb.ctx({ turnId: 'turn_one2', pack: one });
+    await lb.tools.run('show_options', { line: 'Here are stays in North Goa.', results_id: found.results_id, title: 'Stays in North Goa' }, ctx);
+    const mine = C.Card.parse(ctx.cards[0]);
+    if (mine.kind !== 'options') throw new Error('expected an options card');
+    expect(mine.decision_id).toBeUndefined();
+    expect(lb.link.sent('open_vote')).toHaveLength(opened);
+    const at = (over: Partial<{ tap_id: string; action_id: string; option_id: string }>) => ({ ...tap({ person_id: person, ...over }), card_id: mine.card_id });
+    expect(await lb.taps.tap('options', 'vote', at({ tap_id: 'tap_one_v', action_id: 'vote' }), mine)).toEqual({ result: 'refused', toast: 'Just you on this trip: tap Choose this' });
+    const option = mine.options[0]!;
+    const chose = await lb.taps.tap('options', 'choose', at({ tap_id: 'tap_one_c', action_id: 'choose', option_id: option.option_id }), mine);
+    expect(chose).toMatchObject({ result: 'done', toast: expect.stringMatching(/ it is\. Go is booking it$/) });
+    await eventually(() => lb.link.sent('update_trip').some((p) => typeof p.stay === 'string' && option.title.startsWith(String(p.stay).slice(0, 20))));
+    expect(lb.link.sent('open_vote')).toHaveLength(opened);
+  });
+
   // Keshav, 10 Oct: Go opened a group vote, "Book IndiGo 6E2150 for Meher on 12 Nov? 0 of 5 voted", for Meher's own
   // flight ("why would we need everyone to vote for my ticket lol"). A ticket is its traveller's own.
   it("a ticket picked is its picker's own: their confirm goes up at once for them alone, never a vote; Book it opens ixigo set for one", async () => {

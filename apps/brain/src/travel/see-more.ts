@@ -3,7 +3,7 @@
  * card (taps.ts), and the same asked in words right after the card ("show more", typed-more.ts), are one thing: the next
  * 10 of the same search, in the same vote for a shared thing, on a card of their own for a ticket.
  */
-import { PERSONAL_KINDS, buildOptionsCard } from './cards.js';
+import { PERSONAL_KINDS, buildOptionsCard, isChooseCard } from './cards.js';
 import { SocketCallError } from '../door/rpc.js';
 import { stableId } from './ids.js';
 import { MORE_CARD, optionKey, toResultOption, unseenNumbers, type ResultSet } from './results.js';
@@ -59,8 +59,10 @@ export function createSeeMore(d: Pick<TravelTapDeps, 'results' | 'link' | 'log' 
     const set = row ? await d.results.get(o.tripId, row.resultsId) : null;
     const personal = !!row && PERSONAL_KINDS.has(row.optionKind);
     const decisionId = row?.card.decision_id ?? null;
+    // A trip of one's card (Choose this, no vote): its next 10 are theirs to choose from too.
+    const chooser = row && isChooseCard(row.card) ? (row.card.for_person_ids?.[0] ?? null) : null;
     const images = d.images;
-    if (!row || !set || (!personal && !decisionId) || !images) return { result: 'refused', toast: 'Those options are no longer here' };
+    if (!row || !set || (!personal && !decisionId && !chooser) || !images) return { result: 'refused', toast: 'Those options are no longer here' };
     // A second tap meanwhile (a double tap, two people, another card of the same search) would add the same options again.
     const lock = personal ? `${set.resultsId}|${o.personId}` : set.resultsId;
     if (moreRunning.has(lock)) return { result: 'done', toast: MORE_ON_THE_WAY };
@@ -105,6 +107,7 @@ export function createSeeMore(d: Pick<TravelTapDeps, 'results' | 'link' | 'log' 
           const card = buildOptionsCard({
             cardId, title, optionKind: row.optionKind, checkedAt: from.checkedAt, picks,
             ...(personal ? { forPersonIds: [o.personId], ...(after ? { more: true } : {}) } : {}),
+            ...(chooser ? { choose: true, forPersonIds: [chooser], ...(after ? { more: true } : {}) } : {}),
           });
           await d.results.saveCard({ cardId, tripId: o.tripId, resultsId: set.resultsId, title: card.title, optionKind: row.optionKind, card }, picks, from.checkedAt);
           const requestId = stableId('go_more_card', o.key);

@@ -14,6 +14,7 @@ import { createFakeTravel } from '../mcp-travel.js';
 import { createResultsStore, type ResultsStore } from '../results.js';
 import { busesQuery, cardNumbers, compactOption, searchAnswer, searchRoundSummary, travelTools } from '../tools.js';
 import type { Travel } from '../travel.js';
+import { NO_VOTE_FOR_ONE } from '../../trips/votes.js';
 
 let db: Awaited<ReturnType<typeof withSchema>>;
 let lb: LaneBrain;
@@ -453,6 +454,30 @@ describe('show_options', () => {
 });
 
 // Rev 5 R5 (the Server team, 11 Oct): a shared thing's card is the group's vote from the start, Vote on each option.
+// Keshav, 12 Oct: "a trip of one never gets a vote; their word is the decision" (prod t_12c5fbab40c74f41: four stays votes).
+describe('a trip of one never gets a vote', () => {
+  const one = () => ({ ...goaPack(), trip: { ...GOA_TRIP, people: GOA_TRIP.people.slice(0, 1) } });
+  it('its stays card opens no vote: Choose this on each option, the card theirs, and put_to_vote opens none', async () => {
+    const found = (await lb.tools.run('search_stays', STAYS, lb.ctx({ turnId: 'turn_one1', pack: one() }))) as any;
+    const opened = lb.link.sent('open_vote').length;
+    const ctx = lb.ctx({ turnId: 'turn_one2', pack: one() });
+    const shown = (await lb.tools.run('show_options', { line: 'Here are the villas.', results_id: found.results_id, title: 'Villas' }, ctx)) as any;
+    const card = C.OptionsCard.parse(ctx.cards[0]);
+    const person = GOA_TRIP.people[0]!.person_id;
+    expect(lb.link.sent('open_vote')).toHaveLength(opened);
+    expect(shown.decision_id).toBeUndefined();
+    expect(card.decision_id).toBeUndefined();
+    // Theirs, so the Server's personal approval sees their own card's option when they book it.
+    expect(card.for_person_ids).toEqual([person]);
+    expect(card.actions?.[0]).toMatchObject({ action_id: 'choose', label: 'Choose this', per_option: true, only_for_person_ids: [person] });
+    expect(shown.note).toContain(NO_VOTE_FOR_ONE);
+    const put = lb.ctx({ turnId: 'turn_one3', pack: one() });
+    expect(await lb.tools.run('put_to_vote', { line: 'Vote is up.', card_id: shown.card_id }, put)).toEqual({ error: 'one_person', note: NO_VOTE_FOR_ONE });
+    expect(put.cards).toEqual([]);
+    expect(lb.link.sent('open_vote')).toHaveLength(opened);
+  });
+});
+
 describe("a shared thing's card is its vote", () => {
   it('opens one vote before the card goes up, option_ref each option id at its whole-stay price, for a day, and the card names it', async () => {
     const found = (await lb.tools.run('search_stays', STAYS, lb.ctx({ turnId: 'turn_v1' }))) as any;

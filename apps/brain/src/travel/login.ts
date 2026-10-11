@@ -35,6 +35,7 @@ import type { ServerLink } from '../door/server-link.js';
 import type { TapRouter } from '../door/taps.js';
 import type { SetupStep } from '../trips/setup.js';
 import type { Packs, TripPack } from '../trips/pack.js';
+import { tripOfOne } from '../trips/votes.js';
 import type { Tasks } from '../tasks/tasks.js';
 import { TravelError } from './mcp-travel.js';
 import { IXIGO, type Capture, type FetchPlan } from './recipes/recipe.js';
@@ -165,6 +166,8 @@ export const cardIsTheAsk = (name: string, next: string): string =>
 
 /** The hello's last line, for the person asked, with the login card on the same message: the login before anything else. */
 export const HELLO_LINE = '{name}, link ixigo once with one tap and I can book for everyone.';
+/** A trip of one's hello (Keshav, 12 Oct: never "everyone" to one person). */
+export const HELLO_LINE_ONE = '{name}, link ixigo once with one tap and I can book for you.';
 
 /**
  * How a line in the chat names the person it asks: their first name, as a friend would ("Nishanth", never "Nishanth
@@ -987,7 +990,7 @@ export function createIxigoLogin(d: LoginDeps): IxigoLogin {
       const row = await get(i.tripId);
       if (!row || row.state !== 'asked' || row.attempt !== 0) return null;
       const name = i.pack.trip.people.find((p) => p.person_id === row.personId)?.name ?? ORGANIZER;
-      return { card: loginCard(row, name), line: HELLO_LINE.replace('{name}', addressOf(name)) };
+      return { card: loginCard(row, name), line: (tripOfOne(i.pack.trip) ? HELLO_LINE_ONE : HELLO_LINE).replace('{name}', addressOf(name)) };
     },
 
     setupStep: {
