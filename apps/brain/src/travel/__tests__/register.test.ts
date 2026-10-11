@@ -465,13 +465,14 @@ describe('registerTravel', () => {
     // The fake alone: the image fetcher, the screen's Bash streams (screen-feed.ts), the live view's viewers (live.ts), the
     // stays head starts waiting for an edit to settle (warm.ts), the watch checks (recipe-watches.ts), the person's
     // login's keep-alive (login-keepalive.ts), the minute's look at one-tap logins (login.ts sweep) and at the flight
-    // bookings waiting on a login (booking/flight-booking.ts sweep), each stopped by name where it has one.
-    expect(lb.stoppers).toHaveLength(8);
-    expect(lb.stoppers.map((f) => f.name)).toEqual(expect.arrayContaining(['stopWatchChecks', 'stopHeadStarts', 'stopLoginKeepAlive', 'stopLoginSweep', 'stopBookingSweep']));
+    // bookings waiting on a login (booking/flight-booking.ts sweep), the itinerary rewrites under way (itinerary.ts), each
+    // stopped by name where it has one.
+    expect(lb.stoppers).toHaveLength(9);
+    expect(lb.stoppers.map((f) => f.name)).toEqual(expect.arrayContaining(['stopWatchChecks', 'stopHeadStarts', 'stopLoginKeepAlive', 'stopLoginSweep', 'stopBookingSweep', 'stopItineraryRewrites']));
     const withIxigo = makeLaneBrain({ pool: db.pool, env: { IXIGO_MCP_URL: 'http://127.0.0.1:1/mcp', IXIGO_MCP_TOKEN: 'tok-ixigo-123456' } });
     await registerTravel(withIxigo.brain);
-    expect(withIxigo.stoppers).toHaveLength(9);
-    expect(withIxigo.stoppers.map((f) => f.name)).toEqual(expect.arrayContaining(['stopWatchChecks', 'stopHeadStarts', 'stopLoginSweep', 'stopBookingSweep']));
+    expect(withIxigo.stoppers).toHaveLength(10);
+    expect(withIxigo.stoppers.map((f) => f.name)).toEqual(expect.arrayContaining(['stopWatchChecks', 'stopHeadStarts', 'stopLoginSweep', 'stopBookingSweep', 'stopItineraryRewrites']));
     // The client connects on its first call, so closing one that never called resolves at once.
     await withIxigo.stop();
     expect(withIxigo.stoppers).toEqual([]);

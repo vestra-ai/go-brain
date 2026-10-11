@@ -238,7 +238,9 @@ export const registerTravel: RegisterLane = async (brain) => {
   // The trip's itinerary from its dates and bookings: Go writes it, the App's Itinerary tab shows it (travel/itinerary.ts).
   const itinerary = createItinerary({ link: brain.door.link, packs: brain.packs, log: brain.log });
   brain.tripLog.onEvent((ev) => itinerary.onEvent(ev));
-  brain.onStop(() => itinerary.settled());
+  brain.onStop(function stopItineraryRewrites() {
+    return itinerary.settled();
+  });
   // A destination Go sets carries ixigo's place: its id, where it is, its time zone, its guide photos and best months.
   const placeFor = createPlaceFor({ pool: brain.pool, engine, images, log: brain.log });
   const travel = createTravelLayer({
