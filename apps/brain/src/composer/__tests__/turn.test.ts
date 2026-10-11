@@ -1084,8 +1084,8 @@ describe("a lane's card on the turn's own post (p2's regression red: a new trip 
     await turn(r, [greet(r.tripId)]);
     expect(r.posts()).toHaveLength(1);
     const hello = r.posts()[0]!.params;
-    expect(hello.text).toBe(`${HELLO}\n${HELLO_LINE.replace('{name}', 'Rahul')}`);
-    expect(hello.text).toBe(`${HELLO}\nRahul, link ixigo once with one tap and I can book for everyone.`);
+    expect(hello.text).toBe(`${HELLO}\n${HELLO_LINE.replace('{name}', '@Rahul')}`);
+    expect(hello.text).toBe(`${HELLO}\n@Rahul, link ixigo once with one tap and I can book for everyone.`);
     expect(hello.mentions).toEqual(['p_rahul']);
     expect(hello.card).toMatchObject({
       card_id: `c_login_${r.tripId}_0`, kind: 'notice', title: 'Link ixigo for this trip', for_person_ids: ['p_rahul'],
