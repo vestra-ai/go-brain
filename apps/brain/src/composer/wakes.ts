@@ -1,6 +1,8 @@
 import type { DeskItem } from '../desk/desk.js';
+import type { Message } from '../door/methods.js';
 import { amountsIn } from '../money/expenses.js';
 import { looksLikeMoney, saysMoneyMoved } from '../reflex/money-line.js';
+import { plainlyNamesGo } from '../trips/names-go.js';
 import type { TripPack } from '../trips/pack.js';
 import { flexibleOf } from '../trips/votes.js';
 import { answersToGo, inlineData, personName } from './fence.js';
@@ -95,20 +97,73 @@ export function quietNote(items: DeskItem[], pack: TripPack): string | null {
  * person's own facts without budgets or names tied to them.", this note's and the rules' permissions said back as working.
  */
 export function askNote(items: DeskItem[], pack: TripPack): string | null {
-  const seqs = items.flatMap((item) => {
+  const asks = items.flatMap((item) => {
     const asked = item.payload as { namesGo?: boolean; asksGo?: boolean } | null;
     if (item.kind !== 'message' || (asked?.namesGo !== true && asked?.asksGo !== true)) return [];
     const p = (item.payload ?? {}) as { messageId?: string };
     const m = pack.messages.find((x) => x.message_id === (p.messageId ?? item.ref));
-    return m && m.author.kind === 'person' ? [m.seq] : [];
+    return m && m.author.kind === 'person' ? [m] : [];
   });
-  if (seqs.length === 0) return null;
-  const refs = seqs.map((s) => `#${s}`);
-  const which = refs.length === 1 ? refs[0] : `${refs.slice(0, -1).join(', ')} and ${refs[refs.length - 1]}`;
+  if (asks.length === 0) return null;
+  const which = listOfRefs(asks.map((m) => m.seq));
+  const points = asks.flatMap((m) => pointsAt(m, pack) ?? []);
   return (
     `Answer ${which} in one or two short sentences: the answer itself, no extra tips and no offer to do more unless your rules call for one. ` +
     'A list, a recap or a comparison they asked for may be longer. When you cite what someone said, keep its message number. ' +
-    'Start with the answer: never with what they asked for, why your answer takes the shape it does, or what you will leave out.'
+    'Start with the answer: never with what they asked for, why your answer takes the shape it does, or what you will leave out.' +
+    points.map((x) => ` ${x}`).join('')
+  );
+}
+
+const listOfRefs = (seqs: number[], last: 'and' | 'or' = 'and'): string => {
+  const refs = seqs.map((s) => `#${s}`);
+  return refs.length === 1 ? refs[0]! : `${refs.slice(0, -1).join(', ')} ${last} ${refs[refs.length - 1]}`;
+};
+
+/**
+ * How far back a tag reads: the person's own lines just before it ("I'll take you on the trip with me", then "@Go"
+ * alone), and their last ask to Go behind a nudge ("@Go I order you" after Go said no to a rename).
+ */
+export const LEAD_UP_MS = 10 * 60_000;
+/** A person's own lines just before a tag that it reads with, at most. */
+const LEAD_UP_LINES = 3;
+
+/**
+ * What a tag to Go points at besides itself (the App team, prod, 11 Oct: "@Go" alone right after the same person's "I'll
+ * take you on the trip with me" got "your message came through with just my name", and "@Go I order you" right after Go
+ * said no to their rename got "you haven't said what you want me to do"). A tag right after someone's own words points
+ * at those words: their lines just before it, back to a line by anyone else (Go included). A nudge points at their last
+ * ask: the latest earlier line of theirs that named Go. Both within LEAD_UP_MS, and found by who said what and when,
+ * never by the words.
+ */
+export function leadUp(m: Message, pack: TripPack): { own: number[]; lastAsk: number | null } {
+  if (m.author.kind !== 'person') return { own: [], lastAsk: null };
+  const by = m.author.person_id;
+  const at = Date.parse(m.sent_at);
+  const theirs = (x: Message): boolean => x.author.kind === 'person' && x.author.person_id === by;
+  // Newest first; a join or a money line from the App is no one's words, so it never ends the run.
+  const before = pack.messages.filter((x) => x.seq < m.seq && !x.deleted && x.author.kind !== 'system').sort((a, b) => b.seq - a.seq);
+  const own: number[] = [];
+  for (const x of before) {
+    if (!theirs(x) || at - Date.parse(x.sent_at) > LEAD_UP_MS || own.length === LEAD_UP_LINES) break;
+    if (x.text) own.push(x.seq);
+  }
+  const ask = before.find((x) => theirs(x) && !own.includes(x.seq) && at - Date.parse(x.sent_at) <= LEAD_UP_MS && plainlyNamesGo(x, pack));
+  return { own: own.reverse(), lastAsk: ask?.seq ?? null };
+}
+
+/** The ask note's pointer for one tag: what it reads with, and how to answer when it says nothing of its own. */
+function pointsAt(m: Message, pack: TripPack): string | null {
+  const { own, lastAsk } = leadUp(m, pack);
+  if (own.length === 0 && lastAsk === null) return null;
+  const a = m.author;
+  const who = a.kind === 'person' ? personName(pack.trip.people.find((x) => x.person_id === a.person_id)?.name ?? 'Someone') : 'Someone';
+  const reads = [...(own.length ? [`${who}'s own ${listOfRefs(own)} just before it`] : []), ...(lastAsk !== null ? [`${who}'s last ask to you, #${lastAsk}`] : [])];
+  const targets = listOfRefs([...own, ...(lastAsk !== null ? [lastAsk] : [])], 'or');
+  return (
+    `Read #${m.seq} with ${reads.join(', and ')}: a tag right after someone's own words points at them, and a nudge ("do it", "I order you", "?") points at their last ask. ` +
+    `When #${m.seq} says nothing of its own beyond your name or a nudge, it asks you to answer ${targets}: answer that, in character, as your reply to them. ` +
+    'Never say their message came with only your name or said nothing, and never ask what they need.'
   );
 }
 
