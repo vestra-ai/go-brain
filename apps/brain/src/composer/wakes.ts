@@ -115,6 +115,30 @@ export function askNote(items: DeskItem[], pack: TripPack): string | null {
   );
 }
 
+/** An ask this much older than the turn waited for Go: Go was away (an outage, a restart, the trip's Server unreachable). */
+export const WAITED_MS = 2 * 60_000;
+
+/**
+ * The asks Go missed while it was away, answered together: when a turn takes asks that waited, the oldest real ask
+ * comes first (prod, 11 Oct, Manali: "whats going on", "plan a stay", "hi" and "respond" waited 30 minutes on a stranded
+ * socket, and Go came back answering only the newest line, "are you back alive?").
+ */
+export function catchUpNote(items: DeskItem[], pack: TripPack, now: Date): string | null {
+  const asks = items.flatMap((item) => {
+    const asked = item.payload as { namesGo?: boolean; asksGo?: boolean; messageId?: string } | null;
+    if (item.kind !== 'message' || (asked?.namesGo !== true && asked?.asksGo !== true)) return [];
+    const m = pack.messages.find((x) => x.message_id === (asked?.messageId ?? item.ref));
+    return m && m.author.kind === 'person' ? [m] : [];
+  });
+  const waited = asks.filter((m) => now.getTime() - Date.parse(m.sent_at) > WAITED_MS).sort((a, b) => a.seq - b.seq);
+  if (waited.length === 0) return null;
+  return (
+    `You couldn't reach the room when ${listOfRefs(waited.map((m) => m.seq))} came, and they waited. Answer every ask that waited ` +
+    'together in this one reply, the oldest real ask first, doing what it asked (an ask for stays gets the stays card), ' +
+    'never only the newest line. A greeting or "are you there" needs no more than that you are back.'
+  );
+}
+
 const listOfRefs = (seqs: number[], last: 'and' | 'or' = 'and'): string => {
   const refs = seqs.map((s) => `#${s}`);
   return refs.length === 1 ? refs[0]! : `${refs.slice(0, -1).join(', ')} ${last} ${refs[refs.length - 1]}`;

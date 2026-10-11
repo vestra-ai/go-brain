@@ -1,6 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { withSchema } from '../../db/test-db.js';
 import { silentLog } from '../../log.js';
+import { SocketCallError } from '../../door/rpc.js';
 import { TripGoneError } from '../../trips/gone.js';
 import { createDesk, type DeskItem, type TurnInput, type TurnRunner } from '../desk.js';
 
@@ -176,6 +177,64 @@ describe('the desk', () => {
     const { rows } = await db.pool.query('select done_at, error from desk_items where id = $1', [`msg:${T}:m_1`]);
     expect(rows[0].done_at).toBeInstanceOf(Date);
     expect(rows[0].error).toBe(`The Server no longer has trip ${T}.`);
+  });
+
+  // Prod, 11 Oct, Manali: four asks to Go, 07:26 to 07:32, on a socket the Server had dropped. Every turn failed with "no
+  // socket from the Server is open", Go gave up in seconds, and the asks were lost.
+  it('a turn whose trip\'s Server is away waits, never gives up, and runs with the next event\'s message in one turn', async () => {
+    const c = clock();
+    const T = newTrip();
+    let away = true;
+    const { desk, of, gaveUp } = make(c, {
+      run: async (t) => {
+        if (t.tripId === T && away) throw new SocketCallError(503, 'no socket from the Server is open', 'unavailable');
+      },
+    });
+    await desk.put(msgItem(T, 1, c.now()));
+    await desk.tick();
+    await desk.put(msgItem(T, 2, c.now()));
+    // Tries again on a widening gap (30 s at first), never giving up, with no attempt spent.
+    for (let i = 0; i < 6; i++) {
+      c.advance(60_000);
+      await desk.tick();
+    }
+    expect(gaveUp.filter((g) => g.tripId === T)).toEqual([]);
+    expect(of(T).every((r) => r.attempt === 1)).toBe(true);
+    expect(new Set(of(T).map((r) => r.turnId)).size).toBe(1);
+    const runsWhileAway = of(T).length;
+    // The Server is back: its next event for the trip brings a message, and wake runs the waiting turn with it at once.
+    away = false;
+    await desk.put(msgItem(T, 3, c.now()));
+    await desk.wake?.(T);
+    await desk.tick();
+    expect(of(T)).toHaveLength(runsWhileAway + 1);
+    expect(of(T).at(-1)?.items.map((i) => i.ref).sort()).toEqual(['m_1', 'm_2', 'm_3']);
+    const { rows } = await db.pool.query('select count(*)::int as open from desk_items where trip_id = $1 and done_at is null', [T]);
+    expect(rows[0].open).toBe(0);
+  });
+
+  it('a turn whose trip\'s Server stays away past the limit is dropped, with no giving-up line', async () => {
+    const c = clock();
+    const T = newTrip();
+    const runs: TurnInput[] = [];
+    const desk = createDesk({ pool: db.pool, log: silentLog, now: c.now, holder: 'copy-a', inProcessWake: false, awayMaxMs: 10 * 60_000 });
+    let gaveUp = 0;
+    desk.setRunner(
+      async (t) => {
+        runs.push(t);
+        throw new SocketCallError(503, 'no answer in 2500 ms', 'unavailable');
+      },
+      async () => { gaveUp += 1; },
+    );
+    await desk.put(msgItem(T, 1, c.now()));
+    for (let i = 0; i < 20; i++) {
+      await desk.tick();
+      c.advance(60_000);
+    }
+    expect(gaveUp).toBe(0);
+    const { rows } = await db.pool.query('select done_at, error from desk_items where id = $1', [`msg:${T}:m_1`]);
+    expect(rows[0].done_at).toBeInstanceOf(Date);
+    expect(rows[0].error).toMatch(/^the trip's Server was away too long/);
   });
 
   it('a message that lands while a failed turn waits for its retry joins the retry, so nothing is answered twice', async () => {
