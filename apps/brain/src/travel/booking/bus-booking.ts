@@ -26,6 +26,7 @@ import { busLayout, choosePoint, chooseSeats, seatWords, type BusLayout, type Bu
 import type { TravelField } from '../../money/vault-client.js';
 import { bookingLiveCard, bookingOnFor, detailsAsk, FARE_MOVE_OK, hasFields, LOGIN_WAIT_MS, RUNNING_MS, travellerAsk, type TicketPay } from './flight-booking.js';
 import { spokenFirstName } from './travellers.js';
+import { tapAgain } from './tap-again.js';
 
 /** The list's own call, and the seat layout "Select Seats" opens. */
 export const BUS_LIST = '/buslist/v3/services$';
@@ -69,7 +70,7 @@ export interface BusBookingDeps {
   switches: Pick<Switches, 'get'>;
   now: () => Date;
   log: Log;
-  results?: Pick<ResultsStore, 'replaceCard' | 'offer'>;
+  results?: Pick<ResultsStore, 'replaceCard' | 'offer' | 'card'>;
 }
 
 /** What a booking that waited on the trip's login carries on with. */
@@ -359,7 +360,16 @@ export function createBusBooking(d: BusBookingDeps): BusBooking {
       return;
     }
     d.log.warn({ runId, code: got.code }, 'travel: a bus ticket pay card was refused');
-    if (!got.say) await tell(ask, runId, 'go_bus_no', got.refused);
+    if (got.code === 'no_pick') {
+      // A stale pick (tapped over 30 minutes ago, or asked in words): their "I'll take this" back, and a line for the tap.
+      await save(runId, { state: 'failed', why: 'pay_no_pick' });
+      await live.step(3, 'failed');
+      await live.finish(false);
+      await tapAgain(d, ask, runId);
+      return;
+    }
+    // Said, theirs alone: money never says a ticket's no itself.
+    await tell(ask, runId, 'go_bus_no', got.refused);
     await fail(`pay_${got.code}`, 3);
   }
 

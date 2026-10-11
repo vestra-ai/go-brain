@@ -234,6 +234,20 @@ describe("Go books a person's own bus up to ixigo's pay button", () => {
     }]);
   });
 
+  // Prod, 11 Oct: a pick asked in words is older than the Server's 30 minutes (no_pick). Never a dead end: a line asking
+  // for the fresh tap, theirs alone, and no "it failed" line.
+  it("answers a stale pick (no_pick) with one line asking for the tap on I'll take this", async () => {
+    const m = money();
+    m.pay.requestTicketCard = async () => ({ refused: 'Arjun, pick it again on your card: it has been a while, or the price moved. Nothing was charged.', code: 'no_pick', say: true });
+    const b = booking(fakeRunner().runner, m.pay);
+    const from = lb.link.requests.length;
+    await b.start({ tapId: 'words_bus1', tripId: 't_bus', personId: 'p_bus_stale', name: 'Arjun Mehta', offer: { ...OFFER, priceMinor: 900_000 } });
+    await b.settled();
+    const lines = lb.link.requests.slice(from).filter((r) => r.method === 'post_message' && !r.params['card'] && r.params['visible_to_person_ids']);
+    expect(lines.map((r) => [r.params['text'], r.params['visible_to_person_ids']])).toEqual([["Arjun, tap I'll take this on IntrCity SmartBus 22:35 and I'll book it.", ['p_bus_stale']]]);
+    expect((await db.pool.query(`select state, why from bus_bookings where person_id = 'p_bus_stale'`)).rows[0]).toEqual({ state: 'failed', why: 'pay_no_pick' });
+  });
+
   it('is off without BOOKING', async () => {
     expect(await booking(fakeRunner().runner, null, false).onFor('t_bus')).toBe(false);
   });
