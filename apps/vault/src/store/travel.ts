@@ -10,13 +10,20 @@ import type { Db } from './people.js';
  * them for a ticket of their own; unticking or deleting removes the row itself.
  */
 const Name = z.string().trim().min(1).max(40).regex(/^\p{L}[\p{L} '.-]*$/u);
+/** An IRCTC user ID, for a train ticket (ixigo's passenger page asks for it): 3 to 35 letters, digits or underscores. */
+const IrctcId = z.string().trim().regex(/^[A-Za-z0-9_]{3,35}$/);
 export const TravelDetails = z.object({
   first_name: Name,
   last_name: Name,
   gender: z.enum(['male', 'female']),
   dob: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  /** Optional: only train tickets need it. Never the IRCTC password, which the vault never asks for or keeps. */
+  irctc_user_id: IrctcId.nullish(),
 });
 export type TravelDetails = z.infer<typeof TravelDetails>;
+/** The travel details by name, as an add_travel link names the ones a booking still needs. */
+export const TRAVEL_FIELDS = ['first_name', 'last_name', 'gender', 'dob', 'irctc_user_id'] as const;
+export type TravelField = (typeof TRAVEL_FIELDS)[number];
 
 /** A date of birth that is a real day, today or before, at most 120 years back. */
 export function realBirthday(dob: string, now: Date): boolean {
@@ -29,9 +36,11 @@ export function realBirthday(dob: string, now: Date): boolean {
 
 const aad = (personId: string) => itemAad(personId, 'travel', personId);
 
-/** Keeps a person's details, sealed, replacing any before. Only the four fields are sealed, whatever else `d` carries. */
+/** Keeps a person's details, sealed, replacing any before. Only these fields are sealed, whatever else `d` carries. */
 export async function saveTravel(db: Db, master: Buffer, now: Date, personId: string, d: TravelDetails): Promise<void> {
-  const details: TravelDetails = { first_name: d.first_name, last_name: d.last_name, gender: d.gender, dob: d.dob };
+  const details: TravelDetails = {
+    first_name: d.first_name, last_name: d.last_name, gender: d.gender, dob: d.dob, ...(d.irctc_user_id ? { irctc_user_id: d.irctc_user_id } : {}),
+  };
   await db.query(
     `insert into travel_details (person_id, sealed, created_at, updated_at) values ($1, $2, $3, $3)
      on conflict (person_id) do update set sealed = excluded.sealed, updated_at = excluded.updated_at`,

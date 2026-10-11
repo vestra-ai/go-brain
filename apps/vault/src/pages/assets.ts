@@ -106,6 +106,14 @@ export const VAULT_JS = `(() => {
     $('t-last').value = t ? t.last_name : '';
     $('t-gender').value = t ? t.gender : '';
     $('t-dob').value = t ? t.dob : '';
+    $('t-irctc').value = t && t.irctc_user_id ? t.irctc_user_id : '';
+    // A booking's one ask names what it still needs: those fields, and any the form must have that isn't kept yet.
+    const wanted = Array.isArray(r.data.fields) ? r.data.fields : null;
+    const must = { first_name: 't-first', last_name: 't-last', gender: 't-gender', dob: 't-dob' };
+    document.querySelectorAll('#travel-form [data-field]').forEach((el) => {
+      const name = el.dataset.field;
+      el.hidden = !!wanted && !wanted.includes(name) && !(must[name] && !$(must[name]).value);
+    });
     $('t-allow').checked = !!t;
     show('travel-delete', !!t);
     say('travel-used', t && t.last_used ? t.last_used : '');
@@ -119,7 +127,8 @@ export const VAULT_JS = `(() => {
     const allow = $('t-allow').checked;
     say('travel-msg', allow ? 'Saving' : 'Deleting');
     const r = await api('/travel', {
-      first_name: $('t-first').value, last_name: $('t-last').value, gender: $('t-gender').value, dob: $('t-dob').value, allow,
+      first_name: $('t-first').value, last_name: $('t-last').value, gender: $('t-gender').value, dob: $('t-dob').value,
+      irctc_user_id: $('t-irctc').value.trim() || null, allow,
     });
     if (!r.ok) { say('travel-msg', r.data.message || 'Not saved. Try again.', 'bad'); return; }
     say('travel-msg', r.data.saved ? 'Saved.' : 'Deleted. Tick the box to save them.', 'good');

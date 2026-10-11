@@ -123,6 +123,8 @@ export const pageRoutes: FastifyPluginAsync<{ deps: VaultDeps; cards: CardsReady
     return {
       state: 'open',
       start: link.start,
+      // add_travel naming what a booking still needs: the travel form shows those, and any it must have that isn't kept.
+      fields: link.start === 'add_travel' ? link.fields : null,
       publishable_key: deps.env.STRIPE_PUBLISHABLE_KEY,
       // stripe: Stripe's card form. demo: no Stripe keys, the demo's test cards. off: Stripe refused the keys, and the page
       // says so instead of a form.
