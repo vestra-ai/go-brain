@@ -142,6 +142,9 @@ describe('search tools', () => {
     expect(out.note).toContain(CARD_LINE);
     // A stay the data gives no area for says so, rather than leaving the model to fill one in.
     expect(compactOption(1, { kind: 'stay', title: 'Somewhere', priceMinor: 900000, priceNote: 'per night', highlights: [], facts: {} })).toMatchObject({ area: 'not in the data' });
+    // A stay's stars are ixigo's own, beside its guests' rating, so the two are never one (p2's audit, 11 Oct).
+    expect(compactOption(1, { kind: 'stay', title: "Nature's Frame", priceMinor: 305300, priceNote: 'per night', highlights: [], facts: { stars: 3 }, rating: 4.6 }))
+      .toMatchObject({ stars: 3, rating: 4.6 });
   });
 
   it('flights carry their route, and a search with no conditions just counts what came back', async () => {

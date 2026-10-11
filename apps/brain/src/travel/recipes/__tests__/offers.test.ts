@@ -72,6 +72,13 @@ describe("a site's own list of what it offers (hotels.search: ixigo's metadata c
     expect(pickOffers(list, ['gym'], 'sort').picked).toEqual([]);
   });
 
+  // p2's audit, 11 Oct: "5 star only" in Varkala went unfiltered, and a ₹3,053 a night stay was called 5-star.
+  it('reads a star class as ixigo\'s Star Rating, never a user rating', async () => {
+    const list = await listed();
+    expect(pickOffers(list, ['5 star', '4-star hotels only'], 'filter').picked.map((o) => o.code)).toEqual(['SR_5', 'SR_4']);
+    expect(meansOffer('5 star', 'Pleasant: 5+')).toBe(false);
+  });
+
   it('keeps a list per recipe and place for 12 hours, and knows the trips whose reads brought one', () => {
     let nowMs = Date.parse('2026-10-09T18:00:00Z');
     const offers = createOffers({ now: () => new Date(nowMs) });
