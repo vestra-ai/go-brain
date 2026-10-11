@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { fareOf, reviewAddress } from '../review-address.js';
-import { firstNameOf, kindOn, matchSaid, matchTravellers, savedTravellers, type Wanted } from '../travellers.js';
+import { firstNameOf, idNameOf, kindOn, matchSaid, matchTravellers, savedTravellers, type Wanted } from '../travellers.js';
 
 // A results stream as ixigo sends it (7 Oct capture's shape, its values made up): a first event without the flight, the
 // last one with it, two fares, the search's token at the top.
@@ -76,7 +76,12 @@ describe("the account's saved travellers, matched to whom the booking is for", (
     ]);
     // What the model hears: the trip's own names and the outcome, never a saved name or birthday.
     expect(got.map(matchSaid)).toEqual([
-      'Meher: matched', 'Kabir: no saved traveller, asked them', 'Arjun Rao: more than one saved traveller with that name, asked them which', 'priya: matched',
+      'Meher: matched', 'Kabir: no saved traveller, typed in as a new traveller', 'Arjun Rao: more than one saved traveller with that name, typed in as a new traveller', 'priya: matched',
+    ]);
+    // A name as on an ID, from the trip's (Keshav, 11 Oct: one not saved is typed into ixigo's form): first and middle,
+    // then last, past a title; one word has no last name.
+    expect(['Keshav Musunuri', 'Dr. Meher Kapoor', 'Ravi Kumar Sharma', 'Kabir'].map(idNameOf)).toEqual([
+      { first: 'Keshav', last: 'Musunuri' }, { first: 'Meher', last: 'Kapoor' }, { first: 'Ravi Kumar', last: 'Sharma' }, null,
     ]);
     // A saved traveller goes to one person only.
     expect(matchTravellers([{ personId: 'a', name: 'Meher', kind: 'adult' }, { personId: 'b', name: 'Meher', kind: 'adult' }], saved).map((m) => m.status)).toEqual(['matched', 'none']);

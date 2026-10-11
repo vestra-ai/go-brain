@@ -255,7 +255,12 @@ export interface IxigoLogin {
    * the login is in, the composer wakes and carries on with it. booking: money is about to move, so ixigo is read now
    * unless it said in within BOOKING_RECHECK_MS: a token it refuses flips the browser and asks, never failing silently.
    */
-  ensure(tripId: string, what: string, o?: { park?: Parked; booking?: boolean }): Promise<{ ok: true } | { ok: false; note: string }>;
+  /**
+   * for: who is asked first, when they can be: the person whose booking needs it (the lead, 11 Oct: anyone in the trip
+   * can log in on the trip's computer, and Keshav's booking asked Saket, the organizer). Else the one asked before, else
+   * the organizer.
+   */
+  ensure(tripId: string, what: string, o?: { park?: Parked; booking?: boolean; for?: string }): Promise<{ ok: true } | { ok: false; note: string }>;
   /**
    * Someone in the chat asked to log in to ixigo (again): the card goes up now for whoever logs in for the trip (the one
    * asked before while they can be, else the organizer: the trip's browser is theirs), whatever the wait between asks,
@@ -1162,9 +1167,11 @@ export function createIxigoLogin(d: LoginDeps): IxigoLogin {
       );
       const can = (id: string | null | undefined): id is string =>
         !!id && !forgot.has(id) && pack.trip.people.some((p) => p.person_id === id && !p.go_paused);
-      // The person asked before, while they are still in the trip and can be asked; else the organizer; else the first
-      // member who can be (the organizer used Forget me).
-      const personId = row !== null && can(row.personId)
+      // The person whose booking it is, when they can be asked; else the one asked before, while they are still in the
+      // trip and can be; else the organizer; else the first member who can be (the organizer used Forget me).
+      const personId = can(o.for)
+        ? o.for
+        : row !== null && can(row.personId)
         ? row.personId
         : can(pack.trip.organizer_person_id)
           ? pack.trip.organizer_person_id

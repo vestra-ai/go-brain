@@ -38,7 +38,7 @@ function rig(o: { mode?: string; trip?: { destination: string | null; start: str
       // A page still loading, until the test lets it finish.
       if (o.gate) await o.gate;
       nowMs += 9_000;
-      if (o.fails) throw new Error('ixigo took too long to answer. Try again in a moment.');
+      if (o.fails) throw new Error('ixigo took too long to answer.');
       return ANSWER;
     },
     ttlMs: TTL_MS,
