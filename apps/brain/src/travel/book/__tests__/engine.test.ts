@@ -347,7 +347,7 @@ describe('the fast speed', () => {
     const got = await engine.answer('plan.destination', { place: 'Goa' }, { tripId: 't_fast' });
     expect(calls).toEqual([{ url: '/plan/goa', method: 'GET', headers: { RSC: '1' } }]);
     expect(pages).toEqual([]);
-    expect(got.as === 'facts' && got.rows[0]).toMatchObject({ destination: 'Goa, India', best_time: 'November - March' });
+    expect(got.as === 'facts' && got.rows[0]).toMatchObject({ destination: 'Goa, India', best_time: 'November - March', best_months: [1, 2, 3, 11, 12] });
     expect(engine.stats().map((s) => [s.recipe, s.speed, s.runs, s.failed])).toEqual([['plan.destination', 'fast', 1, 0]]);
   });
 
