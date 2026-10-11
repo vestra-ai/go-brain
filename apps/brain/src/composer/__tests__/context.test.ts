@@ -352,6 +352,8 @@ describe('why Go woke, and the trip block', () => {
     expect(hello).toContain('Do not open a vote unless someone asks for one');
     // Keshav, 11 Oct: a hello that suggests where the trip could go puts it on a place card, never in words or buttons.
     expect(hello).toContain("Where the trip could go, if you suggest any, is a place card (the ixigo tool's plan.explore, then show_options), never names in your words or in offer_replies.");
+    // Prod drill, 11 Oct: a hello whose card failed went silent; the hello is said anyway.
+    expect(hello).toContain("If the card can't come, say the hello anyway.");
     expect(hello).not.toMatch(/open_vote|first vote/);
     expect(c.renderWake(wake({ kind: 'trip_change', ref: 'decision:d_stay', payload: { type: 'decision.closed', decisionId: 'd_stay' } }), p)).toBe(
       'the vote <data>Where do we stay?</data> closed: <data>Villa Sol</data> won (<data>Villa Sol</data> 3, <data>Casa Azul</data> 1; 4 of 5 voted). ' +

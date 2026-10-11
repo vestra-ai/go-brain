@@ -606,6 +606,10 @@ export function createEngine(d: EngineDeps) {
     return out;
   }
 
+  /** A date as the recipes read it: YYYY-MM-DD (a time after it too), or a month as YYYY-MM. */
+  const isDate = (v: unknown): boolean =>
+    typeof v === 'string' && /^\d{4}-(0[1-9]|1[0-2])(-(0[1-9]|[12]\d|3[01]))?([T ].*)?$/.test(v.trim()) && Number.isFinite(Date.parse(v.trim().length === 7 ? `${v.trim()}-01` : v.trim()));
+
   /** The recipe's inputs, filled: places, then counts and the rest, then what a count works out from them. */
   async function inputsOf(recipe: RecipeFile, given: Record<string, unknown>, o: RunFor, run: string | null): Promise<Record<string, unknown> | null> {
     const placed = await places(recipe, given, o, run);
@@ -617,6 +621,11 @@ export function createEngine(d: EngineDeps) {
       if (v === undefined || v === null || v === '') {
         if (!input.optional) throw new TravelError('needs_more', `${recipe.title} needs ${input.about ?? name.replace(/_/g, ' ')}.`);
         continue;
+      }
+      // A date in words ("December") is said back as the date it must be, for the next call: the recipe's own date
+      // reading would throw on it, and the model saw no way to fix that and tried the same again (prod drill, 11 Oct).
+      if (input.kind === 'date' && !isDate(v)) {
+        throw new TravelError('needs_more', `${name} is a date written YYYY-MM-DD${input.about ? `, ${input.about}` : ''}, not "${clip(String(v), 40)}".`);
       }
       inputs[name] = v;
     }
