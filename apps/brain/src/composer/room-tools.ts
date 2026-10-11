@@ -252,9 +252,9 @@ export function roomTools(o: { now: () => Date; pool: Pool; travel?: () => Trave
     name: 'offer_replies',
     description:
       'Put up to six tap-to-answer choices under your message, when you ask the group to pick between a few things ' +
-      '(beach or mountains, Saturday or Sunday). A tap comes back as that person\'s own message. ' +
-      'Ask the question in your words and never list the choices there: they show as buttons. Never places to go: ' +
-      'those are a place card (the ixigo tool\'s plan.explore, then show_options).',
+      '(beach or mountains, North or South Goa, Saturday or Sunday). A tap comes back as that person\'s own message. ' +
+      'Ask the question in your words and never list the choices there: they show as buttons. Never where the trip ' +
+      'could go: that is a place card (the ixigo tool\'s plan.explore, then show_options).',
     input: OfferRepliesInput,
     async run(a, ctx) {
       ctx.quickReplies = a.replies.map((r) => ({ label: clip(r.label, 40), ...(r.text ? { text: clip(r.text, 200) } : {}) }));

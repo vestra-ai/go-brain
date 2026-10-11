@@ -26,7 +26,7 @@ export type SeeMoreAnswer = { result: 'done'; toast?: string } | { result: 'refu
 /** key: what makes it once (a tap's id, or the message that asked): the same key again does each write once. */
 export type SeeMore = (o: { tripId: string; cardId: string; personId: string; key: string }) => Promise<SeeMoreAnswer>;
 
-export function createSeeMore(d: Pick<TravelTapDeps, 'results' | 'link' | 'log' | 'images' | 'travel'>): SeeMore {
+export function createSeeMore(d: Pick<TravelTapDeps, 'results' | 'link' | 'log' | 'images' | 'travel' | 'placeCover'>): SeeMore {
   // The searches whose "See more" is running: a second ask meanwhile (a double tap, two people, another card of the same
   // search, a tap and a "show more") would add the same options again.
   const moreRunning = new Set<string>();
@@ -100,7 +100,7 @@ export function createSeeMore(d: Pick<TravelTapDeps, 'results' | 'link' | 'log' 
           }
           const numbers = left.slice(0, room);
           const after = (left.length > numbers.length || !!from.siteMore) && (!decisionId || voted + numbers.length < VOTE_MOST);
-          const picks = await cardPicks(from, numbers, cardId, people, { images });
+          const picks = await cardPicks(from, numbers, cardId, people, { images, ...(d.placeCover ? { placeCover: d.placeCover } : {}) });
           const title = `More: ${row.title.replace(/^More: /, '')}`;
           const card = buildOptionsCard({
             cardId, title, optionKind: row.optionKind, checkedAt: from.checkedAt, picks,

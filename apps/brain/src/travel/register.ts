@@ -323,6 +323,9 @@ export const registerTravel: RegisterLane = async (brain) => {
     const options = placeOptions(rows, { ...asked, budgetMinor: budget?.covers === 'whole_trip' ? budget.perPersonMinor : null });
     return options.length > 0 ? (await results.save({ tripId, optionKind: 'place', source: 'search', query: {}, options, checkedAt })).resultsId : null;
   };
+  // A place's cover from its guide, for one the explorer gave no photo: placeFor keeps it for good, so a second card is instant.
+  const placeCover = async (tripId: string, name: string): Promise<string | null> =>
+    brain.switches.get('TRAVEL_MODE') === 'ixigo_web' ? ((await travel.placeFor?.(name, { tripId }))?.place.photo_url ?? null) : null;
   const showPlacesOf = (tripId: string, picks: Array<{ cardId: string; optionId: string; name: string }>): void => {
     if (brain.switches.get('TRAVEL_MODE') !== 'ixigo_web') return;
     void showPlaces({
@@ -332,7 +335,7 @@ export const registerTravel: RegisterLane = async (brain) => {
   };
   // When ixigo's own quiet on a search's page ends (it refused one): Go's tries again wait past it (try-again.ts).
   const ixigoQuiet = (kind: TravelKind, q: TravelQuery): number | null => engine.ixigoQuietUntil(searchRecipeOf(kind, q));
-  for (const t of travelTools({ travel, results, images, now: brain.now, desk: brain.desk, ixigoQuiet, log: brain.log, warmForTravel: warm, today, showPick, showPlaces: showPlacesOf, stayBudget, groupStay })) brain.tools.register(t);
+  for (const t of travelTools({ travel, results, images, now: brain.now, desk: brain.desk, ixigoQuiet, log: brain.log, warmForTravel: warm, today, showPick, showPlaces: showPlacesOf, placeCover, stayBudget, groupStay })) brain.tools.register(t);
   brain.tools.register(budgetTool({ budgets, pool: brain.pool, now: brain.now, log: brain.log }));
   brain.context.addNow(budgetNow({ budgets, trip: async (tripId) => (await brain.packs.get(tripId)).trip }));
   // A person's own flight booking, in the turns they speak in (the lead, 11 Oct: Ankur's "?" after his stopped).
@@ -412,7 +415,7 @@ export const registerTravel: RegisterLane = async (brain) => {
   brain.onStop(function stopBookingSweep() {
     clearInterval(bookingSweep);
   });
-  const { seeMore } = registerTravelTaps(brain.taps, { results, pool: brain.pool, link: brain.door.link, desk: brain.desk, now: brain.now, log: brain.log, booking, busBooking, nameOf, images, travel });
+  const { seeMore } = registerTravelTaps(brain.taps, { results, pool: brain.pool, link: brain.door.link, desk: brain.desk, now: brain.now, log: brain.log, booking, busBooking, nameOf, images, travel, placeCover });
   // "show more" typed right after an options card: its See more, with no model round (the lead, 11 Oct).
   brain.context.addDirect(typedMoreAnswer({ seeMore, results }));
   // With BOOKING on for a trip, the model is told Go books its people's flights, and books a pick made before by words.
