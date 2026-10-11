@@ -248,6 +248,7 @@ Every one of Go's requests names its trip with `trip_id`, and every write carrie
 | [`add_booking`](04-gos-requests.md) | `AddBooking` | `AddBookingResult` | 2 seconds | `booking.changed` |
 | [`update_booking`](04-gos-requests.md) | `UpdateBooking` | `WriteResult` | 2 seconds | `booking.changed` |
 | [`add_expense`](04-gos-requests.md) | `AddExpense` | `AddExpenseResult` | 2 seconds | `expense.changed` |
+| [`update_expense`](04-gos-requests.md) | `UpdateExpense` | `UpdateExpenseResult` | 2 seconds | `expense.changed` |
 | [`request_spend_approval`](04-gos-requests.md) | `RequestSpendApproval` | `SpendApprovalResult` (`SpendApproved` or `SpendDenied`) | 2 seconds | none |
 | [`cancel_spend_approval`](04-gos-requests.md) | `CancelSpendApproval` | `Ok` | 2 seconds | none |
 

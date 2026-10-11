@@ -27,6 +27,7 @@ Go sends 19 methods. Every one names its trip with `trip_id`.
 | `add_booking` | Records a confirmed booking. | `AddBookingResult` | `booking.changed` |
 | `update_booking` | Changes or cancels a booking. | `WriteResult` | `booking.changed` |
 | `add_expense` | Records something someone paid for, split between people. | `AddExpenseResult` | `expense.changed` |
+| `update_expense` | Changes who an expense is split between (and its note). The amount and the payer never change. | `UpdateExpenseResult` | `expense.changed` |
 | `request_spend_approval` | Runs the spend check. Answers with a signed, one-use spend approval for the vault, or the reason why not. | `SpendApproved` or `SpendDenied` | None |
 | `cancel_spend_approval` | Releases a spend approval Go will not use, so it can never be used. | `Ok` | None |
 
@@ -238,6 +239,7 @@ Every write that changes the trip adds one to the trip's change number, answers 
 | `add_booking` | `AddBookingResult` | `booking.changed` with change `added`, `by` Go, then `record.changed` for the booked line, `by` system |
 | `update_booking` | `WriteResult` | `booking.changed` with change `cancelled` or `updated`, `by` Go |
 | `add_expense` | `AddExpenseResult` | `expense.changed` with change `added`, `by` Go |
+| `update_expense` | `UpdateExpenseResult` | `expense.changed` with change `updated`, `by` Go |
 | `request_spend_approval` | `SpendApproved` or `SpendDenied` (no `seq`) | None. An approval is not a change anyone sees in the trip. |
 | `cancel_spend_approval` | `Ok` (no `seq`) | None |
 
@@ -1488,6 +1490,54 @@ Good to know:
 - The server does all the money maths: shares, totals and the fewest transfers. Go reads the result from `money` in the snapshot and never works it out itself.
 - People add expenses in the app too, like Kabir's airport cab (`e_cab`). Go gets those as `expense.changed` with `by` that person.
 - Go cannot remove an expense. People can, in the app, and Go then gets `expense.changed` with change `removed`.
+- Go never adds a second expense to change how one is split: that counts the cost twice. It sends `update_expense`.
+
+### `update_expense`: change who an expense is split between
+
+`update_expense` changes who an expense that stands is split between, and its note when one is sent. It is the app's Fix the split, done by Go. Go sends it when someone asks for a new split, such as "split it evenly" after the villa was recorded for Rahul alone. The amount and the payer never change.
+
+Here Go splits the villa Rahul paid for between all five. The params are an `UpdateExpense`:
+
+<!-- schema: UpdateExpense -->
+```json
+{
+  "request_id": "rq_split_villa_1",
+  "trip_id": "t_goa",
+  "expense_id": "e_villa",
+  "split_person_ids": ["p_rahul", "p_priya", "p_arjun", "p_meher", "p_kabir"]
+}
+```
+
+The result is the expense as it now stands, and the change number:
+
+<!-- schema: UpdateExpenseResult -->
+```json
+{
+  "expense": {
+    "expense_id": "e_villa",
+    "paid_by_person_id": "p_rahul",
+    "amount_minor": 5420000,
+    "currency": "INR",
+    "note": "Villa Sol, 3 nights",
+    "category": "stay",
+    "split_person_ids": ["p_rahul", "p_priya", "p_arjun", "p_meher", "p_kabir"],
+    "booking_id": "b_villa",
+    "created_at": "2026-10-05T09:12:00Z"
+  },
+  "seq": 81
+}
+```
+
+The server works out the trip's money again, sends `expense.changed` with change `updated` and `"by": {"kind": "go"}`, and posts a line in the room ("Go changed the split of Villa Sol, 3 nights").
+
+| Rule | If it fails |
+|---|---|
+| The expense is in this trip and has not been removed. | `404` `not_found` |
+| Every person in `split_person_ids` is in the trip. | `422` `invalid` |
+
+Good to know:
+- A repeat with the same `request_id` changes the expense once and gets the same answer.
+- A server from before this request answers `-32601`. Go then says it cannot change the split yet, and never adds a second expense instead.
 
 ## Spend approvals
 
