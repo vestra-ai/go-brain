@@ -6,6 +6,8 @@
  * be over its 5 MB). With its file's own page, kept for its credit. Null when there is none in time: never a stock or
  * made-up one.
  */
+import { GO_USER_AGENT } from './images.js';
+
 export type WikiFetch = (url: string, init: { signal: AbortSignal; headers: Record<string, string> }) => Promise<{ ok: boolean; json(): Promise<unknown> }>;
 
 /** A photo, and the page of its file on Wikimedia (its author and licence, for a credit). */
@@ -67,7 +69,7 @@ export async function wikiPhoto(name: string, d: { fetch?: WikiFetch } = {}): Pr
     try {
       const res = await doFetch(`${SUMMARY}${encodeURIComponent(title.replace(/ /g, '_'))}`, {
         signal: AbortSignal.timeout(WIKI_WAIT_MS),
-        headers: { accept: 'application/json', 'user-agent': 'GoTravelAgent/1.0 (https://vestra.ai)' },
+        headers: { accept: 'application/json', 'user-agent': GO_USER_AGENT },
       });
       if (!res.ok) continue;
       const photo = photoOf((await res.json()) as Summary);

@@ -36,16 +36,20 @@ describe("a place's photo from Wikipedia", () => {
 
   it('asks by the full name, then by the name before its first comma, and gives none when neither has a photo in time', async () => {
     const asked: string[] = [];
+    const agents: string[] = [];
     const pages: Record<string, unknown> = { Manali: { thumbnail: { source: THUMB } } };
-    const fetch: WikiFetch = async (url) => {
+    const fetch: WikiFetch = async (url, init) => {
       const title = decodeURIComponent(url.split('/page/summary/')[1]!);
       asked.push(title);
+      agents.push(init.headers['user-agent']!);
       return pages[title] ? { ok: true, json: async () => pages[title] } : { ok: false, json: async () => ({}) };
     };
     expect(await wikiPhoto('Manali, Himachal Pradesh', { fetch })).toEqual({
       url: THUMB.replace('330px-', '1280px-'), page: 'https://commons.wikimedia.org/wiki/File:Manali_valley.jpg',
     });
     expect(asked).toEqual(['Manali,_Himachal_Pradesh', 'Manali']);
+    // Wikipedia answers "Please set a user-agent…" to a fetch without one (the lead, from the prod brain, 11 Oct).
+    expect(agents).toEqual(['GoTravel/1.0 (https://vestra.ai)', 'GoTravel/1.0 (https://vestra.ai)']);
     const down: WikiFetch = async () => {
       throw new Error('timed out');
     };

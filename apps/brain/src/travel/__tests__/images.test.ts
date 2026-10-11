@@ -72,8 +72,10 @@ describe("Go's image cache", () => {
   // ixigo's images host answers a JPEG as image/jpg, and its CDN picks the format by what is asked (webp for a browser).
   it("keeps a JPEG a host calls image/jpg, and asks every source for webp, jpeg or png only", async () => {
     const asked: Array<string | undefined> = [];
-    const fetchStub = vi.fn(async (_url: string, init: { headers?: { accept?: string } }) => {
+    const agents: Array<string | undefined> = [];
+    const fetchStub = vi.fn(async (_url: string, init: { headers?: { accept?: string; 'user-agent'?: string } }) => {
       asked.push(init.headers?.accept);
+      agents.push(init.headers?.['user-agent']);
       return new Response(JPEG, { status: 200, headers: { 'content-type': 'image/jpg' } });
     });
     const app = Fastify();
@@ -83,6 +85,8 @@ describe("Go's image cache", () => {
     expect(res.statusCode).toBe(200);
     expect(res.headers['content-type']).toBe('image/jpeg');
     expect(asked).toEqual(['image/webp,image/jpeg,image/png']);
+    // Wikimedia refuses an image fetch with no descriptive User-Agent (the lead, from the prod brain, 11 Oct).
+    expect(agents).toEqual(['GoTravel/1.0 (https://vestra.ai)']);
     const webp = Fastify();
     registerImageRoute(webp, { pool: db.pool, fetch: (async () => new Response(PNG, { status: 200, headers: { 'content-type': 'image/webp' } })) as unknown as typeof fetch, lookup: publicDns });
     const shot = await images().rehostUrl('https://plan-cf.ixigo.com/v2/images/goa?refresh=true');
