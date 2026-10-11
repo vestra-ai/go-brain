@@ -35,6 +35,7 @@ import type { ServerLink } from '../door/server-link.js';
 import type { TapRouter } from '../door/taps.js';
 import type { SetupStep } from '../trips/setup.js';
 import type { Packs, TripPack } from '../trips/pack.js';
+import { tripOfOne } from '../trips/votes.js';
 import type { Tasks } from '../tasks/tasks.js';
 import { TravelError } from './mcp-travel.js';
 import { IXIGO, type Capture, type FetchPlan } from './recipes/recipe.js';
@@ -165,6 +166,8 @@ export const cardIsTheAsk = (name: string, next: string): string =>
 
 /** The hello's last line, for the person asked, with the login card on the same message: the login before anything else. */
 export const HELLO_LINE = '{name}, link ixigo once with one tap and I can book for everyone.';
+/** A trip of one's hello (Keshav, 12 Oct: never "everyone" or "the group" to one person). */
+export const HELLO_LINE_ONE = '{name}, link ixigo once with one tap and I can book for you.';
 
 /**
  * How a line in the chat names the person it asks: their first name, as a friend would ("Nishanth", never "Nishanth
@@ -352,7 +355,8 @@ export function loginCard(
   row: Pick<LoginRow, 'tripId' | 'personId' | 'state' | 'attempt' | 'loggedInAt'>,
   name: string,
   note?: Note,
-  o: { selfCheck?: boolean } = {},
+  /** one: a trip of one, whose card never says "the group" (Keshav, 12 Oct). */
+  o: { selfCheck?: boolean; one?: boolean } = {},
 ): C.Card {
   const only = [row.personId];
   const button = (action_id: string, label: string, style: 'primary' | 'secondary'): C.CardAction => ({ action_id, label, style, only_for_person_ids: only });
@@ -370,7 +374,7 @@ export function loginCard(
               ? "ixigo didn't keep the login on Go's computer. Tap Log in to ixigo to try again."
               : note === 'expired'
               ? "ixigo's log in closed on Go's screen after 10 minutes. Tap Log in to ixigo to open it again."
-              : `One login on Go's computer lets Go check fares, hold them and book for the group. ${name} logs in on Go's screen with their mobile number and its code; Go never sees either. Trip searches and bookings then use ${name}'s ixigo account, and the group never sees its details.`,
+              : `One login on Go's computer lets Go check fares, hold them and book for ${o.one ? 'you' : 'the group'}. ${name} logs in on Go's screen with their mobile number and its code; Go never sees either. Trip searches and bookings then use ${name}'s ixigo account, and ${o.one ? 'nobody else' : 'the group never'} sees its details.`,
         actions: [button('ixigo_login', 'Log in to ixigo', 'primary'), button('ixigo_not_now', 'Not now', 'secondary')],
         fallback_text: `${addressOf(name)}, log in to ixigo once on Go's computer so Go can check fares and book.`,
       };
@@ -405,7 +409,7 @@ export function loginCard(
         title: `ixigo: logged in as ${name}`.slice(0, 80),
         body: note === 'logout_failed'
           ? `Go couldn't log out just now. Tap Log out to try again, or log out on Go's screen.`
-          : `Since ${row.loggedInAt ? day(row.loggedInAt) : 'today'}. Searches and bookings for this trip use ${name}'s ixigo account; the group never sees its details, and Go never opens the payment page.`,
+          : `Since ${row.loggedInAt ? day(row.loggedInAt) : 'today'}. Searches and bookings for this trip use ${name}'s ixigo account; ${o.one ? 'nobody else sees' : 'the group never sees'} its details, and Go never opens the payment page.`,
         actions: [button('ixigo_logout', 'Log out', 'secondary')],
         fallback_text: `ixigo is logged in as ${name} on Go's computer.`,
       };
@@ -486,8 +490,13 @@ export function createIxigoLogin(d: LoginDeps): IxigoLogin {
     return pack.trip.people.find((p) => p.person_id === personId)?.name ?? ORGANIZER;
   }
 
+  /** A trip of one: its login card never says "the group" (Keshav, 12 Oct). */
+  async function oneIn(tripId: string): Promise<boolean> {
+    return tripOfOne((await d.packs.get(tripId)).trip);
+  }
+
   async function show(row: LoginRow, note?: Note): Promise<void> {
-    const card = loginCard(row, await nameOf(row.tripId, row.personId), note, { selfCheck: selfChecking(row) });
+    const card = loginCard(row, await nameOf(row.tripId, row.personId), note, { selfCheck: selfChecking(row), one: await oneIn(row.tripId) });
     await d.link.request('replace_card', { trip_id: row.tripId, card });
   }
 
@@ -497,7 +506,8 @@ export function createIxigoLogin(d: LoginDeps): IxigoLogin {
     await save(row);
     const name = await nameOf(tripId, personId);
     await d.link.request('post_message', {
-      request_id: `go_login_${tripId}_${attempt}`, trip_id: tripId, text: line.replaceAll("{name}'s", `${firstOf(name)}'s`).replaceAll('{name}', addressOf(name)), mentions: [personId], card: loginCard(row, name),
+      request_id: `go_login_${tripId}_${attempt}`, trip_id: tripId, text: line.replaceAll("{name}'s", `${firstOf(name)}'s`).replaceAll('{name}', addressOf(name)), mentions: [personId],
+      card: loginCard(row, name, undefined, { one: await oneIn(tripId) }),
     });
   }
 
@@ -688,7 +698,8 @@ export function createIxigoLogin(d: LoginDeps): IxigoLogin {
     const name = await nameOf(tripId, personId);
     try {
       await d.link.request('post_message', {
-        request_id: `go_login_${tripId}_0`, trip_id: tripId, text: FIRST_LINE.replace('{name}', addressOf(name)), mentions: [personId], card: loginCard(row, name),
+        request_id: `go_login_${tripId}_0`, trip_id: tripId, text: FIRST_LINE.replace('{name}', addressOf(name)), mentions: [personId],
+        card: loginCard(row, name, undefined, { one: tripOfOne(pack.trip) }),
       });
     } catch (err) {
       // An ask that never reached the room is no ask: the row goes, so setup's retry or the next search asks again.
@@ -987,7 +998,8 @@ export function createIxigoLogin(d: LoginDeps): IxigoLogin {
       const row = await get(i.tripId);
       if (!row || row.state !== 'asked' || row.attempt !== 0) return null;
       const name = i.pack.trip.people.find((p) => p.person_id === row.personId)?.name ?? ORGANIZER;
-      return { card: loginCard(row, name), line: HELLO_LINE.replace('{name}', addressOf(name)) };
+      const one = tripOfOne(i.pack.trip);
+      return { card: loginCard(row, name, undefined, { one }), line: (one ? HELLO_LINE_ONE : HELLO_LINE).replace('{name}', addressOf(name)) };
     },
 
     setupStep: {

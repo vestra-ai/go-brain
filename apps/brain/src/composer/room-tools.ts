@@ -8,6 +8,7 @@ import type { Travel } from '../travel/travel.js';
 import { messageByRef } from '../trips/pack.js';
 import { isSmallTalk } from '../reflex/small-talk.js';
 import { saveTrip } from '../trips/save-trip.js';
+import { NO_VOTE_FOR_ONE, tripOfOne } from '../trips/votes.js';
 import { inlineData } from './fence.js';
 import { CARD_LINE } from './rules.js';
 import { clip } from './sanitize.js';
@@ -159,6 +160,8 @@ export function roomTools(o: { now: () => Date; pool: Pool; travel?: () => Trave
     input: OpenVoteInput,
     endsTurn: true,
     async run(a, ctx) {
+      // A trip of one never gets a poll (prod t_12c5fbab40c74f41, 11 Oct): their word is the decision.
+      if (tripOfOne(ctx.pack?.trip)) return { ok: false, error: NO_VOTE_FOR_ONE };
       if (a.closes_at && Date.parse(a.closes_at) <= o.now().getTime()) return { ok: false, error: 'closes_at must be in the future.' };
       const r = await ctx.link.request('open_vote', {
         request_id: ctx.stableId('go_vote'),

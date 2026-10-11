@@ -760,6 +760,12 @@ describe('the login lines name the person by their first name', () => {
     const hello = await w.login.helloCard({ tripId: w.tripId, wake: [greetWake], pack: goaPack({ trip }) });
     expect(hello?.line).toBe('@Rahul, link ixigo once with one tap and I can book for everyone.');
     expect(JSON.stringify(hello?.card)).toContain('Rahul Varma');
+    // A trip of one (Keshav, 12 Oct): never "everyone" or "the group" to one person, in the line or on the card.
+    const one = { ...trip, people: trip.people.filter((p) => p.person_id === 'p_rahul') };
+    const alone = await w.login.helloCard({ tripId: w.tripId, wake: [greetWake], pack: goaPack({ trip: one }) });
+    expect(alone?.line).toBe('@Rahul, link ixigo once with one tap and I can book for you.');
+    expect(JSON.stringify(alone?.card)).toContain('book for you');
+    expect(JSON.stringify(alone?.card)).not.toMatch(/the group|everyone/);
   });
 });
 
