@@ -258,6 +258,33 @@ describe('the live search card', () => {
     expect(r.cards().at(-1)!.steps.map((s) => s.state)).toEqual(['done', 'done', 'done', 'done']);
   });
 
+  // The App team's room, 11 Oct: asks close together each took Go's one screen, and the one before ended Stopped.
+  it("says it is next in line while the ask before it has Go's screen, then opens its page and ends done, never stopped", async () => {
+    const r = room();
+    const live = startLiveSearch(r.deps, 't_goa', { runKey: 'k_next', kind: 'buses', query: { from: 'Bangalore', to: 'Hyderabad', date: '2026-11-06' } });
+    live.progress({ type: 'opening', recipeId: 'buses.between', url: RESULTS });
+    live.progress({ type: 'queued' });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(r.cards().at(-1)).toMatchObject({
+      state: 'running',
+      steps: [
+        { text: 'Next in line, after the search before it', state: 'doing' },
+        { text: 'Opening ixigo buses', state: 'todo' },
+        { text: 'Reading the results', state: 'todo' },
+        { text: 'Picking the best buses', state: 'todo' },
+      ],
+    });
+    live.progress({ type: 'turn' });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(r.cards().at(-1)!.steps.map((s) => s.state)).toEqual(['done', 'doing', 'todo', 'todo']);
+    live.progress({ type: 'captured', ms: 900 });
+    live.progress({ type: 'extracted', count: 25 });
+    await live.finish(true);
+    expect(r.cards().at(-1)).toMatchObject({ state: 'done' });
+    expect(r.cards().at(-1)!.steps.map((s) => s.state)).toEqual(['done', 'done', 'done', 'done']);
+    expect(r.cards().some((c) => c.state === 'failed')).toBe(false);
+  });
+
   it('takes the page as ixigo drew it after the answer, on a card already done; never on a failed one (the 8 Oct demo)', async () => {
     const r = room();
     const live = startLiveSearch(r.deps, 't_goa', { runKey: 'k_drawn', ...FLIGHTS });

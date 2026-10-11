@@ -4,7 +4,8 @@ import type { ToServerResult, Trip } from '../door/methods.js';
 import { ixigoPage } from '../travel/cards.js';
 import type { Hold, Travel } from '../travel/travel.js';
 import { payCard, type PayCard, type PayCardLook } from './cards.js';
-import type { MoneyDeps } from './deps.js';
+import { postLine, type MoneyDeps } from './deps.js';
+import { reconcile } from './finish.js';
 import { paymentIdFor, rid } from './ids.js';
 import type { Room } from './rooms.js';
 import { EXPIRY_GRACE_MS, getPayment, insertAsking, openForDecision, openTicket, paidForDecision, patchPayment, transition, type PaymentRow } from './store.js';
@@ -38,6 +39,33 @@ export function idsFrom(trigger: string, decisionId: string): AskIds {
 export function withTurn(ctx: Pick<TurnCtx, 'cards'>): Deliver {
   return async (card) => {
     ctx.cards.push(card);
+  };
+}
+
+/**
+ * An ask in a composer turn whose pay card is never lost (prod, 10 Oct 21:05Z: an ask past the composer's 8 s tool budget
+ * pushed its card into a turn that had already posted; the card never reached the room, while Go said it was waiting).
+ * The card rides the turn's own message while the tool still waits for it; once the tool stops waiting (letGo), money
+ * posts the card itself, under the turn's own request id, and says a refusal that came after in the room.
+ */
+export function inTurn(d: MoneyDeps, ctx: Pick<TurnCtx, 'cards' | 'stableId' | 'tripId'>): { ids: AskIds; deliver: Deliver; letGo(asking: Promise<AskResult>): void } {
+  const ids = idsFromTurn(ctx);
+  const own = postCard(d, ctx.tripId, ids.card);
+  let late = false;
+  return {
+    ids,
+    deliver: async (card) => {
+      if (late) await own(card);
+      else ctx.cards.push(card);
+    },
+    letGo(asking) {
+      late = true;
+      void asking
+        .then(async (r) => {
+          if ('refused' in r && r.say) await postLine(d, ctx.tripId, r.refused, rid('go_said', ids.spend));
+        })
+        .catch((err: unknown) => d.log.warn({ err: err instanceof Error ? err.message : String(err) }, 'a payment asked in a turn did not finish'));
+    },
   };
 }
 
@@ -125,7 +153,7 @@ export function payCardOf(row: PaymentRow, state: PayCardLook): PayCard | null {
 export async function askToPay(
   d: MoneyDeps,
   tripId: string,
-  o: { decisionId: string; optionRef: string; purpose: string },
+  o: { decisionId: string; optionRef: string; purpose: string; again?: boolean },
   ids: AskIds,
   deliver: Deliver,
 ): Promise<AskResult> {
@@ -155,7 +183,14 @@ export async function askToPay(
   if (!m.confirmed_at) return refuse(d, 'payer_has_not_confirmed', words);
   if (!chosen?.option_ref || chosen.option_ref !== optionRef) return refuse(d, 'wrong_offer', words);
   if (await paidForDecision(d.pool, tripId, o.decisionId)) return refuse(d, 'already_paid', words);
-  if (await openForDecision(d.pool, tripId, o.decisionId)) return refuse(d, 'approval_outstanding', words);
+  const open = await openForDecision(d.pool, tripId, o.decisionId);
+  if (open) {
+    // The payer can't see its card, or declined it by mistake (again): the one waiting on them is let go, its approval
+    // released, and a fresh one asked below. One still being asked, or with the bank, is never let go.
+    if (!o.again || open.state !== 'waiting') return refuse(d, 'approval_outstanding', words);
+    if (await transition(d.pool, open.payment_id, ['waiting'], 'expired', { release_reason: 'other' }, d.now())) await reconcile(d, open.payment_id);
+    if (await openForDecision(d.pool, tripId, o.decisionId)) return refuse(d, 'approval_outstanding', words);
+  }
 
   const travel = d.travel();
   if (!travel) return refuse(d, 'no_travel', words);

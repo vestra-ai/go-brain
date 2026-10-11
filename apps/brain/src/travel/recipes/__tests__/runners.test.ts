@@ -194,6 +194,59 @@ describe("the browser fetch: how the recipe engine reads a page in the trip's br
     expect(runner.stageReady!('t1')).toBe(false);
   });
 
+  // The App team's room, 11 Oct: three asks close together each opened its page in the one stage tab, so the next one's
+  // page replaced the running one's, and that card ended Stopped.
+  it("runs a trip's stage one page at a time: the next read or steps wait their turn, say so, and never cut the running one", async () => {
+    let release!: () => void;
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const w = world(async (_c, n) => {
+      if (n === 1) await held;
+      return fetched([busCapture]);
+    });
+    const runner = createBrowserFetchRunner(w.deps);
+    const said: Array<RecipeProgress['type']> = [];
+    const first = runner.read('t1', BUSES, busPlan, { stage: true });
+    const next = runner.read('t1', `${BUSES}?next`, busPlan, { stage: true, onProgress: (e) => said.push(e.type) });
+    const steps = runner.onStage!('t1', { ...busPlan, steps: [{ op: 'click', text: 'VRL Travels' }] });
+    // Another trip's stage, and a read off the stage, don't wait.
+    await runner.read('t2', BUSES, busPlan, { stage: true });
+    await runner.read('t1', BUSES, busPlan);
+    for (let i = 0; i < 5; i++) await new Promise((resolve) => setImmediate(resolve));
+    expect(w.calls).toHaveLength(3);
+    expect(said).toEqual(['queued']);
+    release();
+    await Promise.all([first, next, steps]);
+    // In the order they came, each after the one before it ended: the first's page was never replaced.
+    const sent = w.calls.map((c) => (c.opts['body'] as { url?: string; steps?: unknown[] }));
+    expect(sent.slice(3).map((b) => b.url ?? 'steps')).toEqual([`${BUSES}?next`, 'steps']);
+    expect(said).toEqual(['queued', 'turn']);
+  });
+
+  it('lets a read that waits for the stage go when its signal aborts, asking Bash nothing; the one after still waits its turn', async () => {
+    let release!: () => void;
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const w = world(async (_c, n) => {
+      if (n === 1) await held;
+      return fetched([busCapture]);
+    });
+    const runner = createBrowserFetchRunner(w.deps);
+    const first = runner.read('t1', BUSES, busPlan, { stage: true });
+    const ctl = new AbortController();
+    const gone = runner.read('t1', BUSES, busPlan, { stage: true, signal: ctl.signal });
+    const after = runner.read('t1', BUSES, busPlan, { stage: true });
+    ctl.abort(new Error('out of time'));
+    await expect(gone).rejects.toThrow('out of time');
+    for (let i = 0; i < 5; i++) await new Promise((resolve) => setImmediate(resolve));
+    expect(w.calls).toHaveLength(1);
+    release();
+    await Promise.all([first, after]);
+    expect(w.calls).toHaveLength(2);
+  });
+
   // A bus card's own "Select Seats" (buses.stops) is clicked by its operator and time (near_text, bash #4637). A Bash
   // before it refuses the fetch before opening anything; Go never sends it as a plain click (the first card's), says so
   // (NearUnsupportedError), and sends none for a while, on a page or on the stage.

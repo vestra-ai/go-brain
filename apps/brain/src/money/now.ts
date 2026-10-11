@@ -32,7 +32,8 @@ export function paymentsNow(d: { pool: pg.Pool; packs: Pick<Packs, 'get'>; now: 
           lines.push(
             ticket
               ? `- Waiting on ${r.payer_name} to pay ${amount} for their own ticket, ${r.label}, on the vault page their Pay opened${until}.`
-              : `- Waiting on ${r.payer_name} to approve ${amount} for ${r.label} on pay card ${r.card_id ?? ''}${until}.`,
+              : `- Waiting on ${r.payer_name} to approve ${amount} for ${r.label} on pay card ${r.card_id ?? ''}, in this chat${until}. ` +
+                "If they say they can't see it, or declined it by mistake, call ask_to_pay with again: true for a fresh one; say a fresh one is up only once it answers with its card.",
           );
           continue;
         }
@@ -52,7 +53,9 @@ export function paymentsNow(d: { pool: pg.Pool; packs: Pick<Packs, 'get'>; now: 
           lines.push(r.ticket_posted_at ? `- Paid and booked: ${r.label}, ${amount} by ${r.payer_name}.` : `- Paid: ${r.label}. The booking is being finished.`);
         }
         if (r.state === 'failed') lines.push(`- Didn't go through: ${r.label} (${failReasonWords(r.fail_reason)}). Nothing was charged.`);
-        if (r.state === 'declined') lines.push(`- ${r.payer_name} declined paying for ${r.label}. Don't ask again unless someone asks.`);
+        if (r.state === 'declined') {
+          lines.push(`- ${r.payer_name} declined paying for ${r.label}. Don't ask again unless someone asks; declined by mistake, ask_to_pay sends a fresh card.`);
+        }
         if (r.state === 'expired') {
           lines.push(
             ticket

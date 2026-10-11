@@ -313,6 +313,22 @@ export function startLiveSearch(d: LiveSearchDeps, tripId: string, o: LiveFor): 
         push();
         return;
       }
+      case 'queued': {
+        // Go's one screen shows the ask before this one: this card is next in line and runs when that one is done, and
+        // neither stops the other (the App team's room, 11 Oct).
+        const text = 'Next in line, after the search before it';
+        if (card.steps.length > 3) card.steps[0] = { text, state: 'doing' };
+        else card.steps.unshift({ text, state: 'doing' });
+        for (const s of card.steps.slice(1)) if (s.state === 'doing') s.state = 'todo';
+        push();
+        return;
+      }
+      case 'turn':
+        // Its turn: the line it waited in is done, and its page opens.
+        chosen();
+        tick(0, 'doing');
+        push();
+        return;
       case 'captured':
         chosen();
         tick(0, 'done');

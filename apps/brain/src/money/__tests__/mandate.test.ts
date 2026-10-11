@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { askToPay, idsFromTurn, withTurn } from '../ask.js';
+import { askToPay, inTurn } from '../ask.js';
 import { amountsSaid, marginCap, nightsOf, setMandate } from '../mandate.js';
 import { AskToPayInput, SetMandateInput, askToPayTool, setMandateTool } from '../tools.js';
 import type { Travel } from '../../travel/travel.js';
@@ -225,7 +225,11 @@ describe('set_mandate refuses, in code, what Go cannot book', () => {
 
 describe('the quick tools', () => {
   const tools = () => [
-    askToPayTool((ctx, o) => askToPay(k.deps, ctx.tripId, o, idsFromTurn(ctx), withTurn(ctx))),
+    askToPayTool((ctx, o) => {
+      const turn = inTurn(k.deps, ctx);
+      const asking = askToPay(k.deps, ctx.tripId, o, turn.ids, turn.deliver);
+      return { asking, letGo: () => turn.letGo(asking) };
+    }),
     setMandateTool((ctx, o) => setMandate(k.deps, ctx, o)),
   ];
 

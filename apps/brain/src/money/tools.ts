@@ -13,6 +13,8 @@ export const AskToPayInput = z.strictObject({
   decision_id: z.string().min(1).max(64),
   option_ref: z.string().min(1).max(200),
   purpose: z.string().min(1).max(200),
+  /** The payer says the pay card didn't show up, or they declined it by mistake: the waiting one is cancelled, a fresh one sent. */
+  again: z.boolean().optional(),
 });
 export type AskToPayInput = z.infer<typeof AskToPayInput>;
 
@@ -26,22 +28,40 @@ export const SetMandateInput = z.strictObject({
 });
 export type SetMandateInput = z.infer<typeof SetMandateInput>;
 
-type AskRun = (ctx: TurnCtx, o: { decisionId: string; optionRef: string; purpose: string }) => Promise<AskResult>;
+/** The ask, and how to let it finish on its own (its card posted by money itself) once the tool stops waiting. */
+type AskRun = (ctx: TurnCtx, o: { decisionId: string; optionRef: string; purpose: string; again: boolean }) => { asking: Promise<AskResult>; letGo(): void };
+
+/**
+ * The longest ask_to_pay waits in the turn, inside the composer's 8 s for a tool: past it, the ask goes on and money posts
+ * the pay card itself (inTurn), and the room hears it is on its way, never that it is up (prod, 10 Oct 21:05Z).
+ */
+export const IN_TURN_PAY_MS = 6_000;
+const STILL_ASKING = Symbol('still asking');
 type SetRun = (
   ctx: TurnCtx,
   o: { decisionId: string; choiceIndex: number; capMinor?: number; refundableOnly: boolean; payerPersonId: string },
 ) => Promise<{ cardId: string; capMinor: number; byMargin: boolean; note: string | null } | { refused: string; unbookable?: true; parked?: true; claim?: true }>;
 
-export function askToPayTool(run: AskRun): QuickTool<AskToPayInput> {
+export function askToPayTool(run: AskRun, o: { waitMs?: number } = {}): QuickTool<AskToPayInput> {
   return {
     name: 'ask_to_pay',
     description:
-      "Ask the payer to approve paying for what the group voted for. Works only after the vote closed, the mandate is set and the payer tapped Yes, book it; option_ref is the winning option's ref from the vote, exactly as Payments in right now gives it. It checks the live price, gets the Server's approval and puts a pay card the payer approves with Face ID. You never pay, never ask for card details and never offer another way to pay. If it refuses, say why in one short line.",
+      "Ask the payer to approve paying for what the group voted for. Works only after the vote closed, the mandate is set and the payer tapped Yes, book it; option_ref is the winning option's ref from the vote, exactly as Payments in right now gives it. It checks the live price, gets the Server's approval and puts a pay card the payer approves with Face ID. When the payer says the pay card didn't show up, or that they declined it by mistake, call it with again: true: the waiting one is cancelled and a fresh one sent. You never pay, never ask for card details and never offer another way to pay. If it refuses, say why in one short line.",
     input: AskToPayInput,
     async run(args, ctx) {
       // The vote option's option_ref goes in as is; askToPay resolves it to the travel offer.
-      const r = await run(ctx, { decisionId: args.decision_id, optionRef: args.option_ref, purpose: args.purpose });
-      if ('cardId' in r) return { pay_card: r.cardId, tell_the_room: 'Say in one short line that the pay card is up for the payer.' };
+      const { asking, letGo } = run(ctx, { decisionId: args.decision_id, optionRef: args.option_ref, purpose: args.purpose, again: args.again === true });
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      const r = await Promise.race([asking, new Promise<typeof STILL_ASKING>((res) => (timer = setTimeout(() => res(STILL_ASKING), o.waitMs ?? IN_TURN_PAY_MS)))])
+        .finally(() => clearTimeout(timer));
+      if (r === STILL_ASKING) {
+        letGo();
+        return {
+          pay_card: 'on its way',
+          tell_the_room: 'Say in one short line that the pay card is on its way and shows up here in a moment. Never say it is up already, and never tell anyone to open Go: they are in it.',
+        };
+      }
+      if ('cardId' in r) return { pay_card: r.cardId, tell_the_room: 'Say in one short line that the pay card is up for the payer, here in the chat.' };
       return { refused: r.refused, tell_the_room: SAY_THE_REFUSAL };
     },
   };

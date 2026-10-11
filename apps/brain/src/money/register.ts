@@ -1,7 +1,7 @@
 import type { RegisterLane } from '../app.js';
 import { statsRegistry } from '../stats/sources.js';
 import { closeRooms, createRoomsCards } from '../travel/rooms-card.js';
-import { askToPay, idsFromTurn, withTurn } from './ask.js';
+import { askToPay, inTurn } from './ask.js';
 import { moneyRoutes } from './callbacks.js';
 import { claimCardOnClose, claimTap } from './claim-taps.js';
 import { CLAIM_ACTION, createClaims } from './claims.js';
@@ -51,7 +51,12 @@ export function registerMoneyWith(o: { fetch?: typeof fetch; sweepEveryMs?: numb
     const pay = createPay(d);
     brain.pay = pay;
 
-    brain.tools.register(askToPayTool((ctx, a) => askToPay(d, ctx.tripId, a, idsFromTurn(ctx), withTurn(ctx))));
+    // In a turn, the pay card rides Go's message while the tool waits; past its wait, money posts it itself (inTurn).
+    brain.tools.register(askToPayTool((ctx, a) => {
+      const turn = inTurn(d, ctx);
+      const asking = askToPay(d, ctx.tripId, a, turn.ids, turn.deliver);
+      return { asking, letGo: () => turn.letGo(asking) };
+    }));
     brain.tools.register(setMandateTool((ctx, a) => setMandate(d, ctx, a)));
     brain.taps.on('pay', 'approve', (tap, card) => pay.approveTap(tap, card));
     brain.taps.on('pay', 'decline', (tap, card) => pay.declineTap(tap, card));
