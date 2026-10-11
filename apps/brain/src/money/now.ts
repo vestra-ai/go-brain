@@ -74,7 +74,7 @@ export function paymentsNow(d: { pool: pg.Pool; packs: Pick<Packs, 'get'>; now: 
         if (!m) {
           // Something Go cannot book needs no payer: tell the composer before it asks the group who pays. A check that
           // failed just now proves nothing, so that falls through to the usual line.
-          const cannot = d.travel ? await whyNotBookable({ travel: d.travel }, win) : null;
+          const cannot = d.travel ? await whyNotBookable({ travel: d.travel }, win, tripId) : null;
           if (cannot?.unbookable) {
             lines.push(`- Vote ${dec.decision_id} closed and ${win.label} won, but Go can't book it: don't ask who pays or use set_mandate. If it comes up, say: ${cannot.refused}`);
             continue;
