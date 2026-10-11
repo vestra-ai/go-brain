@@ -74,7 +74,9 @@ describe('search tools', () => {
   it('search_stays keeps villas with a pool near the beach for everyone, and answers plainly when nothing fits', async () => {
     const out = (await lb.tools.run('search_stays', STAYS, lb.ctx({ turnId: 'turn_s3' }))) as any;
     expect(out.results.map((r: { title: string }) => r.title)).toEqual(['Casa Mareia', 'Villa Sol', 'The Palms Villa', 'Ocean Breeze Villa']);
-    expect(out.results[1]).toMatchObject({ price: '₹12,800 per night', total: '₹38,400 for 3 nights' });
+    // The whole stay first, as its card headlines it, the night after (the Manali room, 11 Oct: "prices are per room per night").
+    expect(out.results[1]).toMatchObject({ price: '₹38,400 for 3 nights', a_night: '₹12,800 a night' });
+    expect(out.results[1]).not.toHaveProperty('total');
     const missing = (await lb.tools.run('search_stays', { ...STAYS, max_price_per_night: 5000 }, lb.ctx())) as any;
     expect(missing.count).toBe(0);
     // The fake gives 7 that sleep 5; none is under ₹5,000 a night.
@@ -94,8 +96,8 @@ describe('search tools', () => {
     // The ₹9,800 villa the next search can show is named here, with the pool it lacks, so "nothing at ₹8 to 10k" cannot be said.
     expect(none.summary).toBe(
       'None of the 8 stays in North Goa, 2026-11-06 to 2026-11-09 fits at most ₹10,000 a night and with a pool. The nearest: ' +
-      '1. Saudade Villa (Parra), ₹9,800 per night, but no pool; 2. Villa Coco (Arpora), ₹10,400 per night, but ₹10,400 a night, over ₹10,000; ' +
-      '3. Villa Verde (Siolim), ₹11,500 per night, but ₹11,500 a night, over ₹10,000.',
+      '1. Saudade Villa (Parra), ₹29,400 for 3 nights (₹9,800 a night), but no pool; 2. Villa Coco (Arpora), ₹31,200 for 3 nights (₹10,400 a night), but ₹10,400 a night, over ₹10,000; ' +
+      '3. Villa Verde (Siolim), ₹34,500 for 3 nights (₹11,500 a night), but ₹11,500 a night, over ₹10,000.',
     );
     // "If fewer than three fit, say so and show the nearest": they are saved for a card, never called a fit.
     expect(none.card).toEqual({ results_id: none.results_id, option_numbers: [1, 2, 3], title: 'Stays in North Goa' });
@@ -112,12 +114,12 @@ describe('search tools', () => {
     // nearest of the rest are saved after the fits for the same card, each with what it misses, and said plainly.
     const two = (await lb.tools.run('search_stays', { ...STAYS, max_price_per_person: 7700 }, lb.ctx({ turnId: 'turn_head3' }))) as any;
     expect(two.results.map((r: { title: string }) => r.title)).toEqual(['Villa Sol', 'The Palms Villa']);
-    expect(two.summary).toContain('The nearest of the rest, saved after them: 3. Villa Verde (Siolim), ₹11,500 per night, but not within 10 minutes of the beach.');
+    expect(two.summary).toContain('The nearest of the rest, saved after them: 3. Villa Verde (Siolim), ₹34,500 for 3 nights (₹11,500 a night), but not within 10 minutes of the beach.');
     expect(two.card.option_numbers).toEqual([1, 2, 3]);
     expect(two.note).toContain('Only 2 stays fit: show them first and the nearest after on the same card');
     expect((await results.get('t_goa', two.results_id))?.options.map((o) => o.title)).toEqual(['Villa Sol', 'The Palms Villa', 'Villa Verde']);
     const over = (await lb.tools.run('search_stays', { ...STAYS, max_price_per_person: 5000 }, lb.ctx({ turnId: 'turn_head2' }))) as any;
-    expect(over.summary).toContain('The nearest: 1. The Palms Villa (Vagator), ₹12,200 per night, but ₹7,320 each for the whole stay, over ₹5,000 a head;');
+    expect(over.summary).toContain('The nearest: 1. The Palms Villa (Vagator), ₹36,600 for 3 nights (₹12,200 a night), but ₹7,320 each for the whole stay, over ₹5,000 a head;');
   });
 
   it('an area with no stays at all says nothing came back, not that nothing fit', async () => {
@@ -131,7 +133,7 @@ describe('search tools', () => {
       ['Casa Mareia', 'Morjim'], ['Villa Sol', 'Anjuna'], ['The Palms Villa', 'Vagator'], ['Ocean Breeze Villa', 'Candolim'],
     ]);
     expect(out.summary).toBe(
-      '4 of the 7 stays in North Goa, 2026-11-06 to 2026-11-09 fit sleeping 5, with a pool and within 10 minutes of the beach: ₹12,200 to ₹16,900 per night, in Morjim, Anjuna, Vagator and Candolim.',
+      '4 of the 7 stays in North Goa, 2026-11-06 to 2026-11-09 fit sleeping 5, with a pool and within 10 minutes of the beach: ₹36,600 to ₹50,700 for 3 nights, in Morjim, Anjuna, Vagator and Candolim.',
     );
     expect(out.note).toContain("Each option's area, time and price are as given here: name no other");
     // The option's area wins over the asker's words.
@@ -525,33 +527,41 @@ describe("a shared thing's card is its vote", () => {
     expect(two.cards.map((c) => c.kind)).toEqual(['options', 'options']);
   });
 
-  // The lead, 11 Oct (rev 5 Q1): two open votes on stays could pick two winners.
-  it("closes the trip's earlier vote on stays when nobody has voted on it, keeps one somebody has, and never one this turn opened", async () => {
+  // The Manali room, 11 Oct: every new stays search closed the open vote (closed_by_go, 0 votes) and opened another, four
+  // in 22 minutes; votes people cast would have gone the same way.
+  it("never closes the trip's open vote on stays for a new card: the card joins it with its new stays, or goes up without a vote when it is full", async () => {
     const found = (await lb.tools.run('search_stays', STAYS, lb.ctx({ turnId: 'turn_iv1' }))) as any;
-    // The Server's trip: the votes listed here, open, with this many votes in each.
-    let open: Array<{ decision_id: string; voted: number }> = [];
+    // The Server's trip: the votes listed here, open, with these options.
+    let open: Array<{ decision_id: string; voted: number; options: Array<{ label: string }> }> = [];
     const server = {
       request: async (method: string, params: unknown) =>
         method === 'read_trip'
           ? { ...GOA_TRIP, decisions: open.map((v) => ({ ...v, status: 'open' })) }
           : lb.link.request(method as 'open_vote', params as never),
     } as unknown as typeof lb.link;
-    const show = (turnId: string) => lb.tools.run('show_options', { line: 'Here are the villas.', results_id: found.results_id, title: 'Villas' }, lb.ctx({ turnId, link: server }));
-    const closes = () => lb.link.sent('close_vote').map((c) => c['decision_id']);
-    const before = closes().length;
-    // Two cards in one reply: two votes the group just got, both kept.
+    const closes = lb.link.sent('close_vote').length;
+    // Two cards in one reply: two votes the group just got, both opened.
     const turn = lb.ctx({ turnId: 'turn_iv2', link: server });
     const first = (await lb.tools.run('show_options', { line: 'Two villas.', results_id: found.results_id, option_numbers: [1, 2], title: 'Two villas' }, turn)) as any;
-    open = [{ decision_id: first.decision_id, voted: 0 }];
+    open = [{ decision_id: first.decision_id, voted: 1, options: (turn.cards[0] as any).options.map((o: { title: string }) => ({ label: o.title })) }];
     await lb.tools.run('show_options', { line: 'Two more.', results_id: found.results_id, option_numbers: [3, 4], title: 'Two more villas' }, turn);
-    expect(closes()).toHaveLength(before);
-    // A later card: a vote somebody voted in stays; one nobody has closes.
-    open = [{ decision_id: first.decision_id, voted: 1 }];
-    await show('turn_iv3');
-    expect(closes()).toHaveLength(before);
-    open = [{ decision_id: first.decision_id, voted: 0 }];
-    await show('turn_iv4');
-    expect(lb.link.sent('close_vote').slice(before)).toEqual([{ request_id: stableId('go_close_idle', first.decision_id), trip_id: 't_goa', decision_id: first.decision_id }]);
+    const opened = lb.link.sent('open_vote').length;
+    // A later card of the first four joins the open vote: the two it hasn't got are added, the two it has never twice.
+    const later = lb.ctx({ turnId: 'turn_iv3', link: server });
+    const joined = (await lb.tools.run('show_options', { line: 'Four villas.', results_id: found.results_id, option_numbers: [1, 2, 3, 4], title: 'Four villas' }, later)) as any;
+    expect(joined.decision_id).toBe(first.decision_id);
+    expect(C.OptionsCard.parse(later.cards[0]).decision_id).toBe(first.decision_id);
+    const added = lb.link.sent('add_vote_options').at(-1)!;
+    expect(added).toMatchObject({ trip_id: 't_goa', decision_id: first.decision_id });
+    expect((added['options'] as Array<{ label: string }>).map((o) => o.label)).toEqual(found.results.slice(2, 4).map((r: { title: string }) => r.title));
+    expect(lb.link.sent('open_vote')).toHaveLength(opened);
+    // A vote with no room for them: the new card goes up without a vote, and the open one stays as it is.
+    open = [{ decision_id: first.decision_id, voted: 1, options: Array.from({ length: 20 }, (_, i) => ({ label: `Stay ${i + 1}` })) }];
+    const full = (await lb.tools.run('show_options', { line: 'Two villas.', results_id: found.results_id, option_numbers: [3, 4], title: 'Two villas' }, lb.ctx({ turnId: 'turn_iv4', link: server }))) as any;
+    expect(full.decision_id).toBeNull();
+    expect(lb.link.sent('open_vote')).toHaveLength(opened);
+    // No vote is ever closed for a new card.
+    expect(lb.link.sent('close_vote')).toHaveLength(closes);
   });
 
   it("never puts a ticket to a group vote: a train's card is each traveller's own pick, and the model is told so", async () => {
