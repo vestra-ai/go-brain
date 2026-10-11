@@ -153,7 +153,7 @@ describe('before the mandate', () => {
   });
 
   it("with the login's card already up, carries the login's one plain line for a tap to say", async () => {
-    const line = "Booking Saudades Homestays waits on the trip's ixigo login: Rahul, tap Log in to ixigo on your card above, and I'll carry on once you're in.";
+    const line = "Booking Saudades Homestays waits on the trip's ixigo login: @Rahul, tap Log in to ixigo on your card above, and I'll carry on once you're in.";
     const w = world({ login: 'out', loginLine: line });
     expect(await w.stays.prepare('opt_saudades', { tripId: 't_goa', what: 'Saudades Homestays', resume })).toEqual({
       ok: false, note: 'Go asked Rahul to link ixigo for Saudades Homestays.', line,

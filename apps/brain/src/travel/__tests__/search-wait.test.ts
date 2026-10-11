@@ -118,7 +118,7 @@ describe('a stays search past its 12 s (staging pass, 8 Oct: a cold box took 13 
         return set;
       },
       get: async (_t: string, id: string) => sets.get(id) ?? null,
-      saveCard: async () => undefined,
+      saveCard: async () => undefined, shownFrom: async () => [],
       card: async () => null,
     } as unknown as ResultsStore;
   }

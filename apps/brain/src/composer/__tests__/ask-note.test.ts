@@ -182,6 +182,6 @@ describe('a tag that points at the person\'s own words', () => {
   });
 
   it('the rules say the pay and book refusal only when someone asks to pay or book, never as an aside', () => {
-    expect(GO_RULES).toContain("If someone asks you to pay or book, or to use someone else's card, say so kindly and offer to put it to a vote. Say it only then, never as an aside");
+    expect(GO_RULES).toContain("If someone asks you to pay or book for the group, or to use someone else's card, say kindly how it goes (a vote, then the payer's yes) and open that vote. Say it only then, never as an aside.");
   });
 });

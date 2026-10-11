@@ -131,7 +131,7 @@ describe("I'll book it", () => {
   // Prod drill, 11 Oct: "I'll book it" a minute after the hello's login card said nothing at all.
   it("parked on their login card that is up: the login's one plain line, naming them, and no mandate yet", async () => {
     await k.server.request('post_message', { request_id: 'go_close', trip_id: 't_goa', card: claimCard({ decisionId: 'd_villa', what: 'Villa Sol', people: 5, claimer: null }) });
-    const line = "Booking Villa Sol waits on the trip's ixigo login: Rahul, tap Log in to ixigo on your card above, and I'll carry on once you're in.";
+    const line = "Booking Villa Sol waits on the trip's ixigo login: @Rahul, tap Log in to ixigo on your card above, and I'll carry on once you're in.";
     Object.assign(k.travel, { prepare: async () => ({ ok: false as const, note: 'For the model.', line }) });
     const later = new Later();
     await claimTap({ d, claims, packs: packs(), later })(tapOf('p_rahul', 1));

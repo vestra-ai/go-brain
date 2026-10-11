@@ -40,11 +40,12 @@ describe('the prompt, in order and cache-first', () => {
     const b = await context().build(input(packOf(chatOf(3), goaSnapshot({ trip_id: 't_coorg', title: 'Coorg' })), 0));
     expect(a.system).toEqual([{ type: 'text', text: GO_RULES, cache_control: { type: 'ephemeral', ttl: '1h' } }]);
     expect(b.system).toEqual(a.system);
-    // The rules about preferences and tools ride in that one cached block, not after the cache point.
-    expect(a.system[0]?.text).toContain('is their preference: note it with a ✅ and make at most one short offer');
+    // Who Go is, and the rules about preferences, tools and budgets, ride in that one cached block, not after the cache point.
+    expect(a.system[0]?.text.startsWith("You are Go, this group's travel agent.")).toBe(true);
+    expect(a.system[0]?.text).toContain('is their preference: note it with a ✅ and use it in what you look up');
     expect(a.system[0]?.text).toContain('Never mention your tools');
-    expect(a.system[0]?.text).toContain("are their preference, not the plan");
-    expect(a.system[0]?.text).toContain("Never repeat a person's budget to the room");
+    expect(a.system[0]?.text).toContain('Until the group agrees or votes, it is not the plan');
+    expect(a.system[0]?.text).toContain("never say anyone's to the room or tie one to a name");
     expect(all(a.user)).not.toContain('Never mention your tools');
   });
 
@@ -356,7 +357,7 @@ describe('why Go woke, and the trip block', () => {
         "If it settled where to stay (an area or a place to stay), save the winner as the stay, never as the destination: the destination is where the trip goes. " +
         'Say it is the stay or picked, never "locked in": that reads as ixigo\'s Lock Price. ' +
         'The App already posted the result in the room: never say who won or the counts again. ' +
-        'Then say only the next step, in one short line (booking it, the next thing to settle), or call stay_silent when there is none.',
+        "Then take the next step yourself and say it in one short line (a stay picked: each person's flights with search_flights_each; booking it), or call stay_silent when there is none.",
     );
     expect(c.renderWake(wake({ kind: 'timer', ref: 'vote_closes', payload: {} }), p)).toBe('timer (vote_closes)');
   });
@@ -389,7 +390,8 @@ describe('why Go woke, and the trip block', () => {
       // for something Go does is an ask, @Go or not, and Go jumps in wherever it can add anything.
       expect(note).toContain('(logging in to ixigo, a search, a booking, a vote, a reminder, someone checking something): that is an ask even without your name, so do it, or answer it in one line.');
       expect(note).toContain('Either way, jump in whenever you can add anything: answer a question with facts from ixigo or the trip (weather, distances, timings, prices, the record, votes, money, places) unless a person already answered it; offer the lookup or the next step in one line; flag a clash with the plan or the record; note a need or a preference with a ✅ and use it; a quick useful fact.');
-      expect(note).toContain('When the group agrees dates on a trip with a place, offer stays in one line (search_stays only when someone asks to see them); when it agrees a place, offer the next step in one line');
+      // Keshav, 11 Oct: a travel agent takes the obvious next step itself: agreed dates bring the stays card.
+      expect(note).toContain("When the group agrees dates on a trip with a place, show its stays: search_stays, the card (the trip's head start often has them already); when it agrees a place, take the next step and say it in one line");
       // The three chime rules (10 Oct live proof): answer once, offer the vote with the count, search only on a real ask.
       expect(note).toContain(CHIME_RULES);
       expect(note).toContain('when people disagree, offer a vote');
