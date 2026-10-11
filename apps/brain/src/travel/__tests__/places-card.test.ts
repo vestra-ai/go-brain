@@ -1,3 +1,4 @@
+import * as C from '@go/contract';
 import { describe, expect, it } from 'vitest';
 import type { EngineAnswer } from '../book/engine.js';
 import { placeDetails, placeOnClose, placeOptions, retitled, showPlaces } from '../places-card.js';
@@ -14,25 +15,62 @@ describe('the places a trip could go, as a card', () => {
   it("makes each place the explorer read an option: ixigo's estimate a person for the trip, why, getting there", () => {
     const [agra, bare] = placeOptions([AGRA, { place: 'Neemrana, Rajasthan, India' }, { tag: 'no place' }]);
     expect(agra).toEqual({
-      kind: 'place', title: 'Agra, Uttar Pradesh, India', priceMinor: 900_000, currency: 'INR', priceNote: 'a person, 3 nights',
+      kind: 'place', title: 'Agra, Uttar Pradesh, India', subtitle: 'Historical sites · getting there from ₹170',
+      priceMinor: 900_000, currency: 'INR', priceNote: 'a person, 3 nights',
       highlights: ['Weekend getaway', 'Historical sites', 'Architecture'],
-      facts: { getting_there_minor: 17_000, nights: 3, stay_a_night: 'about ₹2,000', weather: '15 to 24 C', guide: 'agra', kinds: 'historical sites, architecture', good_for: 'family, friends' },
+      facts: { getting_there_minor: 17_000, nights: 3, stay_a_night: 'about ₹2,000', weather: '15 to 24 C', guide: 'agra', tag: 'Weekend getaway', kinds: 'historical sites, architecture', good_for: 'family, friends' },
       place: { name: 'Agra, Uttar Pradesh, India' },
     });
     expect(bare).toEqual({ kind: 'place', title: 'Neemrana, Rajasthan, India', highlights: [], facts: {}, place: { name: 'Neemrana, Rajasthan, India' } });
     expect(placeDetails(agra!)).toEqual({
-      why: ['Historical sites, architecture', 'Good for family, friends', '15 to 24 C then'],
-      facts: [
-        { label: 'Getting there', value: 'from ₹170 a person' },
-        { label: "A night's stay", value: 'about ₹2,000' },
-        { label: 'The trip', value: "about ₹9,000 a person for 3 nights, ixigo's estimate" },
+      why: ['Historical sites, architecture', 'Good for family, friends', 'Weekend getaway'],
+      costs: [
+        { label: 'Stay, a night', emoji: '🏡', amount_minor: 200_000, currency: 'INR' },
+        { label: 'Getting there, from', emoji: '🎫', amount_minor: 17_000, currency: 'INR' },
       ],
+      total_minor: 900_000,
+      caption: "ixigo's estimate for 3 nights: about ₹9,000 each",
     });
     expect(placeDetails(bare!)).toBeNull();
   });
 
+  // Keshav, 11 Oct, with Saket's App: a place comes as the App's place card, each piece in the field the App draws it
+  // from. The price badge, the tagline (its kind and getting there; ixigo's explorer gives no travel time, so none), the
+  // green fit line (the group's budget and the month), why, the rough cost each, and its photo. Nothing ixigo didn't say.
+  it("fills the App's place card from ixigo's explorer: tagline, fit line, why, rough cost each, photo", () => {
+    const row = {
+      ...AGRA, kind: ['historical sites', 'food drink'], weather_tags: ['Warmer', 'No Rain'],
+      photo_list: ['https://plan-cf.ixigo.com/v2/images/agra?refresh=true'],
+    };
+    const [agra] = placeOptions([row], { origin: 'Delhi', month: '2026-12-12', budgetMinor: 1_000_000 });
+    expect(agra).toMatchObject({
+      subtitle: 'Historical sites · getting there from ₹170',
+      imageUrl: 'https://plan-cf.ixigo.com/v2/images/agra?refresh=true',
+      facts: { fit: 'Fits the ₹10,000 budget · Dry, 15 to 24 C in Dec', origin: 'Delhi', kinds: 'historical sites, food and drink' },
+    });
+    const details = placeDetails(agra!);
+    expect(C.OptionDetails.safeParse(details).success).toBe(true);
+    expect(details).toEqual({
+      why: ['Fits the ₹10,000 budget · Dry, 15 to 24 C in Dec', 'Historical sites, food and drink', 'Good for family, friends', 'Weekend getaway'],
+      costs: [
+        { label: 'Stay, a night', emoji: '🏡', amount_minor: 200_000, currency: 'INR' },
+        { label: 'Getting there, from', emoji: '🎫', amount_minor: 17_000, currency: 'INR' },
+      ],
+      total_minor: 900_000,
+      caption: "ixigo's estimate for 3 nights from Delhi: about ₹9,000 each",
+    });
+    // Over the budget, the fit line says only the month; with no budget and no month, there is none.
+    expect(placeOptions([row], { month: '2026-12-12', budgetMinor: 500_000 })[0]!.facts['fit']).toBe('Dry, 15 to 24 C in Dec');
+    expect(placeOptions([row])[0]!.facts).not.toHaveProperty('fit');
+    // A photo that isn't https is left out.
+    expect(placeOptions([{ ...row, photo_list: ['http://plan-cf.ixigo.com/v2/images/agra'] }])[0]).not.toHaveProperty('imageUrl');
+  });
+
   it("gives a place card's first places their own place, photos, best time and places to visit, then replaces the card", async () => {
-    const option = { option_id: 'opt_c_1', title: 'Agra, Uttar Pradesh, India', details: { why: ['Historical sites'], facts: [{ label: 'Getting there', value: 'from ₹170 a person' }] } };
+    const option = {
+      option_id: 'opt_c_1', title: 'Agra, Uttar Pradesh, India', image_url: 'https://go.test/img/explorer-agra.jpg',
+      details: { why: ['Historical sites'], costs: [{ label: 'Getting there, from', emoji: '🎫', amount_minor: 17_000, currency: 'INR' }] },
+    };
     const saved: Array<Record<string, unknown>> = [];
     const results = {
       card: async () => ({ card: { options: [option] } }),
@@ -55,9 +93,15 @@ describe('the places a trip could go, as a card', () => {
       results, link: { request: async (_m: string, p: Record<string, unknown>) => { sent.push(p); return {}; } } as never,
     }, 't_goa', [{ cardId: 'c_places', optionId: 'opt_c_1', name: 'Agra, Uttar Pradesh, India' }]);
     expect(read).toEqual([{ given: { place: 'Agra, Uttar Pradesh, India' }, o: { tripId: 't_goa', background: true } }]);
+    // The place's own hero replaces the explorer's photo; its best time is one more reason (the App's rich Details draws no
+    // facts), and its places to visit are the things the crew can do.
     expect(saved).toEqual([{
       place, photos, image_url: 'https://go.test/img/agra0.jpg',
-      details: { why: ['Historical sites'], facts: [{ label: 'Getting there', value: 'from ₹170 a person' }, { label: 'Best time to go', value: 'October to March' }], activities: ['Taj Mahal', 'Agra Fort'] },
+      details: {
+        why: ['Historical sites', 'Best time to go: October to March'],
+        costs: [{ label: 'Getting there, from', emoji: '🎫', amount_minor: 17_000, currency: 'INR' }],
+        activities: ['Taj Mahal', 'Agra Fort'],
+      },
     }]);
     expect(sent).toHaveLength(1);
     expect(sent[0]).toMatchObject({ trip_id: 't_goa', card: { card_id: 'c_places' } });

@@ -60,6 +60,11 @@ export interface TravelToolDeps {
   showPick?: (tripId: string, pick: TopPick, more?: TopPick[]) => void;
   /** A place card's first places, given their own place and guide in the background (places-card.ts showPlaces, rev 5 R2). */
   showPlaces?: (tripId: string, picks: Array<{ cardId: string; optionId: string; name: string }>) => void;
+  /**
+   * A place's own cover from ixigo's guide (placeFor, already in Go's image cache), for a place the explorer gave no photo:
+   * waited for in parallel, up to COVER_WAIT_MS, before its card goes up. Null when ixigo has none: never a made-up one.
+   */
+  placeCover?: (tripId: string, name: string) => Promise<string | null>;
   /** Where the group stays, with its position (group-stay.ts): each bus's nearest drop to it. Absent, none is said. */
   groupStay?: (tripId: string) => Promise<GroupStay | null>;
 }
@@ -411,7 +416,7 @@ async function runSearch(kind: TravelKind, given: TravelQuery, ctx: TurnCtx, d: 
  * A saved set's picked options as a card shows them, numbered on the card: each option's sheet (contract 1.1 details)
  * from what the search read, a stay's photos through Go's image cache. people: who the trip is for, for a sheet's prices.
  */
-export async function cardPicks(set: ResultSet, numbers: number[], cardId: string, people: number, d: Pick<TravelToolDeps, 'images'>) {
+export async function cardPicks(set: ResultSet, numbers: number[], cardId: string, people: number, d: Pick<TravelToolDeps, 'images' | 'placeCover'>) {
   const query = set.query as TravelQuery;
   return Promise.all(
     numbers.map(async (n, i) => {
@@ -423,14 +428,25 @@ export async function cardPicks(set: ResultSet, numbers: number[], cardId: strin
       const details = set.optionKind === 'stay'
         ? stayDetails(option, query, people, gallery)
         : set.optionKind === 'train' ? trainDetails(option) : set.optionKind === 'flight' ? flightDetails(option, people) : set.optionKind === 'place' ? placeDetails(option) : null;
+      // A place goes up with its real cover (Saket, 11 Oct: never the App's drawing): the explorer's own photo, else its
+      // guide's, waited for a little; a place with neither goes up without one.
+      const imageUrl = option.imageUrl
+        ? await d.images.rehostUrl(option.imageUrl)
+        : set.optionKind === 'place' && d.placeCover ? await coverWithin(d.placeCover(set.tripId, option.title)) : null;
       return {
-        n: i + 1, optionId: stableId('opt', cardId, i + 1), option, imageUrl: option.imageUrl ? await d.images.rehostUrl(option.imageUrl) : null,
+        n: i + 1, optionId: stableId('opt', cardId, i + 1), option, imageUrl,
         ...(details ? { details } : {}),
         ...(photos.length ? { photos } : {}),
       };
     }),
   );
 }
+
+/** How long a place card waits for a place's cover from its guide, every place at once, before it goes up without one. */
+export const COVER_WAIT_MS = 2_500;
+
+const coverWithin = (cover: Promise<string | null>): Promise<string | null> =>
+  Promise.race([cover.catch(() => null), new Promise<null>((r) => setTimeout(() => r(null), COVER_WAIT_MS).unref())]);
 
 /**
  * How many options a card shows, and each "See more" after it (Keshav, 11 Oct: "show 10 then see more button, and on
@@ -470,7 +486,7 @@ export async function putUpCard(
   picked: number[],
   given: { title: string; line: string; vote?: CardVote },
   ctx: TurnCtx,
-  d: Pick<TravelToolDeps, 'results' | 'images' | 'showPick' | 'showPlaces' | 'log'> & { now?: () => Date },
+  d: Pick<TravelToolDeps, 'results' | 'images' | 'showPick' | 'showPlaces' | 'placeCover' | 'log'> & { now?: () => Date },
 ): Promise<{ cardId: string; shown: number; decisionId: string | null }> {
   const cardId = ctx.stableId('c_opt');
   const run = runOfSet.get(set.resultsId);

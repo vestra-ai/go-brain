@@ -44,6 +44,8 @@ export interface TravelTapDeps {
   images?: Images;
   /** ixigo's next page of a stays search, for "See more" once the set's own are shown (results.siteMore); absent, none. */
   travel?: Pick<Travel, 'search'>;
+  /** A place's cover from its guide, for a place the explorer gave no photo (tools.ts cardPicks). */
+  placeCover?: (tripId: string, name: string) => Promise<string | null>;
 }
 
 export { ALL_SHOWN } from './see-more.js';

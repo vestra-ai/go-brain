@@ -98,18 +98,41 @@ describe('the options card', () => {
     const results = { saveCard: async () => undefined, shownFrom: async () => [], card: async () => null } as unknown as ResultsStore;
     const images = { rehostUrl: async () => 'https://go.test/img/x.jpg' } as never;
     const ctx = makeTurnCtx({ tripId: 't_goa', turnId: 'turn_pl', link: {} as never, pack: goaPack(), wake: [], signal: new AbortController().signal });
-    const place = (name: string) => ({ place: name, estimate_minor: 900_000, estimate_nights: 3, getting_there_minor: 17_000, kind: ['beaches'] });
-    const options = placeOptions([place('Agra, India'), place('Goa, India'), place('Manali, India'), place('Ladakh, India')]);
+    const place = (name: string, photo = true) => ({
+      place: name, estimate_minor: 900_000, estimate_nights: 3, getting_there_minor: 17_000, kind: ['beaches'],
+      ...(photo ? { photo_list: [`https://plan-cf.ixigo.com/v2/images/${name.split(',')[0]!.toLowerCase()}`] } : {}),
+    });
+    const options = placeOptions([place('Agra, India'), place('Goa, India'), place('Manali, India'), place('Ladakh, India', false), place('Spiti, India', false)]);
     const set = { resultsId: 'r_pl', tripId: 't_goa', optionKind: 'place' as const, source: 'search' as const, query: {}, options, checkedAt: '2026-10-11T02:00:00.000Z' };
     const handed: Array<Array<{ cardId: string; optionId: string; name: string }>> = [];
-    await putUpCard(set, [1, 2, 3, 4], { title: 'Where to go in December', line: 'x' }, ctx, { results, images, showPlaces: (_trip, picks) => handed.push(picks) });
+    // Saket, 11 Oct: every place goes up with its real cover, never the App's drawing. A place the explorer gave no photo
+    // gets its guide's, waited for before the card is posted; one ixigo has none for goes up without one.
+    const covers: string[] = [];
+    const placeCover = async (tripId: string, name: string) => {
+      covers.push(`${tripId}|${name}`);
+      return name.startsWith('Ladakh') ? 'https://go.test/img/ladakh.jpg' : null;
+    };
+    await putUpCard(set, [1, 2, 3, 4], { title: 'Where to go in December', line: 'x' }, ctx, { results, images, placeCover, showPlaces: (_trip, picks) => handed.push(picks) });
     const card = ctx.cards[0] as OptionsCardT;
     expect(card.option_kind).toBe('place');
-    expect(card.options[0]).toMatchObject({
-      title: 'Agra, India', price_minor: 900_000, price_note: 'a person, 3 nights', price_min_minor: 900_000, place: { name: 'Agra, India' },
-      details: { why: ['Beaches'], facts: [{ label: 'Getting there', value: 'from ₹170 a person' }, { label: 'The trip', value: "about ₹9,000 a person for 3 nights, ixigo's estimate" }] },
+    // As the App's place card draws it (Keshav, 11 Oct): the badge, the tagline, the explorer's photo through Go's image
+    // cache, and the Details' reasons, rough cost each and what its total covers.
+    expect(card.options[0]).toEqual({
+      option_id: expect.any(String), title: 'Agra, India', subtitle: 'Beaches · getting there from ₹170', image_url: 'https://go.test/img/x.jpg',
+      price_minor: 900_000, currency: 'INR', price_note: 'a person, 3 nights', price_min_minor: 900_000, highlights: ['Beaches'], place: { name: 'Agra, India' },
+      details: {
+        why: ['Beaches'],
+        costs: [{ label: 'Getting there, from', emoji: '🎫', amount_minor: 17_000, currency: 'INR' }],
+        total_minor: 900_000,
+        caption: "ixigo's estimate for 3 nights: about ₹9,000 each",
+      },
     });
     expect(handed).toEqual([card.options.slice(0, 3).map((o) => ({ cardId: card.card_id, optionId: o.option_id, name: o.title }))]);
+    expect(covers).toEqual(['t_goa|Ladakh, India', 't_goa|Spiti, India']);
+    expect(card.options.map((o) => [o.title, o.image_url ?? null])).toEqual([
+      ['Agra, India', 'https://go.test/img/x.jpg'], ['Goa, India', 'https://go.test/img/x.jpg'], ['Manali, India', 'https://go.test/img/x.jpg'],
+      ['Ladakh, India', 'https://go.test/img/ladakh.jpg'], ['Spiti, India', null],
+    ]);
   });
 
   // The Server team's rev 5 (R1): labelled photos on every stay, not the top pick's alone. The card's next two stays go

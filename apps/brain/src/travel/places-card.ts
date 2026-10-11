@@ -22,65 +22,145 @@ const num = (v: unknown): number | null => (typeof v === 'number' && Number.isFi
 const words = (v: unknown): string[] => (Array.isArray(v) ? v.flatMap((x) => text(x) ?? []) : []);
 const upper = (t: string): string => `${t.charAt(0).toUpperCase()}${t.slice(1)}`;
 
-/** Each place the explorer read, as an option of kind place: ixigo's estimate a person for the trip, why, getting there. */
-export function placeOptions(rows: Array<Record<string, unknown>>): ResultOption[] {
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+/** ixigo's two-word kinds of place (its destinationType, lowercased) as a person says them; any other as it is. */
+const KIND_WORDS: Record<string, string> = {
+  'nature wildlife': 'nature and wildlife', 'food drink': 'food and drink', 'relaxation wellness': 'wellness',
+  'festivals events': 'festivals', 'sports recreation': 'sports',
+};
+const kindWords = (k: string): string => KIND_WORDS[k.toLowerCase()] ?? k.toLowerCase();
+
+/** What the explorer was asked, for each place's words: where from, the month, and the group's budget a head. */
+export interface ExploreAsk {
+  /** The city as the group wrote it ("Bengaluru"). */
+  origin?: string | null;
+  /** Any day in the month, YYYY-MM-DD. */
+  month?: string | null;
+  /** The group's budget a head for the whole trip, in paise: the only budget ixigo's estimate is weighed against. */
+  budgetMinor?: number | null;
+}
+
+/**
+ * The line the App draws in green on a place and first under "Why Go picked it": the group's budget it fits, and the
+ * month as ixigo's explorer reads it. Only what ixigo said and the group decided; null when there is neither.
+ */
+function fitLine(r: Record<string, unknown>, asked: ExploreAsk): string | null {
+  const estimate = num(r['estimate_minor']);
+  const budget = num(asked.budgetMinor);
+  const fits = estimate && budget && estimate <= budget ? `Fits the ${formatInr(budget)} budget` : null;
+  const at = /^\d{4}-(\d{2})-\d{2}$/.exec(asked.month ?? '');
+  const month = at ? MONTHS[Number(at[1]) - 1] : undefined;
+  const weather = text(r['weather']);
+  const tags = words(r['weather_tags']).map((t) => t.toLowerCase());
+  const sky = tags.includes('no rain') ? 'dry' : tags.includes('rain') ? 'some rain' : null;
+  const then = month && (weather || sky) ? upper(`${[sky, weather].filter(Boolean).join(', ')} in ${month}`) : null;
+  const line = [fits, then].filter((x): x is string => x !== null).join(' · ');
+  return line ? clip(line, 140) : null;
+}
+
+/**
+ * Each place the explorer read, as an option of kind place, drawn as the App's place card: ixigo's estimate a person for
+ * the trip, its kind and what getting there costs (the tagline), the fit line, and its photo. A number ixigo didn't give
+ * is left out, never guessed: the explorer has no travel time, so the tagline has none.
+ */
+export function placeOptions(rows: Array<Record<string, unknown>>, asked: ExploreAsk = {}): ResultOption[] {
   return rows.flatMap((r): ResultOption[] => {
     const name = text(r['place']);
     if (!name) return [];
     const estimate = num(r['estimate_minor']);
     const nights = num(r['estimate_nights']);
-    const kinds = words(r['kind']);
+    const kinds = words(r['kind']).map(kindWords);
     const tag = text(r['tag']);
     const facts: Record<string, string | number> = {};
     const there = num(r['getting_there_minor']);
     if (there) facts['getting_there_minor'] = there;
     if (nights) facts['nights'] = nights;
-    for (const k of ['stay_a_night', 'weather', 'guide'] as const) {
+    for (const k of ['stay_a_night', 'weather', 'guide', 'tag'] as const) {
       const v = text(r[k]);
       if (v) facts[k] = v;
     }
     if (kinds.length > 0) facts['kinds'] = kinds.join(', ');
     const goodFor = words(r['good_for']);
     if (goodFor.length > 0) facts['good_for'] = goodFor.join(', ');
+    const fit = fitLine(r, asked);
+    if (fit) facts['fit'] = fit;
+    const origin = text(asked.origin);
+    if (origin) facts['origin'] = clip(origin, 60);
+    const tagline = [kinds[0] ? upper(kinds[0]) : null, there ? `getting there from ${formatInr(there)}` : null].filter((x): x is string => x !== null).join(' · ');
+    const photo = words(r['photo_list'])[0];
     return [{
       kind: 'place',
       title: clip(name, 80),
+      ...(tagline ? { subtitle: clip(tagline, 120) } : {}),
       ...(estimate ? { priceMinor: estimate, currency: 'INR', priceNote: nights ? `a person, ${nights} nights` : 'a person' } : {}),
       highlights: [...(tag ? [tag] : []), ...kinds.map(upper)].map((h) => clip(h, 40)).slice(0, 4),
       facts,
+      ...(photo?.startsWith('https://') ? { imageUrl: photo } : {}),
       place: { name: clip(name, 120) },
     }];
   });
 }
 
-/** A place's sheet from what the explorer said: why it may fit, and what getting there and a stay cost, as ixigo guesses. */
+/** ixigo's "about ₹2,000" a night, in paise; null when it says no amount. */
+function nightMinor(night: string | null): number | null {
+  const m = night ? /₹\s*([\d,]+)/.exec(night) : null;
+  const rupees = m ? Number(m[1]!.replace(/,/g, '')) : NaN;
+  return Number.isFinite(rupees) && rupees > 0 ? rupees * 100 : null;
+}
+
+/**
+ * A place's sheet as the App's Details draws it, from what the explorer said: why it may fit (the fit line first), the
+ * rough cost each (a night's stay and getting there, as ixigo prices them, and ixigo's own estimate for the trip as the
+ * total), and the caption that says what that total covers. Things to do come from its guide (showPlaces, Details).
+ */
 export function placeDetails(o: ResultOption): OptionDetailsT | null {
   const f = o.facts;
   const kinds = text(f['kinds']);
   const goodFor = text(f['good_for']);
-  const weather = text(f['weather']);
   const why = [
+    text(f['fit']),
     kinds ? upper(kinds) : null,
     goodFor ? `Good for ${goodFor}` : null,
-    weather ? `${weather} then` : null,
+    text(f['tag']),
   ].filter((x): x is string => x !== null).map((w) => clip(w, 140));
   const there = num(f['getting_there_minor']);
-  const night = text(f['stay_a_night']);
+  const night = nightMinor(text(f['stay_a_night']));
   const nights = num(f['nights']);
-  const facts = [
-    ...(there ? [{ label: 'Getting there', value: `from ${formatInr(there)} a person` }] : []),
-    ...(night ? [{ label: "A night's stay", value: night }] : []),
-    ...(o.priceMinor !== undefined ? [{ label: 'The trip', value: `about ${formatInr(o.priceMinor)} a person${nights ? ` for ${nights} nights` : ''}, ixigo's estimate` }] : []),
-  ].map((x) => ({ label: x.label, value: clip(x.value, 200) }));
-  if (why.length === 0 && facts.length === 0) return null;
-  return { ...(why.length ? { why: why.slice(0, 5) } : {}), ...(facts.length ? { facts } : {}) };
+  const origin = text(f['origin']);
+  const costs = [
+    ...(night ? [{ label: 'Stay, a night', emoji: '🏡', amount_minor: night, currency: 'INR' }] : []),
+    ...(there ? [{ label: 'Getting there, from', emoji: '🎫', amount_minor: there, currency: 'INR' }] : []),
+  ];
+  const caption = o.priceMinor !== undefined
+    ? `ixigo's estimate${nights ? ` for ${nights} nights` : ''}${origin ? ` from ${origin}` : ''}: about ${formatInr(o.priceMinor)} each`
+    : null;
+  if (why.length === 0 && costs.length === 0 && !caption) return null;
+  return {
+    ...(why.length ? { why: why.slice(0, 5) } : {}),
+    ...(costs.length ? { costs } : {}),
+    ...(o.priceMinor !== undefined && costs.length ? { total_minor: o.priceMinor } : {}),
+    ...(caption ? { caption: clip(caption, 200) } : {}),
+  };
 }
 
 /** A place's own guide read (plan.destination): its best time to go, and the places to visit there by name. */
-function fromGuide(row: Record<string, unknown> | undefined): { best: string | null; visit: string[] } {
+export function fromGuide(row: Record<string, unknown> | undefined): { best: string | null; visit: string[] } {
   if (!row) return { best: null, visit: [] };
   const visit = words(row['places_to_visit']).map((v) => clip(v.split(/\s\(|:\s/)[0]!.trim(), 60)).filter((v) => v.length > 0);
   return { best: text(row['best_time']), visit: [...new Set(visit)].slice(0, 20) };
+}
+
+/**
+ * A place's sheet with its guide's read on it: the best time to go as one more reason (the App's rich Details draws the
+ * reasons, never facts), and the places to visit as the things the crew can do. Null when the guide adds nothing.
+ */
+export function withGuide(details: OptionDetailsT | null, guide: { best: string | null; visit: string[] }): OptionDetailsT | null {
+  const best = guide.best ? clip(`Best time to go: ${guide.best}`, 140) : null;
+  const why = details?.why ?? [];
+  const reasons = best && !why.includes(best) ? [...why, best].slice(0, 5) : why;
+  if (reasons === why && guide.visit.length === 0) return null;
+  return { ...(details ?? {}), ...(reasons.length ? { why: reasons } : {}), ...(guide.visit.length ? { activities: guide.visit } : {}) };
 }
 
 /**
@@ -106,13 +186,13 @@ export async function showPlaces(
       const { best, visit } = fromGuide(guide?.as === 'facts' ? guide.rows[0] : undefined);
       const option = (await d.results.card(tripId, pick.cardId))?.card.options.find((o) => o.option_id === pick.optionId);
       if (!option) continue;
-      const facts = [...(option.details?.facts ?? []), ...(best ? [{ label: 'Best time to go', value: clip(best, 200) }] : [])].slice(0, 20);
-      const details = best || visit.length > 0 ? { ...(option.details ?? {}), ...(facts.length ? { facts } : {}), ...(visit.length ? { activities: visit } : {}) } : null;
+      const details = withGuide(option.details ?? null, { best, visit });
       const place = found?.place ?? null;
+      // The place's own hero replaces the explorer's small photo: it is the first of the labelled photos that follow it.
       const fields = {
         ...(place ? { place: { ...place, name: clip(place.name, 120) } } : {}),
         ...(place?.photos?.length ? { photos: place.photos.slice(0, 12) } : {}),
-        ...(place?.photo_url && !option.image_url ? { image_url: place.photo_url } : {}),
+        ...(place?.photo_url ? { image_url: place.photo_url } : {}),
         ...(details ? { details } : {}),
       };
       if (Object.keys(fields).length === 0) continue;

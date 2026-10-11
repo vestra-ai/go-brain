@@ -68,6 +68,27 @@ describe("Go's image cache", () => {
     expect(fetchStub).toHaveBeenCalledTimes(1);
   });
 
+  // Keshav, 11 Oct: a place card's cover is ixigo's own photo through this cache (its explorer's, plan-cf.ixigo.com).
+  // ixigo's images host answers a JPEG as image/jpg, and its CDN picks the format by what is asked (webp for a browser).
+  it("keeps a JPEG a host calls image/jpg, and asks every source for webp, jpeg or png only", async () => {
+    const asked: Array<string | undefined> = [];
+    const fetchStub = vi.fn(async (_url: string, init: { headers?: { accept?: string } }) => {
+      asked.push(init.headers?.accept);
+      return new Response(JPEG, { status: 200, headers: { 'content-type': 'image/jpg' } });
+    });
+    const app = Fastify();
+    registerImageRoute(app, { pool: db.pool, fetch: fetchStub as unknown as typeof fetch, lookup: publicDns });
+    const url = await images().rehostUrl('https://plan-cf.ixigo.com/v2/images/agra?refresh=true');
+    const res = await app.inject({ method: 'GET', url: new URL(url!).pathname });
+    expect(res.statusCode).toBe(200);
+    expect(res.headers['content-type']).toBe('image/jpeg');
+    expect(asked).toEqual(['image/webp,image/jpeg,image/png']);
+    const webp = Fastify();
+    registerImageRoute(webp, { pool: db.pool, fetch: (async () => new Response(PNG, { status: 200, headers: { 'content-type': 'image/webp' } })) as unknown as typeof fetch, lookup: publicDns });
+    const shot = await images().rehostUrl('https://plan-cf.ixigo.com/v2/images/goa?refresh=true');
+    expect((await webp.inject({ method: 'GET', url: new URL(shot!).pathname })).headers['content-type']).toBe('image/webp');
+  });
+
   it('never fetches what is not an https image on a public name', async () => {
     expect(isFetchableImageUrl('http://picsum.photos/x')).toBe(false);
     expect(isFetchableImageUrl('https://127.0.0.1/x.jpg')).toBe(false);

@@ -22,7 +22,7 @@ function rig(o: { kind?: string; kept?: Record<string, Promise<EngineAnswer>>; l
   };
   const results = {
     card: async (tripId: string, cardId: string) => (tripId === 't_goa' && cardId === 'c_opt_1' ? { card: { options: [option] } } : null),
-    offer: async (optionId: string) => (optionId === option.option_id ? { optionId, kind: o.kind ?? 'stay', resultsId: 'r_1', n: 1, sourceUrl: PAGE } : null),
+    offer: async (optionId: string) => (optionId === option.option_id ? { optionId, kind: o.kind ?? 'stay', title: option.title, resultsId: 'r_1', n: 1, sourceUrl: PAGE } : null),
     get: async () => ({
       checkedAt: '2026-10-11T01:00:00.000Z',
       options: [{ kind: 'stay', title: 'Meritas Auberge', highlights: [], facts: { type: 'Hotel', stars: 3 }, place: { name: 'Meritas Auberge', address: 'Candolim, Goa', lat: 15.52, lng: 73.76 } }],
@@ -32,7 +32,7 @@ function rig(o: { kind?: string; kept?: Record<string, Promise<EngineAnswer>>; l
   const read: Array<{ id: string; given: Record<string, unknown>; o: Record<string, unknown> }> = [];
   const engine = {
     peek: (id: string, given: Record<string, unknown>) => {
-      peeked.push(`${id}|${String(given['hotel'])}`);
+      peeked.push(`${id}|${String(given['hotel'] ?? given['place'])}`);
       return o.kept?.[id] ?? null;
     },
     answer: async (id: string, given: Record<string, unknown>, ro: Record<string, unknown>) => {
@@ -89,6 +89,22 @@ describe("an option's Details on demand", () => {
     const off = rig({ live: false });
     expect(await off.handler(ask, meta)).toMatchObject({ complete: false });
     expect(off.read).toEqual([]);
+  });
+
+  // Keshav, 11 Oct: a place card's Details as Saket's App draws them, "Things the crew can do" too. The card's first three
+  // get their guide in the background (showPlaces); any other place gets its guide when it is opened.
+  it("answers a place with its guide's best time and places to visit once read, else reads the guide in the background", async () => {
+    const guide = facts([{ best_time: 'October to March', places_to_visit: ['Taj Mahal (4.8, monument): white marble', 'Agra Fort'] }]);
+    const kept = rig({ kind: 'place', kept: { 'plan.destination': guide } });
+    const got = await kept.handler(ask, meta);
+    expect(C.OptionFullDetails.safeParse(got).success).toBe(true);
+    expect(got).toMatchObject({ why: ['Pool, as asked', 'Best time to go: October to March'], activities: ['Taj Mahal', 'Agra Fort'] });
+    expect(got).not.toHaveProperty('complete');
+    expect(kept.peeked).toEqual(['plan.destination|Meritas Auberge']);
+    expect(kept.read).toEqual([]);
+    const cold = rig({ kind: 'place' });
+    expect(await cold.handler(ask, meta)).toMatchObject({ why: ['Pool, as asked'], complete: false });
+    expect(cold.read.map((x) => [x.id, x.given, x.o['background']])).toEqual([['plan.destination', { place: 'Meritas Auberge' }, true]]);
   });
 
   it("answers anything but a stay from its card alone, and refuses an option that isn't on the card", async () => {

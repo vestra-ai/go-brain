@@ -328,6 +328,8 @@ describe("ixigo's trip explorer", () => {
       weather: '15 to 24 C', good_for: ['family', 'friends', 'solo'], weather_tags: ['Warmer', 'No Snow', 'No Rain', 'Pollution free'],
       kind: ['historical sites', 'architecture', 'cultural', 'food drink', 'photography', 'romantic', 'shopping', 'luxury', 'festivals events', 'scenic outdoors', 'weekend destination'],
       guide: 'agra',
+      // The explorer's own photo of the place, for its card before its guide's photos come (the model never reads it).
+      photo_list: ['https://plan-cf.ixigo.com/v2/images/agra?refresh=true'],
     });
     expect(got.rows[0]).toMatchObject({ visa_on_arrival: true, tag: 'Visa on Arrival', kind: expect.arrayContaining(['beaches']) });
   });

@@ -9,6 +9,7 @@ import type { ToGoResult } from '../door/methods.js';
 import { SocketCallError } from '../door/rpc.js';
 import type { Engine } from './book/engine.js';
 import { clip, ixigoPage } from './cards.js';
+import { fromGuide, withGuide } from './places-card.js';
 import type { ResultOption, ResultsStore } from './results.js';
 import { stayRoomFields } from './rooms.js';
 import { stayOf } from './web-stays.js';
@@ -48,13 +49,19 @@ export function clockOf(t: unknown): string | null {
 const text = (v: unknown, max: number): string | null => (typeof v === 'string' && v.trim() !== '' ? clip(v.trim(), max) : null);
 const num = (v: unknown): number | null => (typeof v === 'number' && Number.isFinite(v) ? v : typeof v === 'string' && /^\s*\d+(\.\d+)?\s*$/.test(v) ? Number(v) : null);
 
+/** The rows of a facts answer kept for these inputs; null when none is kept in time. */
+async function keptFor(engine: Pick<Engine, 'peek'>, id: string, given: Record<string, unknown>): Promise<Array<Record<string, unknown>> | null> {
+  const hit = engine.peek(id, given);
+  if (!hit) return null;
+  const answer = await Promise.race([hit.catch(() => null), new Promise<null>((r) => setTimeout(() => r(null), KEPT_WAIT_MS).unref())]);
+  return answer?.as === 'facts' ? answer.rows : null;
+}
+
 /** The rows of a facts answer kept for the stay's page, by either way Go names it; null when none is kept in time. */
 async function keptRows(engine: Pick<Engine, 'peek'>, id: string, pages: string[]): Promise<Array<Record<string, unknown>> | null> {
   for (const page of pages) {
-    const hit = engine.peek(id, { hotel: page });
-    if (!hit) continue;
-    const answer = await Promise.race([hit.catch(() => null), new Promise<null>((r) => setTimeout(() => r(null), KEPT_WAIT_MS).unref())]);
-    if (answer?.as === 'facts') return answer.rows;
+    const rows = await keptFor(engine, id, { hotel: page });
+    if (rows) return rows;
   }
   return null;
 }
@@ -137,6 +144,19 @@ export function optionDetailsHandler(d: {
     // What the card carries, its labelled photos as its gallery once its page was read.
     const gallery = option.photos?.length ? { gallery_urls: option.photos.map((ph) => ph.url).slice(0, 12) } : {};
     const card: Details = { ...(option.details ?? {}), ...gallery, ...(url?.startsWith('https://') ? { url } : {}) };
+    // A place past the card's first three (their guides come with the card, showPlaces): its guide's best time and places
+    // to visit, the App's "Things the crew can do", once read; read now in the background, and the answer is partial.
+    if (offer?.kind === 'place' && !card.activities?.length) {
+      const given = { place: offer.title };
+      const rows = await keptFor(d.engine, 'plan.destination', given);
+      if (rows) return { ...card, ...withGuide(card, fromGuide(rows[0])) };
+      if (d.live()) {
+        void d.engine.answer('plan.destination', given, { tripId: p.trip_id, background: true }).catch((err: unknown) => {
+          d.log?.warn({ tripId: p.trip_id, recipe: 'plan.destination', err: String(err).slice(0, 200) }, "travel: a place's Details read didn't come back");
+        });
+      }
+      return { ...card, complete: false };
+    }
     if (offer?.kind !== 'stay' || !url) return card;
     const saved = (await d.results.get(p.trip_id, offer.resultsId))?.options[offer.n - 1] ?? null;
     const pages = [...new Set([url, offer.sourceUrl].filter((x): x is string => typeof x === 'string'))];
