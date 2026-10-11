@@ -192,6 +192,9 @@ export function createIntake(d: IntakeDeps) {
     // Setup runs on trip.created and on any event for a trip not set up yet; it never holds up the events.
     d.setup.ensureSoon(tripId);
     await react(ev);
+    // The Server reached Go for this trip, so it is back: a turn that waited on it runs now, together with this event's
+    // message, so the asks it missed are answered in one reply.
+    await d.desk.wake?.(tripId);
     await d.tripLog.emit(ev);
     await setProcessed(tripId, ev.seq);
   }
