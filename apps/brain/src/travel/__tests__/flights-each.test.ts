@@ -112,11 +112,61 @@ describe("each person's own flights, from their home city", () => {
     expect(flightsFor(priya!, DELHI)).toMatchObject({ fit: 5, shown: [{ title: 'IndiGo 6E2001' }, { title: 'Air India AI101' }, { title: 'IndiGo 6E2134' }] });
   });
 
+  // Keshav, 12 Oct: "round trip should be default". Each person's flights back home on the trip's last day: a one-way card
+  // of their own, after their flights there, booked as those are (a round trip's own fare isn't one Go books).
+  it("gives each person their flights back home on the trip's last day, after their flights there, theirs alone", async () => {
+    const ctx = lb.ctx({ turnId: 'turn_back1' });
+    const from = lb.link.requests.length;
+    const back: Array<Record<string, unknown>> = [];
+    const tool = flightsEachTool({
+      engine: {
+        answer: async (id, given, run) => {
+          if (id === FLIGHTS_EACH) return (tellAll(run), COMPARE);
+          back.push({ id, ...given });
+          return options(given['to'] === 'Mumbai' ? MUMBAI : DELHI);
+        },
+      },
+      results, link: lb.link, now: lb.brain.now, desk, live: () => true, waitMs: 5_000, cardDelayMs: 60_000,
+    });
+    const out = (await tool.run({}, ctx)) as { note: string };
+    expect(out.note).toContain('Their flights back home on Mon 9 Nov come next, each on its own card as it lands: never say they are up.');
+    const backCards = () => postedSince(from).filter((p) => (p.card as { title?: string } | undefined)?.title?.startsWith('Flights back for'));
+    await eventually(() => backCards().length === 5);
+    // One page a home city, the trip's place to home, on the trip's last day, after the flights there.
+    expect(back).toEqual([
+      { id: 'flights.results', from: 'North Goa', to: 'Delhi', date: '2026-11-09' },
+      { id: 'flights.results', from: 'North Goa', to: 'Bangalore', date: '2026-11-09' },
+      { id: 'flights.results', from: 'North Goa', to: 'Mumbai', date: '2026-11-09' },
+    ]);
+    const posted = postedSince(from);
+    const firstBack = posted.findIndex((p) => (p.card as { title?: string } | undefined)?.title?.startsWith('Flights back for'));
+    let lastThere = -1;
+    posted.forEach((p, i) => {
+      if ((p.card as { title?: string } | undefined)?.title?.startsWith('Flights for')) lastThere = i;
+    });
+    expect(firstBack).toBeGreaterThan(lastThere);
+    const rahul = backCards().find((p) => (p.card as { title: string }).title === 'Flights back for Rahul, North Goa to Delhi, Mon 9 Nov')!;
+    expect(rahul.visibleTo).toEqual(['p_rahul']);
+    expect(rahul.text).toMatch(/^Rahul, your flights back from North Goa to Delhi on Mon 9 Nov: \d+ fits?, from ₹[\d,]+ a person\. Tap "I'll take this" on yours\.$/);
+    const card = C.OptionsCard.parse(rahul.card);
+    expect(card.for_person_ids).toEqual(['p_rahul']);
+    expect(card.actions?.map((a) => a.action_id)).toContain('pick');
+    // Arjun's flights there didn't load: his way back comes all the same.
+    expect(backCards().map((p) => (p.card as { title: string }).title)).toContain('Flights back for Arjun, North Goa to Bangalore, Mon 9 Nov');
+  });
+
+  it('gives no way back for a day someone named: their own one-way flights alone', async () => {
+    const from = asked.length;
+    await toolWith(async (run) => (tellAll(run), COMPARE)).run({ date: '2026-11-07' }, lb.ctx({ turnId: 'turn_back2' }));
+    await new Promise((r) => setTimeout(r, 50));
+    expect(asked.slice(from).map((x) => x.id)).toEqual([FLIGHTS_EACH]);
+  });
+
   it('posts a card for each city and window, for its people alone, a plain line and a try again for a city whose page did not come, and ends the turn quietly', async () => {
     const ctx = lb.ctx({ turnId: 'turn_each1' });
     const from = lb.link.requests.length;
     const out = await toolWith(async (run) => (tellAll(run), COMPARE)).run({ cabin: 'economy' }, ctx);
-    expect(asked.at(-1)).toEqual({ id: FLIGHTS_EACH, given: { to: 'North Goa', date: '2026-11-06', cabin: 'economy' } });
+    expect(asked.filter((x) => x.id === FLIGHTS_EACH).at(-1)).toEqual({ id: FLIGHTS_EACH, given: { to: 'North Goa', date: '2026-11-06', cabin: 'economy' } });
     expect(out).toMatchObject({ answered: false, tell_the_room: SAY_NOTHING });
     expect([ctx.cards, ctx.lines]).toEqual([[], []]);
     const posted = postedSince(from);
@@ -225,7 +275,7 @@ describe("each person's own flights, from their home city", () => {
     // The model named everyone: hers alone all the same.
     await toolWith(async (run) => (mumbai(run), COMPARE)).run({ person_ids: ['p_rahul', 'p_priya', 'p_arjun', 'p_meher', 'p_kabir'] }, ctx);
     // Her city's page alone.
-    expect(asked.at(-1)).toEqual({ id: FLIGHTS_EACH, given: { to: 'North Goa', date: '2026-11-06', from: 'Mumbai' } });
+    expect(asked.filter((x) => x.id === FLIGHTS_EACH).at(-1)).toEqual({ id: FLIGHTS_EACH, given: { to: 'North Goa', date: '2026-11-06', from: 'Mumbai' } });
     const posted = postedSince(from);
     expect(posted.map((p) => [(p.card as { title?: string } | undefined)?.title, p.visibleTo])).toEqual([['Flights for Meher, Mumbai to North Goa, Fri 6 Nov', ['p_meher']]]);
   });

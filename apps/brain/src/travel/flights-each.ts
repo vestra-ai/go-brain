@@ -23,7 +23,7 @@ import type { TripPack } from '../trips/pack.js';
 import { dayText, noFlightsLine, noFlightsText } from './answer.js';
 import { noFlightsOfferFor, type NearestAirport } from './nearest-airport.js';
 import type { NoneSaid } from './book/engine.js';
-import type { Engine, EngineAnswer, StepsEvent } from './book/engine.js';
+import { PACE_WAITS_MAX, PacedOutError, type Engine, type EngineAnswer, type StepsEvent } from './book/engine.js';
 import { buildOptionsCard, clip, formatInr, type CardPick } from './cards.js';
 import { flightDetails } from './details.js';
 import { applyConstraints } from './filters.js';
@@ -152,32 +152,34 @@ export interface FlightsEachDeps {
 
 /** A group's card and its line, saved before it posts so its taps find their offers. */
 async function groupCard(
-  d: Pick<FlightsEachDeps, 'results'>, tripId: string, turnId: string, g: EachGroup, at: { to: string; date: string; instead?: Instead },
+  d: Pick<FlightsEachDeps, 'results'>, tripId: string, turnId: string, g: EachGroup, at: { to: string; date: string; instead?: Instead; back?: true },
   got: Extract<EngineAnswer, { as: 'options' }>,
 ) {
   const { shown, fit } = flightsFor(g, got.options);
   const who = namesOf(g);
   const when = g.window ? `, ${g.window.words}` : '';
-  if (shown.length === 0) return { card: null, line: `${who}, no flight from ${g.home} on ${dayText(at.date)}${when} has seats on ixigo.` };
-  const cardId = stableId('c_each', turnId, ...g.people.map((p) => p.personId));
+  // The way back (flightsBack): from the trip's place to their home, on the trip's last day.
+  const [from, to] = at.back ? [at.to, g.home] : [g.home, at.to];
+  if (shown.length === 0) return { card: null, line: `${who}, no flight from ${from}${at.back ? ` to ${to}` : ''} on ${dayText(at.date)}${when} has seats on ixigo.` };
+  const cardId = stableId('c_each', turnId, ...(at.back ? ['back'] : []), ...g.people.map((p) => p.personId));
   const options: ResultOption[] = shown.map((o) => toResultOption(o));
   const ids = g.people.map((p) => p.personId);
   const set = await d.results.save({
     tripId, optionKind: 'flight', source: 'search', options, checkedAt: got.checkedAt, page: got.page,
-    query: { from: g.home, to: at.to, date: at.date, guests: 1, ...(g.window?.departAfter ? { departAfter: g.window.departAfter } : {}), ...(g.window?.departBefore ? { departBefore: g.window.departBefore } : {}), for_person_ids: ids },
+    query: { from, to, date: at.date, guests: 1, ...(g.window?.departAfter ? { departAfter: g.window.departAfter } : {}), ...(g.window?.departBefore ? { departBefore: g.window.departBefore } : {}), for_person_ids: ids },
   });
   const picks: Array<CardPick & { n: number }> = options.map((option, i) => {
     const details = flightDetails(option, 1);
     return { n: i + 1, optionId: stableId('opt', cardId, i + 1), option, imageUrl: null, ...(details ? { details } : {}) };
   });
-  const title = `Flights for ${who}, ${g.home} to ${at.to}, ${dayText(at.date)}${when}`;
+  const title = `Flights ${at.back ? 'back ' : ''}for ${who}, ${from} to ${to}, ${dayText(at.date)}${when}`;
   const card = buildOptionsCard({ cardId, title: clip(title, 80), optionKind: 'flight', checkedAt: got.checkedAt, picks, forPersonIds: ids });
   await d.results.saveCard({ cardId, tripId, resultsId: set.resultsId, title: card.title, optionKind: 'flight', card }, picks, got.checkedAt);
   // A rerun of the same turn finds this card saved already, and posts that one.
   const saved = (await d.results.card(tripId, cardId))?.card ?? card;
   const cheapest = shown[0]!;
   // A place with no airport of its own (Varkala), searched at ixigo's nearest (TRV): said once, in plain words.
-  const near = (got.near ?? []).map((n) => `${n.words} has no airport, so these are flights ${norm(n.words) === norm(g.home) ? 'from' : 'to'} ${n.city} (${n.code}). `).join('');
+  const near = (got.near ?? []).map((n) => `${n.words} has no airport, so these are flights ${norm(n.words) === norm(from) ? 'from' : 'to'} ${n.city} (${n.code}). `).join('');
   const fits = `${fit} ${fit === 1 ? 'fits' : 'fit'}, from ${formatInr(cheapest.priceMinor)} a person. Tap "I'll take this" on yours.`;
   // A search in place of a route ixigo had no flights on: the none first, then which airport this is and for where
   // (Keshav, 12 Oct: "ixigo has no flights from Delhi to Kullu (Manali's airport) on Fri 13 Nov, so here are flights to
@@ -189,7 +191,9 @@ async function groupCard(
     const here = side === 'from' ? `from ${g.home}` : `to ${at.to}`;
     return { card: saved, line: `${who}, ${said.slice(0, -1)}, so here are flights ${here}, the nearest airport to ${of} with flights that day${when}. ${fits}` };
   }
-  const line = `${who}, your flights from ${g.home} on ${dayText(at.date)}${when}: ${near}${fits}`;
+  const line = at.back
+    ? `${who}, your flights back from ${from} to ${to} on ${dayText(at.date)}: ${near}${fits}`
+    : `${who}, your flights from ${g.home} on ${dayText(at.date)}${when}: ${near}${fits}`;
   return { card: saved, line };
 }
 
@@ -233,7 +237,7 @@ export interface Instead {
  */
 async function noFlightsFrom(
   d: Pick<FlightsEachDeps, 'link' | 'log' | 'nearest'>, tripId: string, key: string, groups: EachGroup[],
-  at: { to: string; date: string; instead?: Instead | undefined }, none: NoneSaid,
+  at: { to: string; date: string; instead?: Instead | undefined; back?: true }, none: NoneSaid,
 ): Promise<void> {
   // Kept for the stand-in search's line, under both ends' words: which end had none is the tap's to say.
   for (const place of [groups[0]?.home, at.to]) {
@@ -243,11 +247,51 @@ async function noFlightsFrom(
   }
   for (const g of groups) {
     // The bus goes from their home to the trip's place, whichever end a stand-in search stood in for.
-    const from = at.instead?.side === 'from' ? at.instead.of : g.home;
-    const to = at.instead?.side === 'to' ? at.instead.of : at.to;
+    // The way back: from the trip's place to their home, its nearest airport offered from that side.
+    const from = at.back ? at.to : at.instead?.side === 'from' ? at.instead.of : g.home;
+    const to = at.back ? g.home : at.instead?.side === 'to' ? at.instead.of : at.to;
     const offer = at.instead ? { text: noFlightsLine(from, to, at.date, none), replies: [] } : await noFlightsOfferFor(from, to, at.date, none, d.nearest);
     const ids = g.people.map((p) => p.personId);
     await postFor(d, tripId, stableId('go_each', key, ...ids, 'none'), null, `${namesOf(g)}, ${offer.text}`, ids, offer.replies);
+  }
+}
+
+/**
+ * Each traveller's flights back home on the trip's last day (Keshav, 12 Oct: "round trip should be default"): one
+ * one-way card per home city, the trip's place to their home, theirs alone as their flights there are, each booked by the
+ * same "I'll take this" (a round trip's own fare isn't one Go books). After the flights there, one paced page a city (one
+ * flights page a gap across every trip, waited out), each card posted as its page lands, never holding the flights there
+ * up. ixigo's none offers the nearest airport from the trip's side, as there. A page that never came says nothing.
+ */
+async function flightsBack(
+  d: FlightsEachDeps, tripId: string, turnId: string, groups: EachGroup[], at: { to: string; date: string; cabin?: string },
+): Promise<void> {
+  const back = { to: at.to, date: at.date, back: true as const };
+  for (const home of [...new Set(groups.map((g) => g.home))]) {
+    // Their leaving time is the trip's first day's: the way back has every flight.
+    const mine = groups.filter((g) => norm(g.home) === norm(home)).map((g) => ({ ...g, window: null }));
+    let got: EngineAnswer | null = null;
+    for (let n = 0; n <= PACE_WAITS_MAX && !got; n++) {
+      try {
+        got = await d.engine.answer('flights.results', { from: at.to, to: home, date: at.date, ...(at.cabin ? { cabin: at.cabin } : {}) }, { tripId });
+      } catch (err) {
+        if (err instanceof PacedOutError && err.waitMs !== null && n < PACE_WAITS_MAX) {
+          await new Promise((r) => setTimeout(r, err.waitMs! + 500));
+          continue;
+        }
+        d.log?.warn({ err: String(err).slice(0, 200), tripId }, "travel: a city's flights back didn't load");
+        break;
+      }
+    }
+    if (got?.as === 'options' && got.options.length > 0) {
+      for (const g of mine) {
+        const only = g.people.map((p) => p.personId);
+        const made = await groupCard(d, tripId, turnId, g, back, got);
+        await postFor(d, tripId, stableId('go_each', turnId, 'back', ...only), made.card, made.line, only);
+      }
+    } else if (got?.as === 'options' && got.none) {
+      await noFlightsFrom(d, tripId, stableId('each_none_back', turnId, norm(home)), mine, back, got.none);
+    }
   }
 }
 
@@ -356,6 +400,10 @@ export function flightsEachTool(d: FlightsEachDeps): QuickTool<z.infer<typeof Ar
       if (plan.groups.length === 0) return { error: 'needs_more', note: `Nobody has said where they fly from. Say only this, in one line: ${asks || 'where does everyone fly from?'}` };
 
       const at = { to, date, ...(instead ? { instead } : {}) };
+      // The way back, by default (Keshav, 12 Oct: "round trip should be default"): each home's flights back on the trip's
+      // last day, after the flights there. Not for a day or a place someone named, nor for a nearest airport's search.
+      const end = trip.dates?.end ?? null;
+      const backAt = !a.date && !a.to && !instead && end && end > date ? { to, date: end, ...(a.cabin ? { cabin: a.cabin } : {}) } : null;
       const live = waysLiveCard(d, ctx.tripId, ctx.stableId('c_live'), { kinds: ['flights'], fallback: "Go is checking each person's flights on ixigo from their home city." });
       const timeUp = new AbortController();
       let deadline: ReturnType<typeof setTimeout> | undefined;
@@ -469,6 +517,10 @@ export function flightsEachTool(d: FlightsEachDeps): QuickTool<z.infer<typeof Ar
           // Every card the cities made, posted, before the live card says done.
           for (let n = 0; n < posts.length; n++) await posts[n];
           await live.finish([...cities.values()].some((c) => c.posted));
+          if (backAt) {
+            void flightsBack(d, ctx.tripId, ctx.turnId, plan.groups, backAt)
+              .catch((err: unknown) => d.log?.warn({ err: String(err).slice(0, 200), tripId: ctx.tripId }, "travel: each person's flights back failed"));
+          }
           return { ok: true as const };
         })
         .catch(async (err: unknown) => {
@@ -492,7 +544,8 @@ export function flightsEachTool(d: FlightsEachDeps): QuickTool<z.infer<typeof Ar
           running: true,
           cards: facts,
           tell_the_room: asks ? `Say only this, in one line: ${asks}` : SAY_NOTHING,
-          note: "Each person's flights are still coming in on the trip's computer, and the live card ticks off each city. Each city's cards post themselves as they land: never list the flights.",
+          note: "Each person's flights are still coming in on the trip's computer, and the live card ticks off each city. Each city's cards post themselves as they land: never list the flights." +
+            (backAt ? ` Their flights back home on ${dayText(backAt.date)} follow, each on its own card as it lands.` : ''),
         };
       }
       if ('err' in first) {
@@ -516,7 +569,8 @@ export function flightsEachTool(d: FlightsEachDeps): QuickTool<z.infer<typeof Ar
         ...(notCards.length > 0 ? { not_up: notCards } : {}),
         answered: !!asks,
         ...(asks ? {} : { tell_the_room: SAY_NOTHING }),
-        note: `${said}${notSaid} Never say a card is up that is not in cards_up.${asks ? " This turn's line asks what is missing: it has said what it needed to." : ' Say nothing more about them.'}`,
+        note: `${said}${notSaid} Never say a card is up that is not in cards_up.${asks ? " This turn's line asks what is missing: it has said what it needed to." : ' Say nothing more about them.'}` +
+          (backAt ? ` Their flights back home on ${dayText(backAt.date)} come next, each on its own card as it lands: never say they are up.` : ''),
       };
     },
   };
