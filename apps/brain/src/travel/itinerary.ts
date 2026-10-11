@@ -1,5 +1,7 @@
 import { createHash } from 'node:crypto';
 import type * as C from '@go/contract';
+import { z } from 'zod';
+import type { QuickTool } from '../composer/tools.js';
 import type { TripEvent } from '../door/methods.js';
 import type { ServerLink } from '../door/server-link.js';
 import type { TripPack } from '../trips/pack.js';
@@ -118,16 +120,16 @@ const byTime = (a: Item, b: Item): number => (a.time ?? '99:99').localeCompare(b
  */
 export function itineraryOf(trip: Trip): Day[] | null {
   const tz = trip.destination?.timezone || HOME_TZ;
-  const booked = bookedItems(trip, tz);
-  const stored = trip.itinerary ?? [];
-  if (!booked.length && !stored.some((d) => d.items.some((i) => i.booking_id))) return null;
+  if (!bookedItems(trip, tz).length && !(trip.itinerary ?? []).some((d) => d.items.some((i) => i.booking_id))) return null;
+  return daysFor(trip, trip.itinerary ?? []);
+}
 
-  const range = trip.dates
-    ? datesFrom(trip.dates.start, trip.dates.end)
-    : (() => {
-        const all = booked.map((b) => b.date).sort();
-        return datesFrom(all[0]!, all[all.length - 1]!);
-      })();
+/** The days from the trip's dates and bookings, over these stored days: their items with no booking kept as they are. */
+function daysFor(trip: Trip, stored: readonly Day[]): Day[] {
+  const tz = trip.destination?.timezone || HOME_TZ;
+  const booked = bookedItems(trip, tz);
+  const all = booked.map((b) => b.date).sort();
+  const range = trip.dates ? datesFrom(trip.dates.start, trip.dates.end) : all.length ? datesFrom(all[0]!, all[all.length - 1]!) : [];
   const theirs = new Map<string, Item[]>();
   for (const day of stored) theirs.set(day.date, day.items.filter((i) => !i.booking_id));
   const storedDay = new Map(stored.map((d) => [d.date, d]));
@@ -171,6 +173,80 @@ function canon(v: unknown): string {
     return x;
   };
   return JSON.stringify(strip(v));
+}
+
+/** What plan_days takes: the days to plan, each with what to do, eat or see. */
+const PlanArgs = z.object({
+  days: z
+    .array(
+      z.object({
+        date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).describe('YYYY-MM-DD'),
+        title: z.string().min(1).max(80).optional().describe('A name for the day, e.g. "North Goa beaches"'),
+        items: z
+          .array(
+            z.object({
+              time: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/).optional().describe('"HH:MM" where the trip is, when known'),
+              title: z.string().min(1).max(120),
+              category: z.enum(['food', 'activities', 'getting_around', 'stay', 'other']),
+              note: z.string().max(200).optional(),
+              person_ids: z.array(z.string()).max(30).optional().describe('Only when it is for some of the group, not all'),
+            }),
+          )
+          .max(15),
+      }),
+    )
+    .min(1)
+    .max(14),
+});
+type Plan = z.infer<typeof PlanArgs>;
+
+/**
+ * The itinerary with these days planned: each day named has its planned items (no booking) replaced by the plan's and
+ * its title set when given; booked items are made from the bookings as always, and every other day stays as it is.
+ */
+export function withPlan(trip: Trip, plan: Plan): Day[] {
+  const people = new Set(trip.people.map((p) => p.person_id));
+  const stored = trip.itinerary ?? [];
+  const planned = new Map(plan.days.map((day) => [day.date, day]));
+  const dates = [...new Set([...stored.map((day) => day.date), ...planned.keys()])].sort();
+  const next = dates.map((date): Day => {
+    const kept = stored.find((day) => day.date === date);
+    const p = planned.get(date);
+    if (!p) return kept!;
+    const items: Item[] = p.items.map((it) => {
+      const who = (it.person_ids ?? []).filter((id) => people.has(id));
+      return {
+        item_id: stableId('it', date, it.title, it.time ?? ''),
+        ...(it.time ? { time: it.time } : {}),
+        title: clip(it.title, 120),
+        category: it.category,
+        status: 'planned',
+        ...(it.note ? { note: it.note } : {}),
+        ...(who.length ? { person_ids: who, audience: 'shared' as const } : {}),
+      };
+    });
+    const title = p.title ?? kept?.title;
+    return { date, ...(title ? { title } : {}), ...(kept?.image_url ? { image_url: kept.image_url } : {}), items };
+  });
+  return daysFor(trip, next);
+}
+
+/** The model's way to fill the days: what the chat agreed or asked for, merged with what is booked. No vote. */
+export function planDaysTool(): QuickTool<Plan> {
+  return {
+    name: 'plan_days',
+    description:
+      "Puts a plan for the days you name on the trip's Itinerary tab: what to do, eat or see, with times when known. Each day " +
+      'you name has its planned items replaced by these; booked items (the stay, flights) stay as they are, and days you do not ' +
+      'name are untouched. Use it when someone asks to plan the days or the chat agrees a plan. No vote.',
+    input: PlanArgs,
+    async run(a, ctx) {
+      const next = withPlan(ctx.pack.trip, a);
+      if (sameItinerary(next, ctx.pack.trip.itinerary ?? [])) return { ok: true, note: 'The plan is already that.' };
+      await ctx.link.request('update_trip', { request_id: stableId('go_plan_days', ctx.tripId, ctx.turnId, canon(next)), trip_id: ctx.tripId, itinerary: next });
+      return { ok: true, days: a.days.map((day) => day.date), note: "The plan is on the trip's Itinerary tab. Say so in one short line." };
+    },
+  };
 }
 
 type Log = { info: (obj: object, msg: string) => void; warn: (obj: object, msg: string) => void };

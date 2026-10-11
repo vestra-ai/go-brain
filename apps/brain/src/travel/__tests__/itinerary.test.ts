@@ -2,7 +2,8 @@ import * as C from '@go/contract';
 import { describe, expect, it } from 'vitest';
 import type { TripEvent } from '../../door/methods.js';
 import type { TripPack } from '../../trips/pack.js';
-import { createItinerary, itineraryOf, sameItinerary, type Day } from '../itinerary.js';
+import type { TurnCtx } from '../../composer/tools.js';
+import { createItinerary, itineraryOf, planDaysTool, sameItinerary, withPlan, type Day } from '../itinerary.js';
 
 // Prod, 11 Oct (Keshav: "itinerary is not working"): the App's Itinerary tab shows the trip's stored itinerary, which Go
 // never wrote. Go writes it from the trip's dates and bookings, keeping every item people added.
@@ -115,5 +116,52 @@ describe('keeping it in line', () => {
     await keeper.settled();
     expect(writes).toHaveLength(2);
     expect((writes[1]!['itinerary'] as Day[])[0]!.items.map((i) => i.item_id)).toEqual(['b_fl_rahul_go', 'b_villa_in']);
+  });
+});
+
+describe('plan_days: the model fills the days', () => {
+  const plan = {
+    days: [
+      {
+        date: '2026-11-07', title: 'North Goa beaches',
+        items: [
+          { time: '10:00', title: 'Baga beach', category: 'activities' as const },
+          { time: '20:00', title: 'Dinner at Thalassa', category: 'food' as const, person_ids: ['p_priya', 'p_nobody'] },
+        ],
+      },
+    ],
+  };
+
+  it("replaces only the named day's planned items, keeps what is booked, and names only the trip's people", () => {
+    const booked = itineraryOf(trip())!;
+    const stored = booked.map((d) => (d.date === '2026-11-07' ? { ...d, items: [{ item_id: 'it_old', title: 'Old idea', category: 'activities' as const, status: 'idea' as const }] } : d));
+    const days = withPlan(trip({ itinerary: stored }), plan);
+    expect(valid(days)).toEqual(days);
+    const day2 = days.find((d) => d.date === '2026-11-07')!;
+    expect(day2.title).toBe('North Goa beaches');
+    expect(day2.items.map((i) => [i.time, i.title, i.status, i.person_ids ?? null, i.audience ?? null])).toEqual([
+      ['10:00', 'Baga beach', 'planned', null, null],
+      ['20:00', 'Dinner at Thalassa', 'planned', ['p_priya'], 'shared'],
+    ]);
+    // The other days, booked items and all, are as they were.
+    expect(days.filter((d) => d.date !== '2026-11-07')).toEqual(booked.filter((d) => d.date !== '2026-11-07'));
+  });
+
+  it('writes the merged plan once, and nothing when it is already that', async () => {
+    const t = trip();
+    const writes: Array<Record<string, unknown>> = [];
+    const ctx = {
+      tripId: 't_goa', turnId: 'turn_1', pack: { trip: t },
+      link: { request: async (method: string, params: Record<string, unknown>) => (writes.push({ method, ...params }), { seq: 3 }) },
+    } as unknown as TurnCtx;
+    const tool = planDaysTool();
+    expect(await tool.run(tool.input.parse(plan), ctx)).toMatchObject({ ok: true, days: ['2026-11-07'] });
+    expect(writes).toHaveLength(1);
+    expect(writes[0]).toMatchObject({ method: 'update_trip', trip_id: 't_goa' });
+    const written = writes[0]!['itinerary'] as Day[];
+    expect(written[0]!.items.map((i) => i.booking_id)).toEqual(['b_fl_rahul', 'b_fl_priya', 'b_villa']);
+    t.itinerary = written;
+    expect(await tool.run(tool.input.parse(plan), ctx)).toMatchObject({ ok: true, note: 'The plan is already that.' });
+    expect(writes).toHaveLength(1);
   });
 });
