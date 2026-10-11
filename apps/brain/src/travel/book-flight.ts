@@ -48,7 +48,8 @@ export function bookingNow(d: Pick<BookFlightDeps, 'booking' | 'pool' | 'nameOf'
       return [
         '# Booking flights',
         "You book a person's own flight on this trip: they tap \"I'll take this\" on their own flights card, and you book it on ixigo on the trip's computer up to the pay button; then their Pay goes through the vault, Face ID on their phone. " +
-          "So never say you can't book flights, and never tell anyone to book on ixigo themselves.",
+          "So never say you can't book flights, and never tell anyone to book on ixigo themselves. " +
+          "Their own train is booked the same way: \"I'll take this\" on their train card, the class on it; a waitlist or RAC is said to them before they pay.",
         'When someone asks you to book their flights ("book my flights", "book my flight to Manali"): with a pick of theirs below, call book_flight for them now. ' +
           'With none, search their flights at once, never "want me to?": search_flights_each for the trip\'s own way, search_flights for a route they name. ' +
           "Their card carries \"I'll take this\", and their tap on it books it. A route outside the trip (\"BLR to DPS\") is searched all the same: answer the ask, " +
