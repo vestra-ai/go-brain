@@ -2,7 +2,7 @@ import type pg from 'pg';
 import type { Speak } from '../composer/speak.js';
 import type { Desk } from '../desk/desk.js';
 import type { ToGoHandler } from '../door/handlers.js';
-import type { Message, TripEvent } from '../door/methods.js';
+import type { Message, Trip, TripEvent } from '../door/methods.js';
 import type { Log } from '../log.js';
 import { leftToPeople } from '../reflex/read.js';
 import { UNSURE_READ, type Reflex, type ReflexRead } from '../reflex/reflex.js';
@@ -14,6 +14,16 @@ import { TripGoneError } from './gone.js';
 import type { PacksImpl, TripPack } from './pack.js';
 import { screenEvent } from './screen.js';
 import type { SetupImpl } from './setup.js';
+import { tripOfOne } from './votes.js';
+
+/**
+ * The group's stay, booked before this person joined, that is not theirs yet: they see neither it nor its voucher, and pay
+ * no share of it. None for a trip of one, or a stay booked for one person.
+ */
+export function stayBookedBefore(trip: Trip, personId: string): Trip['bookings'][number] | null {
+  if (tripOfOne(trip)) return null;
+  return trip.bookings.find((b) => b.kind === 'stay' && b.status === 'confirmed' && b.for_person_ids.length > 1 && !b.for_person_ids.includes(personId)) ?? null;
+}
 
 /** send_event answers within 2 s (the contract); an answer slower than this is logged, with the event's type. */
 export const SLOW_ANSWER_MS = 1_000;
@@ -170,6 +180,23 @@ export function createIntake(d: IntakeDeps) {
         dueAt: d.now(),
         payload: { type: ev.type, decisionId, reason: ev.data.reason },
       });
+    }
+    // Someone joined after the group's stay was booked (Keshav, 12 Oct: "people joining later issues"): Go offers to split
+    // it with them and finds their flights, which went out before they came (composer/wakes.ts, person.joined). Once a
+    // person: the id holds, so a second join never asks again.
+    if (ev.type === 'person.joined') {
+      const personId = ev.data.person.person_id;
+      const stay = stayBookedBefore((await d.packs.get(ev.trip_id)).trip, personId);
+      if (stay) {
+        await d.desk.put({
+          id: `joined:${ev.trip_id}:${personId}`,
+          tripId: ev.trip_id,
+          kind: 'trip_change',
+          ref: `person:${personId}`,
+          dueAt: d.now(),
+          payload: { type: ev.type, personId, bookingId: stay.booking_id },
+        });
+      }
     }
   }
 
