@@ -42,10 +42,16 @@ export function bookingWords(r: Row, nowMs: number): string {
       return `${r.title} stopped (${when}): its fare went up${price ? ` to ${price}` : ''}, and Go posted it at the new price for them to tap if they still want it.`;
     case 'travellers_not_read':
       return `${r.title} stopped (${when}): Go couldn't read their saved travellers on ixigo; ${TAP_AGAIN}.`;
-    case 'no_saved_traveller':
-      return `${r.title} stopped (${when}): they aren't a saved traveller on the trip's ixigo login yet; once they're added there, I'll take this again.`;
-    case 'several_saved_travellers':
-      return `${r.title} stopped (${when}): more than one saved traveller on the trip's ixigo login has their first name; once one is kept there, I'll take this again.`;
+    case 'gender_needed':
+      return `${r.title} waits for them to tap Male or Female on Go's card (since ${when}), for ixigo's traveller form: Go carries on by itself then.`;
+    case 'gender_in':
+      return `Go is booking ${r.title} for them now that they answered its card; their pay card comes when it's ready.`;
+    case 'traveller_name_needed':
+      return `${r.title} stopped (${when}): ixigo's traveller form needs their last name as on their ID, and their name in the trip is one word; once their travel details are in Go, I'll take this again.`;
+    case 'traveller_not_filled':
+      return `${r.title} stopped (${when}): Go couldn't fill their traveller details on ixigo's form; ${TAP_AGAIN}.`;
+    case 'international_traveller':
+      return `${r.title} stopped (${when}): an international ticket needs passport details on ixigo's form, which Go doesn't fill yet.`;
     default:
       return r.why?.startsWith('pay_')
         ? `${r.title} stopped at the payment (${when}): Go couldn't get it ready; ${TAP_AGAIN}.`

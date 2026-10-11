@@ -86,9 +86,21 @@ export function matchTravellers(wanted: Wanted[], saved: SavedTraveller[]): Trav
   });
 }
 
-/** What the model hears of a match: the trip's own name and the outcome, never a saved traveller's name. */
+/**
+ * What the model hears of a match: the trip's own name and the outcome, never a saved traveller's name. One not saved, or
+ * one of several with that name, is typed into ixigo's own traveller form (flight-booking.ts), never asked to be saved.
+ */
 export function matchSaid(m: TravellerMatch): string {
   if (m.status === 'matched') return `${m.name}: matched`;
-  if (m.status === 'several') return `${m.name}: more than one saved traveller with that name, asked them which`;
-  return `${m.name}: no saved traveller, asked them`;
+  if (m.status === 'several') return `${m.name}: more than one saved traveller with that name, typed in as a new traveller`;
+  return `${m.name}: no saved traveller, typed in as a new traveller`;
+}
+
+/**
+ * A name as on an ID, from the trip's: its first and middle names, and its last, past a title ("Dr. Meher Kapoor" is
+ * Meher, Kapoor). Null for one word: ixigo's form needs a last name Go doesn't have.
+ */
+export function idNameOf(full: string): { first: string; last: string } | null {
+  const words = full.trim().split(/\s+/).filter((w) => w.replace(/[^a-z]/gi, '') !== '' && !TITLE.test(w.toLowerCase().replace(/[^a-z]/g, '')));
+  return words.length >= 2 ? { first: words.slice(0, -1).join(' '), last: words.at(-1)! } : null;
 }
