@@ -4,7 +4,7 @@
  * as whole paise, images only https, offer ids only Go's own), anything else is a short summary.
  */
 import { z } from 'zod';
-import { clip } from '../travel/cards.js';
+import { clip, ixigoPage } from '../travel/cards.js';
 import { isFetchableImageUrl } from '../travel/images.js';
 import type { OptionKind, ResultOption, ResultsStore } from '../travel/results.js';
 
@@ -39,7 +39,7 @@ const OPTIONS_SCHEMA = {
           offer_id: {
             type: ['string', 'null'],
             maxLength: 200,
-            description: "The offer_id Go's search tools gave for this pick, copied exactly. null only for a pick found on the open web (give its source_url), or a place, restaurant or activity.",
+            description: "The offer_id Go's search tools gave for this pick, copied exactly: null when they gave null (one read off ixigo.com: give its source_url), for one read on ixigo.com, or for a place, restaurant or activity.",
           },
           source_url: { type: 'string', description: 'The https page it came from.' },
           why: { type: 'string', maxLength: 200, description: 'One sentence on why it fits.' },
@@ -134,12 +134,13 @@ export function readReturned(kind: ReturnsKind, data: unknown, text: string | nu
   return { summary, options, fromText };
 }
 
-/** The first highlight of a pick Go cannot book: it came from the open web, not from Go's search. */
+/** The first highlight of a pick from another site than ixigo.com: never Go's search, so Go cannot book it. */
 export const FOUND_ON_WEB = 'Found on the web';
 /** The kinds Go books through its travel layer; only their picks need an offer. */
 const BOOKABLE: ReadonlySet<OptionKind> = new Set<OptionKind>(['stay', 'flight', 'train', 'bus']);
 
 export type FindOffer = ResultsStore['findOffer'];
+export type FindBySource = ResultsStore['findBySource'];
 
 function fromWeb(p: ResultOption): ResultOption {
   const web: ResultOption = { ...p, highlights: [FOUND_ON_WEB, ...p.highlights.filter((h) => h !== FOUND_ON_WEB)].slice(0, 4), facts: { ...p.facts, found_on_web: true } };
@@ -148,25 +149,36 @@ function fromWeb(p: ResultOption): ResultOption {
 }
 
 /**
- * A finished job's picks, checked against Go's own searches. A stay or journey pick whose offer id Go's own search showed in this trip
- * becomes that offer as Go checked it (title, prices, the whole-stay total, image, facts), keeping the job's reasons
- * (why, its highlights, the page it read). Every other stay or journey pick is "found on the web": no offer, so the
- * group can vote on it but P5 never books it. Places, food and activities are left as they are. checkedAt is the
- * oldest check behind the offers used (null when none was), so the card never claims a fresher price than Go has.
+ * A finished job's picks, checked against Go's own searches. A stay or journey pick whose offer id Go's own search showed in
+ * this trip, or, read off ixigo.com with no offer id, whose page it read there (findBySource), becomes that option as Go
+ * checked it (title, prices, the whole-stay total, image, facts, ixigo's label), keeping the job's reasons (why, its
+ * highlights, the page it read). A page on ixigo.com Go's search never showed stays the job's own pick, ixigo's still, with
+ * no offer id a job could have made up. Only a pick from another site is "found on the web": no offer, so the group can
+ * vote on it but P5 never books it. Places, food and activities are left as they are. checkedAt is the oldest check behind
+ * the offers used (null when none was), so the card never claims a fresher price than Go has.
  */
 export async function resolvePicks(
   tripId: string,
   optionKind: OptionKind,
   picks: ResultOption[],
   findOffer: FindOffer,
+  findBySource?: FindBySource,
 ): Promise<{ options: ResultOption[]; checkedAt: string | null; fromWeb: number }> {
   if (!BOOKABLE.has(optionKind)) return { options: picks, checkedAt: null, fromWeb: 0 };
   let checkedAt: string | null = null;
   let web = 0;
   const options: ResultOption[] = [];
   for (const p of picks) {
-    const found = p.offerId ? await findOffer(tripId, p.offerId) : null;
+    const ixigo = ixigoPage(p.sourceUrl);
+    const byOffer = p.offerId ? await findOffer(tripId, p.offerId) : null;
+    const found = byOffer ?? (ixigo && p.sourceUrl && findBySource ? await findBySource(tripId, optionKind, p.sourceUrl, p.title) : null);
     if (!found || found.option.kind !== optionKind) {
+      if (ixigo) {
+        const own: ResultOption = { ...p };
+        delete own.offerId;
+        options.push(own);
+        continue;
+      }
       web += 1;
       options.push(fromWeb(p));
       continue;

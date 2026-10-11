@@ -83,7 +83,7 @@ beforeAll(async () => {
   const model = fakeAnthropic([]);
   built = await buildBrain(
     loadEnv({ ...base, ADMIN_TOKEN: TOKEN, GO_ROLE: 'rehearsal', VESTRA_API_URL: 'https://api.vestra.test', VESTRA_API_KEYS: `vk_test_${'a'.repeat(43)}` }),
-    { pool: db.pool, anthropic: model.client, logger: false },
+    { pool: db.pool, anthropic: model.client, logger: false, timings: { typingMinMs: 0 } },
   );
   built.brain.tasks = fakeTasks;
   built.brain.taps.on('pay', 'decline', async (tap) => {

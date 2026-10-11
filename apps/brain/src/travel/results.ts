@@ -85,6 +85,37 @@ export const optionKey = (o: ResultOption): string => {
   return hotel ? `hotel:${hotel}` : (o.sourceUrl ?? `${o.title}|${o.journey?.depart_at ?? ''}`);
 };
 
+/** A page's address without its query: a stay's /hotels/<id>/details, a train's /trains/<number>, a bus's #operator@time. */
+function pageKey(url: string): string | null {
+  try {
+    const u = new URL(url);
+    return `${u.hostname.replace(/^www\./, '')}${u.pathname}${u.hash}`;
+  } catch {
+    return null;
+  }
+}
+const titleKey = (t: string): string => t.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, ' ').trim();
+
+/**
+ * The option a page shows, among one search's options: its exact address first, then the same page with another query.
+ * Flights share their search page, so several on one page are told apart by the title; still several, or none, is null.
+ */
+export function optionOnPage(options: readonly ResultOption[], sourceUrl: string, title: string): ResultOption | null {
+  const key = pageKey(sourceUrl);
+  const ways: Array<(o: ResultOption) => boolean> = [
+    (o) => o.sourceUrl === sourceUrl,
+    (o) => key !== null && !!o.sourceUrl && pageKey(o.sourceUrl) === key,
+  ];
+  for (const same of ways) {
+    const hits = options.filter(same);
+    if (hits.length === 1) return hits[0]!;
+    const named = hits.filter((o) => titleKey(o.title) === titleKey(title));
+    if (named.length === 1) return named[0]!;
+    if (hits.length > 1) return null;
+  }
+  return null;
+}
+
 /** A search's options that no card has shown yet (shown: results.shownFrom), by their numbers in the search. */
 export function unseenNumbers(set: Pick<ResultSet, 'options'>, shown: ResultOption[]): number[] {
   const seen = new Set(shown.map(optionKey));
@@ -104,6 +135,11 @@ export interface ResultsStore {
    * Go's MCP server), with that check's time; null when no search of this trip showed it. A job's answer is never a source.
    */
   findOffer(tripId: string, offerId: string): Promise<{ option: ResultOption; checkedAt: string } | null>;
+  /**
+   * The option a page on ixigo.com shows, as Go's own search of this trip last read it there (optionOnPage), with that
+   * check's time: how a job's pick read off ixigo.com, which has no offer id, finds Go's option. Null when none did.
+   */
+  findBySource(tripId: string, kind: OptionKind, sourceUrl: string, title: string): Promise<{ option: ResultOption; checkedAt: string } | null>;
   /** The trip and the check-in or departure day of the newest search that showed this offer. */
   searchedFor(offerId: string): Promise<{ tripId: string; day: string | null } | null>;
   saveCard(
@@ -243,6 +279,21 @@ export function createResultsStore(pool: pg.Pool): ResultsStore {
       const r = rows[0];
       const option = r?.options.find((o) => o.offerId === offerId);
       return r && option ? { option, checkedAt: r.checked_at.toISOString() } : null;
+    },
+
+    async findBySource(tripId, kind, sourceUrl, title) {
+      // The trip's newest searches of this kind first: the option as Go read it last.
+      const { rows } = await pool.query<{ options: ResultOption[]; checked_at: Date }>(
+        `select options, checked_at from travel_results
+          where trip_id = $1 and source = 'search' and option_kind = $2
+          order by checked_at desc, created_at desc limit 20`,
+        [tripId, kind],
+      );
+      for (const r of rows) {
+        const option = optionOnPage(r.options, sourceUrl, title);
+        if (option) return { option, checkedAt: r.checked_at.toISOString() };
+      }
+      return null;
     },
 
     async searchedFor(offerId) {

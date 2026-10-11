@@ -21,7 +21,7 @@ beforeAll(async () => {
     PORT: '0', DATABASE_URL: process.env.DATABASE_URL, GO_SIGNING_SECRET: SECRET, GO_PUBLIC_URL: 'http://127.0.0.1',
     ANTHROPIC_API_KEY: 'test-key', LOG_LEVEL: 'silent',
   });
-  built = await buildBrain(env, { pool: db.pool, anthropic: model.client, logger: false, timings: { deskPollMs: 50 } });
+  built = await buildBrain(env, { pool: db.pool, anthropic: model.client, logger: false, timings: { deskPollMs: 50, typingMinMs: 0 } });
   await registerRoom(built.brain);
   ({ port } = await built.start());
   server = await rawServer(`ws://127.0.0.1:${port}/v1/socket?instance=boot-test`, SECRET, (method, params) => {

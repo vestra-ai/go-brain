@@ -2,8 +2,8 @@
  * Code decides what becomes a fact or a record line. A model (the side pass, the composer, the trip's
  * computer) only proposes. The rules (spec §11 and the guide's add_record_line):
  *  - a fact's proof is a visible message written by that same person, with no secret in it;
- *  - "agreed" needs two people saying yes (a 👍 on a proof message counts) or the organizer, and no
- *    objection; otherwise the line is written as "open";
+ *  - "agreed" needs two people saying yes in words, or the organizer, and no objection; a reaction alone, a 👍 too, is
+ *    never a yes; otherwise the line is written as "open";
  *  - a doing line names only people who said they would do it, and never rests on a message to Go (that is an ask:
  *    Go does it);
  *  - only an open question may cite Go's own message;
@@ -75,7 +75,6 @@ export interface CheckEnv {
 
 const no = (reason: string): { ok: false; reason: string } => ({ ok: false, reason });
 const MASKED = /\[(card number )?hidden\]/;
-const THUMBS_UP = /^👍/u;
 
 /** One line of plain words: no newlines, no em dashes, 1 to max characters; null when it does not fit. */
 export function cleanText(s: string, max: number): string | null {
@@ -182,10 +181,8 @@ export function checkLine(p: LineProposal, env: CheckEnv): Checked<CheckedLine> 
     const objections = (p.objections ?? [])
       .map((id) => pack.messages.find((x) => x.message_id === id))
       .filter((m): m is Message => m !== undefined && !m.deleted && m.author.kind === 'person');
+    // Only words say yes: a 👍 on a proof message is never a decision (Keshav's ruling).
     const yes = new Set(authors);
-    for (const m of proof) {
-      for (const r of m.reactions) if (r.person_id && THUMBS_UP.test(r.emoji) && inTrip.has(r.person_id)) yes.add(r.person_id);
-    }
     for (const m of objections) if (m.author.kind === 'person') yes.delete(m.author.person_id);
     const enough = objections.length === 0 && (yes.size >= 2 || yes.has(pack.trip.organizer_person_id));
     if (enough) {

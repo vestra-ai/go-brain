@@ -101,7 +101,7 @@ export const FlightsArgs = z.object({
   site_filters: z.array(z.string().min(1).max(80)).max(8).optional()
     .describe("ixigo's own flight filters the ask means, by their names on ixigo's list for the route (in your context once a search of it ran): an airline, an airport (Mopa for North Goa), a layover city, bags, a free meal, hiding non-refundable fares. Go applies them to the flights and ixigo's page shows them ticked"),
   wants: z.array(z.string().min(1).max(80)).max(8).optional()
-    .describe("Anything else the group asked for that no argument here covers, in their words (a seat): ixigo's page is linked, and the line says to pick it there"),
+    .describe("Anything else the group asked for that no argument here covers, in their words (a seat): you pick from the results' details, and say plainly what they can't show"),
 });
 export const JourneyArgs = z.object({
   from: Where.describe('City or station, e.g. "Jaipur"; for trains, a station with its Indian Railways code works too, e.g. "Udaipur City (UDZ)"'),
@@ -826,7 +826,7 @@ export async function searchAnswer(kind: TravelKind, ask: TravelQuery, found: Tr
       'If someone asked for a place an option is not in, say the option\'s own area: asked for Calangute, a villa in Vagator is in Vagator. ' +
       `${left ? `Say in the line that ${left}. ` : ''}` +
       `${dropped ? `Say in the line that ${dropped}: they are the nearest, never a fit for it. ` : ''}` +
-      `${found.cut ? `Say in the line that these are from the first ${before} ixigo sent, and the whole list is on ixigo's page. ` : ''}` +
+      `${found.cut ? `Say in the line that you picked these from the first ${before} ixigo sent, and offer to look at more. ` : ''}` +
       `${found.notes?.length ? "What ixigo itself offers for this list is in the summary: say it in one short line when it helps the ask (holding a fare while the group decides, a budget), as ixigo's to set, never Go's. " : ''}` +
       (pick.length
         ? `Pick the options whose amenities or details fit ${listOf(pick)}, best first (the card shows the rest after them, 10 in all), and say which part ixigo filtered, which you picked, and that the ones after them don't say it; ` +
@@ -933,7 +933,7 @@ export function travelTools(d: TravelToolDeps): QuickTool<any>[] {
       "ixigo's own filters for the place, once Go has read them, are in your context: the ones the ask means go in site_filters, and the rest of the ask in wants, which you pick from the results. " +
       "Every part of the ask lands somewhere: a kind of stay they named goes in site_filters as ixigo's nearest stay type (a villa is an Entire house on ixigo), with their own word in wants; " +
       'a budget per person goes in max_price_per_person, never worked out by you. ' +
-      'For a deep comparison (reviews, many sites), use start_task instead.',
+      "For a deep comparison on ixigo (its reviews and details of several stays), use start_task instead.",
     input: StaysArgs,
     run: (a, ctx) => runSearch('stays', staysQuery(a), ctx, d),
     summarizeRound: searchRoundSummary,

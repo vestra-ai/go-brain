@@ -122,7 +122,8 @@ const SetBudgetArgs = z
   })
   .strict();
 
-const THUMBS_UP = /👍/;
+/** A message with no word or number in it ("👍", "🙌") is a reaction sent as a message: never a yes. */
+const bare = (m: C.Message): boolean => !/[\p{L}\p{N}]/u.test(m.text ?? '');
 
 /** One of Go's own messages that offers to keep a budget ("Set ₹8,000 a head as the trip's budget?", with Yes and No). */
 const offersBudget = (m: C.Message): boolean =>
@@ -144,8 +145,8 @@ function answersBudgetOffer(m: C.Message, messages: readonly C.Message[]): boole
 /**
  * set_budget: the group's decided budget, kept for the trip, or dropped. One person naming a figure, the organizer too,
  * is not the group's yes (the exam, 10 Oct: "villa with a pool … under 8k a head" is a search, not the trip's budget):
- * Go offers it, and keeps it on the organizer's yes to that offer or a second person's (a 👍 counts). Dropping it takes
- * the organizer's word or two people's. A budget for the whole trip goes to the App (update_trip, 1.1 B1), which then
+ * Go offers it, and keeps it on the organizer's yes to that offer or a second person's, in words: a reaction alone, a 👍
+ * too, is never a yes (Keshav's ruling). Dropping it takes the organizer's word or two people's. A budget for the whole trip goes to the App (update_trip, 1.1 B1), which then
  * holds it; Go keeps it itself only when the App didn't take it (a Server before 1.1), and keeps any other.
  */
 export function budgetTool(d: { budgets: TripBudgets; pool: Pool; now: () => Date; log: Log }): QuickTool<z.infer<typeof SetBudgetArgs>> {
@@ -169,20 +170,14 @@ export function budgetTool(d: { budgets: TripBudgets; pool: Pool; now: () => Dat
       if (proof.length === 0) {
         return { refused: "no person's message in this trip among the proof: give the message ids of the people's own words", tell_the_room: SAY_NOTHING };
       }
-      // Who backs it: the people who said it, and anyone's 👍 on it or on Go's offer. The organizer's yes counts alone
-      // only as an answer to Go's offer.
+      // Who backs it: the people who said it in words. A reaction alone, a 👍 on the figure or on Go's offer too, is never
+      // a yes, and neither is a bare 👍 sent as a message. The organizer's yes counts alone only as an answer to Go's offer.
       const yes = new Set<string>();
       let organizerSaidYes = false;
       for (const m of cited) {
-        if (m.author.kind === 'person') {
-          yes.add(m.author.person_id);
-          if (m.author.person_id === organizer && answersBudgetOffer(m, ctx.pack.messages)) organizerSaidYes = true;
-        }
-        for (const r of m.reactions) {
-          if (!r.person_id || !THUMBS_UP.test(r.emoji)) continue;
-          yes.add(r.person_id);
-          if (r.person_id === organizer && offersBudget(m)) organizerSaidYes = true;
-        }
+        if (m.author.kind !== 'person' || bare(m)) continue;
+        yes.add(m.author.person_id);
+        if (m.author.person_id === organizer && answersBudgetOffer(m, ctx.pack.messages)) organizerSaidYes = true;
       }
       if (a.clear) {
         if (!(yes.has(organizer) || yes.size >= 2)) {

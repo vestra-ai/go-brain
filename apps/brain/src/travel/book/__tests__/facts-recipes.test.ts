@@ -388,19 +388,30 @@ describe("ixigo's trip explorer", () => {
 describe("ixigo's help centre", () => {
   const QUESTIONS = `${IXIGO}/support/helpcenter/api/v1/questions/general?tags=`;
 
-  it('help.services answers the topics, each with the name help.faq takes', async () => {
+  // Keshav's ruling: ixigo money is never surfaced, so its topics (ixigo money, its instant refunds, saved cards and
+  // wallets) are never named or opened.
+  it('help.services answers the topics, each with the name help.faq takes, and never the ixigo money ones', async () => {
     const got = await facts('help.services', {}, [capture('/x', `${IXIGO}/support/helpcenter/api/v1/service`, sample('help.services.json'))]);
-    expect(got.rows).toHaveLength(9);
-    expect(got.rows[1]).toEqual({ topic: 'ixigo money', about: 'View ixigo money transaction details and rules', faq: 'money-faq' });
+    expect(got.rows.map((r) => r['faq'])).toEqual(['account-faq', 'pre-booking', 'ixigo-assured', 'au-credit-card', 'metro', 'tourpackages']);
+    expect(got.rows[1]).toEqual({ topic: 'Pre-booking Queries', about: 'Facing issue while booking? Not able to book?', faq: 'pre-booking' });
+  });
+
+  it('help.faq never opens an ixigo money topic: asked for one, it reads About ixigo', async () => {
+    for (const topic of ['money-faq', 'money-max-faq', 'payment-faq']) {
+      const { engine, runs } = engineWith(() => [capture('/x', `${QUESTIONS}about-ixigo`, sample('help.faq.money.json'))]);
+      expect(await engine.answer('help.faq', { topic }, { tripId: 't_goa' }), topic).toMatchObject({ title: "ixigo's answers on about-ixigo" });
+      expect(runs[0]!.plan, topic).toEqual({ capture: [{ match: '/support/helpcenter/api/v1/questions/general?tags=about-ixigo', required: true }] });
+    }
   });
 
   it("help.faq clicks the topic's card, keeps only that topic's answers, and reads them as text", async () => {
-    const got = await facts('help.faq', { topic: 'Money-FAQ' }, [capture('/x', `${QUESTIONS}money-faq`, sample('help.faq.money.json'))]);
+    // The sample is one topic's answers as ixigo sent them on 7 Oct: only the reading of them is under test here.
+    const got = await facts('help.faq', { topic: 'Ixigo-Assured' }, [capture('/x', `${QUESTIONS}ixigo-assured`, sample('help.faq.money.json'))]);
     expect(got.runs[0]!.plan).toEqual({
-      capture: [{ match: '/support/helpcenter/api/v1/questions/general?tags=money-faq', required: true }],
-      steps: [{ op: 'click', text: 'View ixigo money transaction details and rules' }],
+      capture: [{ match: '/support/helpcenter/api/v1/questions/general?tags=ixigo-assured', required: true }],
+      steps: [{ op: 'click', text: 'Get free cancellation benefits' }],
     });
-    expect(got.title).toBe("ixigo's answers on money-faq");
+    expect(got.title).toBe("ixigo's answers on ixigo-assured");
     expect(got.rows[2]).toEqual({
       question: 'Checking ixigo money balance',
       answer: 'You can check your ixigo money balance via your ixigo account. Simply select the "ixigo money" option from the main menu of the ixigo website or ixigo app.',
@@ -414,8 +425,8 @@ describe("ixigo's help centre", () => {
 
   it("help.faq at the fast speed asks for the topic's answers straight away, with ixigo's two client headers", async () => {
     const { engine, runs, calls } = engineWith(() => [], (call) => capture('/x', call.url, sample('help.faq.money.json')));
-    const got = await engine.answer('help.faq', { topic: 'money-faq' }, { tripId: 't_goa' });
-    expect(calls).toEqual([{ url: '/support/helpcenter/api/v1/questions/general?tags=money-faq', method: 'GET', headers: { ixisrc: 'ixiweb', clientid: 'ixiweb' } }]);
+    const got = await engine.answer('help.faq', { topic: 'ixigo-assured' }, { tripId: 't_goa' });
+    expect(calls).toEqual([{ url: '/support/helpcenter/api/v1/questions/general?tags=ixigo-assured', method: 'GET', headers: { ixisrc: 'ixiweb', clientid: 'ixiweb' } }]);
     expect(runs).toEqual([]);
     expect(got).toMatchObject({ as: 'facts', page: `${IXIGO}/support`, rows: expect.arrayContaining([expect.objectContaining({ question: 'Checking ixigo money balance' })]) });
   });

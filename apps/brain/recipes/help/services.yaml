@@ -18,12 +18,16 @@ answer:
   as: facts
   title: ixigo help topics
   max: 20
+  # ixigo money, its instant refunds and saved cards or wallets are never surfaced (Keshav's ruling): left out.
   each: |
-    $type(header) = "string" ? {
-      "topic": $trim(header),
-      "about": $trim(subHeader),
-      "faq": $substringAfter(action.link, "/support/services/")
-    }
+    (
+      $faq := $substringAfter(action.link, "/support/services/");
+      $type(header) = "string" and $not($faq in ["money-faq", "money-max-faq", "payment-faq"]) ? {
+        "topic": $trim(header),
+        "about": $trim(subHeader),
+        "faq": $faq
+      }
+    )
 ttl_minutes: 60
 samples: { page: help.services.json }
 measured: { fast_ms: 115, page_ms: 2130, flow_ms: null }
