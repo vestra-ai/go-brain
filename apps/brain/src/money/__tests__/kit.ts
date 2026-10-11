@@ -118,8 +118,9 @@ export class FakeCallError extends Error {
 interface ApprovalRow {
   approval_id: string;
   trip_id: string;
-  /** Null for a traveller's ticket (contract 1.2), which names them instead. */
+  /** Null for a person's own pick (contract 1.3), which names it instead. */
   decision_id: string | null;
+  /** The person whose own pick it is (personal.person_id); null for a vote's. */
   for_person_id: string | null;
   payer_person_id: string;
   amount_minor: number;
@@ -240,7 +241,7 @@ export class FakeServerLink implements ServerLink {
           const row = this.approvals.get(p.approval_id);
           if (!row || row.trip_id !== trip.trip_id) throw new FakeCallError(409, "the approval is not one of this trip's");
           if ((p.decision_id ?? null) !== row.decision_id) throw new FakeCallError(409, 'the approval is for another vote');
-          if (row.for_person_id !== null && p.payer_person_id !== row.for_person_id) throw new FakeCallError(409, "the approval is another traveller's ticket");
+          if (row.for_person_id !== null && p.payer_person_id !== row.for_person_id) throw new FakeCallError(409, "the approval is another person's own pick");
           if (row.used) throw new FakeCallError(409, 'the approval is already used');
           if (row.cancelled) throw new FakeCallError(409, 'the approval was cancelled');
           if (p.currency !== row.currency || Number(p.amount_minor) > row.amount_minor) throw new FakeCallError(409, 'the booking costs more than the approval allows');
@@ -262,9 +263,9 @@ export class FakeServerLink implements ServerLink {
     }
   }
 
-  /** The guide's spend check, in its order, then a signed one-use approval. A ticket (1.2): its traveller in the trip. */
+  /** The guide's spend check, in its order, then a signed one-use approval. A personal pick (1.3): its person in the trip. */
   private spend(trip: Trip, p: Record<string, unknown>): unknown {
-    if (p.kind === 'ticket') return this.ticket(trip, p);
+    if (p.personal != null) return this.personal(trip, p);
     const now = this.now();
     const decision = trip.decisions.find((x) => x.decision_id === p.decision_id);
     const m = decision?.mandate;
@@ -319,9 +320,13 @@ export class FakeServerLink implements ServerLink {
     return { status: 'approved', approval_id, approval: token, expires_at: new Date(exp * 1000).toISOString() };
   }
 
-  /** The guide's ticket rule (1.2): the traveller is in the trip; they are the payer, for the amount Go asked. */
-  private ticket(trip: Trip, p: Record<string, unknown>): unknown {
-    const person = String(p.for_person_id);
+  /**
+   * The guide's personal rule (1.3), as far as the kit plays it: the person is in the trip; they are the payer, for the
+   * amount Go asked. The Server's own tap and price checks are the sim's (packages/sim state/money.ts).
+   */
+  private personal(trip: Trip, p: Record<string, unknown>): unknown {
+    const pick = p.personal as { person_id: string; card_id: string; option_id: string };
+    const person = pick.person_id;
     if (!trip.people.some((x) => x.person_id === person)) return { status: 'denied', reason: 'not_in_trip' };
     const iat = Math.floor(this.now().getTime() / 1000);
     const exp = iat + C.MAX_APPROVAL_TTL_SECONDS;
@@ -332,8 +337,7 @@ export class FakeServerLink implements ServerLink {
         aud: 'go-vault',
         jti: approval_id,
         trip_id: trip.trip_id,
-        for_person_id: person,
-        kind: 'ticket',
+        personal: { person_id: pick.person_id, card_id: pick.card_id, option_id: pick.option_id },
         payer_person_id: person,
         amount_minor: Number(p.amount_minor),
         currency: String(p.currency),

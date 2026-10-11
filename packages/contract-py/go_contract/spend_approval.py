@@ -50,16 +50,14 @@ def _compact(value: Any) -> bytes:
 
 
 def spend_form_problem(claims: dict[str, Any]) -> str | None:
-    """Which payment the claims are for: a group's vote (decision_id), or 1.2's ticket (for_person_id, whose traveller
-    is the payer). None when they say exactly one; else what is wrong."""
+    """Which payment the claims are for: a group's vote (decision_id), or 1.3's personal pick (personal: the person,
+    Go's card and the option they tapped; that person is the payer). None when they say exactly one; else what is wrong."""
     vote = claims.get("decision_id") is not None
-    ticket = claims.get("for_person_id") is not None
-    if vote == ticket:
-        return "exactly one of decision_id and for_person_id"
-    if ticket and claims.get("payer_person_id") != claims.get("for_person_id"):
-        return "a ticket's payer is the person it is for"
-    if vote and claims.get("kind") is not None:
-        return "a group approval has no kind"
+    personal = claims.get("personal")
+    if vote == (personal is not None):
+        return "exactly one of decision_id and personal"
+    if personal is not None and claims.get("payer_person_id") != personal.get("person_id"):
+        return "a personal approval's payer is the person who picked"
     return None
 
 

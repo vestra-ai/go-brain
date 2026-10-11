@@ -2,7 +2,7 @@
 
 The contract is everything that travels between the Server and Go, written once as zod schemas. It is the single source of truth for the wire: Go, the fake Go, the simulator and the vault all import their types from here, and nothing redefines a schema of its own. The guide in [`docs/guide`](../../docs/guide) explains it in plain words, and CI checks that every example in the guide matches these schemas.
 
-Version `1.2.0` (`CONTRACT_VERSION`; what 1.1 added: docs/guide/11-contract-1-1.md; 1.2 adds the ticket form of `request_spend_approval`, `not_in_trip`, `already_booked` and `post_message.visible_to_person_ids`). One WebSocket at `/v1/socket`, opened by the Server and signed, with JSON-RPC 2.0 frames both ways.
+Version `1.3.0` (`CONTRACT_VERSION`; what 1.1 added: docs/guide/11-contract-1-1.md; 1.2 adds `not_in_trip`, `already_booked` and `post_message.visible_to_person_ids`; 1.3 adds the personal form of `request_spend_approval` (`personal: { person_id, card_id, option_id }`, in place of 1.2's ticket form), the denial reason `no_pick`, and rev 5: `OptionsCard` up to 10 options with `decision_id` and the `more_options` action, `Option.url`, `add_vote_options` and `decision.options_added`, `WorkingCard.live_url`, `CreateLink.display`, and the Server-to-Go methods `place_info` and `get_option_details`). One WebSocket at `/v1/socket`, opened by the Server and signed, with JSON-RPC 2.0 frames both ways.
 
 ## Main parts
 

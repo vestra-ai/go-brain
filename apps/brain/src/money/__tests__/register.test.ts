@@ -5,7 +5,7 @@ import { statsRegistry } from '../../stats/sources.js';
 import { createPay, type PayEngine } from '../engine.js';
 import { paymentsNow } from '../now.js';
 import { registerMoneyWith } from '../register.js';
-import { NOT_AVAILABLE_YET } from '../vault-link.js';
+import { EMBEDDED_NOT_YET, NOT_AVAILABLE_YET } from '../vault-link.js';
 import { fakeBrain } from './fake-brain.js';
 import { goaTrip, moneyKit, type MoneyKit } from './kit.js';
 
@@ -82,6 +82,16 @@ describe('registerMoney', () => {
     const err = await seen.handlers.get('vault_link')?.(asked, { instance: 'sim', frameId: 'gs_2' }).then(() => null, (e: unknown) => e);
     expect(err).toBeInstanceOf(SocketCallError);
     expect(err).toMatchObject({ code: 409, dataCode: 'conflict', message: NOT_AVAILABLE_YET });
+  });
+
+  it('answers 1.3\'s display "embedded" "not available yet" (409 conflict) and asks the vault nothing; sheet is as before', async () => {
+    const { brain, seen } = fakeBrain({ pool: k.pool, link: k.server });
+    await registerMoneyWith({ fetch: vaultFetch, sweepEveryMs: 0 })(brain);
+    const embedded = C.CreateLink.parse({ kind: 'vault', person_id: 'p_rahul', start: 'add_card', display: 'embedded' });
+    const err = await seen.handlers.get('vault_link')?.(embedded, { instance: 'sim', frameId: 'gs_3' }).then(() => null, (e: unknown) => e);
+    expect(err).toMatchObject({ code: 409, dataCode: 'conflict', message: EMBEDDED_NOT_YET });
+    const sheet = C.CreateLink.parse({ kind: 'vault', person_id: 'p_rahul', start: 'add_card', display: 'sheet' });
+    expect(C.Link.safeParse(await seen.handlers.get('vault_link')?.(sheet, { instance: 'sim', frameId: 'gs_4' })).success).toBe(true);
   });
 
   it('stays off without the vault settings', async () => {

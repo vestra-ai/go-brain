@@ -4,6 +4,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import WebSocket, { WebSocketServer } from 'ws';
 import { withSchema } from '../../db/test-db.js';
 import { fakeBrain, goaPack, goaTrip, manualTime, msg, turnCtx, waitFor } from '../../proactive/fakes.js';
+import { createTools } from '../../composer/tools.js';
 import { CallStore } from '../store.js';
 import { startCalls } from '../register.js';
 
@@ -55,6 +56,7 @@ describe('startCalls', () => {
     const { brain, reg } = fakeBrain({ pool: db.pool, now: time.now, env, switches: { CALLS_MODE: 'allowlist' } });
     const h = await startCalls(brain, { intervals: false, schedule: time.schedule });
     expect(reg.tools.map((t) => t.name)).toEqual(['call_business']);
+    expect(reg.tools[0]!.offered?.()).toBe(true);
     expect(reg.onRead).toHaveLength(1);
     expect(reg.taps.has('call:stop')).toBe(true);
     expect(reg.upgrades).toHaveLength(1);
@@ -64,6 +66,32 @@ describe('startCalls', () => {
     const block = await reg.nows.find((n) => n.name === 'calls')!.render('t_goa', []);
     expect(block).toContain('Go can phone (call_business with the name): Villa Sol.');
     expect(block).not.toContain('+91');
+    h.stop();
+  });
+
+  // Prod, 10 Oct: calls were unset, yet the tool ("a cab about a pickup") was offered; Go offered to call a local cab
+  // operator, and "yes call" placed nothing. The tool is offered only when a call can really go out.
+  it('offers call_business only when a call can go out: every setting, a named business, and the switch on', async () => {
+    const time = manualTime('2026-10-06T10:00:00Z');
+    const blockOf = (reg: ReturnType<typeof fakeBrain>['reg']) => reg.nows.find((n) => n.name === 'calls')!.render('t_goa', []);
+    // Not set up: a setting missing, or no business with a name. Never offered, and no "Go can phone" block.
+    for (const e of [{ ...env, TWILIO_AUTH_TOKEN: '' }, { ...env, CALLS_ALLOWLIST: '' }, { ...env, CALLS_ALLOWLIST: '+919800000001' }]) {
+      const { brain, reg } = fakeBrain({ pool: db.pool, now: time.now, env: e, switches: { CALLS_MODE: 'allowlist' } });
+      const h = await startCalls(brain, { intervals: false, schedule: time.schedule });
+      expect(reg.tools).toEqual([]);
+      expect(await blockOf(reg)).toBeNull();
+      h.stop();
+    }
+    // Set up, with the switch off: left out of the turn's tools until the switch goes on, read every turn.
+    const { brain, reg, switches } = fakeBrain({ pool: db.pool, now: time.now, env, switches: { CALLS_MODE: 'off' } });
+    const h = await startCalls(brain, { intervals: false, schedule: time.schedule });
+    const tools = createTools();
+    for (const t of reg.tools) tools.register(t);
+    expect(tools.list().map((t) => t.name)).toEqual([]);
+    expect(await blockOf(reg)).toBeNull();
+    await switches.set('CALLS_MODE', 'allowlist');
+    expect(tools.list().map((t) => t.name)).toEqual(['call_business']);
+    expect(await blockOf(reg)).toContain('Go can phone (call_business with the name): Villa Sol.');
     h.stop();
   });
 

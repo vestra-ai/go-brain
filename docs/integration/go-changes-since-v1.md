@@ -6,7 +6,7 @@ This page lists what changed in Go between the v1 hand-off and `build` today (9 
 
 Both teams talk to the same Go:
 
-- **Staging Go:** `https://brain-staging-e92c.up.railway.app`. `GET /v1/health` answers `{"ok":true,"contract":"1.2.0"}`, and the socket is `wss://brain-staging-e92c.up.railway.app/v1/socket`.
+- **Staging Go:** `https://brain-staging-e92c.up.railway.app`. `GET /v1/health` answers `{"ok":true,"contract":"1.3.0"}`, and the socket is `wss://brain-staging-e92c.up.railway.app/v1/socket`.
 - **The signing secret** (`GO_SIGNING_SECRET`): ask Keshav. Keep it only in your environment variables, never in code, a chat or a log.
 - **The fake Go**, a small stand-in for Go that speaks the real socket with fixed answers: run it on your machine as in `apps/fake-go/README.md`, "Running it on your machine". You make your own secret there with `openssl rand -hex 32`, and it listens on `http://localhost:8080`.
 - **The guide**, for people: https://vestrago.vercel.app/docs. For a coding agent: https://vestrago.vercel.app/llms-full.txt, the whole guide as one file. Both were built from `docs/guide/` on 5 Oct and got page 11, Contract 1.1, and the 1.1.0 contract files on 9 Oct. Where they differ from `docs/guide/` in this repo, the repo wins. The exact shapes are in `packages/contract` (zod) and its generated `openapi/go.json`, `asyncapi/socket.json` and `socket/methods.json`.

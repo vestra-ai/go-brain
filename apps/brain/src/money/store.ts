@@ -51,6 +51,9 @@ export interface PaymentRow {
   said_at: Date | null;
   /** The vault will not ask the bank again and a person is checking the charge; the payment stays confirming. */
   checking_at: Date | null;
+  /** A traveller's own payment (contract 1.3, G3): the card of Go's they tapped and the option on it. Null for a vote's. */
+  pick_card_id: string | null;
+  pick_option_id: string | null;
   attempts: number;
   last_error: string | null;
   created_at: Date;
@@ -78,6 +81,9 @@ export interface NewPayment {
   refundable_until: string | null;
   /** The rooms picked for the stay when the payment is asked; [] for none, null when nothing reads them. */
   rooms?: Room[] | null;
+  /** A traveller's own payment (contract 1.3): their pick, the card and its option. */
+  pick_card_id?: string | null;
+  pick_option_id?: string | null;
 }
 
 const PATCHABLE = [
@@ -104,12 +110,13 @@ export async function insertAsking(db: Db, p: NewPayment, now: Date): Promise<'o
   try {
     await db.query(
       `insert into payments (payment_id, trip_id, decision_id, option_ref, purpose, label, payer_person_id, payer_name, for_person_ids, state,
-         hold_id, amount_minor, currency, merchant, payment_kind, hold_expires_at, refundable_until, rooms, kind, created_at, updated_at)
-       values ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'asking', $10, $11, $12, $13, $14, $15, $16, $18, $19, $17, $17)`,
+         hold_id, amount_minor, currency, merchant, payment_kind, hold_expires_at, refundable_until, rooms, kind, pick_card_id, pick_option_id,
+         created_at, updated_at)
+       values ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'asking', $10, $11, $12, $13, $14, $15, $16, $18, $19, $20, $21, $17, $17)`,
       [
         p.payment_id, p.trip_id, p.decision_id, p.option_ref, p.purpose, p.label, p.payer_person_id, p.payer_name, p.for_person_ids,
         p.hold_id, p.amount_minor, p.currency, p.merchant, p.payment_kind, p.hold_expires_at, p.refundable_until, now,
-        p.rooms ? JSON.stringify(p.rooms) : null, p.kind ?? 'group',
+        p.rooms ? JSON.stringify(p.rooms) : null, p.kind ?? 'group', p.pick_card_id ?? null, p.pick_option_id ?? null,
       ],
     );
     return 'ok';

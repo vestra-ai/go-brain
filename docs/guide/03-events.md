@@ -445,6 +445,7 @@ Go does not announce each line it writes. Instead, it may add a quiet ✅ reacti
 | `decision.voted` | Someone votes or changes their vote, says they are flexible, or takes their vote back (1.1). | Keeps the count, quietly. |
 | `decision.closed` | A vote closes. | Announces the result. For a booking vote, sets the mandate. |
 | `decision.cancelled` | A vote is called off. | Stops waiting on it. |
+| `decision.options_added` | (1.3) Go added options to an open vote, from "See more". | Adds them to its copy of the vote, after the last option. |
 | `mandate.set` | Go set what the group allowed for a spend. | Records the change number. |
 | `mandate.confirmed` | The payer taps "Yes, book it". | Re-checks the price and asks for a spend approval. |
 | `mandate.declined` | The payer taps "Not now". | Does not ask for a spend approval. |
@@ -1122,6 +1123,26 @@ Rahul called off a vote he had opened about which beach to spend Sunday on:
   "data": {
     "decision_id": "d_beach",
     "by": { "kind": "person", "person_id": "p_rahul" }
+  }
+}
+```
+
+### decision.options_added
+
+(1.3) The server sends `decision.options_added` after Go's `add_vote_options`: someone tapped "See more" on a stays card that is in a vote, and Go added the stays it showed next. The new options take the next indexes after the last one, with no votes yet; votes already cast stay. A vote has at most 20 options in all.
+
+<!-- schema: DecisionOptionsAdded -->
+```json
+{
+  "event_id": "ev_0118",
+  "trip_id": "t_goa",
+  "seq": 118,
+  "occurred_at": "2026-10-06T11:40:00Z",
+  "type": "decision.options_added",
+  "data": {
+    "decision_id": "d_12",
+    "options": [{ "label": "Casa Lua", "option_ref": "opt_14", "price_minor": 4500000, "currency": "INR" }],
+    "by": { "kind": "go" }
   }
 }
 ```

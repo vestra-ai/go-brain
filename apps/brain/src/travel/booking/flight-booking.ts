@@ -45,14 +45,15 @@ export type BookingState = 'fare' | 'fare_type' | 'coupon' | 'travellers' | 'rea
 export const PAY_WAIT_MS = 2_200;
 
 /**
- * Money's Pay (money/pay.ts) as a booking uses it: requestTicketApproval (p1-b's) asks the Server's approval for a person's
+ * Money's Pay (money/pay.ts) as a booking uses it: requestTicketApproval asks the Server's personal approval for a person's
  * own ticket, no vote, and the vault's pay page for that person alone; the vault still needs the Server's signature and
- * their Face ID. Optional until money has it: without it, Pay says it opens soon.
+ * their Face ID. The approval names their pick (contract 1.3, G3): the options card they tapped (cardId) and the flight on
+ * it (optionId). Optional until money has it: without it, Pay says it opens soon.
  */
 export interface TicketPay {
   requestTicketApproval?(
     tripId: string,
-    o: { personId: string; amountMinor: number; currency: string; purpose: string; key: string; trigger: string },
+    o: { personId: string; cardId: string; optionId: string; amountMinor: number; currency: string; purpose: string; key: string; trigger: string },
   ): Promise<{ url: string; expiresAt: string; approvalId: string; paymentId: string } | { refused: string; code: string }>;
   onPaid(fn: (p: { tripId: string; approvalId: string; railRef: string }) => Promise<void>): void;
 }
@@ -350,9 +351,9 @@ export function createFlightBooking(d: FlightBookingDeps): FlightBooking {
     async start(ask) {
       const runId = stableId('fb', ask.tapId);
       const fresh = await d.pool.query(
-        `insert into flight_bookings (run_id, trip_id, person_id, option_id, title, day, choice, state, created_at, updated_at)
-         values ($1, $2, $3, $4, $5, $6, $7, 'fare', $8, $8) on conflict (run_id) do nothing`,
-        [runId, ask.tripId, ask.personId, ask.offer.optionId, clip(ask.offer.title, 120), dayOf(ask.offer.sourceUrl), ask.choice, d.now()],
+        `insert into flight_bookings (run_id, trip_id, person_id, option_id, pick_card_id, title, day, choice, state, created_at, updated_at)
+         values ($1, $2, $3, $4, $5, $6, $7, $8, 'fare', $9, $9) on conflict (run_id) do nothing`,
+        [runId, ask.tripId, ask.personId, ask.offer.optionId, ask.offer.cardId, clip(ask.offer.title, 120), dayOf(ask.offer.sourceUrl), ask.choice, d.now()],
       );
       // A repeat of the tap: the booking it started goes on, and nothing starts twice.
       if (fresh.rowCount === 0) return;
@@ -364,8 +365,10 @@ export function createFlightBooking(d: FlightBookingDeps): FlightBooking {
       void run.finally(() => running.delete(run));
     },
     async pay(i) {
-      const r = await d.pool.query<{ run_id: string; person_id: string; title: string; day: string | null; total_minor: string | null; state: BookingState }>(
-        'select run_id, person_id, title, day, total_minor, state from flight_bookings where trip_id = $1 and card_id = $2',
+      const r = await d.pool.query<{
+        run_id: string; person_id: string; option_id: string; pick_card_id: string | null; title: string; day: string | null; total_minor: string | null; state: BookingState;
+      }>(
+        'select run_id, person_id, option_id, pick_card_id, title, day, total_minor, state from flight_bookings where trip_id = $1 and card_id = $2',
         [i.tripId, i.cardId],
       );
       const row = r.rows[0];
@@ -373,12 +376,15 @@ export function createFlightBooking(d: FlightBookingDeps): FlightBooking {
       if (row.state === 'paid') return { result: 'refused', toast: 'Already paid' };
       const pay = d.pay?.();
       const request = pay?.requestTicketApproval;
-      if (!pay || !request || row.total_minor === null) return { result: 'refused', toast: 'Paying for a ticket through Go opens soon' };
+      // A booking from before its pick was kept has no card to name: the Server could not grant it (contract 1.3).
+      if (!pay || !request || row.total_minor === null || !row.pick_card_id) return { result: 'refused', toast: 'Paying for a ticket through Go opens soon' };
       hookPaid(pay);
       const name = await d.nameOf(i.tripId, i.personId).catch(() => 'them');
       const purpose = clip(`${row.title}${row.day ? `, ${dayText(row.day)}` : ''}, for ${name}`, 200);
       const asked = request
-        .call(pay, i.tripId, { personId: i.personId, amountMinor: Number(row.total_minor), currency: 'INR', purpose, key: row.run_id, trigger: i.tapId })
+        .call(pay, i.tripId, {
+          personId: i.personId, cardId: row.pick_card_id, optionId: row.option_id, amountMinor: Number(row.total_minor), currency: 'INR', purpose, key: row.run_id, trigger: i.tapId,
+        })
         .then(async (got) => {
           if ('approvalId' in got) await d.pool.query('update flight_bookings set approval_id = $2, updated_at = $3 where run_id = $1', [row.run_id, got.approvalId, d.now()]);
           return got;
