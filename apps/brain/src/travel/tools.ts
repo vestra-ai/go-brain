@@ -12,7 +12,7 @@ import { buildOptionsCard, clip, formatInr, ixigoPage, PERSONAL_KINDS, placeKind
 import { localDay } from '../proactive/clock.js';
 import { answerLine, answerTitle, directPicks, droppedWords, ledBy, leftOff, loadWhat, plainAsk } from './answer.js';
 import { flightDetails, stayDetails, trainDetails } from './details.js';
-import { placeDetails } from './places-card.js';
+import { guideName, placeDetails, type PlacePick } from './places-card.js';
 import { DEFAULT_TRIP_TZ } from './dates.js';
 import { asked } from './filters.js';
 import { stableId } from './ids.js';
@@ -59,7 +59,7 @@ export interface TravelToolDeps {
    */
   showPick?: (tripId: string, pick: TopPick, more?: TopPick[]) => void;
   /** A place card's first places, given their own place and guide in the background (places-card.ts showPlaces, rev 5 R2). */
-  showPlaces?: (tripId: string, picks: Array<{ cardId: string; optionId: string; name: string }>) => void;
+  showPlaces?: (tripId: string, picks: PlacePick[]) => void;
   /**
    * A place's own cover from ixigo's guide (placeFor, already in Go's image cache), for a place the explorer gave no photo:
    * waited for in parallel, up to COVER_WAIT_MS, before its card goes up. Null when ixigo has none: never a made-up one.
@@ -534,7 +534,7 @@ export async function putUpCard(
     d.showPick?.(ctx.tripId, { page: top, name: picks[0]!.option.title, kind: set.optionKind === 'bus' ? 'bus' : 'stay', cardId, optionId: picks[0]!.optionId }, more);
   }
   // A place card's first three: each one's own place and guide, read in the background after the card is up (rev 5 R2).
-  if (set.optionKind === 'place') d.showPlaces?.(ctx.tripId, picks.slice(0, 3).map((p) => ({ cardId, optionId: p.optionId, name: p.option.title })));
+  if (set.optionKind === 'place') d.showPlaces?.(ctx.tripId, picks.slice(0, 3).map((p) => ({ cardId, optionId: p.optionId, name: p.option.title, guide: guideName(p.option) })));
   return { cardId, shown: shown.options.length, decisionId: shown.decision_id ?? null };
 }
 

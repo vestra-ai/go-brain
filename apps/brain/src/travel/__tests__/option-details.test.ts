@@ -14,7 +14,7 @@ const ask = { trip_id: 't_goa', card_id: 'c_opt_1', option_id: 'opt_c_opt_1_1', 
 const facts = (rows: Array<Record<string, unknown>>): Promise<EngineAnswer> =>
   Promise.resolve({ as: 'facts', title: 'Meritas', rows, page: PAGE, checkedAt: '2026-10-11T02:00:00.000Z', ms: 2000 });
 
-function rig(o: { kind?: string; kept?: Record<string, Promise<EngineAnswer>>; live?: boolean } = {}) {
+function rig(o: { kind?: string; kept?: Record<string, Promise<EngineAnswer>>; live?: boolean; guide?: string } = {}) {
   const option = {
     option_id: 'opt_c_opt_1_1', title: 'Meritas Auberge', details: { why: ['Pool, as asked'], rating: 9 },
     photos: [{ url: 'https://go.test/img/pool.jpg', label: 'Pool' }, { url: 'https://go.test/img/room.jpg', label: 'Deluxe Room' }],
@@ -25,7 +25,7 @@ function rig(o: { kind?: string; kept?: Record<string, Promise<EngineAnswer>>; l
     offer: async (optionId: string) => (optionId === option.option_id ? { optionId, kind: o.kind ?? 'stay', title: option.title, resultsId: 'r_1', n: 1, sourceUrl: PAGE } : null),
     get: async () => ({
       checkedAt: '2026-10-11T01:00:00.000Z',
-      options: [{ kind: 'stay', title: 'Meritas Auberge', highlights: [], facts: { type: 'Hotel', stars: 3 }, place: { name: 'Meritas Auberge', address: 'Candolim, Goa', lat: 15.52, lng: 73.76 } }],
+      options: [{ kind: 'stay', title: 'Meritas Auberge', highlights: [], facts: { type: 'Hotel', stars: 3, ...(o.guide ? { guide: o.guide } : {}) }, place: { name: 'Meritas Auberge', address: 'Candolim, Goa', lat: 15.52, lng: 73.76 } }],
     }),
   } as unknown as Pick<ResultsStore, 'card' | 'offer' | 'get'>;
   const peeked: string[] = [];
@@ -105,6 +105,12 @@ describe("an option's Details on demand", () => {
     const cold = rig({ kind: 'place' });
     expect(await cold.handler(ask, meta)).toMatchObject({ why: ['Pool, as asked'], complete: false });
     expect(cold.read.map((x) => [x.id, x.given, x.o['background']])).toEqual([['plan.destination', { place: 'Meritas Auberge' }, true]]);
+    // A place the explorer found is read by its guide's own name on ixigo, never its long title (prod drill, 11 Oct:
+    // "Agra, Uttar Pradesh, India" made a page with no guide, and no place had things to do).
+    const named = rig({ kind: 'place', guide: 'agra' });
+    await named.handler(ask, meta);
+    expect(named.peeked).toEqual(['plan.destination|agra']);
+    expect(named.read.map((x) => x.given)).toEqual([{ place: 'agra' }]);
   });
 
   it("answers anything but a stay from its card alone, and refuses an option that isn't on the card", async () => {
