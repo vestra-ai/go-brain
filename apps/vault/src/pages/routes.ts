@@ -18,6 +18,7 @@ import { lastTravelRead, logUnlock, readUnlockLog } from '../store/unlock-log.js
 import { VAULT_CSS, VAULT_JS } from './assets.js';
 import { homePage, payPage } from './html.js';
 import { PAY_MESSAGES, brandLabel, lastUsedLabel, moneyLabel, unlockLine, whenLabel } from './words.js';
+import { CARDS_DOWN, CARDS_NOT_READY, type CardsReady, isStripeError } from '../stripe-ready.js';
 
 const require = createRequire(import.meta.url);
 const WEBAUTHN_JS = readFileSync(
@@ -40,7 +41,7 @@ const Untick = z.object({ allow: z.literal(false) });
 type WithToken = { Params: { token: string } };
 type TokenRequest = FastifyRequest<WithToken>;
 
-export const pageRoutes: FastifyPluginAsync<{ deps: VaultDeps }> = async (app, { deps }) => {
+export const pageRoutes: FastifyPluginAsync<{ deps: VaultDeps; cards: CardsReady }> = async (app, { deps, cards: cardsOn }) => {
   const db = deps.pool;
   const cfg = passkeyConfig(deps.env);
   const master = masterKeyOf(deps.env.VAULT_MASTER_KEY);
@@ -96,6 +97,8 @@ export const pageRoutes: FastifyPluginAsync<{ deps: VaultDeps }> = async (app, {
       state: 'open',
       start: link.start,
       publishable_key: deps.env.STRIPE_PUBLISHABLE_KEY,
+      // Off while the vault's Stripe keys are placeholders or Stripe refused them: the page says so instead of a form.
+      cards_ready: cardsOn.ready(),
       cards: cards.map((c) => ({ brand_label: brandLabel(c.brand), last4: c.last4, expires: `${String(c.exp_month).padStart(2, '0')}/${String(c.exp_year).slice(-2)}` })),
       // The person's own details, to them alone once unlocked, and when Go last used them, for what.
       travel: travel ? { ...travel, last_used: used ? lastUsedLabel(used) : null } : null,
@@ -157,11 +160,24 @@ export const pageRoutes: FastifyPluginAsync<{ deps: VaultDeps }> = async (app, {
     return { ok: true };
   });
 
+  /** A card call's Stripe failure, in words the page shows: off for good when Stripe refused the keys. */
+  const cardsFailed = (reply: FastifyReply, e: unknown): FastifyReply => {
+    if (!isStripeError(e)) throw e;
+    cardsOn.saw(e);
+    app.log.error({ type: e.type, code: e.code }, 'a card call to Stripe failed');
+    return reply.code(503).send({ message: cardsOn.ready() ? CARDS_DOWN : CARDS_NOT_READY });
+  };
+
   app.post<WithToken>('/l/:token/cards/setup', async (req, reply) => {
     const link = await unlocked(req, reply);
     if (!link) return reply;
-    const { clientSecret } = await startCardSetup(db, deps.stripe, link.person_id, deps.now());
-    return { client_secret: clientSecret, publishable_key: deps.env.STRIPE_PUBLISHABLE_KEY };
+    if (!cardsOn.ready()) return reply.code(503).send({ message: CARDS_NOT_READY });
+    try {
+      const { clientSecret } = await startCardSetup(db, deps.stripe, link.person_id, deps.now());
+      return { client_secret: clientSecret, publishable_key: deps.env.STRIPE_PUBLISHABLE_KEY };
+    } catch (e) {
+      return cardsFailed(reply, e);
+    }
   });
 
   app.post<WithToken>('/l/:token/cards', async (req, reply) => {
@@ -169,7 +185,12 @@ export const pageRoutes: FastifyPluginAsync<{ deps: VaultDeps }> = async (app, {
     if (!link) return reply;
     const body = CardBody.safeParse(req.body);
     if (!body.success) return reply.code(400).send({ message: 'The card was not saved.' });
-    const saved = await saveCardFromSetup(db, deps.stripe, master, deps.now(), { personId: link.person_id, setupIntentId: body.data.setup_intent_id });
+    let saved: Awaited<ReturnType<typeof saveCardFromSetup>>;
+    try {
+      saved = await saveCardFromSetup(db, deps.stripe, master, deps.now(), { personId: link.person_id, setupIntentId: body.data.setup_intent_id });
+    } catch (e) {
+      return cardsFailed(reply, e);
+    }
     if (!saved.ok) return reply.code(409).send({ message: 'The card was not saved. Try again.' });
     return { brand_label: brandLabel(saved.card.brand), last4: saved.card.last4 };
   });

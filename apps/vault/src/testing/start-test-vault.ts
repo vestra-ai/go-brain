@@ -31,9 +31,9 @@ export interface TestVault {
 }
 
 /** A whole vault in this process: its own schema, a FakeRail, a FakeStripe, and Go reached through `goFetch`. */
-export async function startTestVault(o: { goFetch: typeof fetch; now: () => Date; rail?: FakeRail; listen?: boolean }): Promise<TestVault> {
+export async function startTestVault(o: { goFetch: typeof fetch; now: () => Date; rail?: FakeRail; listen?: boolean; env?: Partial<VaultEnv> }): Promise<TestVault> {
   const { pool, drop } = await withVaultSchema();
-  const env = testVaultEnv();
+  const env = testVaultEnv(o.env);
   const stripe = new FakeStripe();
   const rail = o.rail ?? new FakeRail();
   const rails = makeRails({ stripe, customerOf: (p) => customerIdOf(pool, p), fake: rail });

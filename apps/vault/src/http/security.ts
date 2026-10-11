@@ -29,11 +29,12 @@ export function keepRawJson(app: FastifyInstance): void {
 /** Stripe's card form needs js.stripe.com; nothing else outside the vault is allowed, and nobody may frame it. */
 export const PAGE_CSP = [
   "default-src 'none'",
-  "script-src 'self' https://js.stripe.com",
+  // Stripe's security guide: Stripe.js may start its frames on *.js.stripe.com.
+  "script-src 'self' https://js.stripe.com https://*.js.stripe.com",
   "style-src 'self' 'unsafe-inline'",
   "img-src 'self' data: https://*.stripe.com",
   "connect-src 'self' https://api.stripe.com",
-  'frame-src https://js.stripe.com https://hooks.stripe.com',
+  'frame-src https://js.stripe.com https://*.js.stripe.com https://hooks.stripe.com',
   "font-src 'self'",
   "form-action 'self'",
   "base-uri 'none'",
