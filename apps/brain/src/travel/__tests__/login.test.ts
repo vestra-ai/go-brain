@@ -1063,10 +1063,42 @@ describe('a booking ask on a trip with no login (8 Oct demo: "heyy can you try b
   const what = 'Saudades Homestays';
   const resume = { decision_id: 'd_villa', choice_index: 0, payer_person_id: 'p_rahul', refundable_only: false };
 
-  it('brings the login card back with its own line, waits on the login, and carries on with exactly that stay once it is in', async () => {
+  // p2's re-audit, 11 Oct: the same ask twice in two minutes. One card per trip while it is up: a booking parks on it.
+  it('a booking while the ask is up parks on that card: no second card, and the reply says what comes once the login is in', async () => {
     const w = world({ statuses: [200] });
     await w.setup();
     w.clock.now = new Date(NOW.getTime() + 3 * 60_000);
+    expect(await w.login.ensure(w.tripId, what, { park: { what, resume } })).toEqual({
+      ok: false,
+      note: `Booking Saudades Homestays waits on the trip's ixigo login, and Go carries on with it once the login is in. ${cardIsTheAsk('Rahul', "I'll re-check Saudades Homestays and book it")}`,
+    });
+    expect(w.link.of('post_message')).toHaveLength(1);
+    expect(await w.parked()).toMatchObject({ what, resume });
+  });
+
+  // #478 (Keshav, 11 Oct): the login card goes to the person booking. One card per person while it is up: an ask open for
+  // Rahul moves to Priya when she books, and her second booking parks on her card.
+  it("an ask open for one person moves to the person booking, once: their next booking parks on their card", async () => {
+    const w = world({ statuses: [200] });
+    await w.setup();
+    expect(w.link.of('post_message')).toHaveLength(1);
+    w.clock.now = new Date(NOW.getTime() + 3 * 60_000);
+    expect((await w.login.ensure(w.tripId, what, { park: { what, resume }, booking: true, for: 'p_priya' })).ok).toBe(false);
+    const posts = w.link.of('post_message');
+    expect(posts).toHaveLength(2);
+    expect(posts[1]).toMatchObject({ mentions: ['p_priya'], card: { for_person_ids: ['p_priya'] } });
+    w.clock.now = new Date(NOW.getTime() + 5 * 60_000);
+    expect((await w.login.ensure(w.tripId, what, { park: { what, resume }, booking: true, for: 'p_priya' })).ok).toBe(false);
+    expect(w.link.of('post_message')).toHaveLength(2);
+    // The card that was Rahul's is not his to tap now.
+    expect(await w.tap('ixigo_login', 'p_rahul')).toMatchObject({ result: 'refused' });
+  });
+
+  it('brings the login card back with its own line, waits on the login, and carries on with exactly that stay once it is in', async () => {
+    const w = world({ statuses: [200] });
+    await w.setup();
+    // Half an hour on: the first ask is far up the chat.
+    w.clock.now = new Date(NOW.getTime() + 31 * 60_000);
     expect(await w.login.ensure(w.tripId, what, { park: { what, resume } })).toEqual({
       ok: false,
       note: `Booking Saudades Homestays waits on the trip's ixigo login, and Go carries on with it once the login is in. ${cardIsTheAsk('Rahul', "I'll re-check Saudades Homestays and book it")}`,
@@ -1125,7 +1157,7 @@ describe('a booking ask on a trip with no login (8 Oct demo: "heyy can you try b
   it('asks once for a turn that runs again, and Not now lets the waiting booking go with the login', async () => {
     const w = world({ statuses: [200] });
     await w.setup();
-    w.clock.now = new Date(NOW.getTime() + 3 * 60_000);
+    w.clock.now = new Date(NOW.getTime() + 31 * 60_000);
     await w.login.ensure(w.tripId, what, { park: { what, resume } });
     const again = await w.login.ensure(w.tripId, what, { park: { what, resume } });
     expect(again).toMatchObject({ ok: false, note: expect.stringContaining(cardIsTheAsk('Rahul', "I'll re-check Saudades Homestays and book it")) });
@@ -1400,8 +1432,9 @@ describe("one tap: Go's screen opens with the log in, and Go sees the login land
     await w.login.ensure(w.tripId, what, { park: { what, resume } });
     await w.tap('ixigo_login', 'p_rahul');
     expect(await w.state()).toBe('logged_in');
+    // The booking parked on the ask that was up (attempt 0): no card of its own, and its wake is that ask's.
     expect(w.wakes).toEqual([
-      expect.objectContaining({ id: `travel:login_resume:${w.tripId}:1`, payload: { source: 'ixigo_login', action: 'resume', personId: 'p_rahul', what, resume } }),
+      expect.objectContaining({ id: `travel:login_resume:${w.tripId}:0`, payload: { source: 'ixigo_login', action: 'resume', personId: 'p_rahul', what, resume } }),
     ]);
     expect(w.ended).toEqual(['ses_1']);
   });
