@@ -317,8 +317,10 @@ export const registerTravel: RegisterLane = async (brain) => {
   const stayBudget = async (tripId: string): Promise<number | null> => stayCap(await budgets.get(tripId, (await brain.packs.get(tripId)).trip));
   // The Server team's rev 5 (R2): "where should we go" as a card of places. The explorer's places are saved as results of
   // kind place for show_options; a place card's first three get their own place and guide in the background.
-  const placesOf = async (tripId: string, rows: Array<Record<string, unknown>>, checkedAt: string): Promise<string | null> => {
-    const options = placeOptions(rows);
+  // Each place's fit line weighs ixigo's estimate for the whole trip against the group's budget for the whole trip only.
+  const placesOf = async (tripId: string, rows: Array<Record<string, unknown>>, checkedAt: string, asked: { origin?: string; month?: string }): Promise<string | null> => {
+    const budget = await budgets.get(tripId, (await brain.packs.get(tripId)).trip).catch(() => null);
+    const options = placeOptions(rows, { ...asked, budgetMinor: budget?.covers === 'whole_trip' ? budget.perPersonMinor : null });
     return options.length > 0 ? (await results.save({ tripId, optionKind: 'place', source: 'search', query: {}, options, checkedAt })).resultsId : null;
   };
   const showPlacesOf = (tripId: string, picks: Array<{ cardId: string; optionId: string; name: string }>): void => {

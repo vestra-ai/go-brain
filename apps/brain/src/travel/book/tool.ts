@@ -27,7 +27,7 @@ export interface IxigoToolDeps {
    * "Where should we go" as its own card (the Server team's rev 5, R2): the explorer's places (plan.explore) saved as
    * results of kind place (places-card.ts), their results_id for show_options. Absent, the places are facts alone.
    */
-  placesOf?: (tripId: string, rows: Array<Record<string, unknown>>, checkedAt: string) => Promise<string | null>;
+  placesOf?: (tripId: string, rows: Array<Record<string, unknown>>, checkedAt: string, asked: { origin?: string; month?: string }) => Promise<string | null>;
   /** Whether Go searches ixigo.com itself now (TRAVEL_MODE ixigo_web): the recipes run in the trip's browser. */
   live: () => boolean;
   /**
@@ -140,7 +140,7 @@ export const NAMES_ONLY_FROM_IXIGO =
 
 /** What the model is told with the explorer's places saved for a card (rev 5 R2): a card, never a list in words. */
 export const PLACES_CARD =
-  "These places are saved as results_id: put the best up to three for the ask on a card with show_options (this results_id, a short title) and one short line that carries on, never a list of them in words. Each shows ixigo's estimate a person for the trip: say no other price.";
+  "These places are saved as results_id: put the best up to three for the ask on a card with show_options (this results_id, a short title) and one short line that carries on. Never name them in your words or in offer_replies: the card shows them and is their vote. Each shows ixigo's estimate a person for the trip: say no other price.";
 
 /** What the room is told with a link recipe's card (a PNR's: the person checks it on ixigo's page themselves). */
 export const LINK_ON_IXIGO =
@@ -290,7 +290,11 @@ export function ixigoTool(d: IxigoToolDeps): QuickTool<{ recipe: string; inputs:
           return { recipe: a.recipe, title: answer.title, facts: [], note: account ? NOTHING_ON_THE_ACCOUNT : NOTHING_ON_IXIGO };
         }
         // "Where should we go": the places on a card of their own (rev 5 R2), never only words.
-        const places = a.recipe === 'plan.explore' && d.placesOf ? await d.placesOf(ctx.tripId, answer.rows, answer.checkedAt).catch(() => null) : null;
+        const asked = { ...early?.asked, ...a.inputs };
+        const words = (k: string): Record<string, string> => (typeof asked[k] === 'string' && asked[k] !== '' ? { [k]: asked[k] as string } : {});
+        const places = a.recipe === 'plan.explore' && d.placesOf
+          ? await d.placesOf(ctx.tripId, answer.rows, answer.checkedAt, { ...words('origin'), ...words('month') }).catch(() => null)
+          : null;
         const note = [...('note' in wider ? [wider.note] : []), ...(places ? [PLACES_CARD] : [])];
         return {
           recipe: a.recipe, title: answer.title, checked_at: answer.checkedAt, source: answer.page, facts: answer.rows.map(withoutPhotos),

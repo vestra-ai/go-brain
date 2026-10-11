@@ -89,7 +89,8 @@ answer:
         "visa_on_arrival": "VISA_ON_ARRIVAL" in destinationType ? true,
         "e_visa": "E_VISA" in destinationType ? true,
         "tag": tagChipText,
-        "guide": slug
+        "guide": slug,
+        "photo_list": $type(imageUrl) = "string" ? [imageUrl]
       }
     )
 ttl_minutes: 60

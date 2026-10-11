@@ -190,3 +190,20 @@ describe("ixigo's page is never the answer", () => {
     expect(GO_RULES).not.toContain("give ixigo's page for it");
   });
 });
+
+// Keshav, 11 Oct, on prod: "hey @Go plan a trip for us" got words and quick replies (Goa / Manali / Jaipur / Kerala /
+// Surprise us). Places to go are a place card, the App's rail with Details and Vote, never words or buttons.
+describe('places to go are a place card', () => {
+  it('runs plan.explore and puts its places up with show_options, never in words or offer_replies, the hello too', () => {
+    expect(section('How you work', 'When you speak')).toContain(
+      "- Places to go are always a place card (plan.explore from the asker's home city, the trip's month or next, then show_options), " +
+        'never words or offer_replies, for "Surprise us" and your hello too.',
+    );
+  });
+
+  it('keeps buttons for other picks, with no place among their examples', () => {
+    const write = section('How you write', 'Truth and money');
+    expect(write).toContain('- For a pick between a few things (beach or mountains, Saturday or Sunday), give the choices with offer_replies');
+    expect(GO_RULES).not.toContain('North or South Goa');
+  });
+});

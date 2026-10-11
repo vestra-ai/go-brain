@@ -160,9 +160,12 @@ describe('an option input', () => {
     const rows = [{ place: 'Agra, Uttar Pradesh, India', estimate_minor: 900_000 }];
     const engine = { answer: async () => ({ as: 'facts' as const, title: 'Where to go from Delhi in December', rows, page: 'https://www.ixigo.com/plan', checkedAt: '2026-10-11T02:00:00.000Z', ms: 1 }) };
     const saved: unknown[] = [];
-    const tool = ixigoTool({ book, engine, live: () => true, placesOf: async (tripId, r) => { saved.push([tripId, r]); return 'r_places'; } })!;
+    const tool = ixigoTool({ book, engine, live: () => true, placesOf: async (tripId, r, _at, asked) => { saved.push([tripId, r, asked]); return 'r_places'; } })!;
     const turn = { tripId: 't_goa', turnId: 'turn_p', cards: [], stableId: (p: string) => `${p}_1` } as unknown as TurnCtx;
     expect(await tool.run({ recipe: 'plan.explore', inputs: { origin: 'Delhi', month: '2026-12-01' } }, turn)).toMatchObject({ results_id: 'r_places', note: PLACES_CARD, facts: rows });
-    expect(saved).toEqual([['t_goa', rows]]);
+    // Where from and the month go with the places, for each card's words (its fit line, its cost's caption).
+    expect(saved).toEqual([['t_goa', rows, { origin: 'Delhi', month: '2026-12-01' }]]);
+    // Keshav, 11 Oct: places to go are a card, never words or quick replies.
+    expect(PLACES_CARD).toContain('Never name them in your words or in offer_replies');
   });
 });
