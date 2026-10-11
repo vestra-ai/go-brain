@@ -22,6 +22,30 @@ describe("a place's photo from Wikipedia", () => {
     expect(photoOf(big('Ooty_lake.jpeg', 'en'))?.page).toBe('https://en.wikipedia.org/wiki/File:Ooty_lake.jpeg');
   });
 
+  // Prod drill, 11 Oct: Coorg and Mussoorie went up with no cover. Wikipedia's summaries put ?utm_… on every image and
+  // serve thumbnails from thumb.wikimedia.org, and the check wanted upload.wikimedia.org and ".jpg" at the very end.
+  it("takes Wikipedia's images as its summaries send them: a query on each, thumbnails on thumb.wikimedia.org", () => {
+    const UTM = '?utm_source=en.wikipedia.org&utm_campaign=api&utm_content=thumbnail';
+    const mussoorie = {
+      type: 'standard',
+      originalimage: { source: `https://upload.wikimedia.org/wikipedia/commons/e/e0/Mussoorie_Snow_Over_Dehradun_%2814831297545%29.jpg${UTM}_unscaled`, width: 1600 },
+      thumbnail: { source: `https://thumb.wikimedia.org/wikipedia/commons/thumb/e/e0/Mussoorie_Snow_Over_Dehradun_%2814831297545%29.jpg/330px-Mussoorie_Snow_Over_Dehradun_%2814831297545%29.jpg${UTM}` },
+    };
+    expect(photoOf(mussoorie)).toEqual({
+      url: 'https://thumb.wikimedia.org/wikipedia/commons/thumb/e/e0/Mussoorie_Snow_Over_Dehradun_%2814831297545%29.jpg/1280px-Mussoorie_Snow_Over_Dehradun_%2814831297545%29.jpg',
+      page: 'https://commons.wikimedia.org/wiki/File:Mussoorie_Snow_Over_Dehradun_(14831297545).jpg',
+    });
+    // Coorg is Kodagu district, whose "original" is itself a 3840 px thumbnail of a 6000 px photo.
+    const coorg = {
+      type: 'standard',
+      originalimage: { source: `https://thumb.wikimedia.org/wikipedia/commons/thumb/1/17/Tadiandamol_Valley%2C_Western_Ghats.jpg/3840px-Tadiandamol_Valley%2C_Western_Ghats.jpg${UTM}`, width: 6000 },
+      thumbnail: { source: `https://thumb.wikimedia.org/wikipedia/commons/thumb/1/17/Tadiandamol_Valley%2C_Western_Ghats.jpg/330px-Tadiandamol_Valley%2C_Western_Ghats.jpg${UTM}` },
+    };
+    expect(photoOf(coorg)?.url).toBe('https://thumb.wikimedia.org/wikipedia/commons/thumb/1/17/Tadiandamol_Valley%2C_Western_Ghats.jpg/1280px-Tadiandamol_Valley%2C_Western_Ghats.jpg');
+    // A small original keeps its own address, with no query.
+    expect(photoOf({ originalimage: { source: `https://upload.wikimedia.org/wikipedia/commons/a/ab/Goa_beach.jpg${UTM}`, width: 1024 } })?.url).toBe('https://upload.wikimedia.org/wikipedia/commons/a/ab/Goa_beach.jpg');
+  });
+
   it('never a flag, a coat of arms, an emblem, a seal, a logo or a map, even as a JPEG; no SVG or PNG; no disambiguation page', () => {
     for (const file of ['Flag_of_Goa.jpg', 'Coat_of_arms_of_Kerala.jpg', 'Emblem_of_Sikkim.jpg', 'Seal_of_Ladakh.jpg', 'Goa_Tourism_logo.jpg', 'Kerala_locator_map.jpg', 'Map_of_Coorg.jpg']) {
       expect(photoOf(big(file)), file).toBeNull();
