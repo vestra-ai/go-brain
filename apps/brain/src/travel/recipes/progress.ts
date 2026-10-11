@@ -27,6 +27,10 @@ export type RecipeProgress =
   | { type: 'choosing'; between: string[] }
   /** A person has the trip's browser (ixigo's login open on Go's screen): the read waits, and runs once it is free. */
   | { type: 'waiting' }
+  /** Go's one screen (the stage) shows the page of the ask before it: this read is next in line, never stopping that one. */
+  | { type: 'queued' }
+  /** Its turn on the stage came: the read opens its page now. */
+  | { type: 'turn' }
   /** The run failed with this TravelError code. */
   | { type: 'failed'; code: string }
   /**
