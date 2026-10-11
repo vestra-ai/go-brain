@@ -15,7 +15,15 @@ export interface TripLog {
   onEvent(fn: (ev: TripEvent) => void | Promise<void>): void;
 }
 
-export type TripLogImpl = TripLog & { emit(ev: TripEvent): Promise<void> };
+export type TripLogImpl = TripLog & {
+  emit(ev: TripEvent): Promise<void>;
+  /**
+   * The trip's home moves to the socket a Server request that names it came on (a tap, a catch_up), as append moves it
+   * for an event: only the Server that has a trip speaks for it. A trip that only gets taps after its Server's redeploy
+   * is never left waiting for the old instance (prod, 11 Oct 08:13Z: a login tap's card never went out). No trip, no move.
+   */
+  rehome(tripId: string, from: { instance: string; server?: string | null }): Promise<void>;
+};
 
 export function createTripLog(o: {
   pool: pg.Pool;
@@ -67,6 +75,13 @@ export function createTripLog(o: {
     async lastSeq(tripId) {
       const { rows } = await o.pool.query<{ last_seq: number }>('select last_seq from trips where trip_id = $1', [tripId]);
       return rows[0]?.last_seq ?? 0;
+    },
+    async rehome(tripId, from) {
+      await (o.appendPool ?? o.pool).query(
+        `update trips set server_instance = $2, server_name = $3
+         where trip_id = $1 and (server_instance is distinct from $2 or server_name is distinct from $3)`,
+        [tripId, from.instance, from.server ?? null],
+      );
     },
     onEvent(fn) {
       listeners.push(fn);

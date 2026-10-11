@@ -169,6 +169,18 @@ describe('the room\'s tools', () => {
     expect(calls[0]?.params).toEqual({ request_id: 'go_trip_turn_T_1', trip_id: 't_goa', dates: { start: '2026-11-06', end: '2026-11-09' } });
   });
 
+  // Prod, 11 Oct: "Goa" and "1 to 7 Dec" were saved, and their ✅ came off two seconds later because the reply ended on
+  // a next-step question. A line whose plan point update_trip saved is noted, so its ✅ stays.
+  it('update_trip marks the lines the turn woke for as noted when it changed the trip, and only then', async () => {
+    const f = fakeLink({ update_trip: () => ({ seq: 62 }) });
+    const wake = [{ id: 'd_1', tripId: 't_goa', kind: 'message' as const, ref: 'm_59', dueAt: new Date(), payload: { messageId: 'm_59' } }];
+    const ctx = makeTurnCtx({ tripId: 't_goa', turnId: 'turn_T', link: f.link, pack: pack(), wake, signal: new AbortController().signal });
+    expect(await tool('update_trip').run({ destination: 'North Goa' }, ctx)).toMatchObject({ ok: false });
+    expect(ctx.outcome.noted ?? []).toEqual([]);
+    expect(await tool('update_trip').run({ dates: { start: '2026-11-06', end: '2026-11-09' } }, ctx)).toEqual({ ok: true, changed: ['dates'] });
+    expect(ctx.outcome.noted).toEqual(['m_59']);
+  });
+
   describe('update_trip and a decided vote', () => {
     const sol = { kind: 'stay', title: 'Villa Sol', place: { name: 'Villa Sol', address: 'Anjuna, North Goa' }, area: 'Anjuna' };
     const casa = { kind: 'stay', title: 'Casa Mareia', place: { name: 'Casa Mareia', address: 'Vagator, North Goa' }, area: 'Vagator' };

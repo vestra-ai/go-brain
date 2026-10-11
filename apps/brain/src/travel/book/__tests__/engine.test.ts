@@ -119,6 +119,11 @@ describe("the site's own list of what it offers (hotels.search: ixigo's filters 
     // The page's own areas and the site's filters go together, as ixigo's page takes them.
     await engine.answer('hotels.search', { ...goa, place: 'Vagator' }, { tripId: 't_site', siteFilters: ['Star Rating 5'] });
     expect(reads[2]).toContain(`&filters=${encodeURIComponent('PA_C_78528,SR_5')}`);
+    // The rest of an ask (the Manali room, 11 Oct: "stays that have gym"): ixigo filters the part one of its own filters
+    // means, on its page, and says which; the rest is neither filtered nor unknown, the model's to pick.
+    const gym = await engine.answer('hotels.search', goa, { tripId: 't_site', siteWants: ['gym', 'quiet'] });
+    expect(reads[3]).toContain('&filters=FL_HF_11');
+    expect(gym.as === 'options' && gym.site).toMatchObject({ filtered: ['Fitness Centre'], unknown: [], wanted: ['gym'], listed: true });
   });
 
   // Staging, 10 Oct: ixigo's Entire house and Swimming Pool for five on all of Goa answered 424 with no stay at three rooms

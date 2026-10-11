@@ -11,6 +11,7 @@ import { bookingOnFor, createFlightBooking } from './booking/flight-booking.js';
 import { tripToday } from './dates.js';
 import { readTravelEnv } from './env.js';
 import { FakeIxigoStore } from './fake-ixigo/data.js';
+import { bookFlightTool, bookingNow } from './book-flight.js';
 import { eachTryAgain, flightsEachTool } from './flights-each.js';
 import { showHeadStartStays } from './head-start-wake.js';
 import { createImages, registerImageRoute } from './images.js';
@@ -240,6 +241,7 @@ export const registerTravel: RegisterLane = async (brain) => {
     results,
     today: tripToday(brain.pool, brain.now),
     simulate: { setFlightDelay: (carrierCode, number, date, minutes) => store.setDelay(carrierCode, number, date, minutes) },
+    booksFlights: (tripId) => bookingOnFor({ pool: brain.pool, switches: brain.switches }, tripId),
     // A stay from ixigo.com books on Go's test rail, after the trip's ixigo login and at ixigo's price now.
     webStays: createWebStays({
       results, runner: () => brain.recipeRunners?.browserFetch ?? null, login, now: brain.now, link: brain.door.link, log: brain.log,
@@ -395,6 +397,9 @@ export const registerTravel: RegisterLane = async (brain) => {
     clearInterval(bookingSweep);
   });
   registerTravelTaps(brain.taps, { results, pool: brain.pool, link: brain.door.link, desk: brain.desk, now: brain.now, log: brain.log, booking, nameOf, images });
+  // With BOOKING on for a trip, the model is told Go books its people's flights, and books a pick made before by words.
+  brain.tools.register(bookFlightTool({ booking, pool: brain.pool, results, nameOf }));
+  brain.context.addNow(bookingNow({ booking, pool: brain.pool, nameOf }));
   // The Server's REV4 B5: once a vote picks a stay, its rooms card (the ways to take its rooms, who shares, what each pays)
   // on the turn that says so; a tap keeps the way picked, for the expense per room (B6, chosenArrangement).
   const roomsCards = createRoomsCards(brain.pool);

@@ -123,7 +123,7 @@ export interface TravelSearch {
    * the names it didn't apply (not on its list, or its list not known before this read: listed false); and its list as
    * it is now known, in words, for the model.
    */
-  site?: { filtered: string[]; sorted: string | null; unknown: string[]; listed: boolean; offers: string | null; priced?: number | null; strictest?: string };
+  site?: { filtered: string[]; sorted: string | null; unknown: string[]; wanted?: string[]; listed: boolean; offers: string | null; priced?: number | null; strictest?: string };
   /**
    * ixigo's own filters left off because together they left no stay (stays: the strictest first, then the rest): these
    * options are the nearest without them, and the line says so (tools.ts leftOffLead).
@@ -273,6 +273,8 @@ export interface Travel {
    * be read: then nothing is said about the price moving. Absent: nothing is needed first.
    */
   prepare?(optionId: string, o: { tripId: string; what: string; resume: Record<string, unknown> }): Promise<{ ok: true; priceMinor: number | null } | { ok: false; note: string }>;
+  /** Whether Go books each person's own flight on this trip (BOOKING, booking/flight-booking.ts bookingOnFor). */
+  booksFlights?(tripId: string): Promise<boolean>;
   /** True while searches come from the fake ixigo (TRAVEL_MODE is fake, or ixigo is not set up): the listings are simulated. */
   simulated?(): boolean;
   /** Present while the fake ixigo runs: makes a flight late, for the demo's labelled "simulated" watch. */

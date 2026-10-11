@@ -6,7 +6,7 @@ import type { TripPack } from '../../trips/pack.js';
 import { createContext } from '../context.js';
 import { dataBlock } from '../fence.js';
 import { GO_RULES } from '../rules.js';
-import { askNote, LEAD_UP_MS, leadUp, quietNote, renderMessageWake, renderSetupWake, renderTripChangeWake } from '../wakes.js';
+import { askNote, catchUpNote, LEAD_UP_MS, leadUp, quietNote, renderMessageWake, renderSetupWake, renderTripChangeWake, WAITED_MS } from '../wakes.js';
 import type { Message } from '../../door/methods.js';
 
 // Asks from the live runs (goa-300 and goa-50), each naming Go.
@@ -153,6 +153,32 @@ describe('a tag that points at the person\'s own words', () => {
     expect(LEAD_UP_MS).toBe(10 * 60_000);
     expect(leadUp(old.messages[2]!, old)).toEqual({ own: [], lastAsk: null });
     expect(askNote([woke(4, true)], old)).toBe(`Answer #4 ${ORDER}`);
+  });
+
+  // Prod, 11 Oct, Manali: four asks waited 30 minutes on a stranded socket, and Go came back answering only the newest.
+  it('asks that waited for Go are answered together, the oldest real ask first; fresh asks get no such note', () => {
+    const pack: TripPack = {
+      trip: goaSnapshot(),
+      messages: [
+        msg(10, 'p_rahul', '@Go whats going on'),
+        msg(11, 'p_priya', '@Go plan a stay'),
+        msg(12, 'p_kabir', 'nice'),
+        msg(40, 'p_rahul', 'yo go are you back?'),
+      ],
+      seq: 40,
+    };
+    const items = [woke(11, true), woke(10, true), woke(12, false), woke(40, true)];
+    // Seq 10 was sent at 10:00:10; seq 40 at 10:00:40.
+    const late = new Date(Date.parse(pack.messages[0]!.sent_at) + WAITED_MS + 20_000);
+    expect(catchUpNote(items, pack, late)).toBe(
+      "You couldn't reach the room when #10 and #11 came, and they waited. Answer every ask that waited together in this one reply, " +
+        'the oldest real ask first, doing what it asked (an ask for stays gets the stays card), never only the newest line. ' +
+        'A greeting or "are you there" needs no more than that you are back.',
+    );
+    // Asks answered as they come: nothing waited.
+    expect(catchUpNote(items, pack, new Date(Date.parse(pack.messages[3]!.sent_at) + 5_000))).toBeNull();
+    // A line that didn't ask Go never counts.
+    expect(catchUpNote([woke(12, false)], pack, late)).toBeNull();
   });
 
   it('the rules say the pay and book refusal only when someone asks to pay or book, never as an aside', () => {

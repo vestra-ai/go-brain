@@ -214,8 +214,15 @@ export async function buildBrain(env: Env, o: BuildOptions = {}): Promise<Built>
   const guard = createReplayGuard({ pool, now });
   const door = createDoor({
     http, secret: env.GO_SIGNING_SECRET, guard, link, log, now, pingMs: t.pingMs, idleMs: t.idleMs,
-    // Read at each request: the tasks lane sets the trip computer's hold after the door is made.
-    onTripActive: (tripId) => brain.recipeRunners?.roomActive?.(tripId),
+    // A request that names a trip came from the Server that has it now: the trip's home follows, in the link at once (the
+    // request's own replies go there) and in trips. Read at each request: the tasks lane sets the trip computer's hold
+    // after the door is made.
+    onTripActive: (tripId, from) => {
+      const home = { instance: from.instance, server: from.server ?? null };
+      link.rehome(tripId, home);
+      tripLog.rehome(tripId, home).catch((err: unknown) => log.warn({ err, trip: tripId }, "a trip's home did not move"));
+      brain.recipeRunners?.roomActive?.(tripId);
+    },
   });
   const taps = createTapRouter({ pool, cards, log });
   // send_event's answer waits on one write only, on connections of its own: never behind the work of earlier events on

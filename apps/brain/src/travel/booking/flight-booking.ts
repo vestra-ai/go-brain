@@ -28,8 +28,17 @@ import { matchTravellers, savedTravellers } from './travellers.js';
 export const FLIGHT_STREAM = '/flights/v2/search/stream';
 export const FLIGHT_FARE = '/flight-booking/flight-fare';
 export const GRAPH = '/graph';
-/** The account's saved travellers (E2, his browser, 10 Oct 11:21Z: the traveller step's own call, `date` the day flown). */
+/**
+ * The account's saved travellers (E2, his browser, 10 Oct 11:21Z: the traveller step's own call, `date` the day flown),
+ * caught as the traveller step makes it: ixigo turns away Go's own call for it, which lacks the page's headers.
+ */
 export const SAVED_TRAVELLERS = '/api/v2/users/traveller';
+/** The review step's Continue, which opens the traveller step. */
+const CONTINUE = { op: 'click', role: 'button', name: 'Continue' } as const;
+/** Said to them alone when their saved travellers didn't read, before the one read more. */
+export const TRAVELLERS_RETRY = "Go couldn't read your saved travellers on ixigo just now. Trying again.";
+/** How long a booking counts as under way: a run takes under a minute, and one a restart cut off frees its person after. */
+export const RUNNING_MS = 3 * 60_000;
 /** The traveller step's fields, its own first call once the review step's Continue is pressed (E2). */
 export const TRAVELLER_FIELDS = '/flight-booking/v1/traveller/display-fields';
 /** ixigo's own flights stream, as flights.results reads it: the last whole event, up to Bash's most. */
@@ -236,8 +245,11 @@ export interface FlightBooking {
    * names the trip's Server instance ("instances:drill-p0").
    */
   onFor(tripId: string): Promise<boolean>;
-  /** Starts the booking a tap asked for, once; its work goes on after the tap is answered. */
-  start(ask: BookingAsk): Promise<void>;
+  /**
+   * Starts the booking a tap asked for, once; its work goes on after the tap is answered. 'running': another booking of
+   * theirs is under way (a second tap on the room's card), and nothing starts.
+   */
+  start(ask: BookingAsk): Promise<'started' | 'running'>;
   /** Pay on a traveller's ready card: the vault's pay page for them alone, or why not. Inside the tap's 2.5 s. */
   pay(i: { tripId: string; cardId: string; personId: string; tapId: string }): Promise<PayTap>;
   /** The trip's ixigo login just landed (login.ts onLoggedIn): every booking that waited on it carries on. */
@@ -445,15 +457,39 @@ export function createFlightBooking(d: FlightBookingDeps): FlightBooking {
       await live.finish(false);
       return;
     }
-    const day = results.searchParams.get('date') ?? '';
-    const ms = dayMs(day);
-    const saved = runner.pageFetch && ms !== null
-      ? await runner.pageFetch(ask.tripId, { url: `${SAVED_TRAVELLERS}?date=${ms}`, method: 'GET' }, { tag: runId }).catch(() => null)
-      : null;
+    const ms = dayMs(results.searchParams.get('date') ?? '');
     const iso = ms !== null ? new Date(ms + 330 * 60_000).toISOString().slice(0, 10) : '';
-    const [match] = saved && saved.status >= 200 && saved.status < 300
-      ? matchTravellers([{ personId: ask.personId, name: ask.name, kind: 'adult' }], savedTravellers(parsed(saved.body), iso))
-      : [];
+    // The list as ixigo's traveller step asks for it itself once Continue is pressed, caught in a private tab: the page's
+    // own call carries the headers ixigo wants. Go's own call for it from inside the page carried none, ixigo turned it
+    // away, and Keshav's first real booking stopped with nothing true said (prod, 11 Oct 08:28Z). A read that fails is
+    // said to them, and read once more.
+    const readSaved = async (): Promise<unknown> => {
+      const got = await runner
+        .read(ask.tripId, review, { capture: [{ match: SAVED_TRAVELLERS, required: true }], steps: [FARE_TYPES[ask.choice].click, CONTINUE] }, { private: true, tag: runId })
+        .catch(() => null);
+      const body = got ? bodiesFor(got.captures, SAVED_TRAVELLERS)[0] : undefined;
+      return body === undefined ? null : parsed(body);
+    };
+    let list = await readSaved();
+    if (list === null) {
+      d.log.info({ runId, tripId: ask.tripId }, "travel: a flight booking's saved travellers didn't read; once more");
+      await d.link
+        .request('post_message', { request_id: stableId('go_book_retry', runId), trip_id: ask.tripId, text: TRAVELLERS_RETRY, visible_to_person_ids: [ask.personId] })
+        .catch(() => undefined);
+      list = await readSaved();
+    }
+    if (list === null) {
+      // Said as it is, never "Go can't book flights", and never an ixigo page as the answer (Keshav's ruling): their card
+      // goes back (fail), to tap again.
+      await d.link
+        .request('post_message', {
+          request_id: stableId('go_book_unread', runId), trip_id: ask.tripId, visible_to_person_ids: [ask.personId],
+          text: `Go still couldn't read your saved travellers on ixigo, so it stopped before booking ${title}. Tap I'll take this to try again.`,
+        })
+        .catch(() => undefined);
+      return fail('travellers_not_read', 3);
+    }
+    const [match] = matchTravellers([{ personId: ask.personId, name: ask.name, kind: 'adult' }], savedTravellers(list, iso));
     if (!match) return fail('travellers_not_read', 3);
     if (match.status !== 'matched') {
       await d.link.request('post_message', {
@@ -469,7 +505,7 @@ export function createFlightBooking(d: FlightBookingDeps): FlightBooking {
         ask.tripId, review,
         {
           capture: [{ match: TRAVELLER_FIELDS, required: true }],
-          steps: [FARE_TYPES[ask.choice].click, { op: 'click', role: 'button', name: 'Continue' }, { op: 'click', text: match.shown }],
+          steps: [FARE_TYPES[ask.choice].click, CONTINUE, { op: 'click', text: match.shown }],
         },
         { private: true, tag: runId, onTrace: (t) => { if (t.failed) ranOut = true; } },
       )
@@ -562,19 +598,29 @@ export function createFlightBooking(d: FlightBookingDeps): FlightBooking {
     onFor: (tripId) => bookingOnFor(d, tripId),
     async start(ask) {
       const runId = stableId('fb', ask.tapId);
+      // One booking of theirs at a time: a second tap meanwhile (the room's card keeps I'll take this) starts nothing, so
+      // two runs never race for one browser (prod, 11 Oct: two taps 1.5 s apart, two runs).
       const fresh = await d.pool.query(
         `insert into flight_bookings (run_id, trip_id, person_id, option_id, pick_card_id, title, day, choice, state, created_at, updated_at)
-         values ($1, $2, $3, $4, $5, $6, $7, $8, 'fare', $9, $9) on conflict (run_id) do nothing`,
-        [runId, ask.tripId, ask.personId, ask.offer.optionId, ask.offer.cardId, clip(ask.offer.title, 120), dayOf(ask.offer.sourceUrl), ask.choice, d.now()],
+         select $1, $2, $3, $4, $5, $6, $7, $8, 'fare', $9, $9
+         where not exists (
+           select 1 from flight_bookings where trip_id = $2 and person_id = $3 and run_id <> $1
+             and state in ('fare', 'fare_type', 'coupon', 'travellers') and updated_at > $10)
+         on conflict (run_id) do nothing`,
+        [runId, ask.tripId, ask.personId, ask.offer.optionId, ask.offer.cardId, clip(ask.offer.title, 120), dayOf(ask.offer.sourceUrl), ask.choice, d.now(), new Date(d.now().getTime() - RUNNING_MS)],
       );
       // A repeat of the tap: the booking it started goes on, and nothing starts twice.
-      if (fresh.rowCount === 0) return;
+      if (fresh.rowCount === 0) {
+        const again = await d.pool.query('select 1 from flight_bookings where run_id = $1', [runId]);
+        return again.rowCount ? 'started' : 'running';
+      }
       const run = book(ask, runId).catch(async (err: unknown) => {
         d.log.warn({ runId, err: String(err).slice(0, 200) }, 'travel: a flight booking failed');
         await save(runId, { state: 'failed', why: 'error' }).catch(() => undefined);
       });
       running.add(run);
       void run.finally(() => running.delete(run));
+      return 'started';
     },
     resumeWaiting: (tripId) => carryOn(tripId),
     async sweep() {

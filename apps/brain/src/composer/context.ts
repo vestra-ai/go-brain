@@ -68,9 +68,9 @@ export interface Context {
    *  non-null string wins; P1's generic line is the fallback. */
   addWake(kind: DeskKind, render: (item: DeskItem, pack: TripPack) => string | null): void;
   /** A line said once under "why Go woke", from all the wake items together (P1's note for messages that don't name Go). */
-  addWakeNote(render: (items: DeskItem[], pack: TripPack) => string | null): void;
+  addWakeNote(render: (items: DeskItem[], pack: TripPack, now: Date) => string | null): void;
   /** An order for this reply, said once at the very end of the prompt, after the newest messages and outside their fence (P1's note for an ask). */
-  addEndNote(render: (items: DeskItem[], pack: TripPack) => string | null): void;
+  addEndNote(render: (items: DeskItem[], pack: TripPack, now: Date) => string | null): void;
   /** P2's fold: the story block sits right before the chat chunks (inside the data fence), and the chat starts at chatFromSeq. */
   setStory(p: StoryProvider): void;
   /** P2's forget: a forgotten person's earlier lines are hidden in the chat, and "right now" says who asked Go to forget them. */
@@ -161,8 +161,8 @@ export function createContext(log: Log): ContextImpl {
   const providers: NowProvider[] = [];
   const wakes = new Map<DeskKind, Array<(item: DeskItem, pack: TripPack) => string | null>>();
   const rules: Array<(wake: DeskItem[]) => TurnLimits | null> = [];
-  const notes: Array<(items: DeskItem[], pack: TripPack) => string | null> = [];
-  const endNotes: Array<(items: DeskItem[], pack: TripPack) => string | null> = [];
+  const notes: Array<(items: DeskItem[], pack: TripPack, now: Date) => string | null> = [];
+  const endNotes: Array<(items: DeskItem[], pack: TripPack, now: Date) => string | null> = [];
   const turnEnds: Array<(t: TurnEnd) => void> = [];
   const directs: DirectAnswer[] = [];
   const riders: TurnCard[] = [];
@@ -333,7 +333,7 @@ export function createContext(log: Log): ContextImpl {
       const said = (renders: typeof notes): string[] =>
         renders.flatMap((n) => {
           try {
-            return n(i.wake, i.pack) || [];
+            return n(i.wake, i.pack, i.now) || [];
           } catch (e) {
             log.warn({ err: e }, 'a wake note failed; the turn goes on without it');
             return [];

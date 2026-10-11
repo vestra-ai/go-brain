@@ -107,6 +107,9 @@ export function tripNow(packs: Packs): NowProvider {
             votersOf(d, trip.people),
         );
       }
+      // The voters are here to answer someone who asks about a vote, never a nudge on a reply about something else (prod,
+      // 11 Oct 08:22: "…and the stay is still open for votes" on an unrelated line).
+      if (trip.decisions.some((x) => x.status === 'open')) lines.push('Mention an open vote only when the message you answer is about it.');
       const booked = trip.bookings.filter((b) => b.status === 'confirmed');
       if (booked.length) lines.push(`Booked: ${booked.map((b) => inlineData(b.title)).join(', ')}`);
       const plan = itineraryLines(trip);
