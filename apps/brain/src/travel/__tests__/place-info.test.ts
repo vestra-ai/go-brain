@@ -6,7 +6,7 @@ import type { EngineAnswer } from '../book/engine.js';
 import type { Suggestion } from '../book/lookup.js';
 import { TravelError } from '../mcp-travel.js';
 import { createGuideOf, createPlaceFor } from '../place-for.js';
-import { placeInfo, placeInfoHandler, registerPlaceLearn } from '../place-info.js';
+import { IXIGO_WORDS, placeInfo, placeInfoHandler, registerPlaceLearn } from '../place-info.js';
 
 const TOKEN = 'admin-test-token-16';
 const LADAKH: Suggestion = { name: 'Ladakh', line: 'India', all: false, country: 'India', placeName: 'Ladakh', place: { locationId: 77, locationType: 'S', lat: 34.15, lng: 77.58 } };
@@ -133,6 +133,38 @@ describe('POST /admin/places/learn: a place learned ahead, through a trip of the
     // Once the place itself is learned (a trip resolved it), place_info answers that.
     await db.pool.query("insert into place_details (words, place, kind, best_months) values ('kerala', $1, 'state', '{1,2}')", [{ name: 'Kerala', place_id: 'ixigo:9', lat: 10.5, lng: 76.2 }]);
     expect(await placeInfo(db.pool, 'Kerala')).toEqual({ place: { name: 'Kerala', place_id: 'ixigo:9', lat: 10.5, lng: 76.2 }, best_months: [1, 2] });
+    await app.close();
+  });
+
+  it("learns a Server name ixigo knows by other words from ixigo's guide under those words, kept under the Server's name", async () => {
+    // The prod warm, 11 Oct: no guide at /plan/andaman, one at /plan/andaman-and-nicobar; the same for Ladakh.
+    expect(IXIGO_WORDS.get('ladakh')).toBe('Leh Ladakh');
+    const asked: string[] = [];
+    const engine = {
+      suggest: async (_id: string, words: string) => {
+        asked.push(`box:${words}`);
+        return null;
+      },
+      answer: async (_id: string, given: Record<string, unknown>) => {
+        asked.push(`guide:${String(given['place'])}`);
+        return {
+          ...KERALA, title: 'Andaman and Nicobar',
+          rows: [{ destination: 'Andaman and Nicobar, India', photo: 'https://imagedelivery.net/x/havelock/public', photos: [{ url: 'https://imagedelivery.net/x/radhanagar/public', label: 'Radhanagar Beach' }], best_months: [1, 2, 3, 11, 12] }],
+        };
+      },
+    };
+    const app = await appWith({ token: TOKEN, engine });
+    const res = await app.inject({ method: 'POST', url: '/admin/places/learn', headers: auth, payload: { trip_id: 't_drill', name: 'Andaman' } });
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toEqual({
+      place: { name: 'Andaman and Nicobar', photo_url: 'https://go.test/img/havelock.jpg', photos: [{ url: 'https://go.test/img/radhanagar.jpg', label: 'Radhanagar Beach' }] },
+      best_months: [1, 2, 3, 11, 12],
+    });
+    // Straight to the guide under ixigo's words: no box lookup, which can't settle on the name.
+    expect(asked).toEqual(['guide:Andaman and Nicobar']);
+    // Kept under the Server's name, which is what place_info is asked by.
+    expect(await placeInfo(db.pool, 'Andaman')).toEqual(res.json());
+    expect(await placeInfo(db.pool, 'Andaman and Nicobar')).toEqual({ place: { name: 'Andaman and Nicobar' }, complete: false });
     await app.close();
   });
 
