@@ -196,9 +196,10 @@ async function finishPaid(d: MoneyDeps, row: PaymentRow): Promise<void> {
       text,
       card: ticketCard({ cardId: rid('c_ticket', approvalId), bookingId, title: confirmed.title, ref: confirmed.ref, refundableUntil, simulated: confirmed.simulated === true }),
     });
-    await patchPayment(d.pool, row.payment_id, { ticket_posted_at: d.now() }, d.now());
-    // 6. The stay booked, each person's flights are next.
+    // 6. The stay booked, each person's flights are next: before the ticket is marked posted, so a failed wake is tried
+    //    again with it (the post and the wake are each once by their ids).
     if (confirmed.kind === 'stay') await d.stayBooked?.(row.trip_id, { bookingId, title: confirmed.title });
+    await patchPayment(d.pool, row.payment_id, { ticket_posted_at: d.now() }, d.now());
   }
 }
 
