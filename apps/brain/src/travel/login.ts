@@ -398,7 +398,8 @@ export function loginCard(
 
 export function createIxigoLogin(d: LoginDeps): IxigoLogin {
   const inFlight = new Set<Promise<void>>();
-  const landed: Array<(tripId: string) => void> = [];
+  /** Who hears a trip's login land (onLoggedIn). */
+  const loggedInListeners: Array<(tripId: string) => void> = [];
   /** The trips whose one-tap login this process is watching now (from the tap until the wait ends). */
   const waiting = new Set<string>();
   const track = (what: string, tripId: string, p: Promise<void>): void => {
@@ -576,7 +577,7 @@ export function createIxigoLogin(d: LoginDeps): IxigoLogin {
     }
     const next: LoginRow = { ...row, state: 'logged_in', loggedInAt: row.state === 'logged_in' ? row.loggedInAt : now, checkedAt: now, parked: null };
     await save(next);
-    if (row.state !== 'logged_in') for (const fn of landed) fn(row.tripId);
+    if (row.state !== 'logged_in') for (const fn of loggedInListeners) fn(row.tripId);
     return next;
   }
 
@@ -1193,7 +1194,7 @@ export function createIxigoLogin(d: LoginDeps): IxigoLogin {
     personGone,
 
     onLoggedIn(fn) {
-      landed.push(fn);
+      loggedInListeners.push(fn);
     },
 
     async sweep() {
