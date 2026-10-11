@@ -11,11 +11,15 @@ export type OptionsCardT = z.infer<typeof C.OptionsCard>;
 export type NoticeCardT = z.infer<typeof C.NoticeCard>;
 type CardOption = OptionsCardT['options'][number];
 
+/** On a ticket's card (PERSONAL_KINDS) only: each person's own pick. */
 export const PICK_ACTION = { action_id: 'pick', label: "I'll take this", style: 'primary', per_option: true } as const;
+/**
+ * Before rev 5 (Server team, 11 Oct, R5) every card had these: "Put it to a vote", "See on ixigo" on each option, and "See
+ * all on ixigo" on stays. A shared thing's card is now its vote (decision_id), and each option carries its ixigo page
+ * (url), so no card gets them; their taps still answer on the cards already in rooms (taps.ts).
+ */
 export const VOTE_ACTION = { action_id: 'vote', label: 'Put it to a vote', style: 'secondary' } as const;
-/** On options from ixigo.com: opens the option's own page there, where the group books it. */
 export const OPEN_ACTION = { action_id: 'open', label: 'See on ixigo', style: 'secondary', per_option: true } as const;
-/** On a card of stays that shows a few of a longer list: the whole list on ixigo.com, one tap away. */
 export const SEE_ALL_ACTION = { action_id: 'see_all', label: 'See all on ixigo', style: 'secondary' } as const;
 /**
  * The App's budget sheet for a trip, from the App team's route table (docs/guide/11-contract-1-1.md): since rev 4 the
@@ -272,6 +276,7 @@ function cardOption(p: CardPick): CardOption {
   const stay = o.kind === 'stay';
   const price = stay ? o.totalMinor : o.priceMinor;
   const note = stay ? (price !== undefined ? stayNote(o) : undefined) : o.priceNote;
+  const page = ixigoPage(o.sourceUrl);
   return {
     option_id: p.optionId,
     title: clip(o.title, 80),
@@ -288,6 +293,8 @@ function cardOption(p: CardPick): CardOption {
     ...(o.refundableUntil ? { refundable_until: o.refundableUntil } : {}),
     ...(p.details ? { details: p.details } : {}),
     ...(p.photos?.length ? { photos: p.photos } : {}),
+    // Its own page on ixigo.com, which the App shows as a small "View on ixigo" in its details (rev 5 R5), never a button.
+    ...(page ? { url: page } : {}),
   };
 }
 
@@ -299,12 +306,13 @@ const KIND_WORDS: Record<OptionKind, [string, string]> = {
 
 /** The options card, checked against the contract: a bug here throws instead of posting a card the App cannot draw. */
 /**
- * seeAll: the card's last button opens the whole list on ixigo.com instead of each option's page (stays, three shown).
- * forPersonIds: a card for those people alone (each person's own flights, flights-each.ts): the room sees it, and only
- * they act on it, each tap their own.
+ * A shared thing's card (a stay, a place) is its vote (rev 5 R5): decisionId, the vote opened for its options, draws Vote
+ * on each, and it has no buttons of its own but more ("See more", R4: more of the same search, in the same vote). A
+ * ticket's card (PERSONAL_KINDS) has "I'll take this", never a vote. forPersonIds: a card for those people alone (each
+ * person's own flights, flights-each.ts): the room sees it, and only they act on it, each tap their own.
  */
 export function buildOptionsCard(i: {
-  cardId: string; title: string; optionKind: OptionKind; checkedAt: string; picks: CardPick[]; seeAll?: boolean; forPersonIds?: string[];
+  cardId: string; title: string; optionKind: OptionKind; checkedAt: string; picks: CardPick[]; decisionId?: string; more?: boolean; forPersonIds?: string[];
 }): OptionsCardT {
   const priced = i.picks.filter((p) => p.option.priceMinor !== undefined);
   const cheapest = [...priced].sort((a, b) => (a.option.priceMinor ?? 0) - (b.option.priceMinor ?? 0))[0];
@@ -320,20 +328,20 @@ export function buildOptionsCard(i: {
     checked_at: i.checkedAt,
     options: i.picks.map(cardOption),
     actions: i.forPersonIds ? optionsActions(i).map((a) => ({ ...a, only_for_person_ids: i.forPersonIds })) : optionsActions(i),
+    ...(i.decisionId ? { decision_id: i.decisionId } : {}),
     ...(i.forPersonIds ? { for_person_ids: i.forPersonIds } : {}),
   });
 }
 
-function optionsActions(i: { optionKind: OptionKind; picks: CardPick[]; seeAll?: boolean }) {
+function optionsActions(i: { optionKind: OptionKind; more?: boolean }) {
   // A ticket is its traveller's own: picked, never voted (PERSONAL_KINDS).
-  const group = [PICK_ACTION, ...(i.picks.length >= 2 && !PERSONAL_KINDS.has(i.optionKind) ? [VOTE_ACTION] : [])];
-  const open = i.picks.some((p) => ixigoPage(p.option.sourceUrl)) ? [OPEN_ACTION] : [];
-  return [...group, ...(i.seeAll ? [SEE_ALL_ACTION] : open)];
+  if (PERSONAL_KINDS.has(i.optionKind)) return [PICK_ACTION];
+  return i.more ? [C.MORE_OPTIONS] : [];
 }
 
 /**
- * The card of each home city's ways to the trip: its rows are trains and buses, each with its own ixigo page; flights:
- * "Flights from my city" opens the tapper's own city's flights. Checked against the contract like any options card.
+ * The card of each home city's ways to the trip: its rows are trains and buses, each with its own ixigo page (url);
+ * flights: "Flights from my city" opens the tapper's own city's flights. Checked against the contract like any options card.
  */
 export function buildWaysCard(i: { cardId: string; title: string; homes: string[]; checkedAt: string; picks: CardPick[]; flights: boolean }): OptionsCardT {
   const homes = i.homes.length < 2 ? (i.homes[0] ?? '') : `${i.homes.slice(0, -1).join(', ')} and ${i.homes.at(-1)}`;
@@ -345,6 +353,6 @@ export function buildWaysCard(i: { cardId: string; title: string; homes: string[
     option_kind: i.picks.every((p) => p.option.kind === 'bus') ? 'bus' : 'train',
     checked_at: i.checkedAt,
     options: i.picks.map(cardOption),
-    actions: [OPEN_ACTION, ...(i.flights ? [FLIGHTS_HOME_ACTION] : [])],
+    actions: i.flights ? [FLIGHTS_HOME_ACTION] : [],
   });
 }

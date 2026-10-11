@@ -144,7 +144,7 @@ export function createDirector(o: { trip: () => TripSnapshot | null }): Director
         ? { tools: [{ name: 'show_options', input: { results_id: id, title: 'Friday flights, Delhi to Goa', line: DIRECTOR_WORDS.flights } }] }
         : { text: DIRECTOR_WORDS.noFlights };
     }
-    // The villas go up as options only: the group opens the vote with the card's own "Put it to a vote" (the stage's way).
+    // The villas go up as options, which are the group's vote from the start (rev 5 R5): Vote on each option.
     // Only lines that arrived meanwhile bring Go back after a card: it says its line again.
     if (result('show_options')) return { text: now.includes('finished with') ? DIRECTOR_WORDS.villasShown : DIRECTOR_WORDS.flights };
     if (result('start_task')) return { text: DIRECTOR_WORDS.villaStarted };

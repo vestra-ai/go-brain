@@ -94,7 +94,10 @@ export async function setMandate(
   d: MoneyDeps,
   ctx: Pick<TurnCtx, 'tripId' | 'stableId' | 'cards' | 'pack'> & Partial<Pick<TurnCtx, 'turnId' | 'wake'>>,
   o: { decisionId: string; choiceIndex: number; capMinor?: number; refundableOnly: boolean; payerPersonId: string },
-): Promise<{ cardId: string; capMinor: number; byMargin: boolean; note: string | null } | { refused: string; unbookable?: true; parked?: true; claim?: true }> {
+): Promise<
+  | { cardId: string; capMinor: number; byMargin: boolean; note: string | null; booking: string }
+  | { refused: string; unbookable?: true; parked?: true; claim?: true }
+> {
   const vague = { payer: 'The payer', what: 'it' };
   let trip: Trip;
   try {
@@ -112,7 +115,9 @@ export async function setMandate(
   const allowed = winner !== null ? o.choiceIndex === winner : top > 0 && decision.tally[o.choiceIndex] === top;
   const winnerLabel = winner !== null ? (decision.options[winner]?.label ?? 'the winner') : 'one of the options that tied';
   const chosen = decision.options[o.choiceIndex];
-  if (!allowed || !chosen) return { refused: `The group picked ${winnerLabel}. I can only set that.` };
+  // A trip of one: nobody else to agree with, so "you", never "the group".
+  const alone = trip.people.length === 1;
+  if (!allowed || !chosen) return { refused: `${alone ? 'You' : 'The group'} picked ${winnerLabel}. I can only set that.` };
 
   // Something Go cannot book needs no payer: say so before anyone is asked who pays. A failed check only says try again.
   const cannot = await whyNotBookable(d, chosen);
@@ -131,7 +136,8 @@ export async function setMandate(
     const holder = held?.personId ?? decision.mandate?.payer_person_id ?? null;
     if (holder) {
       if (holder !== payer.person_id) return { refused: `${nameOf(holder)} is already booking this.` };
-    } else if (ctx.wake && askersOf(ctx.wake, ctx.pack).includes(payer.person_id)) {
+    } else if (alone || (ctx.wake && askersOf(ctx.wake, ctx.pack).includes(payer.person_id))) {
+      // A trip of one has nobody to ask who books: the one person is the payer, with no card asking the group.
       const first = await d.claims.take(ctx.tripId, o.decisionId, payer.person_id);
       if (first !== payer.person_id) return { refused: `${nameOf(first)} is already booking this.` };
       claimedNow = true;
@@ -188,12 +194,16 @@ export async function setMandate(
   let capMinor: number;
   if (o.capMinor !== undefined) capMinor = o.capMinor;
   else if (price !== null) capMinor = marginCap(price);
-  else return { refused: `Tell me the most the group agreed to spend on ${chosen.label}. I can't see its price.` };
+  else return { refused: alone ? `Tell me the most you want to spend on ${chosen.label}. I can't see its price.` : `Tell me the most the group agreed to spend on ${chosen.label}. I can't see its price.` };
   if (price !== null && capMinor < price) return { refused: `That cap is below the price of ${chosen.label} (${money(price, currency)}).` };
   const withinMargin = price !== null && capMinor <= marginCap(price);
   if (!withinMargin && !said.includes(capMinor)) {
     const most = price !== null ? `, up to ${money(marginCap(price), currency)},` : '';
-    return { refused: `Tell me the cap the group agreed on. I can use the price plus a little margin${most} or a number someone said.` };
+    return {
+      refused: alone
+        ? `Tell me the most you want to spend. I can use the price plus a little margin${most} or a number you said.`
+        : `Tell me the cap the group agreed on. I can use the price plus a little margin${most} or a number someone said.`,
+    };
   }
 
   const m = decision.mandate;
@@ -216,8 +226,13 @@ export async function setMandate(
     mandateCard({ cardId, decisionId: o.decisionId, what: chosen.label, capMinor, currency, refundableOnly: o.refundableOnly, payerName: payer.name, moved }),
   );
   // Never "nobody said a number": an I'll book it tap sets it with no model reading the chat, where someone may have.
-  const margin = byMargin ? `I set the cap at ${money(capMinor, currency)}: the price plus a little margin.` : null;
-  const claimed = claimedNow ? `${payer.name}, you're booking for all ${trip.people.length}.` : null;
+  const margin = byMargin ? `The card allows up to ${money(capMinor, currency)}, in case the price rises a little before it's booked.` : null;
+  // Who books, said once: a group hears who books for all of them; one traveller hears what they're booking, and for how much.
+  const nights = nightsOf(trip);
+  const booking = alone
+    ? `${payer.name}, you're booking ${chosen.label}${price !== null ? `, ${money(price, currency)}` : ''}${nights ? ` for ${nights} night${nights === 1 ? '' : 's'}` : ''}.`
+    : `${payer.name}, you're booking for all ${trip.people.length}.`;
+  const claimed = claimedNow ? booking : null;
   const note = [claimed, moved, margin].filter((x) => x !== null).join(' ') || null;
-  return { cardId, capMinor, byMargin, note };
+  return { cardId, capMinor, byMargin, note, booking };
 }

@@ -130,7 +130,8 @@ describe("each person's own flights, from their home city", () => {
     expect(card.for_person_ids).toEqual(['p_rahul']);
     expect(card.options.map((o) => o.title)).toEqual(['IndiGo 6E2134', 'SpiceJet SG8169', 'Vistara UK811']);
     // Every button is Rahul's alone, and a ticket has no vote.
-    expect(card.actions?.map((a) => [a.action_id, a.only_for_person_ids])).toEqual([['pick', ['p_rahul']], ['open', ['p_rahul']]]);
+    // Its own pick only: each option carries its ixigo page (rev 5 R5), never a See on ixigo button.
+    expect(card.actions?.map((a) => [a.action_id, a.only_for_person_ids])).toEqual([['pick', ['p_rahul']]]);
     expect(rahul.text).toBe('Rahul, your flights from Delhi on Fri 6 Nov, after 6 pm: 3 fit, from ₹6,000 a person. Tap "I\'ll take this" on yours.');
     // Bangalore's page didn't come: never a link card (G1, 11 Oct). Arjun hears it plainly, his alone, and Bangalore is
     // tried again in a minute.

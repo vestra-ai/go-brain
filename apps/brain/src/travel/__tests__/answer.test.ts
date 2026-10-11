@@ -148,9 +148,11 @@ describe("the card's title, built from the search as the model's titles read", (
 });
 
 describe("the card's picks", () => {
-  it("takes the engine's first three stays, which hold its conditions, rating and spread", () => {
+  it("takes the engine's first stays, up to 10 (rev 5 R3), which hold its conditions, rating and spread", () => {
     const stays = ['A', 'B', 'C', 'D'].map((t) => toResultOption(priced('stay', t, 500_000)));
-    expect(directPicks('stays', stays)).toEqual([1, 2, 3]);
+    expect(directPicks('stays', stays)).toEqual([1, 2, 3, 4]);
+    const many = Array.from({ length: 14 }, (_, i) => toResultOption(priced('stay', `S${i}`, 500_000)));
+    expect(directPicks('stays', many)).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
   });
 
   it('takes the three cheapest journeys that fit, shown by departure, one fare a train', () => {

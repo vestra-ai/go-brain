@@ -1,15 +1,25 @@
 /**
- * Opening a vote from an options card, once per card: a claim on the card's row (a turn id or a tap id) makes a second
+ * Opening a vote on an options card, once per card: a claim on the card's row (a turn id or a tap id) makes a second
  * tap a no-op, and the same key again (a rerun of the same turn) gets the same vote back. Each vote option's option_ref
  * is the option's id, so P5 finds the offer with brain.travel.offer(option_ref). A stay is put to the vote at its
- * whole-stay price, which is what gets paid. A card with one option is that option or "Keep looking". The caller shows
- * the vote card: a turn puts it in ctx.cards, a tap posts it.
+ * whole-stay price, which is what gets paid.
+ *
+ * Since rev 5 (the Server team, 11 Oct, R5) a shared thing's card is its vote: the vote opens as the card goes up, and the
+ * card names it (onCard), so the App draws Vote on each option; "See more" adds the next card's options to it (R4,
+ * addToVote). A card from before, or put to the vote by put_to_vote, gets its vote card as before: a card with one option
+ * is that option or "Keep looking", and the caller shows the vote card (a turn puts it in ctx.cards, a tap posts it).
  */
 import type * as C from '@go/contract';
 import type { ServerLink } from '../door/server-link.js';
 import { clip, formatInr, ixigoPage, PERSONAL_KINDS, placeKindNotAll, stayLine, type OptionsCardT } from './cards.js';
+import { stableId } from './ids.js';
 import type { OptionFields, OptionKind, ResultOption, ResultsStore } from './results.js';
 import type { StoredOffer } from './travel.js';
+
+/** How long a vote runs unless asked otherwise: a day, as it opens with its card, before anyone has looked (the lead, 11 Oct). */
+export const VOTE_HOURS = 24;
+/** The most options one vote takes, with "See more" (contract 1.3's Decision.options). */
+export const VOTE_MOST = 20;
 
 export type VoteCard = Extract<C.Card, { kind: 'vote' }>;
 export type VoteOutcome =
@@ -33,14 +43,15 @@ function stayQuestion(question: string, offers: StoredOffer[]): string {
   return question.replace(new RegExp(`\\b(${kind})(s?)\\b`, 'gi'), (_w, k: string, s: string) => `${k[0] === k[0]!.toUpperCase() ? 'S' : 's'}tay${s}`);
 }
 
-type VoteOption = { label: string; image_url?: string; price_minor?: number; currency?: string; option_ref?: string; note?: string } & OptionFields;
+type VoteOption = { label: string; image_url?: string; price_minor?: number; currency?: string; option_ref?: string; note?: string; details?: OptionsCardT['options'][number]['details'] } & OptionFields;
 
 /** The other answer of a one-option vote: no offer behind it, so nothing is ever booked when it wins. */
 export const KEEP_LOOKING = 'Keep looking';
 
 /**
- * Each option as the options card shows it: its photos and its rooms too, the top pick's from its own page once read
- * (pick-photos.ts, the Server team's 10 Oct B3 and B4). kept: each stay as its search saved it, for its note.
+ * Each option as the options card shows it: its photos, its details and its rooms too, the top pick's from its own page
+ * once read (pick-photos.ts, the Server team's 10 Oct B3 and B4; rev 5 R5). kept: each stay as its search saved it, for
+ * its note.
  */
 function voteOptions(offers: StoredOffer[], shown: Map<string, OptionsCardT['options'][number]>, kept: Map<string, ResultOption> = new Map()): VoteOption[] {
   return offers.slice(0, 10).map((of) => {
@@ -57,6 +68,7 @@ function voteOptions(offers: StoredOffer[], shown: Map<string, OptionsCardT['opt
       option_ref: of.optionId,
       ...(note ? { note: clip(note, 120) } : {}),
       ...(c?.photos?.length ? { photos: c.photos } : {}),
+      ...(c?.details ? { details: c.details } : {}),
       ...(c?.room_types?.length ? { room_types: c.room_types } : {}),
       ...(typeof c?.price_min_minor === 'number' ? { price_min_minor: c.price_min_minor } : {}),
       ...(typeof c?.price_max_minor === 'number' ? { price_max_minor: c.price_max_minor } : {}),
@@ -64,16 +76,36 @@ function voteOptions(offers: StoredOffer[], shown: Map<string, OptionsCardT['opt
   });
 }
 
-/** Each stay on a card as its search saved it (its facts, its night and its whole stay), by its option id. */
-async function keptStays(results: Pick<ResultsStore, 'get'>, tripId: string, offers: StoredOffer[]): Promise<Map<string, ResultOption>> {
-  const sets = new Map<string, Awaited<ReturnType<ResultsStore['get']>>>();
-  const kept = new Map<string, ResultOption>();
-  for (const offer of offers) {
-    if (!sets.has(offer.resultsId)) sets.set(offer.resultsId, await results.get(tripId, offer.resultsId));
-    const option = sets.get(offer.resultsId)?.options[offer.n - 1];
-    if (option) kept.set(offer.optionId, option);
+type CardRow = NonNullable<Awaited<ReturnType<ResultsStore['card']>>>;
+
+/**
+ * A card's options as its vote gives them: each as the card shows it, and a stay's note from the stay as its search saved
+ * it with its own offer (an offer's n is its place on the card, not in the search: a card of a search's 2nd, 5th and 7th
+ * once took the 1st, 2nd and 3rd's notes).
+ */
+async function cardVoteOptions(results: Pick<ResultsStore, 'offersOnCard' | 'optionsOnCard'>, row: Pick<CardRow, 'cardId' | 'optionKind' | 'card'>) {
+  const offers = await results.offersOnCard(row.cardId);
+  const shown = new Map(row.card.options.map((op) => [op.option_id, op]));
+  const kept = row.optionKind === 'stay' ? await results.optionsOnCard(row.cardId) : new Map<string, ResultOption>();
+  return { offers, options: voteOptions(offers, shown, kept) };
+}
+
+/**
+ * The lead, 11 Oct (rev 5 Q1): a new card of shared things closes the trip's older vote on a card of the same kind when
+ * nobody has voted on it yet, so two open votes never pick two winners. One with a vote stays, and closes by its time.
+ * Go closing it wakes no turn (trips/intake.ts: closed_by_go).
+ */
+async function closeIdleVotes(
+  d: { results: Pick<ResultsStore, 'votesOfKind'>; link: Pick<ServerLink, 'request'> }, tripId: string, kind: OptionKind, cardId: string, key: string,
+): Promise<void> {
+  // Never a vote this same key opened: two cards in one reply are two votes the group just got, both new.
+  const ids = await d.results.votesOfKind(tripId, kind, cardId, key);
+  if (ids.length === 0) return;
+  const trip = await d.link.request('read_trip', { trip_id: tripId });
+  for (const dec of trip.decisions) {
+    if (!ids.includes(dec.decision_id) || dec.status !== 'open' || dec.voted > 0) continue;
+    await d.link.request('close_vote', { request_id: stableId('go_close_idle', dec.decision_id), trip_id: tripId, decision_id: dec.decision_id });
   }
-  return kept;
 }
 
 function voteCardFor(id: string, decisionId: string, question: string, options: VoteOption[]): VoteCard {
@@ -81,22 +113,26 @@ function voteCardFor(id: string, decisionId: string, question: string, options: 
   return { card_id: id, kind: 'vote', decision_id: decisionId, fallback_text: clip(`Vote: ${question} ${listed}. Open Go to vote.`, 300) };
 }
 
+/**
+ * onCard: the card is the vote (rev 5 R5), opened as it goes up, and the caller writes it into the card
+ * (results.setCardDecision): a card with one option gets none (a "Keep looking" has no row on the card to vote on), and
+ * the trip's idle vote of the same kind closes first (closeIdleVotes).
+ */
 export async function openVoteFromCard(
   d: { results: ResultsStore; link: Pick<ServerLink, 'request'>; now: () => Date },
-  o: { tripId: string; cardId: string; key: string; requestId: string; voteCardId: string; question?: string; closesInHours?: number; anonymous?: boolean },
+  o: { tripId: string; cardId: string; key: string; requestId: string; voteCardId: string; question?: string; closesInHours?: number; anonymous?: boolean; onCard?: boolean },
 ): Promise<VoteOutcome> {
   const row = await d.results.card(o.tripId, o.cardId);
   if (!row) return { ok: false, reason: 'unknown_card' };
   // A ticket is its traveller's own (PERSONAL_KINDS): confirmed by them alone, never put to the group.
   if (PERSONAL_KINDS.has(row.optionKind)) return { ok: false, reason: 'personal' };
-  const offers = await d.results.offersOnCard(o.cardId);
-  const shown = new Map(row.card.options.map((op) => [op.option_id, op]));
-  const kept = row.optionKind === 'stay' ? await keptStays(d.results, o.tripId, offers) : new Map<string, ResultOption>();
+  const { offers, options: each } = await cardVoteOptions(d.results, row);
+  if (o.onCard && offers.length < 2) return { ok: false, reason: 'too_few_options' };
   // A card with one option is put to the group as that option or keep looking: still a choice vote on the offer
   // itself, so its winner can be booked (8 Oct run sheet: a one-option card's vote failed here, Go opened a yes/no vote
   // of its own, and "I'll book it" then had nothing to book).
   const one = offers.length === 1;
-  const options = one ? [...voteOptions(offers, shown, kept), { label: KEEP_LOOKING }] : voteOptions(offers, shown, kept);
+  const options = one ? [...each, { label: KEEP_LOOKING }] : each;
   const question = clip(one ? (o.question ?? `Go with ${clip(offers[0]!.title, 120)}?`) : stayQuestion(o.question ?? QUESTIONS[row.optionKind], offers), 200);
   if (row.decisionId && !row.decisionId.startsWith('pending:')) {
     // The same key again is a rerun of the turn that opened it: show the same vote, open nothing new.
@@ -106,7 +142,9 @@ export async function openVoteFromCard(
   if (offers.length === 0) return { ok: false, reason: 'too_few_options' };
   if (!(await d.results.claimVote(o.cardId, o.key))) return { ok: false, reason: 'already_voting' };
   try {
-    const closesAt = new Date(d.now().getTime() + (o.closesInHours ?? 3) * 3_600_000).toISOString();
+    // Best effort: a trip the Server can't read now still gets the card's vote.
+    if (o.onCard) await closeIdleVotes(d, o.tripId, row.optionKind, o.cardId, o.key).catch(() => undefined);
+    const closesAt = new Date(d.now().getTime() + (o.closesInHours ?? VOTE_HOURS) * 3_600_000).toISOString();
     const opened = await d.link.request('open_vote', {
       trip_id: o.tripId, request_id: o.requestId, question, kind: 'choice', anonymous: o.anonymous ?? false, options, closes_at: closesAt,
     });
@@ -116,4 +154,19 @@ export async function openVoteFromCard(
     await d.results.releaseVote(o.cardId, o.key);
     throw err;
   }
+}
+
+/**
+ * "See more" (rev 5 R4): a new card's options join the vote of the card it came from; the caller then writes the vote
+ * into the new card (results.setCardDecision). The caller has checked the vote is open and has room (20 options in all,
+ * the contract's); votes already cast stay. Throws when the card is gone or the Server refuses.
+ */
+export async function addToVote(
+  d: { results: ResultsStore; link: Pick<ServerLink, 'request'> },
+  o: { tripId: string; cardId: string; decisionId: string; requestId: string },
+): Promise<void> {
+  const row = await d.results.card(o.tripId, o.cardId);
+  if (!row) throw new Error(`no card ${o.cardId} to add to the vote`);
+  const { options } = await cardVoteOptions(d.results, row);
+  await d.link.request('add_vote_options', { request_id: o.requestId, trip_id: o.tripId, decision_id: o.decisionId, options });
 }

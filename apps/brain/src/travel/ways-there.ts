@@ -2,7 +2,7 @@
  * How everyone gets to the trip, asked for. The composite trip.how_we_get_there (recipes/trip/) runs each home city's
  * trains, buses and flights on the day side by side on the trip's computer (flights when ixigo shows them: one flights
  * page across every trip in 20 s), and its flights' link. Go puts each city's cheapest and fastest, across all three, on
- * one options card, each row with "See on ixigo", and posts a line built from the same data, with no model round after.
+ * one options card, each row with its own ixigo page, and posts a line built from the same data, with no model round after.
  * "Flights from my city" opens the tapper's own city's flights.
  *
  * Three cities on a computer that runs two pages at once take about 25 s, longer than a turn. So the room sees the run

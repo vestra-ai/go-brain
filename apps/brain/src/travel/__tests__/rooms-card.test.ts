@@ -53,6 +53,7 @@ function deps(o: { slow?: boolean } = {}) {
   };
   return {
     requests,
+    answer,
     release: () => release(),
     d: {
       engine: { answer } as never,
@@ -93,6 +94,16 @@ describe('the rooms card on the closed vote', () => {
     (tied.trip.decisions[0] as { result_index: number | null }).result_index = null;
     expect(await rider({ tripId: 't_goa', turnId: 'turn_b', wake: [closed], pack: tied })).toBeNull();
     expect(await rider({ tripId: 't_goa', turnId: 'turn_c', wake: [], pack: packWith(0) })).toBeNull();
+  });
+
+  // 11 Oct, prod: Saket alone at Hampi got "what each of you pays… Pick one", then "the stay is split evenly".
+  it('never for a trip of one: nothing to split, so no card, no line and no read of its rooms', async () => {
+    const t = deps();
+    const solo = packWith(0);
+    const r = await roomsCardOnClose(t.d)({ tripId: 't_goa', turnId: 'turn_solo', wake: [closed], pack: { ...solo, trip: { ...solo.trip, people: solo.trip.people.slice(0, 1) } } });
+    expect(r).toBeNull();
+    expect(t.answer).not.toHaveBeenCalled();
+    expect(t.requests).toEqual([]);
   });
 
   it("posts on its own when the stay's rooms take longer than the turn waits", async () => {

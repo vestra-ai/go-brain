@@ -89,7 +89,7 @@ export interface TravelOption {
   refundableUntil?: string;
   /** Short facts the filters and the model read: pool, beach_minutes, sleeps, seats_left, class_code. */
   facts: Record<string, string | number | boolean>;
-  /** The option's own page on the site it came from; an options card opens an ixigo.com one ("See on ixigo"). */
+  /** The option's own page on the site it came from; an options card carries an ixigo.com one (its option's url). */
   sourceUrl?: string;
 }
 

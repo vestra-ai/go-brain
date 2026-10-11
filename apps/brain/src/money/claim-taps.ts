@@ -62,7 +62,7 @@ export function claimTap(c: ClaimDeps) {
       );
       const payer = payerOf({ payer_person_id: tap.person_id, payer_name: name });
       if ('cardId' in r) {
-        const text = [`${name}, you're booking for all ${people}.`, r.note, `Tap Yes, book it when you're ready.`].filter(Boolean).join(' ');
+        const text = [r.booking, r.note, `Tap Yes, book it when you're ready.`].filter(Boolean).join(' ');
         const mentions = mentionsIn(text, payer);
         await c.d.link.request('post_message', {
           request_id: rid('go_claim', tap.tap_id),
@@ -76,6 +76,6 @@ export function claimTap(c: ClaimDeps) {
       // Parked on the login: its card and line are already up, and Go carries on when the login is in.
       if (!r.parked) await postLine(c.d, tap.trip_id, r.refused, rid('go_claim_said', tap.tap_id), payer);
     });
-    return { result: 'done', toast: "You're booking it for everyone" };
+    return { result: 'done', toast: pack.trip.people.length === 1 ? "You're booking it" : "You're booking it for everyone" };
   };
 }

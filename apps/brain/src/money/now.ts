@@ -78,6 +78,12 @@ export function paymentsNow(d: { pool: pg.Pool; packs: Pick<Packs, 'get'>; now: 
           }
           // A stay is booked for all by whoever claims it (claims.ts): Go never picks the payer.
           const stay = d.claims && win.option_ref && (await d.travel?.()?.offer(win.option_ref).catch(() => null))?.kind === 'stay';
+          // A trip of one: they pay and book for themselves, with no "for all" and nobody to split with.
+          const only = pack.trip.people.length === 1 ? pack.trip.people[0] : undefined;
+          if (only) {
+            lines.push(`- Vote ${dec.decision_id} closed and ${win.label} won. ${only.name} travels alone and books it for themselves: when they want it, use set_mandate with payer ${only.person_id} (the cap is the price plus a little, or a number they said). Never say "for all", "everyone" or split.`);
+            continue;
+          }
           if (stay && d.claims) {
             const held = (await d.claims.get(tripId, dec.decision_id))?.personId;
             lines.push(

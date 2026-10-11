@@ -78,7 +78,7 @@ describe('set_mandate', () => {
 
   it('with no clear number, sets the whole price plus up to 10% and says so', async () => {
     const r = await setMandate(k.deps, ctxWith([['p_rahul', 'just book whatever works']]), noCap);
-    expect(r).toMatchObject({ cardId: expect.any(String), capMinor: 5900000, byMargin: true, note: expect.stringContaining('the price plus a little margin') });
+    expect(r).toMatchObject({ cardId: expect.any(String), capMinor: 5900000, byMargin: true, note: expect.stringContaining("The card allows up to ₹59,000, in case the price rises a little before it's booked.") });
     expect(k.server.writesOf('set_mandate')[0]?.params).toMatchObject({ cap_minor: 5900000 });
   });
 
@@ -154,7 +154,7 @@ describe('set_mandate refuses, in code, what Go cannot book', () => {
   it('a flight: group fares are not booked, so it says so and points to its card, never the link, and sets nothing', async () => {
     winnerIs('ixigo:flight:6e-2134', { ...flight, link: 'https://www.ixigo.com/flights/6e-2134' });
     expect(await setMandate(k.deps, ctxWith(), mandate)).toEqual({
-      refused: "I can't book flights for the whole group yet. Each of you can book on ixigo: See on ixigo on its card opens it there.",
+      refused: "I can't book flights for the whole group yet. Each of you can book on ixigo: View on ixigo, in its details on its card, opens it there.",
       unbookable: true,
     });
     expect(k.server.writesOf('set_mandate')).toEqual([]);
@@ -180,7 +180,7 @@ describe('set_mandate refuses, in code, what Go cannot book', () => {
     winnerIs(null);
     k.travel.pages.set('opt_villa_sol', 'https://www.ixigo.com/hotels/1384544/details?locationId=1366415&checkinDate=06112026&checkoutDate=09112026&adultCount=5&roomCount=3&hotelInfoToken=true%7C3001%7C1');
     expect(await setMandate(k.deps, ctxWith(), mandate)).toEqual({
-      refused: "Villa Sol is booked on ixigo, not here: See on ixigo on its card opens it there.",
+      refused: "Villa Sol is booked on ixigo, not here: View on ixigo, in its details on its card, opens it there.",
       unbookable: true,
     });
     expect(k.server.writesOf('set_mandate')).toEqual([]);
@@ -258,7 +258,7 @@ describe('the quick tools', () => {
     const [out] = await runToolCalls(tools(), ctx, [
       { name: 'set_mandate', input: { decision_id: 'd_villa', choice_index: 0, refundable_only: true, payer_person_id: 'p_rahul' } },
     ]);
-    expect(out).toMatchObject({ mandate_card: 'c_mandate_turn_test_1', tell_the_room: expect.stringContaining('₹59,000: the price plus a little margin') });
+    expect(out).toMatchObject({ mandate_card: 'c_mandate_turn_test_1', tell_the_room: expect.stringContaining('The card allows up to ₹59,000, in case the price rises') });
     expect(k.server.writesOf('set_mandate')[0]?.params).toMatchObject({ cap_minor: 5900000 });
   });
 });

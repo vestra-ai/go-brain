@@ -3,7 +3,7 @@
  * offers on those cards. An option_id on a card, and a vote option's option_ref, both name a row here.
  */
 import type pg from 'pg';
-import type { Journey, Place } from '@go/contract';
+import { MORE_OPTIONS, type Journey, type Place } from '@go/contract';
 import type { OptionsCardT } from './cards.js';
 import { mintId } from './ids.js';
 import type { StoredOffer, TravelOption } from './travel.js';
@@ -62,6 +62,21 @@ export interface OptionsCardRow {
   voteKey: string | null;
 }
 
+/**
+ * The prefix of a "See more" card's id (taps.ts, rev 5 R4): more of a card already up, never the trip's newest card of its
+ * kind for what reads that (topPick, recipes/option-on-card.ts).
+ */
+export const MORE_CARD = 'c_more';
+
+/** An option as "See more" tells it from the others: its own page, else its name and when it leaves. */
+const optionKey = (o: ResultOption): string => o.sourceUrl ?? `${o.title}|${o.journey?.depart_at ?? ''}`;
+
+/** A search's options that no card has shown yet (shown: results.shownFrom), by their numbers in the search. */
+export function unseenNumbers(set: Pick<ResultSet, 'options'>, shown: ResultOption[]): number[] {
+  const seen = new Set(shown.map(optionKey));
+  return set.options.flatMap((o, i) => (seen.has(optionKey(o)) ? [] : [i + 1]));
+}
+
 export interface ResultsStore {
   save(s: Omit<ResultSet, 'resultsId'> & { resultsId?: string }): Promise<ResultSet>;
   get(tripId: string, resultsId: string): Promise<ResultSet | null>;
@@ -87,9 +102,22 @@ export interface ResultsStore {
   /** True when the card had no vote, or this same key had already claimed it. */
   claimVote(cardId: string, key: string): Promise<boolean>;
   setDecision(cardId: string, decisionId: string): Promise<void>;
+  /**
+   * A card that is its vote (rev 5 R5): its vote set on its row and in the card itself, which a replace_card resends, with
+   * "See more" as its one button while its search has more to show (more), else none. The card as kept now.
+   */
+  setCardDecision(tripId: string, cardId: string, decisionId: string, more: boolean): Promise<OptionsCardT | null>;
   releaseVote(cardId: string, key: string): Promise<void>;
+  /** The votes opened on the trip's other cards of this kind of option, by their decision ids, but those this key opened. */
+  votesOfKind(tripId: string, kind: OptionKind, exceptCardId: string, exceptKey: string): Promise<string[]>;
+  /** A card that never went up ("See more" that failed before its options joined the vote): gone, its options unshown again. */
+  dropCard(tripId: string, cardId: string): Promise<void>;
+  /** Every option of a search that a card has shown, as the search gave it: what "See more" never shows again. */
+  shownFrom(tripId: string, resultsId: string): Promise<ResultOption[]>;
   offer(optionId: string): Promise<StoredOffer | null>;
   offersOnCard(cardId: string): Promise<StoredOffer[]>;
+  /** Each option on a card as its search gave it (its facts, its night and its whole stay), by its option id. */
+  optionsOnCard(cardId: string): Promise<Map<string, ResultOption>>;
   /** An option as its search gave it (its journey, facts and page), by its option id. */
   optionOf(optionId: string): Promise<ResultOption | null>;
   /** A card as it shows now (a person's own card after their pick: their option alone), kept as replace_card sends it. */
@@ -252,6 +280,35 @@ export function createResultsStore(pool: pg.Pool): ResultsStore {
       await pool.query('update options_cards set decision_id = $2 where card_id = $1', [cardId, decisionId]);
     },
 
+    async setCardDecision(tripId, cardId, decisionId, more) {
+      const { rows } = await pool.query<{ card: OptionsCardT }>(
+        `update options_cards set decision_id = $3, card = card || jsonb_build_object('decision_id', $3::text, 'actions', $4::jsonb)
+         where trip_id = $1 and card_id = $2 returning card`,
+        [tripId, cardId, decisionId, JSON.stringify(more ? [MORE_OPTIONS] : [])],
+      );
+      return rows[0]?.card ?? null;
+    },
+
+    async votesOfKind(tripId, kind, exceptCardId, exceptKey) {
+      const { rows } = await pool.query<{ decision_id: string }>(
+        `select distinct decision_id from options_cards
+         where trip_id = $1 and option_kind = $2 and card_id <> $3 and decision_id is not null and decision_id not like 'pending:%'
+           and vote_key is distinct from $4`,
+        [tripId, kind, exceptCardId, exceptKey],
+      );
+      return rows.map((r) => r.decision_id);
+    },
+
+    async dropCard(tripId, cardId) {
+      await pool.query('delete from travel_offers where trip_id = $1 and card_id = $2', [tripId, cardId]);
+      await pool.query('delete from options_cards where trip_id = $1 and card_id = $2', [tripId, cardId]);
+    },
+
+    async shownFrom(tripId, resultsId) {
+      const { rows } = await pool.query<{ option: ResultOption }>('select option from travel_offers where trip_id = $1 and results_id = $2', [tripId, resultsId]);
+      return rows.map((r) => r.option);
+    },
+
     async releaseVote(cardId, key) {
       await pool.query("update options_cards set decision_id = null, vote_key = null where card_id = $1 and decision_id = 'pending:' || $2", [cardId, key]);
     },
@@ -269,10 +326,15 @@ export function createResultsStore(pool: pg.Pool): ResultsStore {
     async topPick(tripId, kind) {
       // A card's picks are saved together, so they share a created_at: the lowest number is its top pick.
       const { rows } = await pool.query<{ kind: string; title: string; option: ResultOption }>(
-        'select kind, title, option from travel_offers where trip_id = $1 and kind = $2 order by created_at desc, n asc limit 1',
-        [tripId, kind],
+        'select kind, title, option from travel_offers where trip_id = $1 and kind = $2 and not starts_with(card_id, $3) order by created_at desc, n asc limit 1',
+        [tripId, kind, `${MORE_CARD}_`],
       );
       return rows[0] ? placeOfRow(rows[0]) : null;
+    },
+
+    async optionsOnCard(cardId) {
+      const { rows } = await pool.query<{ option_id: string; option: ResultOption }>('select option_id, option from travel_offers where card_id = $1', [cardId]);
+      return new Map(rows.map((r) => [r.option_id, r.option]));
     },
 
     async optionOf(optionId) {

@@ -23,19 +23,37 @@ export interface Claim {
   offeredTurn: string | null;
 }
 
-/** The claim card: unclaimed, everyone sees the one button; claimed, it says who is booking, with no buttons. */
+/**
+ * The claim card: unclaimed, everyone sees the one button; claimed, it says who is booking, with no buttons. A trip of one
+ * books for themselves: no "for all 1", nobody to split it with.
+ */
 export function claimCard(o: { decisionId: string; what: string; people: number; claimer: string | null }): C.Card {
   const what = clip(plain(o.what), 80);
+  const alone = o.people === 1;
   if (o.claimer) {
-    const title = clip(`${o.claimer} is booking for all ${o.people}`, 80);
+    const title = clip(alone ? `${o.claimer} is booking ${what}` : `${o.claimer} is booking for all ${o.people}`, 80);
     return {
       card_id: claimCardId(o.decisionId),
       kind: 'notice',
       tone: 'info',
       title,
-      body: clip(`${o.claimer} pays for ${what} now and books it for everyone. Go splits it with the group after.`, 500),
+      body: clip(
+        alone ? `${o.claimer} pays for ${what} and books it.` : `${o.claimer} pays for ${what} now and books it for everyone. Go splits it with the group after.`,
+        500,
+      ),
       actions: [],
       fallback_text: title,
+    };
+  }
+  if (alone) {
+    return {
+      card_id: claimCardId(o.decisionId),
+      kind: 'notice',
+      tone: 'info',
+      title: clip(`Book ${what}`, 80),
+      body: clip(`Tap I'll book it when you're ready to pay for ${what} and book it.`, 500),
+      actions: [{ action_id: CLAIM_ACTION, label: "I'll book it", style: 'primary' }],
+      fallback_text: clip(`Book ${what}: tap I'll book it.`, 300),
     };
   }
   return {

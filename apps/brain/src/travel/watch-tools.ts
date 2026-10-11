@@ -154,7 +154,7 @@ export function watchTools(d: WatchToolDeps): Array<QuickTool<any>> {
           const fit = answer.options.filter((o) => cap === null || (o.priceMinor > 0 && o.priceMinor <= cap * 100));
           const q = queryOf(kind, a.inputs, conditions, cap);
           const found = { results: fit, checkedAt: answer.checkedAt, found: answer.options.length, ...(answer.page ? { page: answer.page } : {}) };
-          const card = (await answerItself(kind, q, found, ctx, { results: d.results, images: d.images }, 'Already on ixigo: ')) as object;
+          const card = (await answerItself(kind, q, found, ctx, { results: d.results, images: d.images, now: d.now }, 'Already on ixigo: ')) as object;
           return { already: true, now: first.reading.what, ...card, note: 'It is already so on ixigo, and its card and line are up. Go keeps no watch for it.' };
         }
         return { already: true, now: first.reading.what, note: 'It is already so on ixigo: tell whoever asked, in one line. Go keeps no watch for it.' };
