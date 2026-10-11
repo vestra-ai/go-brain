@@ -5,7 +5,7 @@ import type { Message, Trip } from '../../door/methods.js';
 import { silentLog } from '../../log.js';
 import type { TripPack } from '../../trips/pack.js';
 import { createContext, formatTime, type TextBlock } from '../context.js';
-import { answersToGo } from '../fence.js';
+import { answersToGo, followsGoAnswer } from '../fence.js';
 import { GO_RULES } from '../rules.js';
 import { datesLine, tripNow } from '../trip-now.js';
 import { ASK_HOW_MUCH, askNote, CHIME_RULES, quietNote, renderMessageWake, renderSetupWake, renderTripChangeWake } from '../wakes.js';
@@ -267,6 +267,23 @@ describe("a plain answer to Go's question", () => {
     expect(answersToGo(packOf([ASKED, ANSWER]))).toEqual(new Map([['m_51', 50]]));
     expect(quietNote([woke(ANSWER)], packOf([ASKED, ANSWER]))).toBeNull();
     expect(p.user.at(-2)?.text).not.toContain("doesn't name you");
+  });
+
+  // p2's prod audit, 11 Oct 08:22: "also mention that he should be my roommate", right after Go answered that person, got
+  // silence. A line going on from Go's answer to its person is for Go too.
+  it("marks a line going on from Go's answer to that person, and gives it no \"doesn't name you\" note", async () => {
+    const asked = later(50, 'p_rahul', 'can you tell Arjun to bring the speaker', 0);
+    const answered = msg(51, null, 'Done, Rahul, I will remind Arjun.', { reply_to: asked.message_id });
+    const more = later(52, 'p_rahul', 'also mention that he should be my roommate', 1);
+    const pack = packOf([asked, answered, more]);
+    expect(followsGoAnswer(pack)).toEqual(new Map([['m_52', 51]]));
+    expect(all((await chat([asked, answered, more], [woke(more)])).user)).toContain("#52 Rahul: (follows Go's answer #51) also mention that he should be my roommate");
+    expect(quietNote([woke(more)], pack)).toBeNull();
+    // Someone else in between, or Go answering two people at once: no mark.
+    expect(followsGoAnswer(packOf([asked, answered, later(52, 'p_priya', 'lol', 1), later(53, 'p_rahul', 'also the roommate thing', 1)]))).toEqual(new Map());
+    expect(followsGoAnswer(packOf([msg(50, null, 'Rahul and Priya, both done.'), later(51, 'p_rahul', 'thanks', 1)]))).toEqual(new Map());
+    // An answer to Go's question keeps its own mark only.
+    expect(followsGoAnswer(packOf([ASKED, ANSWER]))).toEqual(new Map());
   });
 
   it('no mark when someone else spoke in between, or Go posted again', async () => {

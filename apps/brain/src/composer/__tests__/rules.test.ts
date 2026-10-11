@@ -204,6 +204,17 @@ describe("Go's rules", () => {
     expect(section).toContain('- Never write a message number ("#57") in what you say: people don\'t see them. Say whose message it was, or leave it out.\n');
   });
 
+  // p2's prod audit, 11 Oct: a clear ask offered back, "find flights" asked for its route, "first week" asked about three
+  // times, agreed dates offered as buttons, and a follow-up to Go's answer left in silence.
+  it('does a clear ask, takes a short ask on from the one before, reads a loose time, and shows stays after agreed dates', () => {
+    const section = GO_RULES.slice(GO_RULES.indexOf('\nWhen you speak\n'), GO_RULES.indexOf('\nHow you write\n'));
+    expect(section).toContain('- A clear ask is done in this turn, never offered back: "I want the most expensive ones" gets them (searched or sorted, on the card), never "Want me to pull the top-priced ones?".');
+    expect(section).toContain('"find flights" right after "book flights from BLR to DPS" searches BLR to DPS. A day the ask doesn\'t give is the trip\'s own');
+    expect(section).toContain('"first week of December" is 1 to 7 Dec, said once in your line ("Taking 1 to 7 Dec"). Never ask again for exact days they already gave loosely.');
+    expect(section).toContain('After agreed dates, never ask what to pull up first or offer it as buttons: the stays card is the next step.');
+    expect(section).toContain('- A line marked "(follows Go\'s answer #N)" is that person going on from what you told them in #N');
+  });
+
   it('an offer follows from the message it answers: a birthday answer gets no villa offer (staging, 8 Oct)', () => {
     const section = GO_RULES.slice(GO_RULES.indexOf('\nWhen you speak\n'), GO_RULES.indexOf('\nHow you write\n'));
     expect(section).toContain(
@@ -216,6 +227,7 @@ describe("Go's rules", () => {
     expect(section).toContain(
       "- Bring up an open vote only when the message you are answering is about it or what it decides, or once when it is about to close with people who haven't voted. Never add it to a reply about something else, and never to a refusal.",
     );
+    expect(section).toContain('A tail like "…and the stay is still open for votes" on an unrelated reply is never said.');
   });
 
   it('never tells the room who used Forget me, nor that anyone asked Go to forget them (staging, 8 Oct)', () => {
