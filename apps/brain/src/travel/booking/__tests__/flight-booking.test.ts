@@ -169,7 +169,8 @@ describe("Go books a person's own flight up to ixigo's pay button", () => {
       { cardId: 'c_g2', tripId: 't_goa', resultsId: set.resultsId, title: 'Flights', optionKind: 'flight', card: { card_id: 'c_g2' } as never },
       [{ optionId: 'opt_g2', n: 1, option: flight }], '2026-10-10T07:00:00.000Z',
     );
-    const offer = { ...OFFER, optionId: 'opt_g2', cardId: 'c_g2', resultsId: set.resultsId };
+    // Picked at ₹6,000 on its card.
+    const offer = { ...OFFER, optionId: 'opt_g2', cardId: 'c_g2', resultsId: set.resultsId, priceMinor: 600_000 };
     // ₹7,536 to pay against ₹7,200 picked: within 5%, booked to its end.
     const near = fakeRunner();
     const a = booking(near.runner, true, null, { results });
