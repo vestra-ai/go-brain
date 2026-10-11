@@ -235,7 +235,7 @@ export function eachTryAgain(d: Omit<FlightsEachDeps, 'live'>): (t: TryAgainItem
       // city is theirs, so "I'll try again in a minute" never reads as Go forgetting (the lead, 11 Oct).
       d.log?.warn({ tripId: t.tripId, home: each.home }, "travel: a city's flights didn't load after its tries");
       if (each.asker && groups.some((g) => g.people.some((p) => p.personId === each.asker))) {
-        await postFor(d, t.tripId, stableId('go_each', t.id, each.asker, 'closing'), null, `Still couldn't load your ${each.home} flights. Say 'my flights' again whenever you want.`, [each.asker]);
+        await postFor(d, t.tripId, stableId('go_each', t.id, each.asker, 'closing'), null, `I kept trying for over 20 minutes and still couldn't load your ${each.home} flights, so I've stopped for now.`, [each.asker]);
       }
     };
     run().catch((err: unknown) => d.log?.warn({ err: String(err).slice(0, 200), tripId: t.tripId }, "travel: a city's flights try again failed"));

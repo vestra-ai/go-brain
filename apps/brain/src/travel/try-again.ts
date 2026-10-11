@@ -11,9 +11,14 @@
 import type { Desk, DeskItem } from '../desk/desk.js';
 import type { TravelKind, TravelQuery } from './travel.js';
 
-/** The tries after the first, each about a minute after the last. */
-export const TRIES = 2;
+/**
+ * The tries after the first: two a minute apart, then two slow ones ten minutes apart, so Go keeps at it like an agent
+ * would and never asks the room to say it again (Keshav, 11 Oct: "make it a proper travel agent… why this whining").
+ */
+export const TRIES = 4;
+export const QUICK_TRIES = 2;
 export const TRY_AGAIN_MS = 60_000;
+export const SLOW_TRY_MS = 10 * 60_000;
 /** A try that waits out ixigo's own quiet comes this long after it ends. */
 export const PAST_QUIET_MS = 5_000;
 
@@ -48,7 +53,10 @@ export const triesIn = (wake: DeskItem[]): TryAgainItem[] =>
 /** The search a try runs: its own ask, or a home city's flights. */
 const askOf = (t: Pick<TryAgain, 'query' | 'each'>): TravelQuery => t.query ?? (t.each ? { from: t.each.home, to: t.each.to, date: t.each.date } : {});
 
-const waitPast = (now: Date, until: number | null): number => (until === null ? TRY_AGAIN_MS : Math.max(TRY_AGAIN_MS, until - now.getTime() + PAST_QUIET_MS));
+const waitPast = (now: Date, until: number | null, n = 1): number => {
+  const gap = n > QUICK_TRIES ? SLOW_TRY_MS : TRY_AGAIN_MS;
+  return until === null ? gap : Math.max(gap, until - now.getTime() + PAST_QUIET_MS);
+};
 
 /** How long until a try: a minute, or just past ixigo's own quiet when ixigo refused this page (ixigoQuiet). */
 export const waitFor = (d: Pick<TryAgainDeps, 'now' | 'ixigoQuiet'>, kind: TravelKind, q: TravelQuery): number => waitPast(d.now(), d.ixigoQuiet?.(kind, q) ?? null);
@@ -64,7 +72,7 @@ export const inIxigoQuiet = (d: Pick<TryAgainDeps, 'ixigoQuiet'>, kind: TravelKi
  */
 export async function tryAgain(d: TryAgainDeps, tripId: string, kind: TravelKind, t: Omit<TryAgain, 'source'>): Promise<number> {
   const until = d.ixigoQuiet?.(kind, askOf(t)) ?? null;
-  const wait = waitPast(d.now(), until);
+  const wait = waitPast(d.now(), until, t.n);
   await d.desk.put({
     id: `try_again:${tripId}:${t.key}:${t.n}${until === null ? '' : `:${until}`}`, tripId, kind: 'search', ref: kind, dueAt: new Date(d.now().getTime() + wait),
     payload: { source: 'travel_try_again', ...t } satisfies TryAgain,
@@ -82,5 +90,5 @@ export const notLoadedLine = (what: string, waitMs = TRY_AGAIN_MS): string =>
     ? `I couldn't load ${what}: ixigo asked us to slow down, so I'll try again in about ${Math.max(2, Math.round(waitMs / 60_000))} minutes.`
     : `I couldn't load ${what} just now; I'll try again in a minute.`;
 
-/** Go's last word when no try landed: plain, with no link. */
-export const stillNotLoadedLine = (what: string): string => `I tried again and still couldn't load ${what}. Ask me in a bit and I'll look once more.`;
+/** Go's last word when no try landed: plain, with no link, and no ask to say it again. */
+export const stillNotLoadedLine = (what: string): string => `I kept trying for over 20 minutes and ixigo still isn't loading ${what} for me, so I've stopped for now.`;

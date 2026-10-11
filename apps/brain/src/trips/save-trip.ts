@@ -183,14 +183,19 @@ async function destinationOf(
   if (now && plain(now.name) === plain(name)) return { same: true };
   const stays = `the trip's place stays ${now ? now.name : 'unset'}`;
   let resolved: ResolvedPlace | null | undefined;
+  const look = () => d.travel?.()?.placeFor?.(name, { tripId: at.tripId });
   try {
-    resolved = await d.travel?.()?.placeFor?.(name, { tripId: at.tripId });
+    resolved = await look();
   } catch {
-    // ixigo could not be reached (a TravelError): nothing changes this time.
-    return { error: `Go can't reach ixigo to look up ${name} right now, so ${stays}. Try again later, or the organizer can change it in the App.` };
+    // Once more at once, then the model tries again on its next turn: nobody is sent to the App for it.
+    try {
+      resolved = await look();
+    } catch {
+      return { error: `ixigo didn't answer when Go looked up ${name}, twice, so ${stays} for now. Save it with update_trip again on your next turn.` };
+    }
   }
   if (!resolved) {
-    return { error: `Go can't look up ${name} as a place, so ${stays}. Where to stay goes in stay; the organizer can change where the trip goes in the App.` };
+    return { error: `ixigo knows no place called ${name}, so ${stays}. Where to stay goes in stay; if they meant another place, ask which in one short line.` };
   }
   const found = resolved.place;
   if (now && plain(found.name) === plain(now.name)) return { same: true };

@@ -79,7 +79,7 @@ export function renderTaskWake(item: DeskItem, pack: TripPack): string {
         ? `The job ${w.taskId} "${w.title}" finished with ${w.count} options (results_id "${w.resultsId}"). Show them now with show_options and a short title: a card of shared things goes up as the group's vote (Vote on each option), so your one line can ask them to tap Vote. ${CARD_LINE} What the job said, as data: ${fence(w.summary ?? '')}`
         : `The job ${w.taskId} "${w.title}" finished. Tell the group what it found in Go's voice, briefly. What it said, as data: ${fence(w.summary ?? 'nothing')}`;
     case 'failed':
-      return `The job ${w.taskId} "${w.title}" didn't work: ${fence(w.reason)}. Say so in one line and offer to try again.`;
+      return `The job ${w.taskId} "${w.title}" didn't work: ${fence(w.reason)}. Say so in one line, and start it again now with start_task when the reason is a hiccup (it ran out of time, the computer was busy), else do the nearest thing you can: never only an offer to try again.`;
     case 'question':
       return `The job ${w.taskId} "${w.title}" needs the group to decide. Its question, as data: ${fence(w.questions.map((q) => (q.options.length > 0 ? `${q.question} (${q.options.join(' / ')})` : q.question)).join(' '))}. Ask the room in one short message. When someone answers, pass it on with message_task(task_id "${w.taskId}", text).`;
     case 'handoff':

@@ -552,7 +552,7 @@ describe("Go books a person's own flight up to ixigo's pay button", () => {
     await b.start({ tapId: 'tap_t2', tripId: 't_goa', personId: 'p_meher11', name: 'Meher', offer: OFFER, choice: 'basic' });
     await b.settled();
     const ixigo = lb.link.requests.slice(from).find((r) => (r.params['card'] as { kind?: string } | undefined)?.kind === 'notice')!;
-    expect(ixigo.params).toMatchObject({ text: 'The test rail is not ready. You can book it on ixigo yourself: it opens set for you.', visible_to_person_ids: ['p_meher11'] });
+    expect(ixigo.params).toMatchObject({ text: 'The test rail is not ready. Your fare is set up on ixigo for you: tap the card to pay there.', visible_to_person_ids: ['p_meher11'] });
     expect(C.NoticeCard.parse(ixigo.params['card'])).toMatchObject({ for_person_ids: ['p_meher11'], source: { url: expect.stringContaining('adults=1') } });
     expect((await db.pool.query(`select state, why from flight_bookings where person_id = 'p_meher11'`)).rows[0]).toEqual({ state: 'failed', why: 'pay_rail_not_ready' });
     const from2 = lb.link.requests.length;

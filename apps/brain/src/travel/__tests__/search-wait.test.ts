@@ -14,7 +14,7 @@ import { renderSearchWake, searchWakeAnswer, tryAgainAnswer } from '../search-wa
 import { answerItself, handOver, putUpCard, searchAnswer, travelTools } from '../tools.js';
 import { makeTurnCtx } from '../../composer/tools.js';
 import type { Travel, TravelSearch } from '../travel.js';
-import { TRY_AGAIN_MS, type TryAgain } from '../try-again.js';
+import { SLOW_TRY_MS, TRIES, TRY_AGAIN_MS, type TryAgain } from '../try-again.js';
 
 const FOUND: TravelSearch = {
   checkedAt: '2026-10-07T12:00:30.000Z',
@@ -74,13 +74,16 @@ describe('a search that outlives its turn', () => {
     expect((w.puts[0]!.payload as { summary: string }).summary).toContain('1 bus from Mumbai to Goa on 2026-11-06');
   });
 
-  it('wakes Go to say so when the search fails after the turn went on', async () => {
+  // Keshav, 11 Oct: "make it a proper travel agent… why this whining": a search ixigo didn't answer is tried again by
+  // itself, and the room hears that, never an offer to try again.
+  it('tries again by itself when the search fails after the turn went on, and says so', async () => {
     const run = later<TravelSearch>();
     const w = setup(() => run.p, 0);
     await w.run();
     run.reject(new TravelError('unreachable', 'ixigo took too long to answer.'));
-    await vi.waitFor(() => expect(w.puts).toHaveLength(1));
-    expect(w.puts[0]).toMatchObject({ id: 'search:t_goa:turn_w1:buses:failed', payload: { error: 'unreachable', count: 0 } });
+    await vi.waitFor(() => expect(w.puts).toHaveLength(2));
+    expect(w.puts.map((p) => p.id)).toEqual(['try_again:t_goa:turn_w1:buses:1', 'search:t_goa:turn_w1:buses:not_loaded']);
+    expect(w.puts[1]!.payload).toMatchObject({ error: 'unreachable', count: 0, line: expect.stringContaining("I'll try again in a minute") });
   });
 
   it('answers inline when the search is back in time, even one a slow runner kept from before', async () => {
@@ -326,13 +329,24 @@ describe("a search ixigo didn't load", () => {
     expect(search).toHaveBeenCalledWith('flights', DELHI_GOA, { tripId: 't_goa', retry: true });
     await vi.waitFor(() => expect(puts).toHaveLength(1));
     expect(puts[0]).toMatchObject({ id: 'try_again:t_goa:k1:2', dueAt: inAMinute, payload: { n: 2, key: 'k1', query: DELHI_GOA } });
-    // The last try failing too: Go's last word, plain, and no third try.
-    const last = turnOf([puts[0]!], 'turn_g2');
-    expect(await answer({ tripId: 't_goa', wake: [puts[0]!], pack: goaPack(), ctx: last })).toBe(true);
-    await vi.waitFor(() => expect(puts).toHaveLength(2));
-    expect(puts[1]).toMatchObject({ id: 'search:t_goa:k1:gave_up', dueAt: now(), payload: { error: 'link_only', line: "I tried again and still couldn't load flights from Delhi to Goa. Ask me in a bit and I'll look once more." } });
-    const word = turnOf([puts[1]!], 'turn_g3');
-    expect(await searchWakeAnswer({ results: {} as ResultsStore, images: {} as Images })({ tripId: 't_goa', wake: [puts[1]!], pack: goaPack(), ctx: word })).toBe(true);
+    // The quick tries failing: Go keeps at it, ten minutes apart (Keshav, 11 Oct: "a proper travel agent"), never asking
+    // anyone to say it again.
+    let item = puts[0]!;
+    for (let n = 3; n <= TRIES; n += 1) {
+      const turn = turnOf([item], `turn_g${n}`);
+      expect(await answer({ tripId: 't_goa', wake: [item], pack: goaPack(), ctx: turn })).toBe(true);
+      await vi.waitFor(() => expect(puts).toHaveLength(n - 1));
+      expect(puts[n - 2]).toMatchObject({ id: `try_again:t_goa:k1:${n}`, dueAt: new Date(now().getTime() + SLOW_TRY_MS), payload: { n, key: 'k1' } });
+      item = puts[n - 2]!;
+    }
+    // The last try failing too: Go's last word, plain, an outcome, and no further try.
+    const last = turnOf([item], 'turn_g9');
+    expect(await answer({ tripId: 't_goa', wake: [item], pack: goaPack(), ctx: last })).toBe(true);
+    await vi.waitFor(() => expect(puts).toHaveLength(TRIES));
+    const gaveUp = puts[TRIES - 1]!;
+    expect(gaveUp).toMatchObject({ id: 'search:t_goa:k1:gave_up', dueAt: now(), payload: { error: 'link_only', line: "I kept trying for over 20 minutes and ixigo still isn't loading flights from Delhi to Goa for me, so I've stopped for now." } });
+    const word = turnOf([gaveUp], 'turn_g10');
+    expect(await searchWakeAnswer({ results: {} as ResultsStore, images: {} as Images })({ tripId: 't_goa', wake: [gaveUp], pack: goaPack(), ctx: word })).toBe(true);
     expect(word.cards).toEqual([]);
   });
 
@@ -413,11 +427,15 @@ describe('the search wake line', () => {
     expect(line).toContain('<data>3 buses: ₹1,500 to ₹5,000</data>');
   });
 
-  it('a search that failed is said in one line and offered again, never handed to a job (staging, 9 Oct: start_task on a blank page)', async () => {
+  it('a search ixigo didn\'t answer goes on the desk to try again, said as that, never offered and never a job (staging, 9 Oct: start_task on a blank page)', async () => {
     const w = setup(async () => { throw new TravelError('unreachable', "Someone is using the trip's computer's browser. Try again in a moment."); }, null);
     const out = await w.run();
-    expect(out).toMatchObject({ count: 0, error: 'unreachable', tell_the_room: expect.stringContaining('Never start_task for it') });
-    expect(renderSearchWake(item({ source: 'travel_search', search: 'buses', count: 0, resultsId: null, summary: '', error: 'unreachable' }))).toContain('Never start_task');
+    expect(out).toMatchObject({ count: 0, not_loaded: true, tell_the_room: expect.stringContaining("I'll try again in a minute") });
+    expect(w.puts).toEqual([expect.objectContaining({ kind: 'search', payload: expect.objectContaining({ source: 'travel_try_again', n: 1 }) })]);
+    // Any other failure: one line and the nearest thing Go can do now, never only an offer to try again, never a job.
+    const failed = renderSearchWake(item({ source: 'travel_search', search: 'buses', count: 0, resultsId: null, summary: '', error: 'failed' }));
+    expect(failed).toContain('Never start_task');
+    expect(failed).toContain('do the nearest thing you can now (another date, place or kind), never only an offer to try again');
   });
 
   it('says plainly when nothing came back or the search failed, and leaves other desk items alone', () => {

@@ -380,7 +380,9 @@ async function runSearch(kind: TravelKind, given: TravelQuery, ctx: TurnCtx, d: 
     found = first;
   } catch (err) {
     const search = searchName(kind, q);
-    if (err instanceof TravelError && err.code === 'link_only') return notLoadedAnswer(kind, q, ctx, d, plainAsk(kind, q, { wake: ctx.wake, pack: ctx.pack, ...(ctx.roundTools ? { roundTools: ctx.roundTools } : {}), today: await todayOf(d, ctx.tripId) }).ok);
+    // Not loaded, or no answer: Go tries again by itself and says so, never "offer to try again" (Keshav, 11 Oct: "make it
+    // a proper travel agent… why this whining").
+    if (err instanceof TravelError && TRY_AGAIN_CODES.has(err.code)) return notLoadedAnswer(kind, q, ctx, d, plainAsk(kind, q, { wake: ctx.wake, pack: ctx.pack, ...(ctx.roundTools ? { roundTools: ctx.roundTools } : {}), today: await todayOf(d, ctx.tripId) }).ok);
     if (err instanceof TravelError && err.code === 'unknown_place') return placeAnswer(kind, q, err.message);
     // A date in the past is the model's slip (usually the year), not news for the room: search again with the date it names.
     if (err instanceof TravelError && err.code === 'past_date') return { search, count: 0, refused: err.message, tell_the_room: SAY_NOTHING };
@@ -388,7 +390,7 @@ async function runSearch(kind: TravelKind, given: TravelQuery, ctx: TurnCtx, d: 
       return {
         search, count: 0, error: err.code, note: clip(err.message, 200), summary: `This search failed (${err.code}): nothing came back for ${search}, so there is no list for it.`,
         // Never a job for it (staging, 9 Oct: a refused stays search became start_task, a slow job on a blank page).
-        tell_the_room: "Say in one short line that ixigo didn't answer this time, and offer to try again. Never start_task for it: the search tools are how Go searches ixigo.",
+        tell_the_room: "Say in one short line what didn't work, and do the nearest thing you can now (another date, place or kind), never only an offer to try again. Never start_task for it: the search tools are how Go searches ixigo.",
       };
     }
     throw err;
@@ -613,7 +615,7 @@ export function handOver(
       async (err: unknown) => {
         const code = err instanceof TravelError ? err.code : 'failed';
         const failed = { source: 'travel_search', search: searchName(kind, q), count: 0, resultsId: null, summary: '', error: code } as const;
-        if (code !== 'link_only') return wake(`search:${o.tripId}:${o.fallbackId}:failed`, failed);
+        if (!TRY_AGAIN_CODES.has(code)) return wake(`search:${o.tripId}:${o.fallbackId}:failed`, failed);
         // ixigo didn't load it (flights held back or refused, stays with no earlier read): never its link card. The next
         // try goes on the desk; the room hears it now when this was the first, with no turn of its own to say it, and Go's
         // last word when this was the last try.
@@ -628,6 +630,12 @@ export function handOver(
     )
     .catch((err: unknown) => d.log?.warn({ err, tripId: o.tripId, kind }, 'travel: a search that outlived its turn could not wake Go'));
 }
+
+/**
+ * The ways a search fails that Go tries again by itself (try-again.ts): ixigo didn't load it, or didn't answer (a timeout,
+ * a busy computer, Cloudflare's check). A refusal (something Go's computer can't do) is said, never tried again.
+ */
+const TRY_AGAIN_CODES = new Set<string>(['link_only', 'unreachable']);
 
 /** The turn goes on while the search runs; handOver puts its options up when it finishes. */
 function goOnWithout(kind: TravelKind, q: TravelQuery, pending: Promise<TravelSearch>, ctx: TurnCtx, d: TravelToolDeps): unknown {
@@ -725,7 +733,7 @@ export async function searchAnswer(kind: TravelKind, ask: TravelQuery, found: Tr
   const age = ageText(found.checkedAt, d.now());
   const was = found.earlier ? `ixigo's page didn't answer just now, so this is Go's earlier read of it, checked ${age}. ` : '';
   const wasNote = found.earlier
-    ? `Say plainly that ixigo didn't answer just now and these are from Go's read ${age}, never as fresh, and that they can see the latest on ixigo from the card. `
+    ? `Say plainly that ixigo didn't answer just now and these are from Go's read ${age}, never as fresh. `
     : '';
   if (options.length === 0) {
     const near = found.nearest ?? [];

@@ -543,7 +543,7 @@ export function createFlightBooking(d: FlightBookingDeps): FlightBooking {
       if (VAULT_CANT.has(got.code)) {
         const card = { ...buildIxigoLinkCard({ cardId: stableId('c_book_ixigo', runId), title: clip(`Book ${title} on ixigo`, 80), url: results.toString() }), for_person_ids: [ask.personId] };
         await d.link.request('post_message', {
-          request_id: stableId('go_book_ixigo', runId), trip_id: ask.tripId, text: `${got.refused} You can book it on ixigo yourself: it opens set for you.`, card, visible_to_person_ids: [ask.personId],
+          request_id: stableId('go_book_ixigo', runId), trip_id: ask.tripId, text: `${got.refused} Your fare is set up on ixigo for you: tap the card to pay there.`, card, visible_to_person_ids: [ask.personId],
         });
       } else if (!got.say) {
         await d.link.request('post_message', { request_id: stableId('go_book_no', runId), trip_id: ask.tripId, text: got.refused, visible_to_person_ids: [ask.personId] });

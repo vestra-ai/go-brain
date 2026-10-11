@@ -54,6 +54,12 @@ export function amountsSaid(messages: Message[], group: { heads: number; nights:
 }
 
 /**
+ * A check of an option on ixigo that didn't answer: what happened, and the one question to ask (Keshav, 11 Oct: "make it
+ * a proper travel agent… why this whining"; it was "Try again in a moment", work pushed back to the person).
+ */
+export const checkFailed = (label: string): string => `ixigo didn't answer when I checked ${label}, so nothing is set up or charged. Want me to check again now?`;
+
+/**
  * Why Go cannot book an option for the group, in the words to say, or null when it can: Go books only an offer the travel
  * layer can hold for the whole group. A place found on the web has no offer; a flight, train or bus fare is per person
  * (booking those for a group is cut this week); an option with no option_ref is not one Go found at all. Those are
@@ -72,7 +78,12 @@ export async function whyNotBookable(
   try {
     offer = await travel.offer(option.option_ref);
   } catch {
-    return { refused: `I couldn't check ${option.label} just now. Try again in a moment.` };
+    // Once more at once: a hiccup is common, and nobody should have to ask again for it.
+    try {
+      offer = await travel.offer(option.option_ref);
+    } catch {
+      return { refused: checkFailed(option.label) };
+    }
   }
   // The option's own page, said only when it is on ixigo.com.
   const link = ixigoPage(offer?.link);
@@ -176,7 +187,7 @@ export async function setMandate(
     try {
       ready = await prepare(chosen.option_ref, { tripId: ctx.tripId, what: chosen.label, resume });
     } catch {
-      return { refused: `I couldn't check ${chosen.label} just now. Try again in a moment.` };
+      return { refused: checkFailed(chosen.label) };
     }
     if (!ready.ok) return { refused: ready.note, parked: true };
     live = ready.priceMinor;

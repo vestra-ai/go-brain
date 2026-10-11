@@ -108,7 +108,7 @@ export function refusalWords(code: RefusalCode, c: { payer: string; what: string
       return yes(
         c.link
           ? `${c.what} is booked on ixigo, not here: View on ixigo, in its details on its card, opens it there.`
-          : "I found this one on the web, so I can't book it here. Want me to call them instead?",
+          : "I found this one on the web, so it can't be booked through me. Want the closest ones on ixigo, which I can book?",
       );
     case 'not_bookable_yet': {
       // A fare is per person, so one payment for the group would be wrong. Where Go books each person's own flight
@@ -118,7 +118,7 @@ export function refusalWords(code: RefusalCode, c: { payer: string; what: string
         return yes("Flights are each person's own, so there's no one payment for the group: each of you taps I'll take this on your own flights card, and I book it.");
       }
       const first = `I can't book ${c.kind === 'train' ? 'trains' : c.kind === 'bus' ? 'buses' : 'flights'} for the whole group yet.`;
-      return yes(c.link ? `${first} Each of you can book on ixigo: View on ixigo, in its details on its card, opens it there.` : first);
+      return yes(c.link ? `${first} View on ixigo, in its details on its card, opens each one set up for you.` : first);
     }
     case 'already_paid':
       return yes(`${c.what} is already booked.`);
@@ -132,9 +132,9 @@ export function refusalWords(code: RefusalCode, c: { payer: string; what: string
       // No pay page was opened: the payment never started.
       return yes("I couldn't start this payment, so nothing was charged.");
     case 'server_down':
-      return yes("I couldn't reach the trip just now. Nothing was charged. Ask me again in a moment.");
+      return yes("I couldn't reach the trip just now, so nothing was charged. Want me to try again now?");
     case 'closed':
-      return yes('That payment is already closed. Ask me again for a fresh one.');
+      return yes('That payment is already closed. Want a fresh one?');
   }
 }
 

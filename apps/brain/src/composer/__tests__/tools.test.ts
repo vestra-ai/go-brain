@@ -348,9 +348,9 @@ describe('the room\'s tools', () => {
 
     it('changes nothing when ixigo cannot be reached (a TravelError from placeFor), and the rest of the change still saves', async () => {
       const { ctx, calls } = run([], GOA);
-      expect(await updateTrip.run({ proof_message_ids: ORG, destination: 'Unreachable' }, ctx)).toMatchObject({ ok: false, error: expect.stringContaining("can't reach ixigo"), tell_the_room: SAY_NOTHING });
+      expect(await updateTrip.run({ proof_message_ids: ORG, destination: 'Unreachable' }, ctx)).toMatchObject({ ok: false, error: expect.stringContaining("ixigo didn't answer when Go looked up Unreachable, twice"), tell_the_room: SAY_NOTHING });
       expect(await updateTrip.run({ proof_message_ids: ORG, destination: 'Unreachable', dates: { start: '2026-11-06', end: '2026-11-09' } }, ctx))
-        .toMatchObject({ ok: true, changed: ['dates'], note: expect.stringContaining("can't reach ixigo") });
+        .toMatchObject({ ok: true, changed: ['dates'], note: expect.stringContaining("ixigo didn't answer when Go looked up Unreachable") });
       expect(calls.map((c) => c.params.destination)).toEqual([undefined]);
     });
   });
