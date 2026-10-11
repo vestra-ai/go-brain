@@ -337,23 +337,36 @@ describe("Go books a person's own flight up to ixigo's pay button", () => {
     const asks: unknown[] = [];
     const b = createFlightBooking({
       pool: db.pool, runner: () => runner, link: lb.link, switches: lb.switches, now: lb.brain.now, log: lb.brain.log, nameOf: async () => 'Someone',
-      login: { ensure: async (_trip, what, o) => (asked.push(what), asks.push(o), { ok: false, note: 'asked to log in' }) },
+      // As the real ensure does with for: the trip's login ask is the person booking's (login.ts).
+      login: {
+        ensure: async (trip, what, o) => {
+          asked.push(what);
+          asks.push(o);
+          await db.pool.query(
+            `insert into ixigo_logins (trip_id, person_id, state, attempt, asked_at, updated_at) values ($1, $2, 'asked', 0, now(), now())
+             on conflict (trip_id) do update set person_id = excluded.person_id`,
+            [trip, o?.for ?? 'p_rahul'],
+          );
+          return { ok: false, note: 'asked to log in' };
+        },
+      },
     });
     await b.start({ tapId: 'tap_l1', tripId: 't_goa', personId: 'p_meher5', name: 'Meher', offer: OFFER, choice: 'basic' });
     await b.settled();
     expect(asked).toEqual(['Booking IndiGo 6E2150 for Meher']);
     // Its login card goes to the person booking, first (the lead, 11 Oct: Keshav's booking asked Saket, the organizer).
     expect(asks).toEqual([{ booking: true, for: 'p_meher5' }]);
-    // She is told why, on a card for her alone: whose login card it is (the trip's login row's person, named here by this
-    // booking's nameOf), and that Go carries on by itself once it's in (Keshav, 11 Oct).
+    // She is told why, on a card for her alone: the login card is hers, and Go carries on by itself once it's in
+    // (Keshav, 11 Oct).
     const told = lb.link.requests.filter((r) => (r.params['card'] as { card_id?: string } | undefined)?.card_id?.startsWith('c_book_login'));
     expect(told.map((r) => [r.params['visible_to_person_ids'], (r.params['card'] as { body: string }).body])).toEqual([
-      [['p_meher5'], "Your booking needs the trip's ixigo login, which isn't linked yet: Someone has the Log in to ixigo card. Once it's in, Go carries on with your booking."],
+      [['p_meher5'], "Your booking needs the trip's ixigo login, which isn't linked yet. Log in on your card and Go carries on with your booking."],
     ]);
     expect(calls).toEqual([]);
     // It waits on the login, with what it carries on with.
     const row = (await db.pool.query(`select state, why, resume, waiting_since from flight_bookings where person_id = 'p_meher5'`)).rows[0];
     expect(row).toMatchObject({ state: 'failed', why: 'login_needed', resume: { tapId: 'tap_l1', name: 'Meher', choice: 'basic' }, waiting_since: expect.any(Date) });
+    await db.pool.query("delete from ixigo_logins where trip_id = 't_goa'");
   });
 
   it("stops when her saved traveller couldn't be ticked on ixigo's traveller step, whether the fetch failed or ran out at the tick", async () => {
