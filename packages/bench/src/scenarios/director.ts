@@ -20,7 +20,8 @@ export const DIRECTOR_WORDS = {
   callAnnounce: `I'll call ${DEMO_DIVE_SHOP.name} to ask if they can take five of us on Sunday morning.`,
   weather: 'November is dry and sunny in Goa, around 32 degrees by day. Good beach weather.',
   villasShown: 'Three villas that fit, with their prices for the whole stay.',
-  villaWon: 'Villa Sol won, all five votes. One of you books it for everyone.',
+  // Go's own line on the closed stays vote, with no model round (money/claim-taps.ts stayClosedAnswer).
+  villaWon: "Villa Sol it is. Tap I'll book it to book it.",
   mandate: "Rahul, you're booking for all 5. Tap Yes, book it when you're ready.",
   refusal: "I can't pay without a group vote and Rahul's OK on his phone. Want me to put scuba to a vote?",
 } as const;
@@ -131,7 +132,7 @@ export function createDirector(o: { trip: () => TripSnapshot | null }): Director
   const sideBodies: MessageBody[] = [];
   const calls: ToolCall[] = [];
   const results: Array<{ name: string; content: string }> = [];
-  const done = { won: false, mandate: false, notice: false };
+  const done = { mandate: false, notice: false };
 
   function afterRound(body: MessageBody, ran: Array<{ name: string; content: string }>): Reply {
     const now = rightNow(body);
@@ -224,11 +225,6 @@ export function createDirector(o: { trip: () => TripSnapshot | null }): Director
           input: { tone: 'heads_up', title: 'Your flight is 2 hours late', body: 'You now land at 10:45 pm but your cab is at 9. Want me to move it to 11?', for_person_ids: [DEMO_WATCH.person_id] },
         }],
       };
-    }
-    // The vote closed: Go says who won and never picks who pays. The I'll book it card rides on this post.
-    if (!done.won && now.includes(' closed: ')) {
-      done.won = true;
-      return { text: DIRECTOR_WORDS.villaWon };
     }
     const resultsId = /results_id "([^"]+)"/.exec(now)?.[1];
     if (resultsId && now.includes('finished with')) {

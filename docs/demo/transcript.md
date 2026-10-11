@@ -97,7 +97,7 @@ From each cue to what had to happen, on the wall clock of the run.
 | 35.7 s | Arjun | votes for Villa Sol |
 | 35.7 s | Meher | votes for Villa Sol |
 | 35.7 s | Kabir | votes for Villa Sol |
-| 35.8 s | Go | Villa Sol won, all five votes. One of you books it for everyone. [notice card: Rahul is booking for all 5] |
+| 35.8 s | Go | Villa Sol it is. Tap I'll book it to book it. [notice card: Rahul is booking for all 5] |
 
 ### 2:40 Rahul books for everyone, and the mandate
 
