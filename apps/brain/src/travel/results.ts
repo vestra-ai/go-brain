@@ -47,7 +47,7 @@ export interface ResultSet {
 }
 
 /** What a card's option may gain after the card went up (results.setOptionFields): a bus's line its drops (bus-drops.ts) too. */
-export type OptionFields = Partial<Pick<OptionsCardT['options'][number], 'photos' | 'room_types' | 'price_min_minor' | 'price_max_minor' | 'subtitle'>>;
+export type OptionFields = Partial<Pick<OptionsCardT['options'][number], 'photos' | 'room_types' | 'price_min_minor' | 'price_max_minor' | 'subtitle' | 'place' | 'details' | 'image_url'>>;
 
 export interface OptionsCardRow {
   cardId: string;
