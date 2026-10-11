@@ -223,6 +223,8 @@ export function wireMemory(brain: Brain, d: WireDeps): {
          JOIN trips t ON t.trip_id = ld.trip_id AND t.gone_at IS NULL`,
     );
     for (const { trip_id } of due.rows) {
+      // Its Server away (below): nothing to call; the next sweep after it is back settles them.
+      if (await brain.door.link.away?.(trip_id)) continue;
       try {
         await settleDecisionLines(brain.pool, brain.door.link, trip_id, await brain.packs.get(trip_id));
       } catch (err) {

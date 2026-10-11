@@ -429,6 +429,12 @@ describe('open lines a vote settles', () => {
     await mirrorLine(db.pool, 't_r31', line('r_v31'), 5);
     await linkLine(db.pool, 't_r31', 'r_v31', 'd_villa', w.pack);
     w.pack.trip.decisions = [closed];
+    // Its Server away: the sweep calls nothing for it (#390's away), and settles it once the Server is back.
+    let away = true;
+    Object.assign(w.link, { away: async (tripId: string) => away && tripId === 't_r31' });
+    await w.wired.sweep();
+    expect(doneCalls(w)).toEqual([]);
+    away = false;
     await w.wired.sweep();
     expect(doneCalls(w)).toEqual([['r_v31', 'done']]);
     // The Server's record.changed would follow; without it the line stays active in the copy and other sweeps here would try again.
