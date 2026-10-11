@@ -194,7 +194,14 @@ function pointsAt(m: Message, pack: TripPack): string | null {
 }
 
 export function renderTripChangeWake(item: DeskItem, pack: TripPack): string {
-  const p = (item.payload ?? {}) as { type?: string; decisionId?: string };
+  const p = (item.payload ?? {}) as { type?: string; decisionId?: string; title?: string };
+  // The group's stay is booked (money/finish.ts): each person's flights are next, never before it (Saket's test, 11 Oct).
+  if (p.type === 'stay.booked') {
+    return (
+      `the group's stay ${inlineData(p.title ?? 'the stay')} is booked, and its ticket is up. Each person's flights are next: ` +
+      "call search_flights_each for everyone who has no flight picked or booked yet, and say it in one short line. Call stay_silent when everyone has theirs."
+    );
+  }
   if (p.type === 'decision.closed' && p.decisionId) {
     const d = pack.trip.decisions.find((x) => x.decision_id === p.decisionId);
     if (!d) return 'a vote closed';
@@ -209,8 +216,12 @@ export function renderTripChangeWake(item: DeskItem, pack: TripPack): string {
           `If it settled the trip's dates, save them with update_trip first, with decision_id "${d.decision_id}" (days without a year are the next ones from today). ` +
           'If it settled where to stay (an area or a place to stay), save the winner as the stay, never as the destination: the destination is where the trip goes. ' +
           'Say it is the stay or picked, never "locked in": that reads as ixigo\'s Lock Price. ' +
-          'The App already posted the result in the room: never say who won or the counts again. ' +
-          "Then take the next step yourself and say it in one short line (a stay picked: each person's flights with search_flights_each; booking it), or call stay_silent when there is none."
+          'The App already posted the result in the room: never say the counts again, or who won outside the stay\'s line below. ' +
+          'Then take the next step yourself and say it in one short line, or call stay_silent when there is none. ' +
+          // The stay comes first (Saket's test, 11 Oct: his flights card and the stay's card at once, and "tell me when").
+          'A stay Go can book: its booking is the only next step, and its card goes up with your post. Say only "<the stay> it is. Tap I\'ll book it to book it." ' +
+          '(a trip of one: its booking goes up for them by itself, so call stay_silent). No flights yet: each person\'s flights come once the stay is booked, ' +
+          'unless someone asks for theirs, and never ask anyone to tell you when.'
       : `the vote ${inlineData(d.question)} closed with no clear winner (${tally}). Ask the group how to settle it.`;
   }
   return `the trip changed (${p.type ?? item.ref})`;

@@ -30,6 +30,11 @@ export interface MoneyDeps {
    * when none was picked. Absent: every payment is one expense.
    */
   rooms?: (row: Pick<PaymentRow, 'trip_id' | 'decision_id' | 'option_ref' | 'payment_id'>) => Promise<Room[] | null>;
+  /**
+   * The group's stay is booked and its ticket is up: Go wakes for the next step, each person's flights (the stay comes
+   * first, Saket's test, 11 Oct). Called once per booking. Absent: nothing follows.
+   */
+  stayBooked?: (tripId: string, o: { bookingId: string; title: string }) => Promise<void>;
 }
 
 /** Who a money line can name: the payer, or the trip's people. */

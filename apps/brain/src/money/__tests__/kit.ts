@@ -252,6 +252,7 @@ export class FakeServerLink implements ServerLink {
         return { booking_id, seq: this.seq(trip) };
       }
       case 'add_reaction':
+      case 'update_trip':
         return { seq: this.seq(trip) };
       case 'add_expense': {
         const expense_id = `e_${++this.n}`;

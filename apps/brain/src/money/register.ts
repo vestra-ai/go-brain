@@ -3,7 +3,7 @@ import { statsRegistry } from '../stats/sources.js';
 import { closeRooms, createRoomsCards } from '../travel/rooms-card.js';
 import { askToPay, inTurn } from './ask.js';
 import { moneyRoutes } from './callbacks.js';
-import { claimCardOnClose, claimTap } from './claim-taps.js';
+import { claimCardOnClose, claimTap, stayClosedAnswer } from './claim-taps.js';
 import { CLAIM_ACTION, createClaims } from './claims.js';
 import { Later, type MoneyDeps } from './deps.js';
 import { createPay } from './engine.js';
@@ -47,6 +47,11 @@ export function registerMoneyWith(o: { fetch?: typeof fetch; sweepEveryMs?: numb
       // asking for the payment closes the card (its final state, taps refused) and gives the pick it closed with.
       rooms: async (row) =>
         (await closeRooms(roomsCards, row.trip_id, row.option_ref))?.rooms.map((r) => ({ label: r.label, person_ids: r.personIds, price_minor: r.priceMinor })) ?? null,
+      // The stay booked: Go wakes for each person's flights (composer/wakes.ts, stay.booked).
+      stayBooked: (tripId, b) =>
+        brain.desk.put({
+          id: `stay_booked:${b.bookingId}`, tripId, kind: 'trip_change', ref: `booking:${b.bookingId}`, dueAt: brain.now(), payload: { type: 'stay.booked', title: b.title },
+        }),
     };
     const pay = createPay(d);
     brain.pay = pay;
@@ -64,6 +69,8 @@ export function registerMoneyWith(o: { fetch?: typeof fetch; sweepEveryMs?: numb
     const claiming = { d, claims, packs: brain.packs, later: new Later() };
     brain.taps.on('notice', CLAIM_ACTION, claimTap(claiming));
     brain.context.addTurnCard(claimCardOnClose(claiming));
+    // A closed stays vote, alone on the turn: the stay saved and its booking the one next step, with no model round.
+    brain.context.addDirect(stayClosedAnswer(claiming));
     brain.door.handle('vault_link', vaultLinkHandler(vault));
     brain.context.addNow(paymentsNow({ pool: brain.pool, packs: brain.packs, now: brain.now, travel: () => brain.travel, claims }));
     brain.tripLog.onEvent((ev) => pay.heard(ev));

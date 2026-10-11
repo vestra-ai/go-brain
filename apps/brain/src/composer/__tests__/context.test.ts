@@ -356,8 +356,16 @@ describe('why Go woke, and the trip block', () => {
         'If it settled the trip\'s dates, save them with update_trip first, with decision_id "d_stay" (days without a year are the next ones from today). ' +
         "If it settled where to stay (an area or a place to stay), save the winner as the stay, never as the destination: the destination is where the trip goes. " +
         'Say it is the stay or picked, never "locked in": that reads as ixigo\'s Lock Price. ' +
-        'The App already posted the result in the room: never say who won or the counts again. ' +
-        "Then take the next step yourself and say it in one short line (a stay picked: each person's flights with search_flights_each; booking it), or call stay_silent when there is none.",
+        "The App already posted the result in the room: never say the counts again, or who won outside the stay's line below. " +
+        'Then take the next step yourself and say it in one short line, or call stay_silent when there is none. ' +
+        'A stay Go can book: its booking is the only next step, and its card goes up with your post. Say only "<the stay> it is. Tap I\'ll book it to book it." ' +
+        "(a trip of one: its booking goes up for them by itself, so call stay_silent). No flights yet: each person's flights come once the stay is booked, " +
+        'unless someone asks for theirs, and never ask anyone to tell you when.',
+    );
+    // The stay booked (money/finish.ts): each person's flights are next (Saket's test, 11 Oct: never before the stay).
+    expect(c.renderWake(wake({ kind: 'trip_change', ref: 'booking:b_1', payload: { type: 'stay.booked', title: 'Villa Sol' } }), p)).toBe(
+      "the group's stay <data>Villa Sol</data> is booked, and its ticket is up. Each person's flights are next: " +
+        'call search_flights_each for everyone who has no flight picked or booked yet, and say it in one short line. Call stay_silent when everyone has theirs.',
     );
     expect(c.renderWake(wake({ kind: 'timer', ref: 'vote_closes', payload: {} }), p)).toBe('timer (vote_closes)');
   });
@@ -472,7 +480,7 @@ describe('why Go woke, and the trip block', () => {
     // 4 to 1 with all 5 voting: the counts are given, so the result line can never read "5 of 5 votes" for the winner.
     expect(closed('d_dates')).toContain('<data>6-9 Nov</data> won (<data>6-9 Nov</data> 4, <data>13-16 Nov</data> 1; 5 of 5 voted)');
     // The App posts the result line itself (GO-TEAM-FINAL §8): Go reads the counts and never says them again.
-    expect(closed('d_dates')).toContain('The App already posted the result in the room: never say who won or the counts again.');
+    expect(closed('d_dates')).toContain("The App already posted the result in the room: never say the counts again, or who won outside the stay's line below.");
     expect(closed('d_split')).toContain('no clear winner (<data>Villa Sol</data> 2, <data>Casa Azul</data> 2; 4 of 5 voted)');
     expect(closed('d_dates')).toContain("If it settled the trip's dates, save them with update_trip first");
     // Staging, 8 Oct: a vote on where to stay in Goa became the trip's destination.

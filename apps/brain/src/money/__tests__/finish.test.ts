@@ -119,6 +119,17 @@ describe('a paid payment', () => {
     expect(await unsettled(k.pool, k.now())).toEqual([]);
   });
 
+  // Saket's test, 11 Oct: the stay comes first. Once it is booked, Go wakes for each person's flights, once.
+  it('the stay booked and its ticket up, Go wakes for the next step once', async () => {
+    const woke: Array<{ tripId: string; bookingId: string; title: string }> = [];
+    const deps = { ...k.deps, stayBooked: async (tripId: string, b: { bookingId: string; title: string }) => void woke.push({ tripId, ...b }) };
+    for (let i = 0; i < 2; i++) {
+      const row = await markPaid(deps, { tripId: 't_goa', approvalId, railRef: `fake_${approvalId}` });
+      if (row) await reconcile(deps, row.payment_id);
+    }
+    expect(woke).toEqual([{ tripId: 't_goa', bookingId: k.server.trip('t_goa').bookings[0]?.booking_id, title: 'Villa Sol, 3 nights' }]);
+  });
+
   it('does every step once when the vault calls back twice', async () => {
     await paid();
     await paid();

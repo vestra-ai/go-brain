@@ -197,6 +197,8 @@ async function finishPaid(d: MoneyDeps, row: PaymentRow): Promise<void> {
       card: ticketCard({ cardId: rid('c_ticket', approvalId), bookingId, title: confirmed.title, ref: confirmed.ref, refundableUntil, simulated: confirmed.simulated === true }),
     });
     await patchPayment(d.pool, row.payment_id, { ticket_posted_at: d.now() }, d.now());
+    // 6. The stay booked, each person's flights are next.
+    if (confirmed.kind === 'stay') await d.stayBooked?.(row.trip_id, { bookingId, title: confirmed.title });
   }
 }
 
