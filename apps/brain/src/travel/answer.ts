@@ -147,6 +147,46 @@ export const dayText = (iso: string): string => {
   const d = dateOf(iso);
   return `${DAYS[d.getUTCDay()]} ${d.getUTCDate()} ${MONTHS[d.getUTCMonth()]}`;
 };
+/** A place as ixigo searched its flights, in the words people use: Manali as "Kullu (Manali's airport)", Delhi as "Delhi". */
+export function airportWords(n: { words: string; city: string }): string {
+  const [w, c] = [norm(n.words), norm(n.city)];
+  return c.includes(w) || w.includes(c) ? n.words : `${n.city} (${n.words}'s airport)`;
+}
+
+/**
+ * ixigo's own "No flights found" (TravelSearch.none), said as what it is, never a page that didn't load (prod, 12 Oct:
+ * Delhi to Kullu on 13 Nov, then 20 minutes of "I couldn't load your flights"), with the next step: a bus, which Go books.
+ */
+export function noFlightsLine(
+  from: string, to: string, date: string,
+  none: { from?: { words: string; city: string }; to?: { words: string; city: string } },
+): string {
+  return `${noFlightsText(from, to, date, none)} I can look for a bus from ${from} to ${to} instead: just say "bus".`;
+}
+
+/** ixigo's none, said as it is: "ixigo has no flights from Delhi to Kullu (Manali's airport) on Fri 13 Nov." */
+export function noFlightsText(
+  from: string, to: string, date: string,
+  none: { from?: { words: string; city: string }; to?: { words: string; city: string } },
+): string {
+  return `ixigo has no flights from ${none.from ? airportWords(none.from) : from} to ${none.to ? airportWords(none.to) : to} on ${dayText(date)}.`;
+}
+
+/**
+ * What Go does next when ixigo has no flights on a route (Keshav, 12 Oct: "if there is no airport in source or
+ * destination, Go should be smart enough to give the closest airport"): the same search again at once from or to the
+ * nearest other airport with flights, said in one line, never "couldn't load". how: the call that searches again.
+ */
+export function nearestAirportAsk(how: string): string {
+  return (
+    'Search again now with the nearest other airport that has flights in place of the end with none, the trip\'s place or a ' +
+    'home (a small airport\'s nearest bigger one: Manali Chandigarh, Coorg Mangalore, Munnar Kochi, Spiti Chandigarh): ' +
+    `${how}. Say it in one line, the none first and then the airport: "ixigo has no flights from Delhi to Kullu (Manali's ` +
+    'airport) on Fri 13 Nov, so here are flights to Chandigarh, the nearest airport to Manali with flights that day." When this search already was ' +
+    'that nearest airport, say neither has flights that day and offer a bus. Never say it didn\'t load, and never that you\'ll try again.'
+  );
+}
+
 /** "6 to 9 Nov", or "30 Nov to 2 Dec". */
 const rangeText = (a: string, b: string): string => {
   const [x, y] = [dateOf(a), dateOf(b)];

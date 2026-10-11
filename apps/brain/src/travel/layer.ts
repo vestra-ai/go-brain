@@ -155,6 +155,7 @@ export function createTravelLayer(d: TravelLayerDeps): Travel {
         ...(found.earlier ? { earlier: true } : {}), ...(found.cut ? { cut: true } : {}), ...(found.notes ? { notes: found.notes } : {}),
         ...(found.dropped?.length ? { dropped: found.dropped } : {}),
         ...(found.listed !== undefined ? { listed: found.listed } : {}),
+        ...(found.none ? { none: found.none } : {}),
       };
     },
     async waitMs(kind, q, o) {

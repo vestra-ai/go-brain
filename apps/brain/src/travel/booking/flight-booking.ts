@@ -315,18 +315,22 @@ export type TitleShape = (typeof TITLE_SHAPES)[number];
 
 /**
  * ixigo's "Adult 1" form on the traveller step (E2, his browser, 10 Oct: Title, "First & Middle Name", "Last Name",
- * Nationality, India by default), filled for a traveller not saved on the account, its Title as one shape. A step that
- * finds no box ends the fetch before anything is submitted: the next shape is tried.
+ * Nationality, India by default), filled for a traveller not saved on the account. Its labels are not tied to their
+ * boxes: each box is a textbox with no name, the first after its label's words (prod, 11 Oct: every newcomer's booking
+ * stopped at its Title, looked for by a name no box has). So each box is clicked by its label's words, which gives it the
+ * cursor, and typed into as the box with focus; the Title is a dropdown, its box clicked open and its title clicked by
+ * its own words. Each near_text is one text: a match between two would start the search again. A step that finds nothing
+ * ends the fetch before anything is submitted.
  */
-export function newTravellerSteps(t: NewTraveller, shape: TitleShape = 'select'): NonNullable<FetchPlan['steps']> {
+export function newTravellerSteps(t: NewTraveller): NonNullable<FetchPlan['steps']> {
   const title = t.gender === 'male' ? 'Mr' : 'Ms';
-  const titleStep: NonNullable<FetchPlan['steps']>[number] = shape === 'select'
-    ? { op: 'type', role: 'combobox', name: 'Title', text: title }
-    : { op: 'click', role: shape === 'chips' ? 'button' : 'radio', name: title, near_text: 'Adult 1' };
   return [
-    titleStep,
-    { op: 'type', role: 'textbox', name: 'First & Middle Name', text: t.first },
-    { op: 'type', role: 'textbox', name: 'Last Name', text: t.last },
+    { op: 'click', role: 'textbox', near_text: 'Adult 1' },
+    { op: 'click', name: title, near_text: 'Title' },
+    { op: 'click', role: 'textbox', near_text: 'First & Middle Name' },
+    { op: 'type', text: t.first },
+    { op: 'click', role: 'textbox', near_text: 'Last Name' },
+    { op: 'type', text: t.last },
   ];
 }
 
@@ -753,11 +757,7 @@ export function createFlightBooking(d: FlightBookingDeps): FlightBooking {
     };
     let ticked = false;
     if (newcomer) {
-      // Each shape of ixigo's Title in turn, until one fills the form.
-      for (const shape of TITLE_SHAPES) {
-        ticked = await tick([FARE_TYPES[ask.choice].click, CONTINUE, ...newTravellerSteps(newcomer, shape)]);
-        if (ticked) break;
-      }
+      ticked = await tick([FARE_TYPES[ask.choice].click, CONTINUE, ...newTravellerSteps(newcomer)]);
     } else {
       ticked = await tick(steps);
     }

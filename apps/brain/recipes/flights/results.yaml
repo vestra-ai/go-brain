@@ -77,6 +77,9 @@ read:
     from: /flights/v2/search/stream
     format: sse
     list: data.flightJourneys.flightFare
+    # ixigo's own "none": 200, one event {"errors":{"code":201,"message":"No flights found"}} (prod, 12 Oct: Delhi to
+    # Kullu on 13 Nov, 59 bytes). No flights that day is an answer, never a page that didn't load.
+    none: 201 in errors.code
     unique: flightKeys
     # ixigo's own filters the ask named ($site): ixigo applies them in its page, never in its stream, which holds every
     # fare whatever the page shows, so Go applies them to the rows. Any value of one param will do (ixigo's "6E,AI"), and

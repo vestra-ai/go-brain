@@ -72,7 +72,7 @@ type Read = { url: string; plan: FetchPlan; o: ReadOptions | undefined };
  * saved: how the traveller step's own call for the saved travellers goes: answered (the default), refused by ixigo once
  * then answered, or refused every time. calls: each read of it, in order.
  */
-/** fillFails: how many reads that type a new traveller into ixigo's form find no box (a Title shape that isn't there). */
+/** fillFails: how many reads that type a new traveller into ixigo's form find no box. */
 function fakeRunner(o: { fare?: boolean; tick?: boolean | 'ran_out'; saved?: 'ok' | 'once' | 'never'; intl?: boolean; fillFails?: number } = {}): { runner: RecipeRunner; reads: Read[]; calls: string[] } {
   const reads: Read[] = [];
   const calls: string[] = [];
@@ -90,7 +90,7 @@ function fakeRunner(o: { fare?: boolean; tick?: boolean | 'ran_out'; saved?: 'ok
         const fields = capture(TRAVELLER_FIELDS, `https://www.ixigo.com${TRAVELLER_FIELDS}?fareKey=x&journeyType=${o.intl ? 'INTERNATIONAL' : 'DOMESTIC'}`, '{"data":{}}');
         return { captures: [refused ? capture(SAVED_TRAVELLERS, call, '{"errors":[{"message":"unauthorized"}]}', 401) : capture(SAVED_TRAVELLERS, call, SAVED), fields], finalUrl: url };
       }
-      if (opts?.private && plan.steps?.some((st) => st.op === 'type' && st.name === 'First & Middle Name')) {
+      if (opts?.private && plan.steps?.some((st) => st.op === 'click' && st.near_text === 'First & Middle Name')) {
         fills += 1;
         if (fills <= (o.fillFails ?? 0)) throw new Error('504 timeout at 3 click');
       }
@@ -262,8 +262,9 @@ describe("Go books a person's own flight up to ixigo's pay button", () => {
     expect(reads.at(-1)!.o?.private).toBe(true);
     expect(reads.at(-1)!.plan.steps).toEqual([
       { op: 'click', role: 'radio', text: "I don't want Free Cancellation", optional: true, within_ms: 10_000 }, { op: 'click', role: 'button', name: 'Continue' },
-      { op: 'type', role: 'combobox', name: 'Title', text: 'Mr' },
-      { op: 'type', role: 'textbox', name: 'First & Middle Name', text: 'Arjun' }, { op: 'type', role: 'textbox', name: 'Last Name', text: 'Varma' },
+      { op: 'click', role: 'textbox', near_text: 'Adult 1' }, { op: 'click', name: 'Mr', near_text: 'Title' },
+      { op: 'click', role: 'textbox', near_text: 'First & Middle Name' }, { op: 'type', text: 'Arjun' },
+      { op: 'click', role: 'textbox', near_text: 'Last Name' }, { op: 'type', text: 'Varma' },
     ]);
     expect((await db.pool.query(`select state from flight_bookings where person_id = 'p_arjun2'`)).rows[0]).toEqual({ state: 'ready_to_pay' });
     // Never "add yourself to X's saved travellers", and none of his details reaches a card or a line.
@@ -300,27 +301,34 @@ describe("Go books a person's own flight up to ixigo's pay button", () => {
     expect(await b.gender({ tripId: 't_goa', cardId: card.card_id, personId: 'p_kabir3', gender: 'female' })).toEqual({ result: 'refused', toast: 'This booking has moved on' });
   });
 
-  // The lead, 11 Oct: E2 saw the Title's label, not its control. A select, chips or buttons, and radios, in turn.
-  it("tries ixigo's Title as a select, then chips or buttons, then radios, and stops before anything is submitted when none fills", async () => {
+  // Prod, 11 Oct (fb_def5s1f6…, fb_xaxfpt62…, fb_57z1hwje…): every newcomer stopped at ixigo's Title, looked for by a
+  // name no box has. ixigo's labels are not tied to their boxes (E2): each box is the first textbox after its label.
+  it("fills ixigo's Adult 1 form as ixigo draws it: each box clicked by its label's words, then typed into as the focused box", async () => {
     const pay: TicketPay = { onPaid: () => undefined, travelDetails: async () => ({ firstName: 'Meher', lastName: 'Varma', gender: 'female', dob: '1992-02-02' }) };
-    const titles = (reads: Read[]) => reads.filter((r) => r.plan.steps?.some((st) => st.op === 'type' && st.name === 'First & Middle Name')).map((r) => r.plan.steps![2]);
-    // Not a select: chips, the second shape, fill it.
-    const chips = fakeRunner({ fillFails: 1 });
-    const b = booking(chips.runner, true, pay);
+    const fills = (reads: Read[]) => reads.filter((r) => r.plan.steps?.some((st) => st.op === 'click' && st.near_text === 'First & Middle Name'));
+    const ok = fakeRunner();
+    const b = booking(ok.runner, true, pay);
     await b.start({ tapId: 'tap_ts1', tripId: 't_goa', personId: 'p_kabir6', name: 'Kabir', offer: OFFER, choice: 'basic' });
     await b.settled();
-    expect(titles(chips.reads)).toEqual([
-      { op: 'type', role: 'combobox', name: 'Title', text: 'Ms' },
-      { op: 'click', role: 'button', name: 'Ms', near_text: 'Adult 1' },
-    ]);
+    // One read: the fare, Continue, then the form, its Title a dropdown and every name typed into the box clicked.
+    expect(fills(ok.reads).map((r) => r.plan.steps!.slice(2))).toEqual([[
+      { op: 'click', role: 'textbox', near_text: 'Adult 1' },
+      { op: 'click', name: 'Ms', near_text: 'Title' },
+      { op: 'click', role: 'textbox', near_text: 'First & Middle Name' },
+      { op: 'type', text: 'Meher' },
+      { op: 'click', role: 'textbox', near_text: 'Last Name' },
+      { op: 'type', text: 'Varma' },
+    ]]);
+    // No type step names a box ixigo never names.
+    expect(fills(ok.reads)[0]!.plan.steps!.filter((st) => st.op === 'type').every((st) => !('name' in st) && !('role' in st))).toBe(true);
     expect((await db.pool.query(`select state from flight_bookings where person_id = 'p_kabir6'`)).rows[0]).toEqual({ state: 'ready_to_pay' });
-    // None of the three: said, and stopped, nothing submitted.
-    const none = fakeRunner({ fillFails: 3 });
+    // A box not found: said, and stopped, nothing submitted.
+    const none = fakeRunner({ fillFails: 1 });
     const c = booking(none.runner, true, pay);
     const from = lb.link.requests.length;
     await c.start({ tapId: 'tap_ts2', tripId: 't_goa', personId: 'p_kabir7', name: 'Kabir', offer: OFFER, choice: 'basic' });
     await c.settled();
-    expect(titles(none.reads).map((st) => [st!.op, (st as { role?: string }).role])).toEqual([['type', 'combobox'], ['click', 'button'], ['click', 'radio']]);
+    expect(fills(none.reads)).toHaveLength(1);
     expect(lb.link.requests.slice(from).filter((r) => r.method === 'post_message' && !r.params['card']).map((r) => r.params['text'])).toEqual([
       "Go couldn't fill your traveller details on ixigo's form, so it stopped before booking IndiGo 6E2150. Tap I'll take this to try again.",
     ]);

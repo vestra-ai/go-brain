@@ -196,9 +196,12 @@ export const RecipeFile = z
          *  stream holds every fare whatever the page's filters), its filters applied here, from $site. */
         /** empty: the statuses the rows' call answers with when the site has no rows (ixigo's stays: 424 past the end of
          *  its list), read as an empty list, never as a page that did not send. */
+        /** none: true on the rows' body when the site answered that it has none (ixigo's flights: 200 and errors.code 201,
+         *  "No flights found"): a read answer with no rows, said as none (the answer's none), never a page that didn't load. */
         rows: z.object({
           from: z.string().min(1), format: z.enum(BODY_FORMATS).default('json'), list: Expr, unique: Expr.optional(), where: Expr.optional(),
           empty: z.array(z.int().min(400).max(599)).max(4).optional(),
+          none: Expr.optional(),
         }),
         also: z
           .record(z.string().regex(/^[a-z][a-z_]*$/), z.object({ from: z.string().min(1), format: z.enum(BODY_FORMATS).default('json'), value: Expr }))
