@@ -3,14 +3,14 @@ import { describe, expect, it } from 'vitest';
 import { makeTurnCtx } from '../../composer/tools.js';
 import { goaPack } from '../../tasks/testing/goa.js';
 import type { OptionsCardT } from '../cards.js';
-import { placeDetails, suggestedPlaces, type SuggestedPlace } from '../places-card.js';
+import { isCountry, placeDetails, suggestedPlaces, type SuggestedPlace } from '../places-card.js';
 import type { ResultSet, ResultsStore } from '../results.js';
 import { travelTools, type TravelToolDeps } from '../tools.js';
 
 // Keshav, 11 Oct: "where should we go" needs no ixigo. Go picks the places itself and they go up as the place card, the
 // group's vote, with real photos; ixigo stays for what gets booked once the place is picked.
 const place = (name: string, kind = 'Mountains'): SuggestedPlace => ({
-  name, kind, travel: '12h drive', fit: 'Fits ₹30k each · snow in Dec', why: ['Snow by mid December', 'Cafes and walks | for all'],
+  name, stay_in: name.split(',')[0]!, kind, travel: '12h drive', fit: 'Fits ₹30k each · snow in Dec', why: ['Snow by mid December', 'Cafes and walks | for all'],
   cost_each_rupees: 25_000, nights: 4, things_to_do: ['Solang Valley', 'Old Manali walks', 'Hot springs'],
 });
 const PLACES = [place('Manali, Himachal Pradesh'), place('Shimla, Himachal Pradesh'), place('Mussoorie, Uttarakhand'), place('Nainital, Uttarakhand'), place('Kasol, Himachal Pradesh')];
@@ -88,12 +88,25 @@ describe('places Go picks itself', () => {
     expect(handed).toEqual([card.options.slice(0, 3).map((o) => ({ cardId: card.card_id, optionId: o.option_id, name: o.title, guide: o.title.split(',')[0] }))]);
   });
 
+  // p1-a, 11 Oct: a country won a vote (Morocco), ixigo couldn't set it as the trip's place, and the trip never moved.
+  it('a country alone becomes its town in it, with the town it stays in kept; a city that is its own country stays as it is', () => {
+    const [vietnam, coorg, singapore] = suggestedPlaces([
+      { ...place('Vietnam', 'Beaches'), stay_in: 'Hanoi' }, { ...place('Coorg, Karnataka', 'Coffee hills'), stay_in: 'Madikeri' }, { ...place('Singapore', 'City'), stay_in: 'Singapore' },
+    ]);
+    expect(vietnam).toMatchObject({ title: 'Hanoi, Vietnam', place: { name: 'Hanoi, Vietnam' }, facts: { stay_in: 'Hanoi', guide: 'Hanoi' } });
+    expect(coorg).toMatchObject({ title: 'Coorg, Karnataka', facts: { stay_in: 'Madikeri', guide: 'Coorg' } });
+    expect(singapore).toMatchObject({ title: 'Singapore' });
+    expect([isCountry('Vietnam'), isCountry('Morocco'), isCountry('Hoi An, Vietnam'), isCountry('Goa'), isCountry('Singapore'), isCountry('Hong Kong')]).toEqual([true, true, false, false, false, false]);
+  });
+
   it('asks for 5 to 8 places, each with what the card draws, and its line', () => {
     const tool = travelTools({} as TravelToolDeps).find((t) => t.name === 'suggest_places')!;
     expect(tool.input.safeParse({ title: 'x', line: 'y', places: PLACES.slice(0, 4) }).success).toBe(false);
     expect(tool.input.safeParse({ title: 'x', line: 'y', places: [...PLACES, ...PLACES] }).success).toBe(false);
     expect(tool.input.safeParse({ title: 'x', line: 'y', places: PLACES.map((p) => ({ ...p, things_to_do: ['One'] })) }).success).toBe(false);
     expect(tool.description).toContain('never needs ixigo');
+    expect(tool.description).toContain('never a country alone');
+    expect(tool.input.safeParse({ title: 'x', line: 'y', places: PLACES.map(({ stay_in: _, ...p }) => p) }).success).toBe(false);
     expect(tool.description).toContain('never call it a price');
   });
 });

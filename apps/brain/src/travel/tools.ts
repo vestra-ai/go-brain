@@ -958,7 +958,8 @@ const SuggestArgs = z.object({
   places: z
     .array(
       z.object({
-        name: z.string().min(2).max(80).describe('The place as people know it, with its state or country: "Manali, Himachal Pradesh".'),
+        name: z.string().min(2).max(80).describe('A city, town or region people go to, with its state or country: "Manali, Himachal Pradesh", "Coorg, Karnataka", "Hoi An, Vietnam". Never a country alone.'),
+        stay_in: z.string().min(2).max(60).describe('The town the group would travel to and stay in there: Manali for Manali, Madikeri for Coorg, Hoi An for Hoi An.'),
         kind: z.string().min(2).max(30).describe('What it is, in a word or two: "Mountains", "Beaches", "Heritage city".'),
         travel: z.string().min(2).max(40).describe('Rough travel time from the asker\'s home city: "1h flight", "8h drive", "overnight train".'),
         fit: z.string().min(2).max(100).describe('One line on why it fits now: the group\'s budget and the month\'s weather, e.g. "Fits ₹25k each · snow in Dec".'),
@@ -1117,6 +1118,7 @@ export function travelTools(d: TravelToolDeps): QuickTool<any>[] {
       'Puts up a place card of 5 to 8 places you pick yourself for where the trip could go, as the group\'s vote: for "plan a trip", ' +
       '"where should we go", "Surprise us", "beaches in Dec", a vibe such as hills, or your hello on a trip with no place. Pick from what ' +
       "you know, to fit this group: their home cities, the trip's month (else next month), its budget a head and its vibe, all in Right now. " +
+      'Each is a city, town or region (never a country alone: for a country, its best city), with the town they would stay in. ' +
       'Each has its name with its state or country, its kind, a rough travel time from the asker\'s home city, a fit line (the budget and ' +
       "the month's weather), 2 to 4 short reasons, your rough cost a person for the whole trip (the card shows it as an estimate; never " +
       "call it a price or ixigo's), and 3 to 6 things to do, never a cafe, restaurant or shop by name. Go adds each place's real photo. " +

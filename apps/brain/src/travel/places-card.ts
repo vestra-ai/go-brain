@@ -105,6 +105,8 @@ export function placeOptions(rows: Array<Record<string, unknown>>, asked: Explor
 /** A place Go picked itself for where the trip could go (suggest_places), as the model gives it. */
 export interface SuggestedPlace {
   name: string;
+  /** The town the group would travel to and stay in (Madikeri for Coorg): the trip's place when the vote's pick can't be. */
+  stay_in: string;
   kind: string;
   travel: string;
   fit: string;
@@ -112,6 +114,32 @@ export interface SuggestedPlace {
   cost_each_rupees: number;
   nights?: number | undefined;
   things_to_do: string[];
+}
+
+/** The world's countries by their English names, from the runtime's own region names (no list of Go's). */
+const COUNTRIES: ReadonlySet<string> = (() => {
+  const names = new Intl.DisplayNames(['en'], { type: 'region' });
+  const out = new Set<string>();
+  for (let a = 65; a <= 90; a += 1) {
+    for (let b = 65; b <= 90; b += 1) {
+      const code = String.fromCharCode(a, b);
+      try {
+        const name = names.of(code);
+        if (name && name !== code && name !== 'Unknown Region') out.add(name.toLowerCase());
+      } catch {
+        // Not a region code.
+      }
+    }
+  }
+  return out;
+})();
+/** A city that is its own country, a trip's place all the same. */
+const CITY_STATES = new Set(['singapore', 'hong kong', 'macao', 'macau', 'monaco', 'vatican city', 'san marino']);
+
+/** A country alone ("Vietnam", "Morocco"), never a place in one ("Hoi An, Vietnam") or a city that is its own country. */
+export function isCountry(name: string): boolean {
+  const t = name.trim().toLowerCase();
+  return !t.includes(',') && COUNTRIES.has(t) && !CITY_STATES.has(t);
 }
 
 /** One line of a place's list kept in its facts (facts take no lists): its items with this between them. */
@@ -127,7 +155,9 @@ const itemsOf = (xs: string[], max: number): string => xs.map((x) => clip(x.repl
  */
 export function suggestedPlaces(places: SuggestedPlace[]): ResultOption[] {
   return places.map((p) => {
-    const name = clip(p.name.trim(), 80);
+    // A country alone is no place a trip is set to: its town first ("Hanoi, Vietnam").
+    const stayIn = p.stay_in.trim();
+    const name = clip(isCountry(p.name) && stayIn && !isCountry(stayIn) ? `${stayIn}, ${p.name.trim()}` : p.name.trim(), 80);
     return {
       kind: 'place',
       title: name,
@@ -143,8 +173,9 @@ export function suggestedPlaces(places: SuggestedPlace[]): ResultOption[] {
         things: itemsOf(p.things_to_do.slice(0, 6), 60),
         ...(p.nights ? { nights: p.nights } : {}),
         guide: name.split(',')[0]!.trim(),
+        ...(stayIn ? { stay_in: clip(stayIn, 60) } : {}),
       },
-      place: { name: clip(p.name.trim(), 120) },
+      place: { name },
     };
   });
 }
@@ -305,7 +336,7 @@ export function retitled(title: string | null | undefined, old: string | null | 
  * vote's close woke, beside the rooms card's; it posts no card of its own.
  */
 export function placeOnClose(d: {
-  results: Pick<ResultsStore, 'offer'>;
+  results: Pick<ResultsStore, 'offer'> & Partial<Pick<ResultsStore, 'get'>>;
   save: (pack: TripPack, change: TripChange, requestId: () => string) => Promise<Saved>;
   log?: { warn: (o: object, msg: string) => void };
 }): TurnCard {
@@ -317,12 +348,24 @@ export function placeOnClose(d: {
     const won = decision.options[decision.result_index];
     const offer = won?.option_ref ? await d.results.offer(won.option_ref) : null;
     if (!offer || offer.kind !== 'place') return null;
-    const title = retitled(pack.trip.title, pack.trip.destination?.name ?? null, offer.title);
-    const saved = await d.save(pack, { destination: offer.title, ...(title ? { title } : {}) }, () => stableId('go_trip', tripId, decision.decision_id)).catch((err: unknown) => {
-      d.log?.warn({ tripId, err: String(err).slice(0, 200) }, "travel: a place the vote picked didn't become the trip's");
-      return null;
-    });
-    if (saved && !saved.ok) d.log?.warn({ tripId, error: saved.error }, "travel: a place the vote picked didn't become the trip's");
-    return null;
+    const saveAs = async (place: string, requestId: () => string): Promise<boolean> => {
+      const title = retitled(pack.trip.title, pack.trip.destination?.name ?? null, place);
+      const saved = await d.save(pack, { destination: place, ...(title ? { title } : {}) }, requestId).catch((err: unknown) => {
+        d.log?.warn({ tripId, err: String(err).slice(0, 200) }, "travel: a place the vote picked didn't become the trip's");
+        return null;
+      });
+      if (saved && !saved.ok) d.log?.warn({ tripId, error: saved.error }, "travel: a place the vote picked didn't become the trip's");
+      return saved?.ok === true;
+    };
+    if (await saveAs(offer.title, () => stableId('go_trip', tripId, decision.decision_id))) return null;
+    // A region or a country ixigo can't pin (p1-a, 11 Oct: Morocco won, and the trip never moved): the town the group
+    // would stay in there, as the place Go picked it with (suggest_places stay_in), and one line naming it. The App
+    // posted who won already.
+    const option = d.results.get ? (await d.results.get(tripId, offer.resultsId).catch(() => null))?.options[offer.n - 1] : undefined;
+    const stayIn = typeof option?.facts['stay_in'] === 'string' ? option.facts['stay_in'].trim() : '';
+    const picked = offer.title.split(',')[0]!.trim();
+    if (!stayIn || stayIn.toLowerCase() === picked.toLowerCase()) return null;
+    if (!(await saveAs(stayIn, () => stableId('go_trip', tripId, decision.decision_id, 'stay_in')))) return null;
+    return { line: clip(`The trip is set to ${stayIn}, the town most people stay in for ${picked}.`, 200) };
   };
 }

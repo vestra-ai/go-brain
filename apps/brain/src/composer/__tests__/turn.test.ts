@@ -1120,6 +1120,16 @@ describe("a lane's card on the turn's own post (p2's regression red: a new trip 
     expect(r.posts()).toHaveLength(1);
   });
 
+  // A place a vote picked that ixigo couldn't set, set as its town instead (places-card.ts placeOnClose): a line alone.
+  it("a lane's line with no card goes after Go's words in the same message", async () => {
+    const r = room({ messages: [], script: [{ text: 'Flights next, from everyone\'s home city.' }] });
+    r.context.addTurnCard(async () => ({ line: 'The trip is set to Marrakech, the town most people stay in for Morocco.' }));
+    await turn(r, [greet(r.tripId)]);
+    expect(r.posts()).toHaveLength(1);
+    expect(r.posts()[0]!.params.text).toBe("Flights next, from everyone's home city.\nThe trip is set to Marrakech, the town most people stay in for Morocco.");
+    expect(r.posts()[0]!.params.card).toBeUndefined();
+  });
+
   it('a trip already logged in to ixigo gets the hello alone, and any other turn never carries the card', async () => {
     const r = room({ messages: [], script: [{ text: HELLO }] });
     withLogin(r);

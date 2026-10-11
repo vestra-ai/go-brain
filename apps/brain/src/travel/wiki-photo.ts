@@ -19,7 +19,8 @@ export interface WikiPhoto {
 const SUMMARY = 'https://en.wikipedia.org/api/rest_v1/page/summary/';
 /** How long one page summary may take: the card waits for every place's cover at once (tools.ts COVER_WAIT_MS). */
 export const WIKI_WAIT_MS = 2_000;
-const PHOTO = /^https:\/\/upload\.wikimedia\.org\/wikipedia\/([a-z]+)\/.+\.jpe?g$/i;
+/** A JPEG on Wikimedia's own hosts (upload.wikimedia.org, thumb.wikimedia.org), its address with no query. */
+const PHOTO = /^https:\/\/([a-z]+\.)?wikimedia\.org\/wikipedia\/([a-z]+)\/.+\.jpe?g$/i;
 /** A file that is a symbol or a map, not a photo of the place, by the words in its name. */
 const NOT_A_PHOTO = /(^|[_\-\s.(,])(flag|coat[_\s-]of[_\s-]arms|emblem|seal|logo|locator|map)([_\-\s.),]|$)/i;
 /** Wikimedia's own thumbnail steps; 1280 is one it keeps. */
@@ -46,11 +47,27 @@ function pageOf(file: { name: string; project: string }): string {
   return `https://${host}/wiki/File:${encodeURIComponent(file.name.replace(/ /g, '_'))}`;
 }
 
+/**
+ * An image's address as Go keeps it: with no query. Wikipedia's summaries carry ?utm_… on every image (11 Oct, prod:
+ * "Mussoorie_Snow_Over_Dehradun….jpg?utm_source=en.wikipedia.org…"), and thumbnails on thumb.wikimedia.org.
+ */
+const bare = (url: string | undefined): string | undefined => {
+  if (typeof url !== 'string') return undefined;
+  try {
+    const u = new URL(url);
+    u.search = '';
+    u.hash = '';
+    return u.toString();
+  } catch {
+    return undefined;
+  }
+};
+
 /** The photo a summary carries, at most WIDTH wide, with its file's page; null when it has none that is a photograph. */
 export function photoOf(page: Summary): WikiPhoto | null {
   if (page.type === 'disambiguation') return null;
-  const original = page.originalimage?.source;
-  const thumb = page.thumbnail?.source;
+  const original = bare(page.originalimage?.source);
+  const thumb = bare(page.thumbnail?.source);
   const url =
     typeof original === 'string' && PHOTO.test(original) && typeof page.originalimage?.width === 'number' && page.originalimage.width <= WIDTH
       ? original

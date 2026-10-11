@@ -350,8 +350,9 @@ export function createComposer(d: ComposerDeps): Composer {
       // A lane's card for this turn rides on its post, first, with its line after Go's words: one message, never two in a
       // row (the ixigo login on Go's hello).
       // A card a tool already put in this turn (set_mandate's claim card) goes once.
-      const riders = (await d.context.turnCards({ tripId: t.tripId, turnId: t.turnId, wake: t.items, pack })).filter((x) => !ctx.cards.some((c) => c.card_id === x.card.card_id));
-      ctx.cards.unshift(...riders.map((x) => x.card));
+      // A rider may be a line alone, after Go's words in the same message.
+      const riders = (await d.context.turnCards({ tripId: t.tripId, turnId: t.turnId, wake: t.items, pack })).filter((x) => !x.card || !ctx.cards.some((c) => c.card_id === x.card!.card_id));
+      ctx.cards.unshift(...riders.flatMap((x) => (x.card ? [x.card] : [])));
       const lines = ctx.mayPostText === false ? [] : riders.map((x) => x.line);
       const text = [words, ...lines].filter((x): x is string => !!x).join('\n') || null;
       const replyTo = text ? (replyToFor(t.items, pack) ?? citedMessageId(text, pack)) : null;
