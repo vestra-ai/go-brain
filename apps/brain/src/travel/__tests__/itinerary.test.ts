@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import type { TripEvent } from '../../door/methods.js';
 import type { TripPack } from '../../trips/pack.js';
 import type { TurnCtx } from '../../composer/tools.js';
-import { createItinerary, itineraryOf, planDaysTool, sameItinerary, withPlan, type Day } from '../itinerary.js';
+import { createItinerary, itineraryOf, planDaysTool, sameItinerary, stayPlaces, withPlan, type Day } from '../itinerary.js';
 
 // Prod, 11 Oct (Keshav: "itinerary is not working"): the App's Itinerary tab shows the trip's stored itinerary, which Go
 // never wrote. Go writes it from the trip's dates and bookings, keeping every item people added.
@@ -40,8 +40,8 @@ describe("the trip's itinerary from its dates and bookings", () => {
     expect(valid(days)).toEqual(days);
     expect(days.map((d) => [d.date, d.title])).toEqual([['2026-11-06', 'Arrive'], ['2026-11-07', 'Day 2'], ['2026-11-08', 'Day 3'], ['2026-11-09', 'Head home']]);
     expect(days[0]!.items).toEqual([
-      { item_id: 'b_fl_rahul_go', time: '06:10', title: 'Fly DEL → GOI · 6E 2134', booking_id: 'b_fl_rahul', status: 'booked', category: 'getting_around', person_ids: ['p_rahul'], audience: 'shared' },
-      { item_id: 'b_fl_priya_go', time: '09:30', title: 'Fly BLR → GOI · AI 501', booking_id: 'b_fl_priya', status: 'booked', category: 'getting_around', person_ids: ['p_priya'], audience: 'shared' },
+      { item_id: 'b_fl_rahul_go', time: '06:10', title: 'Fly DEL → GOI · 6E 2134', place: { name: 'Goa' }, booking_id: 'b_fl_rahul', status: 'booked', category: 'getting_around', person_ids: ['p_rahul'], audience: 'shared' },
+      { item_id: 'b_fl_priya_go', time: '09:30', title: 'Fly BLR → GOI · AI 501', place: { name: 'Goa' }, booking_id: 'b_fl_priya', status: 'booked', category: 'getting_around', person_ids: ['p_priya'], audience: 'shared' },
       { item_id: 'b_villa_in', time: '14:00', title: 'Check in at Villa Sol', booking_id: 'b_villa', status: 'booked', category: 'stay', audience: 'group' },
     ]);
     expect(days[1]!.items).toEqual([]);
@@ -68,6 +68,36 @@ describe("the trip's itinerary from its dates and bookings", () => {
     expect(days[1]!.items).toEqual([{ item_id: 'it_beach', title: 'Beach at Anjuna', category: 'activities', status: 'planned' }]);
     expect(days[2]!.title).toBe('Spa day');
     expect(days[0]!.items.map((i) => i.booking_id)).toEqual(['b_fl_rahul', 'b_villa']);
+  });
+
+  // Saket's itinerary map (12 Oct): a stay's items carry its place with coordinates when known, so the map pins it; a
+  // flight names where it lands. Coordinates are never made up.
+  it("pins the stay on both its days when its place has coordinates, and names a flight's arrival; no coordinates, no place", () => {
+    const pinnedVilla = { ...VILLA, place: { name: 'Villa Sol', address: 'Anjuna, North Goa', lat: 15.5736, lng: 73.7407 } };
+    const days = itineraryOf(trip({ bookings: [pinnedVilla, RAHUL] }))!;
+    expect(valid(days)).toEqual(days);
+    const stay = days.flatMap((d) => d.items).filter((i) => i.booking_id === 'b_villa');
+    expect(stay.map((i) => i.place)).toEqual([
+      { name: 'Villa Sol', address: 'Anjuna, North Goa', lat: 15.5736, lng: 73.7407 },
+      { name: 'Villa Sol', address: 'Anjuna, North Goa', lat: 15.5736, lng: 73.7407 },
+    ]);
+    expect(days.flatMap((d) => d.items).filter((i) => i.booking_id === 'b_fl_rahul').map((i) => i.place)).toEqual([{ name: 'Goa' }, { name: 'Delhi' }]);
+    // No coordinates on the booking and none found: no place key at all.
+    const bare = itineraryOf(trip({ bookings: [VILLA] }))!.flatMap((d) => d.items);
+    expect(bare.every((i) => !('place' in i))).toBe(true);
+  });
+
+  it("pins a stay with no coordinates of its own where the search that found it put it, through its vote's option", async () => {
+    const t = trip({
+      bookings: [VILLA],
+      decisions: [{ decision_id: 'd_villa', options: [{ label: 'Villa Sol', option_ref: 'opt_villa' }], mandate: { choice_index: 0 } }] as never,
+    });
+    const places = await stayPlaces({ optionOf: async (id) => (id === 'opt_villa' ? ({ place: { name: 'Villa Sol', lat: 15.5736, lng: 73.7407 } } as never) : null) })(t);
+    const days = itineraryOf(t, places)!;
+    expect(days.flatMap((d) => d.items).map((i) => i.place)).toEqual([{ name: 'Villa Sol', lat: 15.5736, lng: 73.7407 }, { name: 'Villa Sol', lat: 15.5736, lng: 73.7407 }]);
+    // A search place with no coordinates pins nothing.
+    const none = await stayPlaces({ optionOf: async () => ({ place: { name: 'Villa Sol' } }) as never })(t);
+    expect(none.size).toBe(0);
   });
 
   it('writes nothing for a trip with no booking and nothing booked stored', () => {
@@ -126,7 +156,7 @@ describe('plan_days: the model fills the days', () => {
         date: '2026-11-07', title: 'North Goa beaches',
         items: [
           { time: '10:00', title: 'Baga beach', category: 'activities' as const },
-          { time: '20:00', title: 'Dinner at Thalassa', category: 'food' as const, person_ids: ['p_priya', 'p_nobody'] },
+          { time: '20:00', title: 'Dinner at Thalassa', category: 'food' as const, person_ids: ['p_priya', 'p_nobody'], place: { name: 'Thalassa', address: 'Siolim' } },
         ],
       },
     ],
@@ -139,9 +169,9 @@ describe('plan_days: the model fills the days', () => {
     expect(valid(days)).toEqual(days);
     const day2 = days.find((d) => d.date === '2026-11-07')!;
     expect(day2.title).toBe('North Goa beaches');
-    expect(day2.items.map((i) => [i.time, i.title, i.status, i.person_ids ?? null, i.audience ?? null])).toEqual([
-      ['10:00', 'Baga beach', 'planned', null, null],
-      ['20:00', 'Dinner at Thalassa', 'planned', ['p_priya'], 'shared'],
+    expect(day2.items.map((i) => [i.time, i.title, i.status, i.person_ids ?? null, i.audience ?? null, i.place ?? null])).toEqual([
+      ['10:00', 'Baga beach', 'planned', null, null, null],
+      ['20:00', 'Dinner at Thalassa', 'planned', ['p_priya'], 'shared', { name: 'Thalassa', address: 'Siolim' }],
     ]);
     // The other days, booked items and all, are as they were.
     expect(days.filter((d) => d.date !== '2026-11-07')).toEqual(booked.filter((d) => d.date !== '2026-11-07'));

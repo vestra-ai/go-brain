@@ -58,7 +58,7 @@ import { createWebStays, stayOf } from './web-stays.js';
 import { createWatchRunner, watchesNow } from './recipe-watches.js';
 import { watchTools } from './watch-tools.js';
 import { ProactiveStore } from '../proactive/store.js';
-import { createItinerary, planDaysTool } from './itinerary.js';
+import { createItinerary, planDaysTool, stayPlaces } from './itinerary.js';
 
 /** How often Go looks for watches that are due: each watch's own pace is an hour or half an hour. */
 export const WATCH_TICK_MS = 30_000;
@@ -238,7 +238,7 @@ export const registerTravel: RegisterLane = async (brain) => {
   const stopHeadStarts = (): void => headStart.stop();
   brain.onStop(stopHeadStarts);
   // The trip's itinerary from its dates and bookings: Go writes it, the App's Itinerary tab shows it (travel/itinerary.ts).
-  const itinerary = createItinerary({ link: brain.door.link, packs: brain.packs, log: brain.log });
+  const itinerary = createItinerary({ link: brain.door.link, packs: brain.packs, log: brain.log, placesFor: stayPlaces(results) });
   brain.tripLog.onEvent((ev) => itinerary.onEvent(ev));
   brain.onStop(function stopItineraryRewrites() {
     return itinerary.settled();
@@ -449,7 +449,7 @@ export const registerTravel: RegisterLane = async (brain) => {
   // With BOOKING on for a trip, the model is told Go books its people's flights, and books a pick made before by words.
   brain.tools.register(bookFlightTool({ booking, pool: brain.pool, results, nameOf }));
   // "Plan our days": the model's plan on the Itinerary tab, merged with what is booked (travel/itinerary.ts).
-  brain.tools.register(planDaysTool());
+  brain.tools.register(planDaysTool(stayPlaces(results)));
   brain.context.addNow(bookingNow({ booking, pool: brain.pool, nameOf }));
   // The Server's REV4 B5: once a vote picks a stay, its rooms card (the ways to take its rooms, who shares, what each pays)
   // on the turn that says so; a tap keeps the way picked, for the expense per room (B6, chosenArrangement).
