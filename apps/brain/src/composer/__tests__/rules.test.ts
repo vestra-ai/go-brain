@@ -60,7 +60,8 @@ describe("Go's rules: a travel agent who owns the outcome", () => {
   it('takes the obvious next step itself: stays after dates, flights after a stay, the booking after a pick', () => {
     const work = section('How you work', 'When you speak');
     expect(work).toContain('- Take the obvious next step yourself, and say what you did: agreed dates on a trip with a place bring the stays card');
-    expect(work).toContain("a stay picked brings each person's flights; a person's pick brings its booking.");
+    // The stay first (p4's #492): a stay picked brings its booking, and each person's flights come once it is booked.
+    expect(work).toContain("a stay picked brings its booking; once it's booked, each person's flights (sooner if asked); a person's pick brings its booking.");
   });
 
   it('runs the booking and the payment up to the person\'s own yes, through the vault', () => {
