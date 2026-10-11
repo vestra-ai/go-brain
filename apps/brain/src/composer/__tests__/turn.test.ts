@@ -21,7 +21,7 @@ import { createIxigoLogin, HELLO_LINE } from '../../travel/login.js';
 import { createFakeTravel } from '../../travel/mcp-travel.js';
 import { createResultsStore } from '../../travel/results.js';
 import { travelTools } from '../../travel/tools.js';
-import { createComposer, logTurn, OVER_BUDGET, TROUBLE, TYPING_MIN_MS } from '../turn.js';
+import { createComposer, HELLO, logTurn, OVER_BUDGET, TROUBLE, TYPING_MIN_MS } from '../turn.js';
 import { ASK_HOW_MUCH, renderMessageWake, renderSetupWake, renderTripChangeWake } from '../wakes.js';
 
 let db: Awaited<ReturnType<typeof withSchema>>;
@@ -417,11 +417,13 @@ describe('a composer turn', () => {
 
   it('typing goes off when the turn ends, also when the message that named Go was pulled in, or the turn posted', async () => {
     const ask = msg(3, 'p_arjun', '@Go and flights?');
+    const plans = msg(2, 'p_priya', 'Goa in November!');
     let claimed = false;
     const pulled = room({
-      messages: [],
-      // The fold round ends silent, so only the pulled-in message can turn typing off.
-      script: [{ text: 'Hi all, I am Go!' }, { tools: [{ name: 'stay_silent', input: { reason: 'nothing to add' } }] }],
+      messages: [plans],
+      // The fold round ends silent, so only the pulled-in message can turn typing off. A line that didn't name Go, never
+      // the trip's hello: a hello that ends silent says the plain hello (#496).
+      script: [{ text: 'Goa in November is lovely.' }, { tools: [{ name: 'stay_silent', input: { reason: 'nothing to add' } }] }],
       claimNew: async (tripId) => {
         if (claimed) return [];
         claimed = true;
@@ -430,7 +432,7 @@ describe('a composer turn', () => {
         return [item(tripId, ask, true)];
       },
     });
-    await turn(pulled, [{ id: `setup:${pulled.tripId}:greet`, tripId: pulled.tripId, kind: 'setup', ref: 'greet', dueAt: new Date(), payload: {} }]);
+    await turn(pulled, [item(pulled.tripId, plans, false)]);
     expect(pulled.posts()).toEqual([]);
     expect(pulled.notes.map((x) => x.params.on)).toEqual([true, false]);
 
@@ -566,11 +568,31 @@ describe('a composer turn', () => {
     await r.composer.giveUp(t);
     expect(r.posts()).toHaveLength(1);
     expect(r.posts()[0]?.params).toMatchObject({ request_id: `go_trouble_turn_${r.tripId}`, text: TROUBLE });
-    const quiet = room({ messages: [], script: [] });
-    await quiet.composer.giveUp({
-      tripId: quiet.tripId, turnId: 'turn_quiet', attempt: 3,
-      items: [{ id: 'g', tripId: quiet.tripId, kind: 'setup', ref: 'greet', dueAt: new Date(), payload: {} }],
+    // A hello that failed to its last attempt is the plain hello: the trip hears Go once (prod drill, 11 Oct).
+    const hello = room({ messages: [], script: [] });
+    await hello.composer.giveUp({
+      tripId: hello.tripId, turnId: 'turn_quiet', attempt: 3,
+      items: [{ id: 'g', tripId: hello.tripId, kind: 'setup', ref: 'greet', dueAt: new Date(), payload: {} }],
     });
+    expect(hello.posts()).toHaveLength(1);
+    expect(hello.posts()[0]?.params).toMatchObject({ request_id: 'go_hello_turn_quiet', trip_id: hello.tripId, text: HELLO });
+  });
+
+  // Prod drill, 11 Oct: the hello's place card failed, the model called stay_silent, and the trip never heard Go.
+  it('a hello turn that says nothing says the plain hello', async () => {
+    const r = room({ messages: [], script: [{ tools: [{ name: 'stay_silent', input: { reason: 'the card failed' } }] }] });
+    await turn(r, [{ id: `setup:${r.tripId}:greet`, tripId: r.tripId, kind: 'setup', ref: 'greet', dueAt: new Date(), payload: {} }]);
+    expect(r.posts().map((p) => p.params.text)).toEqual([HELLO]);
+    const { rows } = await db.pool.query('select outcome from turns where turn_id = $1', [`turn_${r.tripId}`]);
+    expect(rows[0].outcome).toBe('spoke');
+    // Only the trip's first hello: a hello wake in a trip Go has spoken in already stays silent.
+    const again = room({ messages: [msg(1, null, 'Hi all, I am Go!')], script: [{ tools: [{ name: 'stay_silent', input: { reason: 'said hello' } }] }] });
+    await turn(again, [{ id: `setup:${again.tripId}:greet`, tripId: again.tripId, kind: 'setup', ref: 'greet', dueAt: new Date(), payload: {} }]);
+    expect(again.posts()).toEqual([]);
+    // Any other turn that stays silent still posts nothing.
+    const lol = msg(4, 'p_meher', 'lol');
+    const quiet = room({ messages: [lol], script: [{ tools: [{ name: 'stay_silent', input: { reason: 'chatter' } }] }] });
+    await turn(quiet, [item(quiet.tripId, lol, false)]);
     expect(quiet.posts()).toEqual([]);
   });
 

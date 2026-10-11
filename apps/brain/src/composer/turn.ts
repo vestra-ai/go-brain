@@ -56,6 +56,18 @@ export interface Composer {
 export const TROUBLE = "Sorry, I'm having trouble right now. Give me a minute and ask me again?";
 /** Said once per trip per day, to someone who asks Go once today's model budget is spent. */
 export const OVER_BUDGET = "I've reached today's limit for this demo. I'll be back tomorrow.";
+/**
+ * Go's plain hello, for a hello turn that said none (stay_silent, a tool that failed, an error to its last attempt): every
+ * trip hears Go once (prod drill, 11 Oct: a hello whose place card failed went silent, and the trip never heard Go).
+ */
+export const HELLO =
+  "Hi all, I'm Go, your travel agent for this trip. I can find stays and flights from everyone's home cities, run votes when you're choosing, keep the plan, and book once you've agreed.";
+/**
+ * The turn is the trip's first hello: the one hello wake setup puts (room.ts, keyed setup:<trip>:greet), in a trip Go
+ * has never spoken in. Only it may fall back to the plain hello; every other turn that says nothing stays silent.
+ */
+const firstHello = (items: DeskItem[], messages: Array<{ author: { kind: string } }>): boolean =>
+  items.some((i) => i.kind === 'setup' && i.ref === 'greet') && !messages.some((m) => m.author.kind === 'go');
 
 /** A message that names Go, or that the quick read is sure asks Go without its name (trips/intake.ts asksGo). */
 const isForGo = (i: DeskItem): boolean => {
@@ -331,8 +343,10 @@ export function createComposer(d: ComposerDeps): Composer {
         }
       }
 
-      // With mayPostText false the words are dropped; the cards in ctx.cards still go.
-      const words = r.silent || ctx.mayPostText === false ? null : r.text.trim() || null;
+      // With mayPostText false the words are dropped; the cards in ctx.cards still go. A hello turn that said nothing
+      // says the plain hello, so the trip always hears Go once.
+      const said = r.silent || ctx.mayPostText === false ? null : r.text.trim() || null;
+      const words = said ?? (firstHello(t.items, pack.messages) && ctx.mayPostText !== false ? HELLO : null);
       // A lane's card for this turn rides on its post, first, with its line after Go's words: one message, never two in a
       // row (the ixigo login on Go's hello).
       // A card a tool already put in this turn (set_mandate's claim card) goes once.
@@ -424,16 +438,20 @@ export function createComposer(d: ComposerDeps): Composer {
     });
   }
 
-  /** After the last failed attempt: one calm line, only if someone asked Go something and nothing went out yet. */
+  /**
+   * After the last failed attempt: one calm line, only if someone asked Go something and nothing went out yet. A hello
+   * turn's is the plain hello: the trip hears Go once, whatever failed.
+   */
   async function giveUp(t: TurnInput): Promise<void> {
-    if (!t.items.some(isForGo)) return;
+    const hello = firstHello(t.items, (await d.packs.get(t.tripId).catch(() => null))?.messages ?? [{ author: { kind: 'go' } }]);
+    if (!hello && !t.items.some(isForGo)) return;
     if (await alreadyPosted(t.turnId)) return;
     await d.speak.post({
       link: scopedLink(d.link, t.turnId),
       tripId: t.tripId,
       turnId: t.turnId,
-      requestId: () => `go_trouble_${t.turnId}`,
-      text: TROUBLE,
+      requestId: () => (hello ? `go_hello_${t.turnId}` : `go_trouble_${t.turnId}`),
+      text: hello ? HELLO : TROUBLE,
       cards: [],
     });
   }

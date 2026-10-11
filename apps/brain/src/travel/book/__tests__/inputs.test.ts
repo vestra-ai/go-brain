@@ -2,11 +2,12 @@ import { describe, expect, it } from 'vitest';
 import type { TurnCtx } from '../../../composer/tools.js';
 import type { FetchPlan } from '../../recipes/recipe.js';
 import { capture } from '../../recipes/__tests__/fixtures.js';
+import { TravelError } from '../../mcp-travel.js';
 import type { ResultsStore } from '../../results.js';
 import { checkRecipe, loadBook, type Book } from '../book.js';
 import { createEngine } from '../engine.js';
 import type { RecipeFile } from '../format.js';
-import { ixigoTool, PLACES_CARD } from '../tool.js';
+import { DIDNT_LOAD, EXPLORE_DIDNT_LOAD, ixigoTool, PLACES_CARD } from '../tool.js';
 
 const { book } = loadBook();
 
@@ -167,5 +168,21 @@ describe('an option input', () => {
     expect(saved).toEqual([['t_goa', rows, { origin: 'Delhi', month: '2026-12-01' }]]);
     // Keshav, 11 Oct: places to go are a card, never words or quick replies.
     expect(PLACES_CARD).toContain('Never name them in your words or in offer_replies');
+  });
+
+  // Prod drill, 11 Oct: the planner didn't load, and Go said "I'll post the options card as soon as it comes through";
+  // none came. A read that didn't come back says what Go does now: for the planner, a question of kinds, as buttons.
+  it('a read that did not load says what Go does now, never a later card; a missing input only how to call again', async () => {
+    const failing = (code: string) => ({ answer: async () => { throw new TravelError(code as never, 'The page did not answer in time.'); } });
+    const turn = { tripId: 't_goa', turnId: 'turn_f', cards: [], stableId: (p: string) => `${p}_1` } as unknown as TurnCtx;
+    const explore = ixigoTool({ book, engine: failing('unreachable'), live: () => true })!;
+    expect(await explore.run({ recipe: 'plan.explore', inputs: { origin: 'Delhi', month: '2026-12-01' } }, turn)).toMatchObject({ error: 'unreachable', tell_the_room: EXPLORE_DIDNT_LOAD });
+    expect(EXPLORE_DIDNT_LOAD).toContain('never say a card or places will come later');
+    expect(EXPLORE_DIDNT_LOAD).toContain('offer_replies of kinds, never places');
+    const guide = ixigoTool({ book, engine: failing('unreachable'), live: () => true })!;
+    expect(await guide.run({ recipe: 'plan.destination', inputs: { place: 'Goa' } }, turn)).toMatchObject({ error: 'unreachable', tell_the_room: DIDNT_LOAD });
+    expect(DIDNT_LOAD).toContain("never say you'll post it or let them know later");
+    const missing = ixigoTool({ book, engine: failing('needs_more'), live: () => true })!;
+    expect(await missing.run({ recipe: 'plan.explore', inputs: { origin: 'Delhi', month: '2026-12-01' } }, turn)).not.toHaveProperty('tell_the_room');
   });
 });
