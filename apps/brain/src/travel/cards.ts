@@ -104,29 +104,6 @@ export function buildIxigoLinkCard(i: { cardId: string; title: string; url: stri
   });
 }
 
-/** ixigo's own search page for each kind of search: where the group searches a place Go has no code for. */
-export const IXIGO_SEARCH_PAGES = {
-  flights: { url: 'https://www.ixigo.com/flights', noun: 'flights' },
-  trains: { url: 'https://www.ixigo.com/trains', noun: 'trains' },
-  buses: { url: 'https://www.ixigo.com/buses', noun: 'buses' },
-  stays: { url: 'https://www.ixigo.com/hotels', noun: 'hotels' },
-} as const;
-
-/** The card for a search Go has no ixigo code for: ixigo's own page for that kind of search, to search it there. */
-export function buildIxigoPageCard(i: { cardId: string; title: string; kind: keyof typeof IXIGO_SEARCH_PAGES }): NoticeCardT {
-  const page = IXIGO_SEARCH_PAGES[i.kind];
-  return C.NoticeCard.parse({
-    card_id: i.cardId,
-    kind: 'notice',
-    fallback_text: clip(`${i.title}: search it on ixigo`, 300),
-    tone: 'info',
-    title: clip(i.title, 80),
-    body: `Search it on ixigo's ${page.noun} page, and book it there.`,
-    source: { name: 'ixigo', url: page.url },
-    actions: [{ ...SEE_FLIGHTS_ACTION, label: `See ${page.noun} on ixigo` }],
-  });
-}
-
 /** The kinds of place a stays title or vote can name. ixigo.com's results carry no kind, so a name has to say it. */
 const PLACE_KINDS = /\b(villa|resort|hotel|homestay|apartment|cottage)s?\b/i;
 
