@@ -172,7 +172,8 @@ describe('the payments block of right now', () => {
   it('a check that failed just now does not mark the winner unbookable: the usual set_mandate line', async () => {
     k.travel.failOffer = true;
     const text = await paymentsNow({ pool: k.pool, packs: packs(goaTrip('closed')), now: k.now, travel: () => k.travel }).render('t_goa', []);
-    expect(k.travel.looked).toEqual(['opt_villa_sol']);
+    // Checked once more at once before it counts as failed (the lead, 11 Oct: nobody should have to ask again for a hiccup).
+    expect(k.travel.looked).toEqual(['opt_villa_sol', 'opt_villa_sol']);
     expect(text).toContain('Vote d_villa closed and Villa Sol won. Once the group says who pays, use set_mandate');
     expect(text).not.toContain("Go can't book it");
   });

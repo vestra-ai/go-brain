@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { openSession } from '../taps.js';
+import { openSession, SESSION_RETRY_MAX_MS } from '../taps.js';
 import { V1Error, type V1Client } from '../v1-client.js';
 
 /** A /v1 that records each POST /v1/sessions body and answers with what `answer` says for it. */
@@ -39,5 +39,20 @@ describe('openSession', () => {
     const off = v1((b) => (b.screen === 'control' ? new V1Error(409, 'screen_control_unavailable', 'off') : null));
     expect(await openSession(off.client, 'u_1', null, 'control', { driver: 'user' })).toMatchObject({ url: 'https://screen.example/view' });
     expect(off.bodies.at(-1)).toEqual({ user_id: 'u_1', screen: 'view' });
+  });
+
+  // 11 Oct: Saket's Log in to ixigo found every Go key resting for a moment, and said "Can't open Go's screen right now".
+  it('a short 429 is waited out and tried once more; a long one is not', async () => {
+    let n = 0;
+    const brief = v1(() => (n++ === 0 ? new V1Error(429, 'rate_limited', 'Every /v1 key is resting.', 20) : null));
+    expect(await openSession(brief.client, 'u_1', null, 'control', { driver: 'user' })).toMatchObject({ url: 'https://screen.example/control' });
+    expect(brief.bodies).toHaveLength(2);
+    const long = v1(() => new V1Error(429, 'rate_limited', 'Every /v1 key is resting.', SESSION_RETRY_MAX_MS + 1));
+    await expect(openSession(long.client, 'u_1', null, 'control')).rejects.toMatchObject({ status: 429 });
+    expect(long.bodies).toHaveLength(1);
+    let m = 0;
+    const twice = v1(() => (m++ < 2 ? new V1Error(429, 'rate_limited', 'Every /v1 key is resting.', 20) : null));
+    await expect(openSession(twice.client, 'u_1', null, 'view')).rejects.toMatchObject({ status: 429 });
+    expect(twice.bodies).toHaveLength(2);
   });
 });

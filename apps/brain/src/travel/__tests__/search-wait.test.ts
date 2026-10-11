@@ -428,7 +428,7 @@ describe('the search wake line', () => {
   });
 
   it('a search ixigo didn\'t answer goes on the desk to try again, said as that, never offered and never a job (staging, 9 Oct: start_task on a blank page)', async () => {
-    const w = setup(async () => { throw new TravelError('unreachable', "Someone is using the trip's computer's browser. Try again in a moment."); }, null);
+    const w = setup(async () => { throw new TravelError('unreachable', "Someone is using the trip's computer's browser."); }, null);
     const out = await w.run();
     expect(out).toMatchObject({ count: 0, not_loaded: true, tell_the_room: expect.stringContaining("I'll try again in a minute") });
     expect(w.puts).toEqual([expect.objectContaining({ kind: 'search', payload: expect.objectContaining({ source: 'travel_try_again', n: 1 }) })]);

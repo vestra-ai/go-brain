@@ -11,7 +11,7 @@ import { BOOK_DIR, checkRecipe, loadBook, type Book } from '../book/book.js';
 import { createEngine } from '../book/engine.js';
 import type { DeskItem } from '../../desk/desk.js';
 import {
-  cardIsTheAsk, createIxigoLogin, HANDOFF_MS, HANDOFF_PAGE_MS, HELLO_WAIT_MS, IDENTITY, ixigoLoginTool, LOGIN_CALLS, LOGIN_POLL_MS, LOGIN_TAB, LOGIN_URL, loginFrom, RECHECK_MS, renderLoginResume,
+  cardIsTheAsk, createIxigoLogin, HANDOFF_MS, HANDOFF_PAGE_MS, HELLO_WAIT_MS, IDENTITY, ixigoLoginTool, LOGIN_CALLS, LOGIN_POLL_FAST_FOR_MS, LOGIN_POLL_MS, LOGIN_POLL_SLOW_MS, LOGIN_TAB, LOGIN_URL, loginFrom, RECHECK_MS, renderLoginResume,
   SELF_CHECK_MS, USERINFO, WALLET,
 } from '../login.js';
 import { TravelError } from '../mcp-travel.js';
@@ -78,7 +78,7 @@ function world(o: {
       reads.push({ url, plan });
       if (plan !== LOGIN_CALLS) return { captures: [], finalUrl: url };
       const s = statuses.shift() ?? 'timeout';
-      if (s === 'timeout') throw new TravelError('unreachable', 'ixigo took too long to answer. Try again in a moment.');
+      if (s === 'timeout') throw new TravelError('unreachable', 'ixigo took too long to answer.');
       if (s === 'challenged') throw new ChallengedError();
       return { captures: load(s), finalUrl: url };
     },
@@ -98,7 +98,7 @@ function world(o: {
     // The taps on the page once it is in front: what the card says then is kept, to see it said so first.
     tabSteps: async (_trip: string, tab: string, steps: unknown[], to: { keepOpenMs: number; timeoutMs: number }) => {
       tabStepCalls.push({ tab, steps, o: to, cardActions: cardActions() });
-      if (o.taps === 'fail') throw new TravelError('unreachable', 'ixigo took too long to answer. Try again in a moment.');
+      if (o.taps === 'fail') throw new TravelError('unreachable', 'ixigo took too long to answer.');
     },
     ...(o.cookies ? { cookies: async (_trip: string, domain: string, names: string[]) => {
       cookieReads.push({ domain, names, at: clock.now.getTime() });
@@ -869,6 +869,24 @@ describe("one login for all of a person's trips: their browser (tasks/browsers.t
     expect(w.reads).toHaveLength(1);
   });
 
+  // The lead, 11 Oct: Keshav booked on Saket's trip, and the login card went to Saket, the organizer. Anyone in the trip
+  // can log in on the trip's computer: the person booking is asked, and an ask open for someone else moves to them.
+  it("asks the person booking for the trip's ixigo login before the organizer, and moves the organizer's open ask to them", async () => {
+    const w = world({});
+    await w.setup();
+    const whose = async () => (await db.pool.query<{ person_id: string }>('select person_id from ixigo_logins where trip_id = $1', [w.tripId])).rows[0]?.person_id;
+    expect(await whose()).toBe('p_rahul');
+    const before = w.link.of('post_message').length;
+    const out = await w.login.ensure(w.tripId, 'Booking IndiGo 6E2150 for Meher', { booking: true, for: 'p_meher' });
+    expect(out.ok).toBe(false);
+    const posts = w.link.of('post_message').slice(before);
+    expect(posts).toHaveLength(1);
+    expect(posts[0]).toMatchObject({ card: { for_person_ids: ['p_meher'] } });
+    expect(JSON.stringify(posts[0])).not.toContain('p_rahul');
+    expect(await whose()).toBe('p_meher');
+    expect(await w.state()).toBe('asked');
+  });
+
   it("the browser's login gone since this trip checked ends this trip's login: the next booking asks again, reading nothing", async () => {
     const b = fakeBrowser();
     const w = world({ browser: b, statuses: [200] });
@@ -1340,6 +1358,18 @@ describe("one tap: Go's screen opens with the log in, and Go sees the login land
     expect(w.releases).toEqual([LOGIN_TAB]);
   });
 
+  // 11 Oct: about 50 reads a minute from two waits, and the next Log in to ixigo found every Go key resting.
+  it('reads every LOGIN_POLL_MS for LOGIN_POLL_FAST_FOR_MS from the tap, then every LOGIN_POLL_SLOW_MS', async () => {
+    const w = world({ cookies: (n) => (n < 20 ? [] : at(AT)), statuses: [200] });
+    await w.setup();
+    await w.tap('ixigo_login', 'p_rahul');
+    expect(await w.state()).toBe('logged_in');
+    const reads = w.cookieReads.map((r) => r.at);
+    const gaps = reads.slice(1).map((t, i) => t - reads[i]!);
+    gaps.forEach((g, i) => expect(g).toBe(reads[i]! - reads[0]! < LOGIN_POLL_FAST_FOR_MS ? LOGIN_POLL_MS : LOGIN_POLL_SLOW_MS));
+    expect(gaps).toContain(LOGIN_POLL_SLOW_MS);
+  });
+
   it('an `at` the browser had counts once its expiry moves or it went and came back; a read Bash could not answer compares nothing', async () => {
     // Its expiry moves on the third read.
     const moved = world({ cookies: (n) => (n < 2 ? at(AT) : at(AT + 3600_000)), statuses: [200] });
@@ -1392,7 +1422,8 @@ describe("one tap: Go's screen opens with the log in, and Go sees the login land
   it(`with nothing seen for ${SELF_CHECK_MS / 1000} s the card gets I'm logged in; Not now ends every screen session it opened`, async () => {
     const w = world({ cookies: () => [] });
     await w.setup();
-    const at60 = SELF_CHECK_MS / LOGIN_POLL_MS;
+    // The look that reaches 60 s from the tap: every 2 s for the first 30 s, then every 5 s.
+    const at60 = LOGIN_POLL_FAST_FOR_MS / LOGIN_POLL_MS + (SELF_CHECK_MS - LOGIN_POLL_FAST_FOR_MS) / LOGIN_POLL_SLOW_MS;
     const seen: Record<number, string[]> = {};
     // While Go waits: Log in tapped again (the screen opens again), then, once that is answered, Not now. Each is kept, so
     // the test waits on them itself: how many looks the wait takes meanwhile is the database's pace, never counted.
@@ -1407,7 +1438,7 @@ describe("one tap: Go's screen opens with the log in, and Go sees the login land
     // The wait ends only once Not now is in (its state), so both taps were made by now.
     await notNow;
     await w.login.settled();
-    // Each look is one 2 s wait: up to 60 s from the tap the card has no I'm logged in, and the next look shows it.
+    // Up to 60 s from the tap the card has no I'm logged in, and the next look shows it.
     expect(seen[at60]).toEqual(['ixigo_login', 'ixigo_not_now']);
     expect(seen[at60 + 1]).toEqual(['ixigo_login', 'ixigo_logged_in', 'ixigo_not_now']);
     expect(w.cards().filter((c) => ids(c).includes('ixigo_logged_in'))).toHaveLength(1);

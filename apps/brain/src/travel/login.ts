@@ -112,6 +112,13 @@ export const LOGIN_COOKIE = 'at';
 const COOKIE_SITE = 'ixigo.com';
 /** How often Go reads the browser's `at` while the person logs in on Watch. One browser-level read: no page, no tab. */
 export const LOGIN_POLL_MS = 2_000;
+/**
+ * Past this long from the tap, the read comes every LOGIN_POLL_SLOW_MS: a login that has not landed in 30 s is a person
+ * reading a code, and every read is a request Bash counts against Go (11 Oct: about 50 a minute from two waits, and
+ * "Every /v1 key is resting" on the next Log in to ixigo).
+ */
+export const LOGIN_POLL_FAST_FOR_MS = 30_000;
+export const LOGIN_POLL_SLOW_MS = 5_000;
 /** A one-tap login shows "I'm logged in" only when Go has seen nothing land this long (Bash's read gone quiet, say). */
 export const SELF_CHECK_MS = 60_000;
 /** How often Go looks over the one-tap logins (sweep): a restart of Go loses at most this much of a person's wait. */
@@ -250,7 +257,12 @@ export interface IxigoLogin {
    * the login is in, the composer wakes and carries on with it. booking: money is about to move, so ixigo is read now
    * unless it said in within BOOKING_RECHECK_MS: a token it refuses flips the browser and asks, never failing silently.
    */
-  ensure(tripId: string, what: string, o?: { park?: Parked; booking?: boolean }): Promise<{ ok: true } | { ok: false; note: string }>;
+  /**
+   * for: who is asked first, when they can be: the person whose booking needs it (the lead, 11 Oct: anyone in the trip
+   * can log in on the trip's computer, and Keshav's booking asked Saket, the organizer). Else the one asked before, else
+   * the organizer.
+   */
+  ensure(tripId: string, what: string, o?: { park?: Parked; booking?: boolean; for?: string }): Promise<{ ok: true } | { ok: false; note: string }>;
   /**
    * Someone in the chat asked to log in to ixigo (again): the card goes up now for whoever logs in for the trip (the one
    * asked before while they can be, else the organizer: the trip's browser is theirs), whatever the wait between asks,
@@ -816,7 +828,8 @@ export function createIxigoLogin(d: LoginDeps): IxigoLogin {
   async function waitForLogin(row: LoginRow): Promise<void> {
     let fellBack = false;
     for (;;) {
-      await sleep(LOGIN_POLL_MS);
+      const sinceTap = row.oneTap ? d.now().getTime() - row.oneTap.tappedAt : 0;
+      await sleep(sinceTap < LOGIN_POLL_FAST_FOR_MS ? LOGIN_POLL_MS : LOGIN_POLL_SLOW_MS);
       const now = await get(row.tripId);
       if (now?.state !== 'logging_in' || now.attempt !== row.attempt || !now.oneTap) return;
       const waited = d.now().getTime() - now.oneTap.tappedAt;
@@ -1156,9 +1169,11 @@ export function createIxigoLogin(d: LoginDeps): IxigoLogin {
       );
       const can = (id: string | null | undefined): id is string =>
         !!id && !forgot.has(id) && pack.trip.people.some((p) => p.person_id === id && !p.go_paused);
-      // The person asked before, while they are still in the trip and can be asked; else the organizer; else the first
-      // member who can be (the organizer used Forget me).
-      const personId = row !== null && can(row.personId)
+      // The person whose booking it is, when they can be asked; else the one asked before, while they are still in the
+      // trip and can be; else the organizer; else the first member who can be (the organizer used Forget me).
+      const personId = can(o.for)
+        ? o.for
+        : row !== null && can(row.personId)
         ? row.personId
         : can(pack.trip.organizer_person_id)
           ? pack.trip.organizer_person_id

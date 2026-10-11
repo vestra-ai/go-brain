@@ -53,7 +53,7 @@ describe("the task wake lines", () => {
     const line = renderTaskWake(item({ event: 'failed', taskId: 'gt_3', title: 'Finding villas', reason: 'timed out' }), goaPack());
     expect(line).toContain('start it again now with start_task when the reason is a hiccup');
     expect(line).toContain('never only an offer to try again');
-    expect(line).not.toContain('offer to try again.');
+    expect(line).not.toContain('Say so in one line and offer to try again');
   });
 
   it('names the person a hand-off waits on, sends them to Watch, and never asks for a code in the chat', () => {
