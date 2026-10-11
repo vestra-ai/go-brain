@@ -5,7 +5,7 @@ import type * as C from '@go/contract';
  * their vote under the hood, so their one tap picks it at once (1 of 1) and a stay's booking follows; a poll of its own
  * is never opened for them, and Go's words never say vote, poll, everyone or the group.
  */
-export const tripOfOne = (trip: { people: readonly unknown[] } | null | undefined): boolean => trip?.people.length === 1;
+export const tripOfOne = (trip: { people?: readonly unknown[] } | null | undefined): boolean => trip?.people?.length === 1;
 /** What a tool that would open a poll tells the model in a trip of one. */
 export const NO_VOTE_FOR_ONE =
   'This trip has one person: their word is the decision, so there is no vote or poll. Apply what they chose now (update_trip, ' +

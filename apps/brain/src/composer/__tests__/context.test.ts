@@ -375,10 +375,10 @@ describe('why Go woke, and the trip block', () => {
     // A trip of one (Keshav, 12 Oct): their word is the decision. Go's hello never offers votes, and their stay booked
     // brings their own flights.
     const one = { ...p, trip: { ...p.trip, people: p.trip.people.slice(0, 1) } };
-    const hello = c.renderWake(wake({ kind: 'setup', ref: 'greet', payload: {} }), one);
-    expect(hello).toContain('which has one person');
-    expect(hello).toContain('never say vote, poll, everyone or the group');
-    expect(hello).not.toMatch(/run votes|when the group agrees/);
+    const helloOne = c.renderWake(wake({ kind: 'setup', ref: 'greet', payload: {} }), one);
+    expect(helloOne).toContain('which has one person');
+    expect(helloOne).toContain('never say vote, poll, everyone or the group');
+    expect(helloOne).not.toMatch(/run votes|when the group agrees/);
     const theirs = c.renderWake(wake({ kind: 'trip_change', ref: 'booking:b_1', payload: { type: 'stay.booked', title: 'Villa Sol' } }), one);
     expect(theirs).toContain('Their flights are next: call search_flights_each for them');
     expect(theirs).not.toMatch(/for everyone|group's stay/);

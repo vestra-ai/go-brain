@@ -458,13 +458,13 @@ describe('show_options', () => {
 describe('a trip of one', () => {
   const one = () => ({ ...goaPack(), trip: { ...GOA_TRIP, people: GOA_TRIP.people.slice(0, 1) } });
   it("its stays card keeps its vote under the hood (their one tap picks it, and the stay's booking follows), the model never says so, and put_to_vote opens nothing", async () => {
-    const found = (await lb.tools.run('search_stays', STAYS, lb.ctx({ turnId: 'turn_one1', pack: one() }))) as any;
-    const ctx = lb.ctx({ turnId: 'turn_one2', pack: one() });
+    const found = (await lb.tools.run('search_stays', STAYS, lb.ctx({ turnId: 'turn_solo1', pack: one() }))) as any;
+    const ctx = lb.ctx({ turnId: 'turn_solo2', pack: one() });
     const shown = (await lb.tools.run('show_options', { line: 'Here are the villas.', results_id: found.results_id, title: 'Villas' }, ctx)) as any;
     expect(shown.decision_id).toMatch(/^d_\d+$/);
     expect(shown.note).toBe('The card goes out with your line. This trip has one person: their one tap on an option picks it, at once, and Go takes it from there. Never say vote, poll, everyone or the group.');
     const opened = lb.link.sent('open_vote').length;
-    const put = lb.ctx({ turnId: 'turn_one3', pack: one() });
+    const put = lb.ctx({ turnId: 'turn_solo3', pack: one() });
     expect(await lb.tools.run('put_to_vote', { line: 'Vote is up.', card_id: shown.card_id }, put)).toEqual({ error: 'one_person', note: NO_VOTE_FOR_ONE });
     expect(put.cards).toEqual([]);
     expect(lb.link.sent('open_vote')).toHaveLength(opened);
