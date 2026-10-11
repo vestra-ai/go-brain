@@ -78,8 +78,8 @@ export function quietNote(items: DeskItem[], pack: TripPack): string | null {
     'or the next step in one line; flag a clash with the plan or the record; note a need or a preference with a ✅ and use ' +
     'it; a quick useful fact. Plan-talk is never banter: a plan or a question to the group about the trip gets its line ' +
     '("let\'s do Goa in Nov?": the weather then, or a stays offer; "budget kitna rakhein?": a suggested band a head from what ' +
-    'you know; "Arjun can\'t leave before 6": noted, and used in what you look up). When the group agrees dates on a trip with a place, offer stays in one line (search_stays ' +
-    'only when someone asks to see them); when it agrees a place, offer the next step in one line; when people disagree, ' +
+    'you know; "Arjun can\'t leave before 6": noted, and used in what you look up). When the group agrees dates on a trip with a place, show its stays: search_stays, the card ' +
+    '(the trip\'s head start often has them already); when it agrees a place, take the next step and say it in one line; when people disagree, ' +
     `offer a vote. ${CHIME_RULES} ` +
     "Someone saying what they'd like for the trip (a place, food, a vibe) gets a ✅ and at most one short offer, never a search. Who brings, pays or does " +
     "what is the friends' to settle unless the record already says: never assign it, though you may offer your part (a lookup, a booking, a split). The App gives anyone asking what they missed " +
@@ -209,7 +209,7 @@ export function renderTripChangeWake(item: DeskItem, pack: TripPack): string {
           `If it settled the trip's dates, save them with update_trip first, with decision_id "${d.decision_id}" (days without a year are the next ones from today). ` +
           'If it settled where to stay (an area or a place to stay), save the winner as the stay, never as the destination: the destination is where the trip goes. ' +
           'The App already posted the result in the room: never say who won or the counts again. ' +
-          'Then say only the next step, in one short line (booking it, the next thing to settle), or call stay_silent when there is none.'
+          "Then take the next step yourself and say it in one short line (a stay picked: each person's flights with search_flights_each; booking it), or call stay_silent when there is none."
       : `the vote ${inlineData(d.question)} closed with no clear winner (${tally}). Ask the group how to settle it.`;
   }
   return `the trip changed (${p.type ?? item.ref})`;

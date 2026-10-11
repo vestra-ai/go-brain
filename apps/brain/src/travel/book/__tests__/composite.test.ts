@@ -59,7 +59,7 @@ describe('a composite: the same recipes for each entry of a list, at once', () =
         opened.push(url);
         const caps = pageFor(url);
         // Delhi's buses need ixigo's box, which doesn't answer here.
-        if (!caps) throw new TravelError('unreachable', 'ixigo took too long to answer. Try again in a moment.');
+        if (!caps) throw new TravelError('unreachable', 'ixigo took too long to answer.');
         return { captures: caps, finalUrl: url };
       },
     };
@@ -195,6 +195,26 @@ describe('a composite: the same recipes for each entry of a list, at once', () =
     // Each wait is the pacer's own gap: a city that missed its turn to another waits again rather than giving up.
     expect(waits.length).toBeGreaterThanOrEqual(1);
     expect(waits.every((w) => w >= 20_000)).toBe(true);
+  });
+
+  // p2's re-audit of Keshav's Varkala trip (11 Oct): "Book my flights" read every member's city for one person.
+  it("reads one home city alone when from names it: one person's own flights, never every city's page", async () => {
+    const opened: string[] = [];
+    const runner = {
+      read: async (_trip: string, url: string, _plan: FetchPlan) => {
+        opened.push(url);
+        return { captures: url.includes('/search/result/flight?') ? [capture('/flights/v2/search/stream', 'https://www.ixigo.com/flights/v2/search/stream', fixture('flights-del-goi-2026-11-13.sse'))] : [], finalUrl: url };
+      },
+    };
+    const engine = createEngine({
+      book, runner: () => runner, now: () => new Date('2026-10-08T12:00:00Z'),
+      trip: async () => ({ people: 4, homes: ['Delhi', 'Mumbai', 'Bengaluru', 'Pune'], destination: 'Goa', start: '2026-11-06' }),
+      sleep: async () => undefined,
+    });
+    const got = await engine.answer('trip.flights_each', { from: 'Mumbai' }, { tripId: 't_goa', signal: new AbortController().signal, waitOutPace: true });
+    if (got.as !== 'compare') throw new Error(got.as);
+    expect(got.entries.map((e) => e.entry)).toEqual(['Mumbai']);
+    expect(opened.filter((u) => u.includes('/search/result/flight?'))).toEqual([expect.stringContaining('from=BOM&to=GOI')]);
   });
 
   // The same run: three cities' bus pages at once from one address, while ixigo was asking for Cloudflare's check.

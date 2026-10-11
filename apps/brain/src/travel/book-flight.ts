@@ -11,8 +11,8 @@ import type pg from 'pg';
 import { z } from 'zod';
 import type { NowProvider } from '../composer/context.js';
 import { inlineData } from '../composer/fence.js';
-import type { QuickTool, TurnCtx } from '../composer/tools.js';
-import type { DeskItem } from '../desk/desk.js';
+import type { QuickTool } from '../composer/tools.js';
+import { askedBy } from './asker.js';
 import type { FlightBooking } from './booking/flight-booking.js';
 import { stableId } from './ids.js';
 import { picksOf, type PersonPick } from './picks.js';
@@ -51,6 +51,7 @@ export function bookingNow(d: Pick<BookFlightDeps, 'booking' | 'pool' | 'nameOf'
           "So never say you can't book flights, and never tell anyone to book on ixigo themselves.",
         'When someone asks you to book their flights ("book my flights", "book my flight to Manali"): with a pick of theirs below, call book_flight for them now. ' +
           'With none, search their flights at once, never "want me to?": search_flights_each for the trip\'s own way, search_flights for a route they name. ' +
+          '"My flights" is the asker\'s alone: search_flights_each with person_ids [theirs]; everyone\'s only when they ask for everyone\'s or ours. ' +
           "Their card carries \"I'll take this\", and their tap on it books it. A route outside the trip (\"BLR to DPS\") is searched all the same: answer the ask, " +
           'mention the trip once at most, and never refuse it.',
         ...(named.length ? ['Flight picks so far:', ...named] : []),
@@ -59,19 +60,8 @@ export function bookingNow(d: Pick<BookFlightDeps, 'booking' | 'pool' | 'nameOf'
   };
 }
 
-/** The person a turn is for: the one book_flight names, else the person whose message woke it. */
-function whoAsked(wake: DeskItem[], ctx: TurnCtx): string | null {
-  for (const item of wake) {
-    if (item.kind !== 'message') continue;
-    const id = (item.payload as { messageId?: string } | null)?.messageId ?? item.ref;
-    const m = ctx.pack?.messages.find((x) => x.message_id === id);
-    if (m?.author.kind === 'person') return m.author.person_id;
-  }
-  return null;
-}
-
 const Args = z.object({
-  person_id: z.string().min(1).max(80).optional().describe('Whose flight: the person who asked, when absent'),
+  person_id: z.string().min(1).max(80).optional().describe('Whose flight: the person who asked, when absent; "my flight" is always theirs'),
 });
 
 /** Books a person's flight pick made before: the same booking their tap on "I'll take this" starts. */
@@ -86,7 +76,9 @@ export function bookFlightTool(d: BookFlightDeps): QuickTool<z.infer<typeof Args
       if (!(await d.booking.onFor(ctx.tripId))) {
         return { error: 'not_here', note: "Go doesn't book flights on this trip. Search their flights, and they book on ixigo from their own card." };
       }
-      const personId = a.person_id ?? whoAsked(ctx.wake, ctx);
+      // "Book my flights" is the asker's own, whoever the model names (p2's re-audit, 11 Oct).
+      const asked = askedBy(ctx);
+      const personId = asked?.own ? asked.personId : (a.person_id ?? asked?.personId ?? null);
       if (!personId) return { error: 'needs_more', note: 'Say whose flight to book: person_id.' };
       const pick = (await flightPicks(d.pool, ctx.tripId)).get(personId);
       const offer = pick ? await d.results.offer(pick.optionId) : null;

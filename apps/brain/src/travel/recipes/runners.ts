@@ -259,6 +259,8 @@ export const PAYMENT_PAGE_BLOCKED = "That's the payment page, and Go never opens
 export const FETCH_TIMEOUT_MS = 20_000;
 /** A cookie read: one read of the browser on a computer that is up. */
 export const COOKIES_TIMEOUT_MS = 5_000;
+/** A browser's cookie read answered this recently is the answer for every wait that asks for the same names. */
+export const COOKIES_SHARE_MS = 1_500;
 
 /**
  * How long Bash waits past a plan's required captures for its optional ones (a recipe's `required: false`), when the plan
@@ -462,7 +464,7 @@ function nextLoadMs(pageMs: number, started: number, now: number, loadsAgain: nu
   const left = started + challengeTime(pageMs) - now - CHALLENGE_WAIT_MS;
   return loadsAgain >= CHALLENGE_TRIES || left < CHALLENGE_LOAD_MS ? null : Math.min(pageMs, left);
 }
-export const CHALLENGED = "ixigo asked the trip's computer to wait a moment. Try again in a minute.";
+export const CHALLENGED = "ixigo asked the trip's computer to wait a moment.";
 /** A read whose page stayed on the check: unreachable, saying so; a caller that must tell it from other failures asks for this class. */
 export class ChallengedError extends TravelError {
   constructor() {
@@ -475,7 +477,7 @@ export class ChallengedError extends TravelError {
  */
 export class NothingCaughtError extends TravelError {
   constructor() {
-    super('unreachable', 'ixigo took too long to answer. Try again in a moment.');
+    super('unreachable', 'ixigo took too long to answer.');
   }
 }
 /**
@@ -581,12 +583,12 @@ function fetchFailed(
       caught: got.map((c) => `${c.match === o.doc ? 'document' : 'call'} ${c.status}`), ...(o.about ? { read: o.about } : {}),
     }, 'travel: a page ran out of time');
     if (o.fallsBack && caughtNothing(err, o.doc)) throw new NothingCaughtError();
-    throw new TravelError('unreachable', 'ixigo took too long to answer. Try again in a moment.');
+    throw new TravelError('unreachable', 'ixigo took too long to answer.');
   }
   if (err.status === 402) throw new TravelError('refused', OUT_OF_CREDIT);
-  if (isBusy(err)) throw new TravelError('unreachable', "The trip's computer is busy with other searches. Try again in a moment.");
-  if (err.status === 409) throw new TravelError('unreachable', "Someone is using the trip's computer's browser. Try again in a moment.");
-  if (err.status === 503) throw new TravelError('unreachable', "The trip's computer did not wake up in time. Try again in a moment.");
+  if (isBusy(err)) throw new TravelError('unreachable', "The trip's computer is busy with other searches.");
+  if (err.status === 409) throw new TravelError('unreachable', "Someone is using the trip's computer's browser.");
+  if (err.status === 503) throw new TravelError('unreachable', "The trip's computer did not wake up in time.");
   // Bash's block on ixigo's payment page (#4591): never a fault of Go's setup, and never a page Go opens.
   if (err.status === 403 && err.code === 'page_blocked') throw new TravelError('refused', PAYMENT_PAGE_BLOCKED);
   if (err.status === 400 || err.status === 403) {
@@ -598,6 +600,8 @@ function fetchFailed(
 }
 
 export function createBrowserFetchRunner(d: RunnerDeps): RecipeRunner {
+  /** Each browser's cookie read out now, or last answered (cookies, below), by the browser and the names it asks for. */
+  const cookieReads = new Map<string, { read: Promise<Array<{ name: string; expiresAt: number | null }> | null>; answeredAt: number | null }>();
   const sleep = d.sleep ?? nap;
   const slot = fetchSlots(d.slots ?? (() => DEFAULT_SLOTS));
   /** When each trip's computer last met Cloudflare's check, newest last; bounded. */
@@ -1114,19 +1118,32 @@ export function createBrowserFetchRunner(d: RunnerDeps): RecipeRunner {
     prime: (tripId) => inSlot(tripId, {}, () => prime(tripId)),
     handOff: (tripId, url, plan, o) => inSlot(tripId, {}, () => handOff(tripId, url, plan, o)),
     release: (tripId, tab) => inSlot(tripId, {}, () => release(tripId, tab)),
-    // No slot: one read of the browser, no page, and the sign-in wait reads it every few seconds.
+    // No slot: one read of the browser, no page, and the sign-in wait reads it every few seconds. One read per browser at
+    // a time, shared: the waits of an organizer's trips (one browser) take a read already out, or one answered within
+    // COOKIES_SHARE_MS, so Bash counts one read however many trips wait on it.
     cookies: async (tripId, domain, names) => {
-      try {
-        const answer = await d.v1.call<{ cookies?: Array<{ name: string; expires_at: string | null }> }>(
-          'GET',
-          `/v1/users/${await d.browser.userFor(tripId)}/browser/cookies`,
-          { query: { domain, names: names.join(',') }, signal: AbortSignal.timeout(COOKIES_TIMEOUT_MS) },
-        );
-        return (answer.cookies ?? []).map((c) => ({ name: c.name, expiresAt: c.expires_at === null ? null : Date.parse(c.expires_at) }));
-      } catch {
-        // A Bash without the read (404), a computer that didn't answer, a slow one: the wait reads again, or falls back.
-        return null;
-      }
+      const user = await d.browser.userFor(tripId);
+      const key = `${user} ${domain} ${names.join(',')}`;
+      const had = cookieReads.get(key);
+      if (had && (had.answeredAt === null || d.now().getTime() - had.answeredAt < COOKIES_SHARE_MS)) return had.read;
+      const entry: { read: Promise<Array<{ name: string; expiresAt: number | null }> | null>; answeredAt: number | null } = { read: Promise.resolve(null), answeredAt: null };
+      entry.read = (async () => {
+        try {
+          const answer = await d.v1.call<{ cookies?: Array<{ name: string; expires_at: string | null }> }>(
+            'GET',
+            `/v1/users/${user}/browser/cookies`,
+            { query: { domain, names: names.join(',') }, signal: AbortSignal.timeout(COOKIES_TIMEOUT_MS) },
+          );
+          return (answer.cookies ?? []).map((c) => ({ name: c.name, expiresAt: c.expires_at === null ? null : Date.parse(c.expires_at) }));
+        } catch {
+          // A Bash without the read (404), a computer that didn't answer, a slow one: the wait reads again, or falls back.
+          return null;
+        } finally {
+          entry.answeredAt = d.now().getTime();
+        }
+      })();
+      cookieReads.set(key, entry);
+      return entry.read;
     },
     tabCall: (tripId, tab, call, keepOpenMs) => inSlot(tripId, {}, () => tabCall(tripId, tab, call, keepOpenMs)),
     tabSteps: (tripId, tab, steps, o) => inSlot(tripId, {}, () => tabSteps(tripId, tab, steps, o)),

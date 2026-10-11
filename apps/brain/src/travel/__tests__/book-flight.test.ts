@@ -73,9 +73,22 @@ describe('Go books flights where BOOKING is on', () => {
 
   it('with no pick it says to search their flights now, and with BOOKING off it books nothing', async () => {
     const { d, started } = deps(true);
-    expect(await bookFlightTool(d).run({ person_id: 'p_priya' }, ctx)).toMatchObject({ error: 'no_pick', note: expect.stringContaining('Search their flights now') });
+    // Priya's own "book my flight", with no pick of hers.
+    const hers = msg(41, 'p_priya', '@Go book my flight');
+    const priya = {
+      ...ctx, wake: [{ id: 'w41', tripId: T, kind: 'message', ref: hers.message_id, dueAt: new Date(), payload: { messageId: hers.message_id, namesGo: true } }],
+      pack: { ...goaPack(), messages: [hers] },
+    } as unknown as TurnCtx;
+    expect(await bookFlightTool(d).run({}, priya)).toMatchObject({ error: 'no_pick', note: expect.stringContaining('Search their flights now') });
     const off = deps(false);
     expect(await bookFlightTool(off.d).run({}, ctx)).toMatchObject({ error: 'not_here' });
     expect([...started, ...off.started]).toEqual([]);
+  });
+
+  // p2's re-audit of Keshav's Varkala trip (11 Oct): "my flights" is the asker's own.
+  it('books the asker\'s own pick on "book my flights", whoever the model names', async () => {
+    const { d, started } = deps(true);
+    await bookFlightTool(d).run({ person_id: 'p_priya' }, ctx);
+    expect(started.map((s) => s.personId)).toEqual(['p_rahul']);
   });
 });
