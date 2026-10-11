@@ -145,6 +145,8 @@ ${browserSheet(o.live && o.watchOrigin ? ` data-watch-origin="${escHtml(o.watchO
   var toastTimer = null;
   // A login hand-off's Watch answer goes in the sheet (login-panel.ts); without it every page opens in a window.
   var watchHere = function () { return false; };
+  // A tap on a login card's Log in, heard by the login sheet (login-panel.ts); nothing without it.
+  var loginTapped = function () {};
   // A login card's own part (login-panel.ts), or null: without it the card is drawn as any notice.
   var loginPart = function () { return null; };
   try { me = localStorage.getItem('go-dev-room-me') || me; } catch (e) {}
@@ -515,6 +517,7 @@ ${o.live ? '    syncLogin();\n' : ''}    renderSheet();
     } else if (d.tap) {
       if (watchOpensSheet(d.tap, d.action)) openSheet(d.tap);
       else if (tapCard(d.tap, d.action, d.option, me)) {
+        loginTapped(d.tap, d.action, me);
         if (OPENS_TAB.indexOf(d.action) >= 0) holdTab(d.tap, d.action, me);
         render();
       }

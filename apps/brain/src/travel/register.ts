@@ -14,11 +14,11 @@ import { FakeIxigoStore } from './fake-ixigo/data.js';
 import { flightsEachTool } from './flights-each.js';
 import { showHeadStartStays } from './head-start-wake.js';
 import { createImages, registerImageRoute } from './images.js';
-import { createIxigoLogin, ixigoLoginTool, renderLoginResume } from './login.js';
+import { createIxigoLogin, ixigoLoginTool, LOGIN_SWEEP_MS, renderLoginResume } from './login.js';
 import { createLoginKeepAlive } from './login-keepalive.js';
 import { createTravelLayer } from './layer.js';
 import { registerLive } from './live.js';
-import { startLiveSearch } from './live-search.js';
+import { openRecipeCards, startLiveSearch } from './live-search.js';
 import { createHttpMcpCaller } from './mcp-caller.js';
 import { createFakeTravel, createIxigoTravel } from './mcp-travel.js';
 import { createIxigoWebBackend, LINK_ONLY_KINDS, searchKindOf } from './recipes/backend.js';
@@ -85,6 +85,7 @@ export const registerTravel: RegisterLane = async (brain) => {
     runner: () => brain.recipeRunners?.browserFetch ?? null,
     tasks: () => brain.tasks ?? null,
     screen: () => brain.recipeRunners?.screen ?? null,
+    endScreen: () => brain.recipeRunners?.endScreen ?? null,
     browser: () => brain.recipeRunners?.login ?? null,
     desk: brain.desk,
     live: () => brain.switches.get('TRAVEL_MODE') === 'ixigo_web',
@@ -104,6 +105,14 @@ export const registerTravel: RegisterLane = async (brain) => {
   keepAlive.start();
   brain.onStop(function stopLoginKeepAlive() {
     keepAlive.stop();
+  });
+  // One-tap logins, looked over every minute from their rows: a wait a restart of Go lost is picked up, one past its time ends.
+  const loginSweep = setInterval(() => {
+    login.sweep().catch((err: unknown) => brain.log.warn({ err }, 'travel: the one-tap login sweep failed'));
+  }, LOGIN_SWEEP_MS);
+  loginSweep.unref();
+  brain.onStop(function stopLoginSweep() {
+    clearInterval(loginSweep);
   });
   // Go's hello carries the login card and its line: one message to open a new trip, never two in a row.
   brain.context.addTurnCard((i) => login.helloCard(i));
@@ -281,9 +290,12 @@ export const registerTravel: RegisterLane = async (brain) => {
   for (const t of travelTools({ travel, results, images, now: brain.now, desk: brain.desk, log: brain.log, warmForTravel: warm, today, showPick, stayBudget, groupStay })) brain.tools.register(t);
   brain.tools.register(budgetTool({ budgets, pool: brain.pool, now: brain.now, log: brain.log }));
   brain.context.addNow(budgetNow({ budgets, trip: async (tripId) => (await brain.packs.get(tripId)).trip }));
-  // A recipe's live card: its runs on the stage, as a search's are, so the room watches every page Go opens.
+  // A recipe's live card: its runs on the stage, as a search's are, so the room watches every page Go opens. Kept while
+  // open, so the turn that answered ends its own done (exam #9, 10 Oct: two cards left failed beside a good answer).
+  const recipeCards = openRecipeCards();
   const recipeCard = (tripId: string, o: { runKey: string; recipe: string }) =>
-    startLiveSearch({ link: brain.door.link, images, now: brain.now, log: brain.log, saidOnIt }, tripId, o);
+    recipeCards.card(tripId, o.runKey, () => startLiveSearch({ link: brain.door.link, images, now: brain.now, log: brain.log, saidOnIt }, tripId, o));
+  brain.context.addTurnEnd((t) => recipeCards.turnEnded(t));
   // Any other recipe in the book, by its id: ixigo's own facts for the model to say (the destination guide, and more).
   const recipesTool = ixigoTool({
     book, engine, results, live: () => brain.switches.get('TRAVEL_MODE') === 'ixigo_web',

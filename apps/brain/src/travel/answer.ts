@@ -221,6 +221,16 @@ export function leftOff(unapplied: readonly string[]): string {
   return `ixigo's ${listOf(names)} filter${names.length > 1 ? 's' : ''} didn't load in time, so these aren't filtered for ${listOf(unapplied.map((c) => of(c)[1]))}`;
 }
 
+/**
+ * ixigo's own filters left off because together they left no stay: "Private Pool alone leaves out every stay, so these
+ * leave it out". The options are the nearest without them, never called a fit (the exam's re-run, 10 Oct).
+ */
+export function droppedWords(dropped: readonly string[]): string {
+  return dropped.length === 1
+    ? `${dropped[0]} alone leaves out every stay, so these leave it out`
+    : `${listOf([...dropped])} leave out every stay, so these leave them out`;
+}
+
 /** A line with words before it ("Already on ixigo: "), its own first letter then lower case. */
 export const ledBy = (lead: string | undefined, line: string): string => (lead ? `${lead}${line.charAt(0).toLowerCase()}${line.slice(1)}` : line);
 

@@ -100,7 +100,9 @@ export interface Brain {
     prime(tripId: string): Promise<void>;
     watch(tripId: string, signal: AbortSignal): Promise<ScreenStream>;
     /** A fresh 15-minute session on the trip's screen, in control or to view (POST /v1/sessions): the ixigo login's Watch. */
-    screen(tripId: string, mode: 'view' | 'control'): Promise<{ url: string; expires_at: string }>;
+    screen(tripId: string, mode: 'view' | 'control'): Promise<{ id?: string; url: string; expires_at: string }>;
+    /** Ends a session now (DELETE /v1/sessions/{id}): its Watch closes itself, and its control ends with it. */
+    endScreen?(sessionId: string): Promise<void>;
     /** Where the trip's browser's ixigo login stands: one browser, and one login, for every trip of its organizer. */
     login?: Pick<Browsers, 'login' | 'setLogin' | 'loggedInSince'>;
   };

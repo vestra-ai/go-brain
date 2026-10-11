@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { BOOK_DIR, loadBook } from '../../book/book.js';
 import { evaluate } from '../../book/expr.js';
-import { asOffers, bandsFor, createOffers, NAMES_PER_GROUP, OFFERS_TTL_MS, offersText, pickOffers, type Offer } from '../offers.js';
+import { asOffers, bandsFor, createOffers, NAMES_PER_GROUP, OFFERS_TTL_MS, offersText, pickOffers, strictestOf, type Offer } from '../offers.js';
 import { offersNow } from '../offers-now.js';
 
 const { book } = loadBook();
@@ -13,13 +13,21 @@ const listed = async (): Promise<Offer[]> => asOffers(await evaluate(book.get('h
 describe("a site's own list of what it offers (hotels.search: ixigo's metadata call)", () => {
   it('reads every filter group and the sorts from the call ixigo makes, with their codes, and leaves the nameless price bands out', async () => {
     const list = await listed();
-    expect(list).toContainEqual({ kind: 'filter', group: 'Facilities', name: 'Swimming Pool', code: 'FL_HF_29' });
-    expect(list).toContainEqual({ kind: 'filter', group: 'Facilities', name: 'Pet-friendly property', code: 'FL_HF_21' });
-    expect(list).toContainEqual({ kind: 'filter', group: 'Accommodation Type', name: 'Entire house', code: 'AT_EH' });
-    expect(list).toContainEqual({ kind: 'filter', group: 'Star Rating', name: '5', code: 'SR_5' });
-    expect(list).toContainEqual({ kind: 'filter', group: 'Payment Mode', name: 'Pay At Hotel', code: 'PT_PAY_AT_HOTEL' });
+    expect(list).toContainEqual({ kind: 'filter', group: 'Facilities', name: 'Swimming Pool', code: 'FL_HF_29', count: 21 });
+    expect(list).toContainEqual({ kind: 'filter', group: 'Facilities', name: 'Pet-friendly property', code: 'FL_HF_21', count: 7 });
+    expect(list).toContainEqual({ kind: 'filter', group: 'Accommodation Type', name: 'Entire house', code: 'AT_EH', count: 1 });
+    expect(list).toContainEqual({ kind: 'filter', group: 'Star Rating', name: '5', code: 'SR_5', count: 12 });
+    expect(list).toContainEqual({ kind: 'filter', group: 'Payment Mode', name: 'Pay At Hotel', code: 'PT_PAY_AT_HOTEL', count: 3 });
     expect(list).toContainEqual({ kind: 'sort', group: 'Sort', name: 'Price (Low to High)', code: 'SC_P_LH' });
     expect(list.some((o) => o.code.startsWith('DP_'))).toBe(false);
+    // Each filter with the stays ixigo's list counts for it, for the strictest to drop first (strictestOf); a sort has none.
+    expect(list.find((o) => o.code === 'SC_P_LH')).not.toHaveProperty('count');
+    // Entire house holds 1 stay of Goa's, Private Pool 4, Swimming Pool 21; a name not on the list is never one.
+    expect(strictestOf({ offers: list }, ['Swimming Pool', 'Private Pool', 'Entire house'])).toBe('Entire house');
+    expect(strictestOf({ offers: list }, ['Swimming Pool', 'Private Pool'])).toBe('Private Pool');
+    expect(strictestOf({ offers: list }, ['beachfront'])).toBeNull();
+    // A list that counts none of them: the last the site has.
+    expect(strictestOf({ offers: list.map((o) => ({ kind: o.kind, group: o.group, name: o.name, code: o.code })) }, ['Private Pool', 'Swimming Pool'])).toBe('Swimming Pool');
   });
 
   it('reads the nameless price bands apart from the list, with their prices, for Go alone', async () => {
