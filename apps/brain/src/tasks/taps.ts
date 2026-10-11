@@ -16,14 +16,22 @@ export interface TaskTapDeps {
   log: { warn(obj: object, msg: string): void };
 }
 
-export async function openSession(v1: V1Client, userId: string, conversationId: string | null, screen: 'view' | 'control'): Promise<{ id?: string; url: string; expires_at: string }> {
+export async function openSession(
+  v1: V1Client,
+  userId: string,
+  conversationId: string | null,
+  screen: 'view' | 'control',
+  o: { driver?: 'user' } = {},
+): Promise<{ id?: string; url: string; expires_at: string }> {
   try {
     return await v1.call<{ id?: string; url: string; expires_at: string }>('POST', '/v1/sessions', {
-      body: { user_id: userId, ...(conversationId ? { conversation_id: conversationId } : {}), screen },
+      body: { user_id: userId, ...(conversationId ? { conversation_id: conversationId } : {}), screen, ...(screen === 'control' && o.driver ? { driver: o.driver } : {}) },
       signal: AbortSignal.timeout(2_000),
     });
   } catch (err) {
     if (screen === 'control' && err instanceof V1Error && err.code === 'screen_control_unavailable') return openSession(v1, userId, conversationId, 'view');
+    // A Bash from before driver (bash #4656) refuses the field: the screen opens as it did, with Take control.
+    if (o.driver && err instanceof V1Error && err.status === 400) return openSession(v1, userId, conversationId, screen);
     throw err;
   }
 }
