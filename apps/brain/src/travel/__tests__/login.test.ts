@@ -78,7 +78,7 @@ function world(o: {
       reads.push({ url, plan });
       if (plan !== LOGIN_CALLS) return { captures: [], finalUrl: url };
       const s = statuses.shift() ?? 'timeout';
-      if (s === 'timeout') throw new TravelError('unreachable', 'ixigo took too long to answer. Try again in a moment.');
+      if (s === 'timeout') throw new TravelError('unreachable', 'ixigo took too long to answer.');
       if (s === 'challenged') throw new ChallengedError();
       return { captures: load(s), finalUrl: url };
     },
@@ -98,7 +98,7 @@ function world(o: {
     // The taps on the page once it is in front: what the card says then is kept, to see it said so first.
     tabSteps: async (_trip: string, tab: string, steps: unknown[], to: { keepOpenMs: number; timeoutMs: number }) => {
       tabStepCalls.push({ tab, steps, o: to, cardActions: cardActions() });
-      if (o.taps === 'fail') throw new TravelError('unreachable', 'ixigo took too long to answer. Try again in a moment.');
+      if (o.taps === 'fail') throw new TravelError('unreachable', 'ixigo took too long to answer.');
     },
     ...(o.cookies ? { cookies: async (_trip: string, domain: string, names: string[]) => {
       cookieReads.push({ domain, names, at: clock.now.getTime() });

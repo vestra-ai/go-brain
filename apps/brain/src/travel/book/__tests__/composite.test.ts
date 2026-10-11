@@ -59,7 +59,7 @@ describe('a composite: the same recipes for each entry of a list, at once', () =
         opened.push(url);
         const caps = pageFor(url);
         // Delhi's buses need ixigo's box, which doesn't answer here.
-        if (!caps) throw new TravelError('unreachable', 'ixigo took too long to answer. Try again in a moment.');
+        if (!caps) throw new TravelError('unreachable', 'ixigo took too long to answer.');
         return { captures: caps, finalUrl: url };
       },
     };

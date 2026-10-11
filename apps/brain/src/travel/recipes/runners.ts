@@ -464,7 +464,7 @@ function nextLoadMs(pageMs: number, started: number, now: number, loadsAgain: nu
   const left = started + challengeTime(pageMs) - now - CHALLENGE_WAIT_MS;
   return loadsAgain >= CHALLENGE_TRIES || left < CHALLENGE_LOAD_MS ? null : Math.min(pageMs, left);
 }
-export const CHALLENGED = "ixigo asked the trip's computer to wait a moment. Try again in a minute.";
+export const CHALLENGED = "ixigo asked the trip's computer to wait a moment.";
 /** A read whose page stayed on the check: unreachable, saying so; a caller that must tell it from other failures asks for this class. */
 export class ChallengedError extends TravelError {
   constructor() {
@@ -477,7 +477,7 @@ export class ChallengedError extends TravelError {
  */
 export class NothingCaughtError extends TravelError {
   constructor() {
-    super('unreachable', 'ixigo took too long to answer. Try again in a moment.');
+    super('unreachable', 'ixigo took too long to answer.');
   }
 }
 /**
@@ -583,12 +583,12 @@ function fetchFailed(
       caught: got.map((c) => `${c.match === o.doc ? 'document' : 'call'} ${c.status}`), ...(o.about ? { read: o.about } : {}),
     }, 'travel: a page ran out of time');
     if (o.fallsBack && caughtNothing(err, o.doc)) throw new NothingCaughtError();
-    throw new TravelError('unreachable', 'ixigo took too long to answer. Try again in a moment.');
+    throw new TravelError('unreachable', 'ixigo took too long to answer.');
   }
   if (err.status === 402) throw new TravelError('refused', OUT_OF_CREDIT);
-  if (isBusy(err)) throw new TravelError('unreachable', "The trip's computer is busy with other searches. Try again in a moment.");
-  if (err.status === 409) throw new TravelError('unreachable', "Someone is using the trip's computer's browser. Try again in a moment.");
-  if (err.status === 503) throw new TravelError('unreachable', "The trip's computer did not wake up in time. Try again in a moment.");
+  if (isBusy(err)) throw new TravelError('unreachable', "The trip's computer is busy with other searches.");
+  if (err.status === 409) throw new TravelError('unreachable', "Someone is using the trip's computer's browser.");
+  if (err.status === 503) throw new TravelError('unreachable', "The trip's computer did not wake up in time.");
   // Bash's block on ixigo's payment page (#4591): never a fault of Go's setup, and never a page Go opens.
   if (err.status === 403 && err.code === 'page_blocked') throw new TravelError('refused', PAYMENT_PAGE_BLOCKED);
   if (err.status === 400 || err.status === 403) {

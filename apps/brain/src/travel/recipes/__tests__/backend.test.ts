@@ -532,7 +532,7 @@ function staysEngine(
     runs.push({ conditions, background: ro.background === true });
     asks.push(ro);
     const filtered = conditions.length > 0 || (ro.siteFilters?.length ?? 0) > 0;
-    if (o.hangs && filtered) throw ro.fallsBack ? new NothingCaughtError() : new TravelError('unreachable', 'ixigo took too long to answer. Try again in a moment.');
+    if (o.hangs && filtered) throw ro.fallsBack ? new NothingCaughtError() : new TravelError('unreachable', 'ixigo took too long to answer.');
     // ixigo's own filters by their names on its list (site_filters): what the engine says the site did with them.
     if (ro.siteFilters?.length) {
       const list = { recipeId: 'hotels.search', about: 'stays in Goa', at: 0, offers: [{ kind: 'filter' as const, group: 'Facilities', name: 'Pet-friendly property', code: 'FL_HF_21' }] };
