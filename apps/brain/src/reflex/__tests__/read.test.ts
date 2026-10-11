@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { JevAnswer } from '../jev.js';
 import { looksLikeMoney } from '../money-line.js';
-import { applyLive, codeOnly, readAnswers, type CodeFacts } from '../read.js';
+import { applyLive, codeOnly, leftToPeople, liveRecipe, readAnswers, type CodeFacts } from '../read.js';
 import type { QuestionName } from '../questions.js';
 
 const n = (p: number): JevAnswer => ({ type: 'noul', noul: p });
@@ -24,6 +24,53 @@ describe('question 1: for Go', () => {
     expect(read({ q1_chatter: n(0.3), q1_addressed: n(0.22) }).forGo).toEqual({ value: false, sure: true });
     expect(read({ q1_chatter: n(0.5), q1_addressed: n(0.3) }).forGo.sure).toBe(false);
     expect(read({ q1_chatter: n(0.5), q1_addressed: n(0.06) }, { ...plain, namesGo: true }).forGo).toEqual({ value: true, sure: true });
+  });
+  // Keshav, 10 Oct: "go can interfere in most of the messages". Only pure banter or an acknowledgement is left alone: a
+  // line no one spoke to Go in that carries a fact or a plan is not banter, so the turn can jump in.
+  it('reads banter only on the chatter bar, or small talk with no answer; never a line naming Go or about money', () => {
+    expect(read({ q1_chatter: n(0.95), q1_addressed: n(0.05) }).banter).toEqual({ value: true, sure: true });
+    expect(read({ q1_chatter: n(0.5), q1_addressed: n(0.06) }).banter).toEqual({ value: null, sure: false });
+    expect(read({ q1_chatter: n(0.3), q1_addressed: n(0.22) }).banter?.sure).toBe(false);
+    expect(read({ q1_chatter: n(0.95), q1_addressed: n(0.05) }, { ...plain, namesGo: true }).banter).toEqual({ value: false, sure: true });
+    expect(read({ q1_chatter: n(0.95), q1_addressed: n(0.05) }, { ...plain, money: true }).banter).toEqual({ value: false, sure: true });
+    expect(read(null, { ...plain, smallTalk: true }).banter).toEqual({ value: true, sure: true });
+    expect(read(null).banter?.sure).toBe(false);
+    // A bare ok or 👍 is banter by code whatever Jev says, unless it comes right after Go's own line (the yes to an offer).
+    expect(read({ q1_chatter: n(0.3), q1_addressed: n(0.3) }, { ...plain, smallTalk: true }).banter).toEqual({ value: true, sure: true });
+    expect(read({ q1_chatter: n(0.3), q1_addressed: n(0.3) }, { ...plain, smallTalk: true, answersGo: true }).banter?.sure).toBe(false);
+  });
+  // Keshav, 10 Oct: "jev decision model should know that many messages even without @go or go can be responded by go or
+  // acted upon by go". Question 11 says so for itself; a wrong no would leave a real ask unanswered.
+  it('reads question 11 above or below its bars; a line naming Go or about money always has something for Go', () => {
+    expect(read({ q11_actionable: n(0.92) }).actionable).toEqual({ value: true, sure: true });
+    expect(read({ q11_actionable: n(0.04) }).actionable).toEqual({ value: false, sure: true });
+    expect(read({ q11_actionable: n(0.5) }).actionable).toEqual({ value: null, sure: false });
+    expect(read({ q11_actionable: n(0.04) }, { ...plain, namesGo: true }).actionable).toEqual({ value: true, sure: true });
+    expect(read({ q11_actionable: n(0.04) }, { ...plain, money: true }).actionable).toEqual({ value: true, sure: true });
+    expect(read(null).actionable?.sure).toBe(false);
+  });
+  it('leaves a line to the people when question 11 is sure there is nothing in it for Go, or question 1 reads banter it is not sure of', () => {
+    const yes = { value: true, sure: true } as const;
+    const no = { value: false, sure: true } as const;
+    const unsure = { value: null, sure: false } as const;
+    expect(leftToPeople({ actionable: no })).toBe(true);
+    expect(leftToPeople({ actionable: yes, banter: yes })).toBe(false);
+    expect(leftToPeople({ actionable: unsure, banter: yes })).toBe(true);
+    expect(leftToPeople({ actionable: unsure, banter: unsure })).toBe(false);
+    expect(leftToPeople({})).toBe(false);
+  });
+  it("wakes Go for a line no one spoke to it in when question 6 reads a plan question to the group or an agreement: a point Go can move", () => {
+    // Jev's own answers in live run 37488230324.
+    const birthday = { q1_addressed: n(0.21), q1_chatter: n(0.22), q6_open: n(0.85), q6_agreed: n(0.05) }; // "Birthday dinner on the 7th somewhere nice? Not a shack pls"
+    const scooty = { q1_addressed: n(0.2), q1_chatter: n(0.21), q6_open: n(0.78), q6_agreed: n(0.06) }; // "scooty rent karenge na?"
+    const pool = { q1_addressed: n(0.08), q1_chatter: n(0.71), q6_open: n(0.05), q6_agreed: n(0.82) }; // "+1 pool"
+    for (const a of [birthday, scooty, pool]) expect(read(a).forGo.sure).toBe(false);
+    // Below the plan bar, or with no question 6 answer, it still reads not for Go.
+    expect(read({ q1_addressed: n(0.13), q1_chatter: n(0.27), q6_open: n(0.6), q6_agreed: n(0.05) }).forGo).toEqual({ value: false, sure: true }); // "anyone up?"
+    expect(read({ q1_addressed: n(0.21), q1_chatter: n(0.22) }).forGo).toEqual({ value: false, sure: true });
+    // Banter stays quiet whatever question 6 says: chatter is read first ("Finallyyyy 😭🙌", "haha same").
+    expect(read({ q1_addressed: n(0.03), q1_chatter: n(0.93), q6_open: n(0.02), q6_agreed: n(0.71) }).forGo).toEqual({ value: false, sure: true });
+    expect(read({ q1_addressed: n(0.02), q1_chatter: n(0.95), q6_open: n(0.9), q6_agreed: n(0.9) }).forGo).toEqual({ value: false, sure: true });
   });
   it('never reads a line about money as not for Go, so it reaches the model; a bare number or a fact without money still skips', () => {
     const notToGo = { q1_chatter: n(0.9), q1_addressed: n(0.03) };
@@ -124,6 +171,11 @@ describe('question 10: which ixigo search', () => {
   it('is sure there is no search when none wins', () => {
     expect(recipe({ flights: 0.05, stays: 0.02, trains: 0.01, buses: 0.0, none: 0.92 })).toEqual({ value: null, sure: true });
   });
+  it('reads the asks beyond the searches the same way', () => {
+    expect(recipe({ train_status: 0.93, schedule: 0.03, trains: 0.02, none: 0.02 })).toEqual({ value: 'train_status', sure: true });
+    // A train's timetable and today's run are close: no clear winner, no pick.
+    expect(recipe({ train_status: 0.6, schedule: 0.35, none: 0.05 }).sure).toBe(false);
+  });
   it('reads a missing or malformed answer as unsure', () => {
     expect(read(null).recipe).toEqual({ value: null, sure: false });
     expect(read({ q10_recipe: n(0.9) }).recipe).toEqual({ value: null, sure: false });
@@ -190,6 +242,14 @@ describe('applyLive', () => {
     expect(would.recipe).toEqual({ value: 'trains', sure: true });
     expect(applyLive(would, new Set<QuestionName>(['for_go']), plain).recipe).toEqual({ value: null, sure: false });
     expect(applyLive(would, new Set<QuestionName>(['recipe']), plain).recipe).toEqual({ value: 'trains', sure: true });
+  });
+  it('acts on a sure pick still in shadow as none, so nothing starts for it and no search is started instead', () => {
+    const { would } = readAnswers({ q10_recipe: ch({ pnr: 0.95, trains: 0.02, none: 0.03 }) }, plain, []);
+    expect(would.recipe).toEqual({ value: 'pnr', sure: true });
+    expect(applyLive(would, new Set<QuestionName>(['recipe']), plain).recipe).toEqual({ value: null, sure: true });
+    // Once its choice is live, it acts as read; unsure stays unsure.
+    expect(liveRecipe({ value: 'pnr', sure: true }, ['trains', 'pnr'])).toEqual({ value: 'pnr', sure: true });
+    expect(liveRecipe({ value: null, sure: false })).toEqual({ value: null, sure: false });
   });
   it('codeOnly has no Jev opinion at all', () => {
     const out = codeOnly(plain);

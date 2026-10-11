@@ -1,0 +1,230 @@
+id: flights.results
+title: Flights between two airports on a date, with their fares and times
+asks:
+  - flights from delhi to goa on friday
+  - cheapest non stop london to delhi on 20 oct
+  - kal subah mumbai se bangalore flight
+inputs:
+  from: { kind: place, lookup: flights.airport_lookup, about: 'the city or airport people fly from; abroad, with its airport code, like "London (LHR)"' }
+  to: { kind: place, lookup: flights.airport_lookup, about: the city or airport people fly to }
+  date: { kind: date }
+  # A round trip's day back, as the link takes it: a search with one runs flights.round_trip, which reads both ways.
+  return_date: { kind: date, optional: true, about: the day back }
+  # The members who live by another airport are not on this flight (Arjun, in Bangalore, is not on a flight from Delhi);
+  # one with no home, or a home Go has no airport for, may fly from here.
+  adults:
+    kind: count
+    min: 1
+    max: 9
+    value: |
+      ($n := $trip.people - $count($trip.homes[$known("flights.airport_lookup", $).code != $inputs.from.code]); $n > 0 ? $n : $trip.people)
+  depart_after: { kind: text, optional: true, about: 24-hour HH:MM }
+  depart_before: { kind: text, optional: true, about: 24-hour HH:MM }
+  arrive_before: { kind: text, optional: true, about: 24-hour HH:MM }
+  max_price: { kind: money, optional: true, about: "per person, in paise" }
+  # Children (2 to 11) and infants (under 2, on a lap) fly too, when the ask says so: ixigo's fare is then per adult.
+  children: { kind: count, min: 0, max: 8, value: "0", about: children 2 to 11 }
+  infants: { kind: count, min: 0, max: 4, value: "0", about: infants under 2 }
+  cabin: { kind: choice, optional: true, about: "economy, premium_economy or business" }
+  special_fare: { kind: choice, optional: true, about: "student, senior_citizen, armed_forces or doctor" }
+auth: none
+changes_state: false
+conditions:
+  non_stop: "'stops=0'"
+let:
+  # ixigo's departure and arrival windows, as the page's own filter shows them (p1-b's flights map).
+  windows: |
+    [{"name": "EARLY_MORNING", "from": "00:00", "to": "06:00"}, {"name": "MORNING", "from": "06:00", "to": "12:00"},
+     {"name": "AFTERNOON", "from": "12:00", "to": "18:00"}, {"name": "NIGHT", "from": "18:00", "to": "24:00"}]
+  take_off: |
+    (depart_after or depart_before) ? (
+      $a := depart_after ? depart_after : "00:00"; $b := depart_before ? depart_before : "24:00";
+      $join($windows[from < $b and to > $a].name, ",")
+    )
+  landing: |
+    arrive_before ? $join($windows[from < $$.arrive_before and to > "00:00"].name, ",")
+  # ixigo's own filters the ask named ($site, "param:value" codes from offers below), as the page's own params
+  # ("airlines=6E,AI&refundable=true"), so the stage shows them ticked on ixigo's page. The page opens with exactly its
+  # address's filters, whatever it kept from before (his browser, 10 Oct 05:49Z: airlines=IX showed one chip, Air-India
+  # Express, and its 15 flights). So Go sets filters by the address and never clicks one: a click on the page's
+  # "Recommended Filters" row ticked all four of ixigo's recommendations at once (stops, two airlines, a free meal).
+  site_params: |
+    $site ? $join($distinct($site.$substringBefore($, ":")).(
+      $k := $; $k & "=" & $join($site[$substringBefore($, ":") = $k].$substringAfter($, ":"), ",")
+    ), "&")
+  # ixigo's cabin letters, its own map (e Economy, w Premium Economy, b Business; it sells no First).
+  class_code: |
+    cabin = "premium_economy" ? "w" : (cabin = "business" ? "b" : "e")
+  # ixigo's special fares (airlineFareType): the page asks its stream for the flights that sell one, and only those.
+  fare_type: |
+    special_fare = "student" ? "STUDENT" : special_fare = "senior_citizen" ? "SENIOR_CITIZEN" : special_fare = "armed_forces" ? "ARMED_FORCES" : special_fare = "doctor" ? "DOCTOR"
+  # One infant to an adult, as airlines seat them on a lap.
+  lap_infants: $min([infants, adults])
+  # What people asked for, in ixigo's own params, and the cheapest first (the param ixigo's "Price / Low to High" writes).
+  params: |
+    $join($append($conditions, [$take_off ? "takeOff=" & $take_off, $landing ? "landing=" & $landing, max_price ? "price=0," & $string($floor(max_price / 100)), $site_params, $fare_type ? "airlineFareType=" & $fare_type, "sort_type=cheapest"]), "&")
+# ixigo's results page; its own call, /flights/v2/search/stream, is a stream of server-sent events, one to three of them,
+# each the whole list so far (10 Oct: 15, 101, then 139 flights for Delhi to Goa; 57, 272, then 613 for Delhi to Dubai,
+# 2.1 MB, the last event alone past 1 MB). So Bash keeps only the last complete event (sse: last), up to its 4 MB; a Bash
+# that predates it sends the stream whole, cut at 1 MB, and the reader takes every whole event in it, a flight's last copy
+# winning. Its inputs, conditions and page are flights.search's, the link that stands in for this one when ixigo refuses
+# our boxes' shared address (403 or 429 under a burst, 9 Oct).
+page: /search/result/flight?from={from.code}&to={to.code}&date={date|DDMMYYYY}&returnDate={return_date|DDMMYYYY}&adults={adults}&children={children}&infants={$lap_infants}&class={$class_code}&source=Search%20Form&{$params|raw}
+capture:
+  - { match: /flights/v2/search/stream, max_bytes: 4194304, sse: last }
+read:
+  rows:
+    from: /flights/v2/search/stream
+    format: sse
+    list: data.flightJourneys.flightFare
+    # ixigo's own "none": 200, one event {"errors":{"code":201,"message":"No flights found"}} (prod, 12 Oct: Delhi to
+    # Kullu on 13 Nov, 59 bytes). No flights that day is an answer, never a page that didn't load.
+    none: 201 in errors.code
+    unique: flightKeys
+    # ixigo's own filters the ask named ($site): ixigo applies them in its page, never in its stream, which holds every
+    # fare whatever the page shows, so Go applies them to the rows. Any value of one param will do (ixigo's "6E,AI"), and
+    # every param named must hold.
+    where: |
+      (
+        $by := function($key) { $site[$substringBefore($, ":") = $key].$substringAfter($, ":") };
+        $any := function($key, $have) { $count($by($key)) = 0 or $count($by($key)[$ in $have]) > 0 };
+        $stops := $number(flightDetails[0].stop);
+        $any("stops", $string($stops >= 2 ? 2 : $stops))
+          and $any("airlines", flightFilter[0].airline)
+          and $any("departureAirports", flightDetails[0].origin)
+          and $any("arrivalAirports", flightDetails[-1].destination)
+          and $any("layoverAirports", flightFilter[0].layoverAirports)
+          and $any("baggage", fares.fareType)
+          and ($count($by("freeMeal")) = 0 or isFreeMealAvailable = true)
+          and ($count($by("refundable")) = 0 or refundableType != "NON_REFUNDABLE")
+      )
+  also:
+    # Every event's airports as one (a stream may send its flights over several events).
+    airports: { from: /flights/v2/search/stream, format: sse, value: $merge(data.airportDetails) }
+    # ixigo's Smart Lock, on a logged-in browser's one-way domestic search (the 10 Oct atlas, his browser): an ixigo agent
+    # that watches the route's fares 24x7 and locks the flight within the person's budget, for a fee. The last event that
+    # carries it is read: {titleHtml, highlightText (the route's cheapest), description, cta "Set Smart Lock", flightsCount}.
+    smart_lock: { from: /flights/v2/search/stream, format: sse, value: '(data.smartLockDetails)[-1]' }
+# One flights page across every trip at most every 20 s, and none for 10 minutes after one ixigo refused: flights.search's
+# link answers in its place (recipes/backend.ts).
+pace: { gap_seconds: 20, quiet_minutes: 10 }
+# What ixigo's results page offers to narrow its flights, from its own stream's last event (the 10 Oct atlas): stops,
+# airlines, the airports each end may use, the cities a change of plane may be in (abroad), bags, a free meal and hiding
+# non-refundable fares, each as the page's own param and value ("airlines:6E"). Kept per route for the model, which maps
+# the ask onto it by name (site_filters); applied above (read.rows.where, params).
+offers:
+  from: /flights/v2/search/stream
+  format: sse
+  list: |
+    (
+      $e := ($type($) = "array" ? $[-1] : $).data;
+      $t := $e.tripFilter;
+      $j := $e.flightJourneys[0].journeyFilter[0];
+      $place := function($code) { $lookup($e.airportDetails, $code) };
+      $stop := {"Non-Stop": "0", "1 Stop": "1", "2+ Stops": "2"};
+      [
+        [$t.stopsFilter[count > 0 and $lookup($stop, stopText)].{ "kind": "filter", "group": "Stops", "name": stopText, "code": "stops:" & $lookup($stop, stopText) }],
+        [$each($t.airlineMap, function($v, $k) { { "kind": "filter", "group": "Airlines", "name": $v.name, "code": "airlines:" & $k } })],
+        [$j.departureAirports.{ "kind": "filter", "group": "Departure airport", "name": airportCode & " " & $place(airportCode).airportName, "code": "departureAirports:" & airportCode }],
+        [$j.arrivalAirports.{ "kind": "filter", "group": "Arrival airport", "name": airportCode & " " & $place(airportCode).airportName, "code": "arrivalAirports:" & airportCode }],
+        [$j.layoverAirports.{ "kind": "filter", "group": "Layover city", "name": ($place(airportCode).city ? $place(airportCode).city : airportCode) & " (" & airportCode & ")", "code": "layoverAirports:" & airportCode }],
+        [$t.baggageFilter[available = true].{ "kind": "filter", "group": "Baggage", "name": text, "code": "baggage:" & value }],
+        $t.freeMealsFilter.available = true ? { "kind": "filter", "group": "Meal", "name": $t.freeMealsFilter.text, "code": "freeMeal:true" },
+        $t.nonRefundableFilter.available = true ? { "kind": "filter", "group": "Refund", "name": $t.nonRefundableFilter.text, "code": "refundable:true" }
+      ]
+    )
+  for: "{from.code}-{to.code}"
+  about: "flights {from.code} to {to.code}"
+answer:
+  as: options
+  kind: flight
+  # One option a flight, its first leg's airline and every leg's number ("IndiGo 6E328 + 6E5106" with a stop). The fare is
+  # ixigo's shown one, per person. The times are the first leg's departure and the whole journey's length.
+  # What ixigo's card and filters say, from the same row (the ixigo atlas, 10 Oct): the fare's bags (a handbag-only fare,
+  # and what the same flight costs with a check-in bag), seats left, a free meal, each change of plane, the code's saving
+  # the card shows ("Extra ₹740 Off"; the stream's text comes mis-decoded, so only its amount is read), and Lock Price:
+  # its fee a person, how long it holds the fare, and the most ixigo covers if the fare rises, from the fare's own fields.
+  # The airport it lands at, by ixigo's name for it and its code: Goa has two, Dabolim (GOI) and Manohar (GOX), 39 km apart.
+  each: |
+    (
+      $leg := flightDetails[0];
+      $numbers := $map($split(flightKeys, "*"), function($k) { $split($k, "-")[2] });
+      $fare := $num(fares[0].fareDetails.displayFare);
+      $minutes := $num($leg.duration.time);
+      $stops := $num($leg.stop);
+      $departAt := $leg.departureTime ? $istAt($inputs.date, $leg.departureTime);
+      $place := function($code) { { "name": $lookup($airports, $code).city ? $lookup($airports, $code).city : $code, "code": $code } };
+      $f := fares[0];
+      $meta := $f.fareMetadata[0];
+      $bags := $meta.baggageDetails;
+      $handbag := $f.fareType = "HAND_BAGGAGE_ONLY" or $meta.handBaggageOnly = true;
+      $withBag := $handbag ? $min(fares[fareType != "HAND_BAGGAGE_ONLY"].fareDetails.displayFare);
+      $seats := $num($meta.seatRemaining);
+      $off := $type($f.offerText) = "string" ? $groups($f.offerText, "([0-9][0-9,]*)\\s*Off", "i");
+      $offAmount := $off ? $number($replace($off[0], ",", ""));
+      $lock := $num($f.priceLockPremium);
+      $hold := $num($f.lockWindow);
+      $cover := $num($f.priceLockMaxAbsorption);
+      $lands := flightDetails[-1].destination;
+      $landsName := $trim($replace($string($lookup($airports, $lands).airportName), /\s*(International\s+)?Airport$/i, ""));
+      $lockOptions := $f.allPriceLockPremiums[$num(amount) > 0 and $num(expiry) > 0];
+      $layovers := flightDetails.layover[$type(location) = "string" and $num(durationInMinutes) > 0];
+      ($fare > 0 and $exists($departAt) and $minutes > 0) ? {
+        "title": $substring($leg.headerTextWeb & " " & $join($numbers, " + "), 0, 80),
+        "priceMinor": $paise($fare),
+        "currency": "INR",
+        "priceNote": ($inputs.children > 0 or $inputs.infants > 0 ? "per adult" : "per person")
+          & ($class_code = "w" ? ", premium economy" : ($class_code = "b" ? ", business" : ""))
+          & (($fare_type and $f.fareDisplayText) ? ", " & $lowercase($f.fareDisplayText) : ""),
+        "journey": {
+          "mode": "flight",
+          "origin": $place($leg.origin),
+          "destination": $place(flightDetails[-1].destination),
+          "depart_at": $departAt,
+          "arrive_at": $istPlus($departAt, $minutes),
+          "carrier_name": $substring($leg.headerTextWeb, 0, 60),
+          "carrier_code": $substring($leg.airlineCode, 0, 3),
+          "number": $numbers[0],
+          "stops": $stops
+        },
+        "highlights": $highlights(
+          $leg.stopText, $hoursMinutes($minutes),
+          ($seats > 0 and $seats <= 5) ? $string($seats) & " seat" & ($seats = 1 ? "" : "s") & " left",
+          $handbag ? "Cabin bag only",
+          refundableType = "NON_REFUNDABLE" ? "Non-refundable"
+        ),
+        "facts": {
+          "stops": $stops, "duration_min": $minutes, "flights": $join($numbers, " + "), "refundable": refundableType,
+          "fare_type": $f.fareDisplayText,
+          "cabin_bag": $bags.handBaggageText ? $bags.handBaggageText : $bags.handBaggage,
+          "checkin_bag": $handbag ? "none" : ($bags.checkInBaggageText ? $bags.checkInBaggageText : $bags.checkInBaggage),
+          "with_checkin_bag_minor": $withBag > 0 ? $paise($withBag),
+          "seats_left": $seats > 0 ? $seats,
+          "free_meal": isFreeMealAvailable = true ? true,
+          "layover": $count($layovers) > 0 ? $join($layovers.(location & " " & $hoursMinutes($num(durationInMinutes))), ", "),
+          "offer": $offAmount > 0 ? "Extra " & $rupees($offAmount) & " off with a code",
+          "offer_minor": $offAmount > 0 ? $paise($offAmount),
+          "arrival_airport": $type($lands) = "string" ? ($landsName != "" ? $landsName & " (" & $lands & ")" : $lands),
+          "lock": ($lock > 0 and $hold > 0) ? "Lock Price " & $rupees($lock) & " a person, holds " & $string($hold) & " h"
+            & ($cover > 0 ? ", covers a fare rise up to " & $rupees($cover) : ""),
+          "lock_fee_minor": $lock > 0 ? $paise($lock),
+          "lock_hours": ($lock > 0 and $hold > 0) ? $hold,
+          "lock_cover_minor": ($lock > 0 and $cover > 0) ? $paise($cover),
+          "lock_options": $count($lockOptions) > 0 ? $join($lockOptions.($rupees($num(amount)) & " for " & $string($num(expiry)) & " h"), ", ")
+        },
+        "sourceUrl": $page
+      }
+    )
+  # Smart Lock, said for the route as ixigo's own: the person sets it on ixigo, and Go sets nothing on anyone's account.
+  # Of ixigo's own text only the amount's digits are said: nothing the page writes reaches the model as words (and the
+  # stream's text comes mis-decoded until Bash keeps it as UTF-8).
+  notes:
+    - |
+      $smart_lock.cta ? (
+        $under := $replace($string($smart_lock.highlightText), /[^0-9,]/, "");
+        "ixigo offers its Smart Lock on this route: a paid ixigo feature that watches the fares 24x7 and locks a flight"
+        & " within a budget the person sets" & ($contains($under, /[0-9]/) ? " (ixigo's pitch here: fly in less than ₹" & $under & ")" : "")
+        & ". The person sets it up themselves, on ixigo's results page (its Set Smart Lock button); Go never sets it."
+      )
+measured: { fast_ms: null, page_ms: 4100, flow_ms: null }
+notes: The stream's fares are ixigo's shown ones; the fare a person pays is ixigo's at Book, Review and Traveller Details.

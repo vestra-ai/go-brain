@@ -61,15 +61,19 @@ const UNSURE = { value: null, sure: false } as const;
 
 /**
  * The reflex for the demo: a line that calls Go is for Go and complete (its turn is due at once); every other line is
- * sure chatter, so it never wakes the model. A line that holds a fact (DEMO_FACT_LINES) is read as Jev's Q5 and Q7
+ * sure chatter with nothing in it for Go (banter, and question 11 sure no), so it never wakes the model: the run sheet's
+ * chatter beat is quiet. A line that holds a fact (DEMO_FACT_LINES) is read as Jev's Q5 and Q7
  * would on stage: sure of a fact and sure of a ✅, so P2's instant ✅ and its notes pass run for real. Jev itself is off
  * (REFLEX_LIVE=off).
  */
 export const cueReflex: Brain['reflex'] = {
   async read(msg) {
     const holdsFact = DEMO_FACT_LINES.some((l) => l.text === msg.text);
+    const toGo = addressesGo(msg.text ?? '');
     const read: ReflexRead = {
-      forGo: { value: addressesGo(msg.text ?? ''), sure: true },
+      forGo: { value: toGo, sure: true },
+      banter: { value: !toGo, sure: true },
+      actionable: { value: toGo, sure: true },
       complete: { value: true, sure: true },
       fact: holdsFact ? { value: true, sure: true } : UNSURE,
       reaction: holdsFact ? { value: '✅', sure: true } : UNSURE,
@@ -222,6 +226,25 @@ export interface DemoRoom {
   payer: TestAuthenticator;
   goUrl: string;
   stop(): Promise<void>;
+}
+
+/**
+ * Runs this process's clock from `at`, as if the test started then, at the real pace. Go, the FakeServer, the trip's
+ * computer, the vault and the test itself all read the same Date, so signatures, expiries and the transcript's times
+ * agree with each other. Returns the undo.
+ */
+export function runClockFrom(at: string): () => void {
+  const Real = Date;
+  const offset = Real.parse(at) - Real.now();
+  const now = (): number => Real.now() + offset;
+  globalThis.Date = new Proxy(Real, {
+    construct: (target, args, newTarget) => Reflect.construct(target, args.length === 0 ? [now()] : args, newTarget),
+    apply: () => new Real(now()).toString(),
+    get: (target, key, receiver) => (key === 'now' ? now : Reflect.get(target, key, receiver)),
+  });
+  return () => {
+    globalThis.Date = Real;
+  };
 }
 
 export async function startDemoRoom(o: { anthropic: AnthropicLike }): Promise<DemoRoom> {

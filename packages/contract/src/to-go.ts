@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { HttpUrl, Id, IsoDateTime } from './common.js';
+import { AppUrl, HttpUrl, Id, IsoDateTime, Place } from './common.js';
 
 /**
  * Your requests: what the Server asks Go over the socket. Events tell Go what happened;
@@ -25,13 +25,18 @@ export const CardTap = z
     person_id: Id,
     /** Set when the button was on one option of an options card. */
     option_id: Id.nullish(),
+    /** 1.1: what the tapper chose on the button's sheet: one way or the round trip, on an option with both prices (sent with pick). */
+    payload: z.object({ trip: z.enum(['oneway', 'round']) }).meta({ id: 'CardTapPayload' }).nullish(),
   })
   .meta({ id: 'CardTap' });
 
 /** Done. Show the toast, if any. Go follows up in the room. */
 export const ActionDone = z.object({ result: z.literal('done'), toast: z.string().max(120).nullish() }).meta({ id: 'ActionDone' });
-/** Open this page in the system browser sheet (the vault, or watching Go work). */
-export const ActionOpen = z.object({ result: z.literal('open'), url: HttpUrl, expires_at: IsoDateTime }).meta({ id: 'ActionOpen' });
+/**
+ * Open this page in the system browser sheet (the vault, or watching Go work). 1.1: or one of the App's own screens,
+ * by a go:// link from the guide's route table, which the App opens in place.
+ */
+export const ActionOpen = z.object({ result: z.literal('open'), url: AppUrl, expires_at: IsoDateTime }).meta({ id: 'ActionOpen' });
 /** Not allowed or no longer possible. Show the toast. */
 export const ActionRefused = z.object({ result: z.literal('refused'), toast: z.string().min(1).max(120) }).meta({ id: 'ActionRefused' });
 
@@ -103,10 +108,46 @@ export const CreateLink = z
   .object({
     kind: z.enum(['vault']),
     person_id: Id,
-    /** Which part of the vault to open. */
-    start: z.enum(['home', 'add_card', 'add_login']).nullish(),
+    /** Which part of the vault to open. 1.1 adds add_documents (Go answers "not available yet" in 1.1). */
+    start: z.enum(['home', 'add_card', 'add_login', 'add_documents']).nullish(),
+    /** 1.1: what the link is for: the trip, and what the documents are for. */
+    context: z.object({ trip_id: Id, purpose: z.enum(['visa']).nullish() }).meta({ id: 'LinkContext' }).nullish(),
+    /**
+     * 1.3 (rev 5 R8): where the App opens it. sheet (the default): the system browser sheet. embedded: inside the App, where
+     * the page allows framing only by the App's origins and posts { type: "go-vault", status: "saved" | "cancelled" |
+     * "failed" } to its parent when done. Any start may be embedded (11 Oct, the App's demo: cards are demo cards on prod);
+     * every vault page may be framed by the App's origins, and by no other.
+     */
+    display: z.enum(['sheet', 'embedded']).nullish(),
   })
   .meta({ id: 'CreateLink' });
 export const Link = z.object({ url: HttpUrl, expires_at: IsoDateTime }).meta({ id: 'Link' });
 
 export const Health = z.object({ ok: z.literal(true), contract: z.string() }).meta({ id: 'Health' });
+
+/** 1.3 (rev 5 R6): what a place is like, for the ideas on the home screen. The Server asks at most once a day per idea. */
+export const PlaceInfoRequest = z
+  .object({ name: z.string().min(1).max(120), from_city: z.string().min(1).max(120).nullish() })
+  .meta({ id: 'PlaceInfoRequest' });
+export const PlaceInfo = z
+  .object({
+    /** The place with its photos (6 to 12 when Go has them) and where it is. */
+    place: Place,
+    /** One short line, e.g. "High-altitude road trip". */
+    tag: z.string().min(1).max(80).nullish(),
+    /** The usual way there from from_city, and how long it takes. */
+    travel: z
+      .object({ mode: z.enum(['flight', 'train', 'bus', 'cab', 'drive']), duration_minutes: z.int().positive() })
+      .meta({ id: 'PlaceTravel' })
+      .nullish(),
+    /** The best months to go, 1 to 12. */
+    best_months: z.array(z.int().min(1).max(12)).max(12).nullish(),
+    /** Absent or true: the whole answer. false: partial (photos still coming): don't keep it, and ask again later. */
+    complete: z.boolean().nullish(),
+  })
+  .meta({ id: 'PlaceInfo' });
+
+/** 1.3 (rev 5 R9): asked when a person opens an option's Details. The Server keeps the answer an hour per option. */
+export const GetOptionDetails = z
+  .object({ trip_id: Id, card_id: Id, option_id: Id, person_id: Id })
+  .meta({ id: 'GetOptionDetails' });

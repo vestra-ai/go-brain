@@ -16,14 +16,31 @@ export interface TaskTapDeps {
   log: { warn(obj: object, msg: string): void };
 }
 
-async function openSession(v1: V1Client, userId: string, conversationId: string | null, screen: 'view' | 'control'): Promise<{ url: string; expires_at: string }> {
+/** The longest a session's open waits out Bash's 429 before trying again once: a tap must answer within 3 s. */
+export const SESSION_RETRY_MAX_MS = 1_200;
+
+export async function openSession(
+  v1: V1Client,
+  userId: string,
+  conversationId: string | null,
+  screen: 'view' | 'control',
+  o: { driver?: 'user'; retried?: boolean } = {},
+): Promise<{ id?: string; url: string; expires_at: string }> {
   try {
-    return await v1.call<{ url: string; expires_at: string }>('POST', '/v1/sessions', {
-      body: { user_id: userId, ...(conversationId ? { conversation_id: conversationId } : {}), screen },
+    return await v1.call<{ id?: string; url: string; expires_at: string }>('POST', '/v1/sessions', {
+      body: { user_id: userId, ...(conversationId ? { conversation_id: conversationId } : {}), screen, ...(screen === 'control' && o.driver ? { driver: o.driver } : {}) },
       signal: AbortSignal.timeout(2_000),
     });
   } catch (err) {
     if (screen === 'control' && err instanceof V1Error && err.code === 'screen_control_unavailable') return openSession(v1, userId, conversationId, 'view');
+    // Every key resting for a moment (Bash counts Go's background reads too): once more, when the wait fits in a tap's
+    // answer, never a screen that can't open for a pause of a second.
+    if (err instanceof V1Error && err.status === 429 && !o.retried && (err.retryAfterMs ?? Infinity) <= SESSION_RETRY_MAX_MS) {
+      await new Promise((r) => setTimeout(r, err.retryAfterMs ?? 0));
+      return openSession(v1, userId, conversationId, screen, { ...o, retried: true });
+    }
+    // A Bash from before driver (bash #4656) refuses the field: the screen opens as it did, with Take control.
+    if (o.driver && err instanceof V1Error && err.status === 400) return openSession(v1, userId, conversationId, screen);
     throw err;
   }
 }

@@ -5,6 +5,7 @@ import { createHash, randomBytes } from 'node:crypto';
 import type { CallCard } from '@go/contract';
 import type { z } from 'zod';
 import type { Switches } from '../admin/switches.js';
+import { mentionsIn } from '../composer/speak.js';
 import type { CardTapParams, CardTapResult, Message } from '../door/methods.js';
 import type { ServerLink } from '../door/server-link.js';
 import type { Schedule } from '../proactive/clock.js';
@@ -125,6 +126,11 @@ export class CallService {
     return this.d.switches.get('CALLS_MODE') === 'allowlist' ? 'allowlist' : 'off';
   }
 
+  /** Whether a call can go out at all: every setting set and at least one named business to call. */
+  ready(): boolean {
+    return this.d.config.missing.length === 0 && this.callable().length > 0;
+  }
+
   /** Names from the allowlist; numbers are never shown to the model. */
   callable(): string[] {
     return this.d.config.allowlist.flatMap((c) => (c.name ? [c.name] : []));
@@ -169,10 +175,14 @@ export class CallService {
     }
     if (row.state === 'waiting' && row.announceMessageId === null) {
       try {
+        const text = clip(`${plain(r.announce)} ${STOP_LINE}`, 2000);
+        // The people the line names get a push, as in a turn (composer/speak.ts).
+        const mentions = mentionsIn(text, pack.trip.people);
         const posted = await this.d.link.request('post_message', {
           request_id: rid(row.callId, 'announce'),
           trip_id: tripId,
-          text: clip(`${plain(r.announce)} ${STOP_LINE}`, 2000),
+          text,
+          ...(mentions.length ? { mentions } : {}),
         });
         // The window starts once the line is in the room, however long posting it took.
         row = (await this.d.store.announced(row.callId, posted.message_id, posted.seq, new Date(this.d.now().getTime() + CALL_WINDOW_MS))) ?? row;
@@ -416,12 +426,15 @@ export class CallService {
       const organizer = pack.trip.people.find((p) => p.person_id === pack.trip.organizer_person_id && !p.go_paused) ?? null;
       const ask = row.record?.kind === 'open' ? organizer : null;
       const asked = row.askedMessageId ? pack.messages.find((m) => m.message_id === row.askedMessageId && !m.deleted) : undefined;
+      const text = clip(ask ? `${row.outcome} ${ask.name}, want to decide on this?` : row.outcome, 2000);
+      // Whoever the outcome names gets a push, and the organizer it asks to decide.
+      const mentions = [...new Set([...(ask ? [ask.person_id] : []), ...mentionsIn(text, pack.trip.people)])];
       await this.d.link.request('post_message', {
         request_id: rid(row.callId, 'outcome'),
         trip_id: row.tripId,
-        text: clip(ask ? `${row.outcome} ${ask.name}, want to decide on this?` : row.outcome, 2000),
+        text,
         ...(asked ? { reply_to: asked.message_id } : {}),
-        ...(ask ? { mentions: [ask.person_id] } : {}),
+        ...(mentions.length ? { mentions } : {}),
       });
       if (row.record && row.cardMessageId) {
         const line = await this.d.link.request('add_record_line', {

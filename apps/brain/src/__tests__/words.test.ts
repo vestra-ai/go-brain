@@ -2,7 +2,7 @@
 // reach a person: in the room, in the App, on a phone call, on the vault's pages, the admin page, the proof board, the
 // dev room or from the fake Go. Every string in each one is checked, read from its source, so a word inside a template
 // or a function counts too. A new module whose words reach people joins the list.
-import { readFileSync } from 'node:fs';
+import { readdirSync, readFileSync } from 'node:fs';
 import ts from 'typescript';
 import { describe, expect, it } from 'vitest';
 
@@ -16,13 +16,15 @@ const PEOPLE_READ: readonly string[] = [
   'apps/brain/src/composer/turn.ts', // the line Go posts when a turn fails
   'apps/brain/src/door/taps.ts', // a tap's toast
   'apps/brain/src/travel/cards.ts', // options cards
+  'apps/brain/src/travel/details.ts', // an option's details sheet
   'apps/brain/src/travel/taps.ts',
+  'apps/brain/src/travel/login.ts', // the ixigo login card and its line
+  'apps/brain/src/travel/ways-there.ts', // each home city's ways to the trip: its card and its line
   'apps/brain/src/travel/votes.ts',
-  'apps/brain/src/travel/recipes/flights.ts', // ixigo options: titles, highlights, price notes, and the places refusals
-  'apps/brain/src/travel/recipes/stays.ts',
-  'apps/brain/src/travel/recipes/trains.ts',
-  'apps/brain/src/travel/recipes/buses.ts',
-  'apps/brain/src/travel/recipes/places.ts',
+  'apps/brain/src/travel/recipes/places.ts', // the places refusals
+  'apps/brain/src/travel/recipes/now.ts', // the line for a plain ask whose search is still running, off ixigo_web
+  'apps/brain/src/travel/book/engine.ts', // the recipe engine's refusals; its options' words are in the recipe files
+  'apps/brain/src/travel/book/read.ts',
   'apps/brain/src/tasks/working-card.ts', // the working card
   'apps/brain/src/tasks/taps.ts',
   'apps/brain/src/money/cards.ts', // pay and ticket cards
@@ -95,6 +97,16 @@ describe('what people read', () => {
   for (const path of PEOPLE_READ) {
     it(`${path} has no em dash, en dash or "Claude"`, () => {
       expect(slipsIn(path)).toEqual([]);
+    });
+  }
+
+  // The recipe book's files: ixigo options' titles, highlights and price notes, read whole.
+  const BOOK = new URL('apps/brain/recipes/', ROOT);
+  const sections = readdirSync(BOOK, { withFileTypes: true }).filter((d) => d.isDirectory() && d.name !== 'samples');
+  for (const file of sections.flatMap((s) => readdirSync(new URL(`${s.name}/`, BOOK)).map((f) => `${s.name}/${f}`))) {
+    it(`apps/brain/recipes/${file} has no em dash, en dash or "Claude"`, () => {
+      const lines = readFileSync(new URL(file, BOOK), 'utf8').split('\n');
+      expect(lines.flatMap((l, i) => (SLIPS.test(l) ? [`${file}:${i + 1} ${l}`] : []))).toEqual([]);
     });
   }
 });

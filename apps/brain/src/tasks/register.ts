@@ -11,6 +11,8 @@ import { tripToday } from '../travel/dates.js';
 import { createImages } from '../travel/images.js';
 import { createResultsStore } from '../travel/results.js';
 import { createCardUpdater } from './card-updater.js';
+import { createTripAwake, recentTalk } from './awake.js';
+import { createBrowsers, type Browsers } from './browsers.js';
 import { addComputerSteps, createComputer, type Computer } from './computer.js';
 import { renderTaskWake, tasksNow } from './context.js';
 import { readTasksEnv } from './env.js';
@@ -21,10 +23,10 @@ import { createKeepWarm } from './keep-warm.js';
 import { createScreens, SCREENS_PER_MINUTE_PER_KEY, type Screens } from './screens.js';
 import { createTaskStore, type TaskStore } from './store.js';
 import { SWEEP_EVERY_MS, createSweep, type Sweep } from './sweep.js';
-import { registerTaskTaps } from './taps.js';
+import { openSession, registerTaskTaps } from './taps.js';
 import { createTasks, type TasksService } from './tasks.js';
 import { taskTools } from './tools.js';
-import { createAgentJobRunner, createBrowserFetchRunner } from '../travel/recipes/runners.js';
+import { createBrowserFetchRunner, FRAME_WIDTH, WATCH_FPS } from '../travel/recipes/runners.js';
 import { createV1Client, type V1Client } from './v1-client.js';
 import { registerV1Webhooks } from './webhooks.js';
 
@@ -42,6 +44,7 @@ export interface TasksLane {
   sweep: Sweep;
   screens: Screens;
   computer: Computer;
+  browsers: Browsers;
   v1: V1Client;
   store: TaskStore;
 }
@@ -56,13 +59,30 @@ export async function createTasksLane(brain: Brain, o: TasksLaneOptions = {}): P
   const tokens = createTokenStore(brain.pool, brain.now);
   const computer = createComputer({ pool: brain.pool, v1, tokens, env, now: brain.now, log: brain.log });
   addComputerSteps(brain.setup, computer);
-  // ixigo.com searches (TRAVEL_MODE ixigo_web) run on the trip's computer too; the travel lane picks one per search, and
-  // keeps the computer awake while people talk travel.
-  const keeper = createKeepWarm({ warm: (tripId, keepMs) => computer.warm(tripId, { keepMs }), now: brain.now, log: brain.log });
+  // ixigo.com searches (TRAVEL_MODE ixigo_web) run in the person's browser (browsers.ts), one computer for every trip
+  // the organizer has, through its browser fetch; the travel lane keeps it awake while people talk travel.
+  const browsers = createBrowsers({ pool: brain.pool, v1, packs: brain.packs, env, now: brain.now, log: brain.log });
+  const keeper = createKeepWarm({ warm: (tripId, keepMs) => browsers.warm(tripId, { keepMs }), now: brain.now, log: brain.log });
+  const browserFetch = createBrowserFetchRunner({ v1, browser: browsers, now: brain.now, log: brain.log, slots: () => Number(brain.switches.get('BROWSER_FETCH_SLOTS')) });
   brain.recipeRunners = {
-    browserFetch: createBrowserFetchRunner({ v1, computer, now: brain.now, log: brain.log }),
-    agentJob: createAgentJobRunner({ v1, computer, now: brain.now, log: brain.log, deploymentId: env.VESTRA_RECIPE_DEPLOYMENT_ID ?? null }),
+    browserFetch,
     keepWarm: (tripId) => keeper.touch(tripId),
+    keepAwake: (tripId, keepMs) => browsers.keepAwake(tripId, keepMs),
+    start: (tripId) => browsers.warm(tripId),
+    // The new computer's first ixigo visit, travel's setup step after start (runners.ts COLD_COMPUTER).
+    prime: async (tripId) => {
+      await browserFetch.prime?.(tripId);
+    },
+    // Bash's live view of the fetch's own tabs: a stream that never wakes the computer. No resume: a watch has no history.
+    watch: async (tripId, signal) => v1.stream(`/v1/users/${await browsers.userFor(tripId)}/browser/watch?width=${FRAME_WIDTH}&fps=${WATCH_FPS}`, { lastEventId: 0, signal }),
+    // The ixigo login's Watch (travel/login.ts): a session on the browser's screen, as the working card's Watch opens one.
+    screen: async (tripId, mode, o) => openSession(v1, await browsers.userFor(tripId), null, mode, o),
+    // The one-tap login's Watch, ended the moment Go sees the login land (travel/login.ts): Bash's page closes itself.
+    endScreen: async (sessionId) => {
+      await v1.call('DELETE', `/v1/sessions/${encodeURIComponent(sessionId)}`, { signal: AbortSignal.timeout(2_000) });
+    },
+    // Where the browser's ixigo login stands, for every trip of the person's (travel/login.ts).
+    login: browsers,
   };
   const store = createTaskStore(brain.pool);
   const eventStore = createEventStore(brain.pool, brain.now);
@@ -99,14 +119,30 @@ export async function createTasksLane(brain: Brain, o: TasksLaneOptions = {}): P
   brain.context.addNow(tasksNow({ store, packs: brain.packs, now: brain.now }));
   brain.context.addWake('task', renderTaskWake);
   sweep.start(o.sweepEveryMs ?? SWEEP_EVERY_MS);
-  // When Go stops (built.stop()): no new sweep, every stream and wait aborted, the last card updates sent.
+  // The trip's computer stays awake while its group talks (awake.ts): a hold every 30 s until 10 quiet minutes, where Go
+  // reads ixigo.com on it; after a restart, picked back up from each trip's last person's line.
+  const awake = createTripAwake({
+    keep: (tripId, keepMs) => browsers.keepAwake(tripId, keepMs),
+    now: brain.now,
+    log: brain.log,
+    on: () => brain.switches.get('TRAVEL_MODE') === 'ixigo_web',
+    gone: async (tripId) => ((await brain.pool.query('select 1 from trips where trip_id = $1 and gone_at is not null', [tripId])).rowCount ?? 0) > 0,
+    recent: (since) => recentTalk(brain.pool, since),
+  });
+  brain.tripLog.onEvent((ev) => awake.onEvent(ev));
+  // A person opening the room after a while (catch_up) or tapping a card counts as their line: the box is up before their
+  // first ask, which never waits for it to wake (10 Oct drill: 6.3 s of a 15 s trains read).
+  if (brain.recipeRunners) brain.recipeRunners.roomActive = (tripId) => awake.heard(tripId, brain.now());
+  void awake.catchUp().catch((err: unknown) => brain.log.warn({ err: String(err) }, 'tasks: the keepalive could not read which trips are talking'));
+  // When Go stops (built.stop()): no new sweep or hold, every stream and wait aborted, the last card updates sent.
   brain.onStop(async () => {
+    awake.stop();
     await sweep.stop();
     await follower.close();
     await cards.flush();
   });
   brain.tasks = tasks;
-  return { tasks, events, follower, sweep, screens, computer, v1, store };
+  return { tasks, events, follower, sweep, screens, computer, browsers, v1, store };
 }
 
 export const registerTasks: RegisterLane = async (brain) => {

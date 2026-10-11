@@ -13,8 +13,15 @@ export const BARS = {
    * 37572657366): every line 0.25 skips that 0.1 woke is labelled not for Go, and the nearest line Go may answer reads 0.28
    * and 0.30 ("6:30 se pehle wali flight mat dekhna yaar"). On Go's set the lowest answer on a line labelled for Go that
    * does not name it is 0.61. The other three are Bash's.
+   *
+   * planMin: a line in which no one spoke to Go still wakes it when question 6 reads it as a question to the group about
+   * the plan or as agreeing to one, at least this sure (Keshav, 2026-10-08: "go should be proactive bro, whenever it can intervene
+   * it should"). On the same two live runs, the plan questions the "not spoken to Go" bar dropped read 0.72 to 0.85
+   * ("who's bringing the speaker?" 0.72, "scooty rent karenge na?" 0.78 and 0.85, "Birthday dinner on the 7th somewhere
+   * nice? Not a shack pls" 0.85) and the agreements 0.71 to 0.93 ("+1 pool" 0.82, "agreed, pool villa it is" 0.93); "anyone up?" (0.60, 0.63) and
+   * "manager approved 🙏" (0.60) stay below. Chatter is read first, so "Finallyyyy 😭🙌" (agreed 0.71, chatter 0.93) stays quiet.
    */
-  for_go: { chatterMin: 0.85, addressedMaxForChatter: 0.2, notAddressedMax: 0.25, addressedMin: 0.9, chatterMaxForAddressed: 0.1 },
+  for_go: { chatterMin: 0.85, addressedMaxForChatter: 0.2, notAddressedMax: 0.25, addressedMin: 0.9, chatterMaxForAddressed: 0.1, planMin: 0.7 },
   /**
    * Q2, for a line that names Go only (read.ts readComplete). Answering mid-thought is visible; unsure only costs the 2 s
    * wait. On Go's set (Jev 1.13.0, two recordings on 2026-10-07) lines to Go cut short read 0.04 to 0.41 and whole asks
@@ -40,8 +47,18 @@ export const BARS = {
    * RECIPE_BARS.recipe, RECIPE_RIVAL_BAR). On Go's set (Jev 1.13.0, two recordings on 2026-10-07) one search ask is read
    * as the wrong kind, "sleeper availability Mumbai to Goa" as buses, at 0.76 and 0.81: every bar up to 0.8 makes a wrong
    * pick on at least one recording, and 0.85 clears it by 0.04. 0.9 leaves room for answers moving by up to 0.10 between
-   * runs (recall 0.91 and 0.90, no wrong pick on either).
+   * runs (recall 0.91 and 0.90, no wrong pick on either). Recorded again on 2026-10-10 with question 10's twelve choices
+   * beyond the searches (17 options with none): no wrong pick on two runs at these bars, live recall 0.87 and search
+   * recall 0.94, and a whole Jev call still 134 ms at the middle and 161 ms at p90.
    */
   recipe: { pickMin: 0.9, rivalMax: 0.3 },
+  /**
+   * Q11, a noul. On Go's set (Jev 1.13.0, recorded 2026-10-10, 71 rows: 48 yes, 23 no) Jev's answer tops out at 0.87:
+   * the yes rows read 0.42 to 0.87, the no rows 0.16 to 0.78 ("hotel ka wifi kaisa tha last time?" 0.78, "Priya booked
+   * the last trip, your turn Kabir" 0.70). A wrong no leaves a real ask with no turn, so its bar keeps the wide margin:
+   * 0.3 sits 0.12 under the lowest yes ("Saudades looks perfect to me" 0.42). A wrong yes only frames a turn that still
+   * decides, so 0.8 sits just over the highest no. Recall 0.51 (24 yes and 12 no sure), no wrong answer.
+   */
+  actionable: { yesMin: 0.8, noMax: 0.3 },
 };
 export type Bars = typeof BARS;

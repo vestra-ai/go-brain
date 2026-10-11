@@ -2,6 +2,7 @@ import { Event } from '@go/contract';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { withSchema } from '../../db/test-db.js';
 import type { Trip, TripEvent } from '../../door/methods.js';
+import { TripGoneError } from '../../trips/gone.js';
 import { candidate, fakePacks, goaPack, goaTrip, msg, seedTrip, unsureRead } from '../fakes.js';
 import { chatOpening, createOpenings, isHush, tripChangeOpenings, wasEngaged } from '../openings.js';
 import { ProactiveStore } from '../store.js';
@@ -9,7 +10,8 @@ import { ProactiveStore } from '../store.js';
 const NOW = new Date('2026-10-06T06:30:00Z');
 const ev = (seq: number, type: string, data: unknown): TripEvent =>
   Event.parse({ event_id: `ev_${seq}`, trip_id: 't_goa', seq, occurred_at: '2026-10-06T06:30:00Z', type, data });
-const sureOpening = unsureRead({ opening: { value: true, sure: true }, forGo: { value: false, sure: true } });
+// A line the composer doesn't wake for (pure banter: trips/intake.ts wakesComposer) that the reflex still reads as a moment.
+const sureOpening = unsureRead({ opening: { value: true, sure: true }, forGo: { value: false, sure: true }, banter: { value: true, sure: true } });
 
 describe('isHush', () => {
   const goLine = msg({ id: 'm_go', by: 'go', text: 'Want me to put it to a vote?' });
@@ -41,6 +43,23 @@ describe('chatOpening', () => {
     expect(chatOpening(msg({ text: '@Go check-in?', mentionsGo: true }), sureOpening, goaPack(), NOW)).toBeNull();
     expect(chatOpening(msg({ text: 'x' }), unsureRead({ opening: { value: true, sure: true }, forGo: { value: true, sure: true } }), goaPack(), NOW)).toBeNull();
     expect(chatOpening(msg({ text: null, withheld: true }), sureOpening, goaPack(), NOW)).toBeNull();
+  });
+
+  // Keshav, 10 Oct: "go can interfere in most of the messages". A line no one spoke to Go in wakes the composer unless it
+  // is pure banter, so its moments are the composer's to answer: an opening as well would post twice.
+  it("leaves the moments of a line that isn't banter to the composer: a need to keep to, something to settle, a search to run", () => {
+    const notForGo = { forGo: { value: false, sure: true } } as const;
+    expect(chatOpening(msg({ id: 'm_60', seq: 60, by: 'p_kabir', text: 'guys dates final karo yaar, kal tak' }), unsureRead({ ...notForGo, recordKind: { value: 'open', sure: true } }), goaPack(), NOW)).toBeNull();
+    expect(chatOpening(msg({ id: 'm_61', by: 'p_meher', text: "I'm veg btw, so no seafood shacks only" }), unsureRead({ ...notForGo, fact: { value: true, sure: true } }), goaPack(), NOW)).toBeNull();
+    expect(chatOpening(msg({ id: 'm_63', by: 'p_arjun', text: 'koi trains dekh lo Mumbai se' }), unsureRead({ ...notForGo, recipe: { value: 'trains', sure: true } }), goaPack(), NOW)).toBeNull();
+    // Banter the composer leaves alone opens one only when the reflex is sure of a moment in it.
+    const banter = { ...notForGo, banter: { value: true, sure: true } } as const;
+    expect(chatOpening(msg({ id: 'm_64', by: 'p_kabir', text: 'haha dates final karo yaar 😂' }), unsureRead({ ...banter, recordKind: { value: 'open', sure: true } }), goaPack(), NOW)).not.toBeNull();
+    // Question 11 decides first: sure of something for Go, the composer has the line (no opening); sure of nothing, it doesn't.
+    expect(chatOpening(msg({ id: 'm_65', by: 'p_kabir', text: 'haha dates final karo yaar 😂' }), unsureRead({ ...banter, actionable: { value: true, sure: true }, recordKind: { value: 'open', sure: true } }), goaPack(), NOW)).toBeNull();
+    expect(chatOpening(msg({ id: 'm_66', by: 'p_kabir', text: 'dates final karo 😂' }), unsureRead({ ...notForGo, actionable: { value: false, sure: true }, recordKind: { value: 'open', sure: true } }), goaPack(), NOW)).not.toBeNull();
+    const nothing = unsureRead({ ...banter, fact: { value: false, sure: true }, recordKind: { value: null, sure: true }, recipe: { value: null, sure: true } });
+    expect(chatOpening(msg({ by: 'p_kabir', text: 'haha same 😂' }), nothing, goaPack(), NOW)).toBeNull();
   });
 
   it('leaves a message to the composer unless the reflex is sure it is not for Go and it does not name Go', () => {
@@ -140,5 +159,30 @@ describe('createOpenings', () => {
     expect(await make(fakePacks(pack)).checkIgnored()).toBe(1);
     expect((await store.signals('t_goa', '2026-10-06')).ignoredCount).toBe(1);
     expect(await make(fakePacks(pack)).checkIgnored()).toBe(0);
+  });
+
+  it("checks past a trip the Server no longer has: it is marked checked, and the trips after it are still checked", async () => {
+    await seedTrip(db.pool, 't_gone');
+    const posted = new Date(NOW.getTime() - 8 * 3600_000);
+    const gone = candidate({ tripId: 't_gone', dedupeKey: 'ign:gone' });
+    await store.add(gone);
+    await store.promote(gone, { allowed: ['pin'], forPersonIds: ['p_arjun'], counted: true, localDay: '2026-10-05' }, posted);
+    const later = candidate({ dedupeKey: 'ign:10' });
+    const laterAt = new Date(posted.getTime() + 3600_000);
+    await store.add(later);
+    await store.promote(later, { allowed: ['pin'], forPersonIds: ['p_arjun'], counted: true, localDay: '2026-10-05' }, laterAt);
+    const packs = fakePacks(goaPack({ messages: [msg({ id: 'm_go_78', by: 'go', sentAt: laterAt.toISOString() })] }));
+    const withGone = {
+      ...packs,
+      get: async (tripId: string) => {
+        if (tripId === 't_gone') throw new TripGoneError(tripId);
+        return packs.get(tripId);
+      },
+    };
+    // The gone trip comes first and no longer stops the sweep: the later trip's post counts as ignored.
+    expect(await make(withGone).checkIgnored()).toBe(1);
+    expect(await make(withGone).checkIgnored()).toBe(0);
+    const { rows } = await db.pool.query('select ignore_checked_at from proactive_candidates where trip_id = $1 and dedupe_key = $2', ['t_gone', 'ign:gone']);
+    expect(rows[0].ignore_checked_at).toBeInstanceOf(Date);
   });
 });

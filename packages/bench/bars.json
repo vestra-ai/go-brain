@@ -5,7 +5,7 @@
     "goTimeP90Ms": 1500,
     "cacheHitMin": 0.85,
     "cacheChats": ["goa-2000"],
-    "wakeRateMax": 0.25,
+    "banterWakeMax": 0.1,
     "labelledChats": ["goa-50"],
     "recallMissMax": 0,
     "leakMax": 0,
@@ -18,7 +18,7 @@
     "replyP50Ms": 2500,
     "replyP90Ms": 5000,
     "cacheHitMin": 0.85,
-    "wakeRateMax": 0.25,
+    "banterWakeMax": 0.1,
     "labelledChats": ["goa-50"],
     "unpromptedShareMax": 0.02,
     "recallMissMax": 0

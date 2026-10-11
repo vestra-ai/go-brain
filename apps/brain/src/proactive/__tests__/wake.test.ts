@@ -4,7 +4,7 @@ import { ALWAYS, composerRules, rulesForTurn, simulatedIn } from '../allowed.js'
 import { candidate, goaPack, goaTrip } from '../fakes.js';
 import { deskId, toPayload } from '../payload.js';
 import type { Action, Candidate } from '../policy.js';
-import { describeNoticed, openingsNow, renderWake } from '../wake.js';
+import { describeNoticed, howLate, openingsNow, renderWake } from '../wake.js';
 import { clip, namesOf, plain, quote, rupees } from '../words.js';
 
 const NOW = new Date('2026-10-06T06:30:00Z');
@@ -61,11 +61,14 @@ describe('rulesForTurn', () => {
     const r = rulesForTurn([proItem(chat, ['react', 'record', 'message'])]);
     expect(r).toMatchObject({ mayPostText: true, pinOnlyFor: null });
     expect(r?.tools).toEqual(expect.arrayContaining(['react', 'record', 'post_notice', 'stay_silent']));
+    // A message Go volunteers may carry quick replies (1.1 A3); a turn that may post no text gets none.
+    expect(r?.tools).toContain('offer_replies');
   });
 
   it('never lets simulated news out as text: a notice card carries its label and pins', () => {
     const toAll = candidate({ dedupeKey: 'sim:flight_status:all', simulated: true, personIds: [] });
     expect(rulesForTurn([proItem(toAll, ['message'])])).toMatchObject({ mayPostText: false, tools: expect.arrayContaining(['post_notice']) });
+    expect(rulesForTurn([proItem(toAll, ['message'])])?.tools).not.toContain('offer_replies');
     expect(composerRules([proItem(toAll, ['message'])])?.mayPostText).toBe(false);
     expect(rulesForTurn([proItem(chat, ['react', 'record', 'message'])])?.mayPostText).toBe(true);
   });
@@ -94,10 +97,39 @@ describe('rulesForTurn', () => {
 });
 
 describe('the wake text', () => {
+  it("says a watch the group asked for came true as Go answering an ask, naming who asked, with what ixigo shows", () => {
+    const fired = candidate({
+      dedupeKey: 'recipe_watch:rw_1:fired', topic: 'recipe_watch', asked: true, personIds: ['p_arjun'], useful: ['message'],
+      facts: { recipeWatchId: 'rw_1', label: "12608's CC to confirm", what: 'Lalbagh Sf Exp 12608, CC: Available 4', checkedAt: NOW.toISOString(), page: 'https://www.ixigo.com/trains/search-pwa/from/SBC/to/MAS/22-10-2026' },
+    });
+    const text = renderWake(proItem(fired, ['message']), goaPack(), NOW);
+    expect(text).toContain('Go is answering an ask from earlier');
+    expect(text).not.toContain('nobody asked');
+    expect(text).toContain('Arjun asked Go to watch ixigo for "12608\'s CC to confirm"');
+    expect(text).toContain('CC: Available 4');
+    expect(text).toContain('At most one short message');
+    const stopped = candidate({ dedupeKey: 'recipe_watch:rw_1:stopped', topic: 'recipe_watch_stopped', asked: true, personIds: ['p_arjun'], useful: ['message'], facts: { label: "12608's CC to confirm", tries: 6 } });
+    expect(renderWake(proItem(stopped, ['message']), goaPack(), NOW)).toContain('could not check ixigo for "12608\'s CC to confirm" 6 times in a row');
+  });
+
+  it('tells Go to chime in once, briefly, only when it adds something real, and to stay silent on banter', () => {
+    const text = describeNoticed(chat, goaPack(), 'Asia/Kolkata', NOW);
+    expect(text).toContain('Message #9 may be a moment to chime in without being asked');
+    expect(text).toContain("in the group's own words and language");
+    for (const shape of ['Dates are set: 6 to 9 Nov ✅. Want to change them?', "Veg noted, I'll skip seafood shacks", '3 of you said yes to Saudades. Want me to put it to a vote?']) expect(text).toContain(shape);
+    expect(text).toContain('use what the trip and the chat say');
+    // The 10 Oct live proof's three misses: answer once, never "locked in" without a vote, no search on one opinion.
+    expect(text).toContain('then never raise it again');
+    expect(text).toContain('never say locked in, confirmed or decided until a vote closes, and');
+    expect(text).toContain('is never a search');
+    expect(text).toContain('Banter, a plan a person is already handling, or something you already said: call stay_silent.');
+    expect(text).not.toContain('—');
+  });
+
   it('says the demo watch is simulated, pinned to Arjun, and not for everyone', () => {
     const text = renderWake(proItem(delay, ['pin'], ['p_arjun']), goaPack(), NOW);
     expect(text).toContain('Simulated for the demo');
-    expect(text).toContain('running 120 minutes late');
+    expect(text).toContain('running 2 hours late');
     expect(text).toContain("Arjun's airport cab");
     expect(text).toContain('["p_arjun"]');
     expect(text).toContain('Do not post a message to everyone');
@@ -113,9 +145,59 @@ describe('the wake text', () => {
     expect(text).toContain('in about 6 hours');
   });
 
+  it('names only the payments still open in settle-up: a confirmed payback (1.1 settlement.recorded) is gone from them', () => {
+    const c = candidate({ source: 'timer', topic: 'settle_up', personIds: [], facts: { end: '2026-11-09' } });
+    const transfers = [
+      { from_person_id: 'p_meher', to_person_id: 'p_rahul', amount_minor: 460000, currency: 'INR' },
+      { from_person_id: 'p_arjun', to_person_id: 'p_kabir', amount_minor: 48000, currency: 'INR' },
+    ];
+    const pack = goaPack();
+    pack.trip.money = { ...pack.trip.money, transfers };
+    const text = describeNoticed(c, pack, 'Asia/Kolkata', NOW);
+    expect(text).toContain('2 payments are still open in settle-up: Meher to Rahul ₹4,600; Arjun to Kabir ₹480. Remind only these.');
+    // Priya paid Rahul back and he confirmed it: the Server's balances no longer have that pair, so neither does the nudge.
+    expect(text).not.toContain('Priya');
+  });
+
+  // The Server team's GO-TEAM-FINAL §8: Go repeated the result after the App's own "Villa Sol won · 3 votes".
+  it('a closed vote: the App posted the result, so the note never asks for it again, only the next step', () => {
+    const c = candidate({ source: 'opening', topic: 'vote_closed', personIds: [], facts: { question: 'Where do we stay?', winner: 'Villa Sol' } });
+    const text = describeNoticed(c, goaPack(), 'Asia/Kolkata', NOW);
+    expect(text).toContain('"Villa Sol" won');
+    expect(text).toContain('The App already posted the result: never say who won or the counts again.');
+  });
+
   it('says how much is at stake when free cancellation ends', () => {
     const c = candidate({ source: 'timer', topic: 'free_cancel', personIds: ['p_rahul'], facts: { booking_id: 'b_villa', refundable_until: '2026-11-01T18:29:59Z' } });
     expect(describeNoticed(c, goaPack(), 'Asia/Kolkata', NOW)).toContain('₹54,200');
+  });
+
+  it("reads a late flight as a friend's heads-up: hours, the new landing, what moves with it, and one next step", () => {
+    const text = describeNoticed(delay, goaPack(), 'Asia/Kolkata', NOW);
+    expect(text).toContain('"IndiGo 6E 2134" is running 2 hours late, now landing');
+    expect(text).toContain('10:45 pm');
+    expect(text).toContain("Write it as a friend's heads-up to Arjun: their name first, what changed in plain words and when they now land");
+    // The new landing is known: what the note times around the old one has to fit it.
+    expect(text).toContain('anything in the note set around the old time has to fit the new landing');
+    expect(text).toContain('using only what the flight and the note say');
+    expect(text).toContain('Want me to move your cab to 11 pm?');
+    // With no landing time, the note moves by the delay.
+    const noLanding = candidate({ ...delay, facts: { ...delay.facts, arriveAt: undefined } });
+    expect(describeNoticed(noLanding, goaPack(), 'Asia/Kolkata', NOW)).toContain('anything in the note set around the old time moves by 2 hours too');
+    expect(text).not.toContain('120 minutes');
+    expect(text).not.toContain('—');
+    // Nobody to tell: what happened, and no heads-up wording.
+    const nobody = candidate({ topic: 'flight_status', personIds: [], facts: { label: 'IndiGo 6E 2134', state: 'delayed', delayMinutes: 120 } });
+    expect(describeNoticed(nobody, goaPack(), 'Asia/Kolkata', NOW)).toBe('"IndiGo 6E 2134" is running 2 hours late.');
+  });
+
+  it('says how late in hours and minutes, as a friend would', () => {
+    expect(howLate(120)).toBe('2 hours');
+    expect(howLate(60)).toBe('1 hour');
+    expect(howLate(90)).toBe('1 hour 30 minutes');
+    expect(howLate(45)).toBe('45 minutes');
+    expect(howLate(1)).toBe('1 minute');
+    expect(howLate(121)).toBe('2 hours 1 minute');
   });
 
   it('reads a watched flight and a train ticket from P4 status words, with how old the check is', () => {

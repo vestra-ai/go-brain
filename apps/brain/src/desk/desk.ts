@@ -1,4 +1,5 @@
 import type pg from 'pg';
+import { SocketCallError } from '../door/rpc.js';
 import { newUlid } from '../door/ulid.js';
 import type { Log } from '../log.js';
 import { TripGoneError } from '../trips/gone.js';
@@ -20,6 +21,8 @@ export interface Desk {
   put(item: Omit<DeskItem, 'id'> & { id?: string }): Promise<void>;
   /** Drops waiting items with this ref; items a running turn already took stay with it. */
   cancel(tripId: string, ref: string): Promise<void>;
+  /** The trip's Server is back (an event of its came): a turn waiting on it runs now, with whatever came meanwhile. */
+  wake?(tripId: string): Promise<void>;
 }
 
 export interface TurnInput {
@@ -42,6 +45,8 @@ export interface DeskOptions {
   leaseMs?: number;
   retryDelaysMs?: readonly number[];
   maxAttempts?: number;
+  /** A turn whose trip's Server can't be reached waits at most this long, from its oldest item, before it is dropped. */
+  awayMaxMs?: number;
   /** Wake a trip in-process when its item is due. Tests turn it off and drive the desk with tick(). */
   inProcessWake?: boolean;
 }
@@ -70,6 +75,10 @@ interface Row {
 }
 
 const COLUMNS = 'id, trip_id, kind, ref, due_at, payload, turn_id, attempts';
+/** The error a turn waiting on its trip's Server is marked with (wake finds it). */
+const AWAY = 'away:';
+/** How long such a turn waits between tries: a quarter of how long it has waited, within these bounds. */
+const AWAY_GAP_MS = { min: 30_000, max: 5 * 60_000 };
 const toItem = (r: Row): DeskItem => ({ id: r.id, tripId: r.trip_id, kind: r.kind, ref: r.ref, dueAt: r.due_at, payload: r.payload });
 
 export function createDesk(o: DeskOptions): DeskImpl {
@@ -78,6 +87,7 @@ export function createDesk(o: DeskOptions): DeskImpl {
   const leaseMs = o.leaseMs ?? 60_000;
   const retryDelays = o.retryDelaysMs ?? [1_000, 4_000];
   const maxAttempts = o.maxAttempts ?? 3;
+  const awayMaxMs = o.awayMaxMs ?? 6 * 60 * 60_000;
   const inProcessWake = o.inProcessWake ?? true;
   let runTurn: TurnRunner | null = null;
   let giveUp: TurnRunner | null = null;
@@ -147,6 +157,33 @@ export function createDesk(o: DeskOptions): DeskImpl {
         return;
       }
       o.log.warn({ err: e, trip: b.tripId, turn: b.turnId, attempt: b.attempt }, 'a turn failed');
+      // The trip's Server can't be reached (its socket is gone, or silent): no try can post, so none is spent and Go never
+      // gives up on the asks. The turn keeps its id and waits; the Server's next event for the trip wakes it (wake), else
+      // it tries again on a widening gap, so every ask it holds is answered in one reply once the trip is back (prod,
+      // 11 Oct: four asks to Go in Manali, 07:26 to 07:32, were given up in seconds on a stranded socket).
+      if (e instanceof SocketCallError && e.code === 503) {
+        const { rows } = await o.pool.query<{ since: Date | null }>(
+          'select min(created_at) as since from desk_items where turn_id = $1 and done_at is null',
+          [b.turnId],
+        );
+        const waited = o.now().getTime() - (rows[0]?.since?.getTime() ?? o.now().getTime());
+        if (waited > awayMaxMs) {
+          await o.pool.query('update desk_items set done_at = $2, error = $3 where turn_id = $1 and done_at is null', [
+            b.turnId,
+            o.now(),
+            `the trip's Server was away too long: ${message}`,
+          ]);
+          return;
+        }
+        const gap = Math.min(AWAY_GAP_MS.max, Math.max(AWAY_GAP_MS.min, Math.round(waited / 4)));
+        const dueAt = new Date(o.now().getTime() + gap);
+        await o.pool.query(
+          'update desk_items set attempts = greatest(attempts - 1, 0), due_at = $2, error = $3 where turn_id = $1 and done_at is null',
+          [b.turnId, dueAt, `${AWAY} ${message}`],
+        );
+        schedule(b.tripId, dueAt);
+        return;
+      }
       if (b.attempt >= maxAttempts) {
         try {
           await giveUp?.(b);
@@ -230,6 +267,13 @@ export function createDesk(o: DeskOptions): DeskImpl {
         );
       }
       schedule(item.tripId, item.dueAt);
+    },
+    async wake(tripId) {
+      const r = await o.pool.query(
+        'update desk_items set due_at = $2 where trip_id = $1 and done_at is null and turn_id is not null and error like $3 and due_at > $2',
+        [tripId, o.now(), `${AWAY}%`],
+      );
+      if ((r.rowCount ?? 0) > 0) schedule(tripId, o.now());
     },
     async cancel(tripId, ref) {
       await o.pool.query(

@@ -102,7 +102,11 @@ describe('the early start, replayed on the 2026-10-06 live run in the fake trave
     const all = await runs(DATED);
     const started = all.filter((a) => a.started).map((a) => a.line);
     expect(started).toEqual(['goa-300 L9', 'goa-300 L73', 'goa-300 L122', 'goa-50 L9', 'goa-50 L24']);
-    expect(all.find((a) => a.line === 'goa-50 L24')!.started).toEqual({ kind: 'stays', query: { area: 'north goa', checkIn: '2026-11-06', checkOut: '2026-11-09', mustHave: ['pool'] } });
+    // "under 8k a head" (#357): each one's share of the whole stay, and the budget ixigo's price bands are picked by, as
+    // the composer's search takes it, so both are one read.
+    expect(all.find((a) => a.line === 'goa-50 L24')!.started).toEqual({
+      kind: 'stays', query: { area: 'north goa', checkIn: '2026-11-06', checkOut: '2026-11-09', mustHave: ['pool'], maxShareMinor: 800_000, budgetMinor: 800_000 },
+    });
     // "Friday" is the trip's Friday on a trip with its dates.
     expect(all.find((a) => a.line === 'goa-50 L9')!.started!.query).toMatchObject({ date: '2026-11-06', departAfter: '18:00' });
     expect(all.find((a) => a.line === 'goa-300 L122')!.started!.query).toMatchObject({ date: '2026-11-06', departAfter: '19:00' });

@@ -4,35 +4,83 @@
  */
 import * as C from '@go/contract';
 import type { z } from 'zod';
+import type { OptionDetailsT } from './details.js';
 import type { OptionKind, ResultOption } from './results.js';
 
 export type OptionsCardT = z.infer<typeof C.OptionsCard>;
 export type NoticeCardT = z.infer<typeof C.NoticeCard>;
 type CardOption = OptionsCardT['options'][number];
 
+/** On a ticket's card (PERSONAL_KINDS) only: each person's own pick. */
 export const PICK_ACTION = { action_id: 'pick', label: "I'll take this", style: 'primary', per_option: true } as const;
+/**
+ * Before rev 5 (Server team, 11 Oct, R5) every card had these: "Put it to a vote", "See on ixigo" on each option, and "See
+ * all on ixigo" on stays. A shared thing's card is now its vote (decision_id), and each option carries its ixigo page
+ * (url), so no card gets them; their taps still answer on the cards already in rooms (taps.ts).
+ */
 export const VOTE_ACTION = { action_id: 'vote', label: 'Put it to a vote', style: 'secondary' } as const;
-/** On options from ixigo.com: opens the option's own page there, where the group books it. */
 export const OPEN_ACTION = { action_id: 'open', label: 'See on ixigo', style: 'secondary', per_option: true } as const;
-
-/** On the card that links to flights on ixigo, when Go can't read them itself. */
-export const SEE_FLIGHTS_ACTION = { action_id: 'see_on_ixigo', label: 'See flights on ixigo', style: 'primary' } as const;
+export const SEE_ALL_ACTION = { action_id: 'see_all', label: 'See all on ixigo', style: 'secondary' } as const;
+/**
+ * The App's budget sheet for a trip, from the App team's route table (docs/guide/11-contract-1-1.md): since rev 4 the
+ * group's one budget. No card asks for a budget any more (rev 4: nobody gives a private one); a stays card from before
+ * still opens it from its "Add my budget" (taps.ts).
+ */
+export const budgetSheet = (tripId: string): string => `go://trips/${encodeURIComponent(tripId)}/sheet/budget`;
 
 /**
- * The flights Go couldn't read, as a link: ixigo's results page with what people asked for already set, and who it is
- * set for ("for 3 from Delhi"). It never says there are no flights: ixigo refused Go's computer, and the page has them.
+ * A ticket is its traveller's own (Keshav, 10 Oct: "why would we need everyone to vote for my ticket lol"): a flight,
+ * train or bus fare is confirmed by the person it is for, alone, never put to the group. Shared things (a stay, a cab, an
+ * activity) still go to a vote. Its cards have no "Put it to a vote", and a pick on one posts that person's own confirm.
  */
-export function buildFlightsLinkCard(i: { cardId: string; title: string; url: string; who?: string | null }): NoticeCardT {
-  const set = i.who ? `set ${i.who}, with what you asked for` : 'with what you asked for already set';
+export const PERSONAL_KINDS: ReadonlySet<OptionKind> = new Set<OptionKind>(['flight', 'train', 'bus']);
+
+/** On a person's own confirm: "Book it" and "Change", for them alone. */
+export const BOOK_MINE = 'book_mine';
+export const CHANGE_MINE = 'change';
+
+/**
+ * One person's own confirm of the ticket they picked: the option itself, "Book IndiGo 6E2150 for you, ₹11,571?", with
+ * "Book it" and "Change" that only they see. The room sees the card; it names them (for_person_ids), so it is pinned for
+ * them until settled.
+ */
+export function buildConfirmMineCard(i: { cardId: string; personId: string; optionKind: OptionKind; checkedAt: string; option: CardOption }): OptionsCardT {
+  const price = typeof i.option.price_minor === 'number' ? `, ${formatInr(i.option.price_minor)}` : '';
+  const ask = `Book ${i.option.title} for you${price}?`;
+  const only = [i.personId];
+  return C.OptionsCard.parse({
+    card_id: i.cardId,
+    kind: 'options',
+    fallback_text: clip(ask, 300),
+    title: clip(ask, 80),
+    option_kind: i.optionKind,
+    checked_at: i.checkedAt,
+    options: [i.option],
+    for_person_ids: only,
+    actions: [
+      { action_id: BOOK_MINE, label: 'Book it', style: 'primary', per_option: true, only_for_person_ids: only },
+      { action_id: CHANGE_MINE, label: 'Change', style: 'secondary', per_option: true, only_for_person_ids: only },
+    ],
+  });
+}
+
+/** On the card of each home city's ways to the trip: ixigo's flights from the tapper's own home city. */
+export const FLIGHTS_HOME_ACTION = { action_id: 'flights_home', label: 'Flights from my city', style: 'secondary' } as const;
+
+/** On a card that opens one of ixigo's pages for the person to use there themselves. */
+export const OPEN_ON_IXIGO_ACTION = { action_id: 'see_on_ixigo', label: 'Open on ixigo', style: 'primary' } as const;
+
+/** A recipe's link (book/tool.ts): ixigo's own page, which the person opens and uses on their own phone (a PNR's status). */
+export function buildIxigoLinkCard(i: { cardId: string; title: string; url: string }): NoticeCardT {
   return C.NoticeCard.parse({
     card_id: i.cardId,
     kind: 'notice',
-    fallback_text: clip(`${i.title}${i.who ? `, ${i.who}` : ''}: see them on ixigo`, 300),
+    fallback_text: clip(`${i.title}: open it on ixigo`, 300),
     tone: 'info',
     title: clip(i.title, 80),
-    body: `Go can't read ixigo's flights from its computer right now, so here they are on ixigo, ${set}. Book them there.`,
+    body: 'It opens on ixigo, to check there on your own phone.',
     source: { name: 'ixigo', url: i.url },
-    actions: [SEE_FLIGHTS_ACTION],
+    actions: [OPEN_ON_IXIGO_ACTION],
   });
 }
 
@@ -110,7 +158,17 @@ export function formatClock(hhmm: string): string {
   return `${h12}:${hhmm.slice(3, 5)} ${h < 12 ? 'am' : 'pm'}`;
 }
 
-const CLASS_WORDS: Record<string, string> = { '1A': 'AC First Class', '2A': 'AC 2 Tier', '3A': 'AC 3 Tier', SL: 'Sleeper', CC: 'AC Chair Car', '2S': 'Second Sitting' };
+export const CLASS_WORDS: Record<string, string> = { '1A': 'AC First Class', '2A': 'AC 2 Tier', '3A': 'AC 3 Tier', SL: 'Sleeper', CC: 'AC Chair Car', '2S': 'Second Sitting' };
+
+/**
+ * A bus's times as its list gives them: when it leaves, and when it reaches its first stop in the city it goes to, which
+ * is not every drop's ("8:00 pm, first stop in Goa 7:20 am next day"; the exam's re-run, 10 Oct: "reach Goa between 6
+ * and 7:20 am, all dropping at Mapusa" read as Mapusa then, where Paulo reaches Mapusa at 10:30). A drop's own time comes
+ * from the bus's seat layout only (bus-drops.ts).
+ */
+export function busTimes(j: { depart_at: string; arrive_at: string; destination: { name: string } }): string {
+  return `${formatClock(localClock(j.depart_at))}, first stop in ${j.destination.name} ${formatClock(localClock(j.arrive_at))}${arrivalWords(j.depart_at, j.arrive_at)}`;
+}
 
 export function subtitleFor(o: ResultOption): string | null {
   if (o.subtitle) return o.subtitle;
@@ -120,45 +178,153 @@ export function subtitleFor(o: ResultOption): string | null {
     if (o.kind === 'flight' && typeof j.stops === 'number') extra = j.stops === 0 ? 'non-stop' : `${j.stops} stop`;
     if (o.kind === 'train' && typeof o.facts.class_code === 'string') extra = CLASS_WORDS[o.facts.class_code] ?? o.facts.class_code;
     if (o.kind === 'bus' && typeof o.facts.bus_type === 'string') extra = o.facts.bus_type;
-    return `${formatClock(localClock(j.depart_at))} to ${formatClock(localClock(j.arrive_at))}${arrivalWords(j.depart_at, j.arrive_at)}${extra ? `, ${extra}` : ''}`;
+    if (o.kind === 'bus') return `${busTimes(j)}${extra ? `, ${extra}` : ''}`;
+    // A flight lands at an airport by its name: Goa has two, Dabolim (GOI) and Manohar (GOX) (p2's re-run #16, 11 Oct).
+    const at = o.kind === 'flight' && typeof o.facts.arrival_airport === 'string' ? ` at ${o.facts.arrival_airport}` : '';
+    return `${formatClock(localClock(j.depart_at))} to ${formatClock(localClock(j.arrive_at))}${arrivalWords(j.depart_at, j.arrive_at)}${at}${extra ? `, ${extra}` : ''}`;
   }
   if (o.kind === 'stay') {
     const area = typeof o.facts.area === 'string' ? o.facts.area : null;
-    const nights = typeof o.facts.nights === 'number' ? o.facts.nights : null;
-    const total = o.totalMinor !== undefined && nights ? `${formatInr(o.totalMinor)} for ${nights} night${nights === 1 ? '' : 's'}` : null;
-    const words = [area, total].filter((x): x is string => x !== null).join(', ');
+    // The card's price is the whole stay (cardOption), so the night's goes here, as its source said it: "₹12,800 per
+    // night", "₹9,000 per night, per room, IXIFIRST applied".
+    const nightly = o.priceMinor !== undefined ? `${formatInr(o.priceMinor)} ${o.priceNote ?? 'a night'}` : null;
+    const words = [area, nightly, shareWords(o)].filter((x): x is string => x !== null).join(', ');
     return words || null;
   }
   return o.why ?? null;
 }
 
-export interface CardPick { optionId: string; option: ResultOption; imageUrl: string | null }
+/** details: the option's sheet (contract 1.1), when Go has one for it. */
+/** photos: the Server team's 10 Oct B3, Go's re-hosted copies, labelled when the source says what each shows (photos.ts). */
+export interface CardPick { optionId: string; option: ResultOption; imageUrl: string | null; details?: OptionDetailsT; photos?: C.Photo[] }
+
+/** A stay as its whole price is said: its total, and the nights, rooms and head count ixigo priced it for. */
+type StayPrice = { totalMinor?: number; facts?: ResultOption['facts'] };
+
+/** What a stay's whole price covers, in words: "3 nights", "3 nights, 2 rooms"; null when its nights are not known. */
+function stayCovers(o: StayPrice): string | null {
+  const nights = typeof o.facts?.nights === 'number' && o.facts.nights > 0 ? o.facts.nights : null;
+  const rooms = typeof o.facts?.rooms === 'number' && o.facts.rooms > 1 ? o.facts.rooms : null;
+  return nights ? `${nights} night${nights === 1 ? '' : 's'}${rooms ? `, ${rooms} rooms` : ''}` : null;
+}
+
+/** What a stay's whole price covers, as its price says it: "for 3 nights", "for 3 nights, 2 rooms", or the whole stay. */
+export function stayNote(o: StayPrice): string {
+  const covers = stayCovers(o);
+  return covers ? `for ${covers}` : 'for the whole stay';
+}
+
+/** A stay's night as its whole price's brackets say it: "₹12,800 a night", "₹11,972 a room a night" for more rooms. */
+export function stayNight(o: Pick<ResultOption, 'priceMinor' | 'facts'>): string | null {
+  const rooms = typeof o.facts.rooms === 'number' && o.facts.rooms > 1;
+  return o.priceMinor !== undefined ? `${formatInr(o.priceMinor)} ${rooms ? 'a room a night' : 'a night'}` : null;
+}
+
+/**
+ * Each person's share of a stay's whole price to the nearest ₹100, worked out here and never by the model ("about ₹7,700
+ * each": the demo's ask was "under 8k a head"). Only with the nights and the head count ixigo priced it for, more than one.
+ */
+function shareWords(o: StayPrice): string | null {
+  const nights = typeof o.facts?.nights === 'number' ? o.facts.nights : null;
+  const guests = typeof o.facts?.guests === 'number' && o.facts.guests > 1 ? o.facts.guests : null;
+  return o.totalMinor !== undefined && nights && guests ? `about ${formatInr(Math.round(o.totalMinor / guests / 10_000) * 10_000)} each` : null;
+}
+
+/**
+ * Stays' "from": the cheapest whole stay, what that covers and each person's share ("from ₹11,178 for 3 nights, 2 rooms,
+ * about ₹2,200 each"), never a night's (the exam, 10 Oct: "from ₹621 per night, per room" for five people); nothing when
+ * none has a total. A stays card's fallback and the line Go posts with it (answer.ts answerLine) both say it.
+ */
+export function stayFrom(stays: ReadonlyArray<StayPrice>): string {
+  const cheapest = stays.filter((o) => o.totalMinor !== undefined).sort((a, b) => (a.totalMinor ?? 0) - (b.totalMinor ?? 0))[0];
+  const whole = cheapest ? stayWhole(cheapest) : null;
+  return whole ? `, from ${whole}` : '';
+}
+
+/**
+ * A stay's price as its card headlines it, and as the model reads it: the whole stay, what it covers and each person's
+ * share ("₹31,140 for 4 nights, 3 rooms, about ₹5,200 each"), never a night's first (the Manali room, 11 Oct: Go said
+ * "prices are per room per night" four times over cards whose headline was the whole stay). Null with no total.
+ */
+export function stayWhole(o: StayPrice): string | null {
+  if (o.totalMinor === undefined) return null;
+  const each = shareWords(o);
+  return `${formatInr(o.totalMinor)} ${stayNote(o)}${each ? `, ${each}` : ''}`;
+}
+
+/**
+ * A stay as its vote and its payment say it: the whole stay first with what it covers, the night only in brackets
+ * ("Anjuna, ₹38,400 for 3 nights (₹12,800 a night), about ₹7,700 each"), so the pay card's "Paid ₹38,400 for Villa Sol,
+ * …" never reads as a night's (the lead, 10 Oct). A stay with no total says what its card does.
+ */
+export function stayLine(o: ResultOption): string | null {
+  if (o.totalMinor === undefined) return subtitleFor(o);
+  const area = typeof o.facts.area === 'string' ? o.facts.area : null;
+  const night = stayNight(o);
+  return [area, `${formatInr(o.totalMinor)} ${stayNote(o)}${night ? ` (${night})` : ''}`, shareWords(o)].filter((x): x is string => x !== null).join(', ');
+}
+
+/**
+ * A stay as its payment names it beside the amount, which the pay card says already: what the whole stay covers and its
+ * night in brackets ("Anjuna: 3 nights (₹12,800 a night)"), so "Paid ₹38,400 to ixigo for Villa Sol, Anjuna: 3 nights
+ * (₹12,800 a night)" never says the amount twice (the lead, 10 Oct). Null when there is nothing to say.
+ */
+export function stayPayWords(o: ResultOption): string | null {
+  const covers = stayCovers(o);
+  const night = stayNight(o);
+  const what = covers && night ? `${covers} (${night})` : (covers ?? night);
+  if (!what) return null;
+  return typeof o.facts.area === 'string' ? `${o.facts.area}: ${what}` : what;
+}
 
 function cardOption(p: CardPick): CardOption {
   const o = p.option;
   const subtitle = subtitleFor(o);
+  // A stay's price is the whole stay, as on its vote and its payment, or none when Go has no total for it: never a night's
+  // (the Server team's 10 Oct §6c saw ₹11,800 on a card and ₹35,400 on the vote built from it). The night is in the subtitle.
+  const stay = o.kind === 'stay';
+  const price = stay ? o.totalMinor : o.priceMinor;
+  const note = stay ? (price !== undefined ? stayNote(o) : undefined) : o.priceNote;
+  const page = ixigoPage(o.sourceUrl);
   return {
     option_id: p.optionId,
     title: clip(o.title, 80),
     ...(subtitle ? { subtitle: clip(subtitle, 120) } : {}),
     ...(p.imageUrl ? { image_url: p.imageUrl } : {}),
-    ...(o.priceMinor !== undefined ? { price_minor: o.priceMinor, currency: o.currency ?? 'INR' } : {}),
-    ...(o.priceNote ? { price_note: clip(o.priceNote, 40) } : {}),
+    ...(price !== undefined ? { price_minor: price, currency: o.currency ?? 'INR' } : {}),
+    ...(note ? { price_note: clip(note, 40) } : {}),
+    // A place's price is ixigo's estimate a person for the trip: the least it may cost (rev 5 R2's rough range). Go's own
+    // rough estimate for a place it picked is no least: the card says "each, rough" (price_note).
+    ...(o.kind === 'place' && price !== undefined && o.facts['estimate'] !== true ? { price_min_minor: price } : {}),
     highlights: o.highlights.map((h) => clip(h, 40)).filter((h) => h.length > 0).slice(0, 4),
     ...(o.journey ? { journey: o.journey } : {}),
     ...(o.place ? { place: { ...o.place, name: clip(o.place.name, 120), ...(o.place.address ? { address: clip(o.place.address, 200) } : {}) } } : {}),
     ...(o.rating !== undefined ? { rating: Math.min(5, Math.max(0, o.rating)) } : {}),
     ...(o.refundableUntil ? { refundable_until: o.refundableUntil } : {}),
+    ...(p.details ? { details: p.details } : {}),
+    ...(p.photos?.length ? { photos: p.photos } : {}),
+    // Its own page on ixigo.com, which the App shows as a small "View on ixigo" in its details (rev 5 R5), never a button.
+    ...(page ? { url: page } : {}),
   };
 }
 
 const KIND_WORDS: Record<OptionKind, [string, string]> = {
   stay: ['stay', 'stays'], flight: ['flight', 'flights'], train: ['train', 'trains'], bus: ['bus', 'buses'],
   place: ['place', 'places'], food: ['place to eat', 'places to eat'], activity: ['thing to do', 'things to do'],
+  cab: ['cab', 'cabs'],
 };
 
 /** The options card, checked against the contract: a bug here throws instead of posting a card the App cannot draw. */
-export function buildOptionsCard(i: { cardId: string; title: string; optionKind: OptionKind; checkedAt: string; picks: CardPick[] }): OptionsCardT {
+/**
+ * A shared thing's card (a stay, a place) is its vote (rev 5 R5): decisionId, the vote opened for its options, draws Vote
+ * on each, and it has no buttons of its own but more ("See more", R4: more of the same search, in the same vote). A
+ * ticket's card (PERSONAL_KINDS) has "I'll take this", never a vote, and "See more" too while its search has more.
+ * forPersonIds: a card for those people alone (each person's own flights, flights-each.ts; a ticket's See more): the room
+ * sees it, and only they act on it, each tap their own.
+ */
+export function buildOptionsCard(i: {
+  cardId: string; title: string; optionKind: OptionKind; checkedAt: string; picks: CardPick[]; decisionId?: string; more?: boolean; forPersonIds?: string[];
+}): OptionsCardT {
   const priced = i.picks.filter((p) => p.option.priceMinor !== undefined);
   const cheapest = [...priced].sort((a, b) => (a.option.priceMinor ?? 0) - (b.option.priceMinor ?? 0))[0];
   const from = cheapest ? `, from ${formatInr(cheapest.option.priceMinor ?? 0)}${cheapest.option.priceNote ? ` ${cheapest.option.priceNote}` : ''}` : '';
@@ -166,11 +332,38 @@ export function buildOptionsCard(i: { cardId: string; title: string; optionKind:
   return C.OptionsCard.parse({
     card_id: i.cardId,
     kind: 'options',
-    fallback_text: clip(`${i.picks.length} ${i.picks.length === 1 ? one : many}: ${i.title}${from}`, 300),
+    // A stays card's from is its whole stay and each share; a night's only when none of its stays has a total.
+    fallback_text: clip(`${i.picks.length} ${i.picks.length === 1 ? one : many}: ${i.title}${(i.optionKind === 'stay' ? stayFrom(i.picks.map((p) => p.option)) : '') || from}`, 300),
     title: clip(i.title, 80),
     option_kind: i.optionKind,
     checked_at: i.checkedAt,
     options: i.picks.map(cardOption),
-    actions: [PICK_ACTION, ...(i.picks.length >= 2 ? [VOTE_ACTION] : []), ...(i.picks.some((p) => ixigoPage(p.option.sourceUrl)) ? [OPEN_ACTION] : [])],
+    actions: i.forPersonIds ? optionsActions(i).map((a) => ({ ...a, only_for_person_ids: i.forPersonIds })) : optionsActions(i),
+    ...(i.decisionId ? { decision_id: i.decisionId } : {}),
+    ...(i.forPersonIds ? { for_person_ids: i.forPersonIds } : {}),
+  });
+}
+
+function optionsActions(i: { optionKind: OptionKind; more?: boolean }) {
+  // A ticket is its traveller's own: picked, never voted (PERSONAL_KINDS).
+  if (PERSONAL_KINDS.has(i.optionKind)) return i.more ? [PICK_ACTION, C.MORE_OPTIONS] : [PICK_ACTION];
+  return i.more ? [C.MORE_OPTIONS] : [];
+}
+
+/**
+ * The card of each home city's ways to the trip: its rows are trains and buses, each with its own ixigo page (url);
+ * flights: "Flights from my city" opens the tapper's own city's flights. Checked against the contract like any options card.
+ */
+export function buildWaysCard(i: { cardId: string; title: string; homes: string[]; checkedAt: string; picks: CardPick[]; flights: boolean }): OptionsCardT {
+  const homes = i.homes.length < 2 ? (i.homes[0] ?? '') : `${i.homes.slice(0, -1).join(', ')} and ${i.homes.at(-1)}`;
+  return C.OptionsCard.parse({
+    card_id: i.cardId,
+    kind: 'options',
+    fallback_text: clip(`${i.title}: the cheapest and the fastest from ${homes}`, 300),
+    title: clip(i.title, 80),
+    option_kind: i.picks.every((p) => p.option.kind === 'bus') ? 'bus' : 'train',
+    checked_at: i.checkedAt,
+    options: i.picks.map(cardOption),
+    actions: i.flights ? [FLIGHTS_HOME_ACTION] : [],
   });
 }

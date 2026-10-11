@@ -442,15 +442,17 @@ Go does not announce each line it writes. Instead, it may add a quiet ✅ reacti
 | `trip.created` | Someone creates a trip. | Sets the trip up (memory, people, its queue, and its own computer in the background), then greets the group and starts. |
 | `trip.updated` | The title, destination, dates, vibe, stay, itinerary, status or budget changes. | Reads the trip and warns the room about a clash. |
 | `decision.opened` | A vote opens. | Notes the vote and when it closes. |
-| `decision.voted` | Someone votes or changes their vote. | Keeps the count, quietly. |
+| `decision.voted` | Someone votes or changes their vote, says they are flexible, or takes their vote back (1.1). | Keeps the count, quietly. |
 | `decision.closed` | A vote closes. | Announces the result. For a booking vote, sets the mandate. |
 | `decision.cancelled` | A vote is called off. | Stops waiting on it. |
+| `decision.options_added` | (1.3) Go added options to an open vote, from "See more". | Adds them to its copy of the vote, after the last option. |
 | `mandate.set` | Go set what the group allowed for a spend. | Records the change number. |
 | `mandate.confirmed` | The payer taps "Yes, book it". | Re-checks the price and asks for a spend approval. |
 | `mandate.declined` | The payer taps "Not now". | Does not ask for a spend approval. |
 | `record.changed` | A trip record line is added, changed, done or undone. | Keeps its copy of the record. Treats an undone line as no longer settled. |
 | `booking.changed` | A booking is added, changed or cancelled. | Checks it against the plan and warns about a clash. |
-| `expense.changed` | An expense is added or removed. | Takes note. The server does the money maths. |
+| `expense.changed` | An expense is added or removed, or (1.1) someone it is split between approves or disputes it. | Takes note. The server does the money maths. |
+| `settlement.recorded` | (1.1) Someone paid someone back, and the one paid confirmed it. | Reads the trip's money again. |
 
 The rest of this page shows each event type with an example from the Goa trip.
 
@@ -1125,6 +1127,26 @@ Rahul called off a vote he had opened about which beach to spend Sunday on:
 }
 ```
 
+### decision.options_added
+
+(1.3) The server sends `decision.options_added` after Go's `add_vote_options`: someone tapped "See more" on a stays card that is in a vote, and Go added the stays it showed next. The new options take the next indexes after the last one, with no votes yet; votes already cast stay. A vote has at most 20 options in all.
+
+<!-- schema: DecisionOptionsAdded -->
+```json
+{
+  "event_id": "ev_0118",
+  "trip_id": "t_goa",
+  "seq": 118,
+  "occurred_at": "2026-10-06T11:40:00Z",
+  "type": "decision.options_added",
+  "data": {
+    "decision_id": "d_12",
+    "options": [{ "label": "Casa Lua", "option_ref": "opt_14", "price_minor": 4500000, "currency": "INR" }],
+    "by": { "kind": "go" }
+  }
+}
+```
+
 ## The mandate
 
 These three events cover what the group allowed for a spend and the payer's answer. [Money and the vault](08-money-and-the-vault.md) explains the whole payment.
@@ -1195,6 +1217,40 @@ If Rahul had tapped "Not now" instead, the server would have sent:
   "occurred_at": "2026-10-05T08:58:00Z",
   "type": "mandate.declined",
   "data": { "decision_id": "d_villa", "person_id": "p_rahul" }
+}
+```
+
+### payment.completed (1.3)
+
+For the demo, the server pays a waiting pay card itself. When the payer taps `approve` on it, the tap never reaches Go. The server sets the card to paid, with no buttons, and writes the booking and the expense. In the same transaction it sends `booking.changed`, `record.changed` and `expense.changed`, then `payment.completed`, then its own "booked" and expense lines. No vault and no money are involved (`method: "demo"`).
+
+Go finishes its side by `approval_id`. It marks its payment paid and stops every timer on it. It never sends `add_booking` or `add_expense` for it, because the server has made both. It posts the ticket card (`{ "kind": "ticket", "booking_id": … }`, for that person alone on a person's own ticket) and moves on to the next step. It sends no second "booked" line, because the server has sent it. An `approval_id` Go doesn't know is accepted and ignored, and the same event twice does nothing more.
+
+Rahul taps Pay with ixigo money on the villa's pay card:
+
+<!-- schema: PaymentCompleted -->
+```json
+{
+  "event_id": "ev_0081",
+  "trip_id": "t_goa",
+  "seq": 81,
+  "occurred_at": "2026-10-05T09:02:00Z",
+  "type": "payment.completed",
+  "data": {
+    "approval_id": "ap_01JA7Q3V8Z",
+    "card_id": "c_villa_pay",
+    "payer_person_id": "p_rahul",
+    "amount_minor": 5420000,
+    "currency": "INR",
+    "merchant": "ixigo: Villa Sol, Anjuna",
+    "purpose": "Villa Sol, 3 nights, 6 to 9 Nov",
+    "decision_id": "d_villa",
+    "booking_id": "bk_villa",
+    "expense_id": "ex_villa",
+    "method": "demo",
+    "paid_at": "2026-10-05T09:02:00Z",
+    "by": { "kind": "person", "person_id": "p_rahul" }
+  }
 }
 ```
 

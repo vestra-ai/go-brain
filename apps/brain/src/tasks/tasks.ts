@@ -46,6 +46,11 @@ export interface TaskBrief {
   cardId?: string;
   /** A turn's ctx.cards: the working card rides with the turn's message instead of being posted at once. */
   cards?: C.Card[];
+  /**
+   * Neither the job's hand-off nor its end wakes anyone: its cards say who is needed and that it is done, and the lane that
+   * started it speaks for it (the ixigo login). A failure still wakes the composer.
+   */
+  quiet?: boolean;
 }
 
 export interface Tasks {
@@ -87,7 +92,15 @@ export interface TasksDeps {
   /** True while Go's travel search is the simulator: the job's message then says its listings are simulated. */
   listingsSimulated?: () => boolean;
   deadlineMs?: number;
+  /** When a stop that found no /v1 id looks the job's start up again (STOP_LOOKUP_MS). */
+  stopLookupMs?: readonly number[];
 }
+
+/**
+ * A stop that found no /v1 id while the job was on its way there looks its start up again at these, from the stop: a job
+ * whose "started" event Go missed (a stream reconnect) never runs on for the sweep's two minutes.
+ */
+export const STOP_LOOKUP_MS: readonly number[] = [3_000, 10_000, 30_000];
 
 export interface TasksService extends Tasks {
   dispatch(taskId: string): Promise<void>;
@@ -135,6 +148,28 @@ export function createTasks(d: TasksDeps): TasksService {
   }
 
   /** Stops a job on /v1: by its task id, or, when Go never heard /v1 name it, by looking its start up (mapStarts then stops it). */
+  /**
+   * After a stop that found no /v1 id: the job's start is looked up on /v1 again soon (STOP_LOOKUP_MS), and mapStarts
+   * stops it there once found. Over once /v1 named the job; a job never handed over has no turn, so findStart asks
+   * nothing. Not tracked, so nothing waits on it: the sweep is the backstop.
+   */
+  function lookUpSoon(taskId: string): void {
+    const waits = [...(d.stopLookupMs ?? STOP_LOOKUP_MS)];
+    const next = (): void => {
+      const ms = waits.shift();
+      if (ms === undefined) return;
+      setTimeout(() => {
+        void (async () => {
+          const row = await d.store.get(taskId);
+          if (!row || row.v1TaskId) return;
+          await service.findStart(row);
+          next();
+        })().catch((err: unknown) => d.log.warn({ err, taskId }, "tasks: looking up a stopped job's start failed; the sweep tries again"));
+      }, ms).unref();
+    };
+    next();
+  }
+
   async function stopOnV1(row: TaskRow): Promise<void> {
     if (row.v1TaskId) return service.stopV1(row.v1TaskId);
     if (!row.v1TurnId) return;
@@ -232,6 +267,7 @@ export function createTasks(d: TasksDeps): TasksService {
         steps: plannedSteps(brief.steps),
         deadlineAt: new Date(now.getTime() + deadlineMs),
         createdAt: now,
+        quiet: brief.quiet ?? false,
       };
       // Queued instead when the trip already runs three: counted and saved under one per-trip lock.
       const state = await d.store.insertCapped(row, MAX_ACTIVE_PER_TRIP);
@@ -372,6 +408,7 @@ export function createTasks(d: TasksDeps): TasksService {
           await service.afterEnd(row.tripId);
         })().catch((err: unknown) => d.log.warn({ err, taskId }, 'tasks: finishing a stop on /v1 failed; the sweep tries again')),
       );
+      if (!stopped.v1TaskId) lookUpSoon(taskId);
     },
 
     async running(tripId) {

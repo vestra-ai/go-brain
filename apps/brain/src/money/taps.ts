@@ -1,7 +1,7 @@
 import type * as C from '@go/contract';
-import type { CardTapParams, CardTapResult } from '../door/methods.js';
+import type { CardTapParams, CardTapResult, TripEvent } from '../door/methods.js';
 import type { AskResult } from './ask.js';
-import { postLine, type Later, type MoneyDeps } from './deps.js';
+import { payerOf, postLine, type Later, type MoneyDeps } from './deps.js';
 import { rid } from './ids.js';
 import { byApproval, EXPIRY_GRACE_MS, patchPayment, transition, type PaymentRow } from './store.js';
 import type { PayLinkInput, PaymentKind } from './vault-client.js';
@@ -13,6 +13,8 @@ export interface TapDeps {
   ask: (tripId: string, o: { decisionId: string; optionRef: string; purpose: string }, trigger: string) => Promise<AskResult>;
   later: Later;
   reconcile: (paymentId: string) => Promise<void>;
+  /** payment.completed: the Server paid and booked a waiting pay card itself (engine.ts). */
+  paidByServer: (ev: Extract<TripEvent, { type: 'payment.completed' }>) => Promise<void>;
 }
 
 const refused = (toast: string): CardTapResult => ({ result: 'refused', toast });
@@ -33,7 +35,11 @@ function stateToast(row: PaymentRow): string {
   }
 }
 
-function payLinkInput(row: PaymentRow): PayLinkInput | null {
+/** The group agreed to it first: a vote's payment among more than one person. A person's own ticket or a trip of one: no. */
+export const groupAgreed = (row: Pick<PaymentRow, 'kind' | 'decision_id' | 'for_person_ids'>): boolean =>
+  row.kind === 'group' && row.decision_id !== null && row.for_person_ids.length > 1;
+
+export function payLinkInput(row: PaymentRow): PayLinkInput | null {
   if (!row.approval_token || !row.approval_id || !row.hold_id || row.amount_minor === null || !row.currency || !row.merchant || !row.hold_expires_at) return null;
   return {
     approval: row.approval_token,
@@ -41,6 +47,7 @@ function payLinkInput(row: PaymentRow): PayLinkInput | null {
     tripId: row.trip_id,
     payerPersonId: row.payer_person_id,
     payerName: row.payer_name,
+    groupAgreed: groupAgreed(row),
     hold: {
       holdId: row.hold_id,
       amountMinor: row.amount_minor,
@@ -57,11 +64,14 @@ function payLinkInput(row: PaymentRow): PayLinkInput | null {
  * A fresh ask runs the Server's spend check again and needs Face ID again.
  */
 function startAgain(t: TapDeps, row: PaymentRow, tapId: string): void {
+  // A traveller's ticket has no pay card, so no Approve can start one again: its own card asks afresh.
+  const decisionId = row.decision_id;
+  if (decisionId === null) return;
   t.later.run(t.d.log, 'start a payment again', async () => {
     await t.reconcile(row.payment_id);
     // The vote's option_ref again: the fresh ask resolves it to the travel offer and holds it anew.
-    const r = await t.ask(row.trip_id, { decisionId: row.decision_id, optionRef: row.option_ref, purpose: row.purpose }, tapId);
-    if ('refused' in r && r.say) await postLine(t.d, row.trip_id, r.refused, rid('go_said', tapId));
+    const r = await t.ask(row.trip_id, { decisionId, optionRef: row.option_ref, purpose: row.purpose }, tapId);
+    if ('refused' in r && r.say) await postLine(t.d, row.trip_id, r.refused, rid('go_said', tapId), payerOf(row));
   });
 }
 
@@ -77,6 +87,7 @@ export async function approveTap(t: TapDeps, tap: CardTapParams, card: C.Card): 
   // The bank has not answered about a charge: no new page, and never Start again.
   if (row.state === 'confirming') return refused(row.checking_at ? TOASTS.checking : TOASTS.confirming);
   if (row.state === 'expired') {
+    if (row.kind === 'ticket') return refused(TOASTS.ticketRunOut);
     startAgain(t, row, tap.tap_id);
     return done(TOASTS.restart);
   }
@@ -88,6 +99,7 @@ export async function approveTap(t: TapDeps, tap: CardTapParams, card: C.Card): 
   const holdGone = !row.hold_expires_at || row.hold_expires_at.getTime() <= now.getTime() + 60_000;
   if (approvalGone || holdGone) {
     await transition(t.d.pool, row.payment_id, ['waiting'], 'expired', { release_reason: 'expired' }, now);
+    if (row.kind === 'ticket') return refused(TOASTS.ticketRunOut);
     startAgain(t, row, tap.tap_id);
     return done(TOASTS.fresh);
   }

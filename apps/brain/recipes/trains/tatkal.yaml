@@ -1,0 +1,42 @@
+id: trains.tatkal
+title: When Tatkal booking opens for each class and what it costs extra, by ixigo's Tatkal page, with its rules
+asks:
+  - when does tatkal booking open
+  - tatkal kab khulta hai
+  - tatkal charges for 3a
+  - can we book tatkal on the same day
+  - tatkal and premium tatkal mein kya fark hai
+auth: none
+changes_state: false
+# ixigo's Tatkal page, plain server-rendered HTML: a table a time window (AC classes, then sleeper and seating), a table
+# of each class's Tatkal charge (least and most), a table setting Tatkal beside Premium Tatkal, and its questions as
+# FAQPage ld+json. Whether a train has Tatkal seats is trains.between's (its Tatkal line, on the day booking opens).
+page: /trains/tatkal-railway-reservation
+capture:
+  - { match: /trains/tatkal-railway-reservation$, max_bytes: 1000000 }
+read:
+  rows: { from: /trains/tatkal-railway-reservation$, format: html_tables, list: "[ $ ]" }
+answer:
+  as: facts
+  title: Tatkal
+  max: 1
+  each: |
+    (
+      $plain := function($t) { $t ? $trim($replace($replace($replace($t, /<[^>]+>/, " "), "&amp;", "&"), /\s+/, " ")) };
+      $rows := function($header, $line) {
+        $reduce(tables, function($found, $t) { $contains($string($t[0][1]), $header) ? $append($found, $map($t, function($r, $i) { $i > 0 ? $line($r) })) : $found }, [])
+      };
+      $versus := $reduce(tables, function($found, $t) { ($count($found) = 0 and $t[0][0] = "Tatkal" and $t[0][1] = "Premium Tatkal") ? $t : $found }, []);
+      $faq := ld[`@type` = "FAQPage"].mainEntity[$not($contains(acceptedAnswer.text, "<table"))];
+      {
+        "opens": $rows("Timing", function($r) { $r[0] & ": " & $r[1] }),
+        "charges": $rows("Minimum", function($r) { $r[0] & ": " & $r[1] & " to " & $r[2] }),
+        "tatkal_vs_premium_tatkal": [$map($versus, function($r, $i) { $i > 0 ? "Tatkal: " & $r[0] & "; Premium Tatkal: " & $r[1] })],
+        "questions": [$faq.($replace($plain(name), /^Q\.\s*/, "") & " " & $replace($plain(acceptedAnswer.text), /^A\.\s*/, ""))]
+      }
+    )
+ttl_minutes: 60
+samples: { page: trains.tatkal.html }
+notes: >-
+  Booking opens the day before the journey from the train's starting station. The page also says that since 15 July
+  2025 an Aadhaar OTP is needed to book Tatkal online, and a confirmed Tatkal ticket gets no refund when cancelled.

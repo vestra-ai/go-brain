@@ -72,7 +72,7 @@ afterAll(async () => {
 describe('headers', () => {
   it('never lets a page be framed, and sends no referrer', async () => {
     const res = await app.inject({ method: 'GET', url: '/health' });
-    expect(res.json()).toEqual({ ok: true });
+    expect(res.json()).toEqual({ ok: true, cards: 'ready' });
     expect(res.headers['x-frame-options']).toBe('DENY');
     expect(String(res.headers['content-security-policy'])).toContain("frame-ancestors 'none'");
     expect(res.headers['referrer-policy']).toBe('no-referrer');
@@ -190,6 +190,23 @@ describe('POST /internal/pay-links', () => {
 
   it('refuses another payer', async () => {
     expect(await reasonOf(payBody({ payer_person_id: 'p_priya' }))).toBe('wrong_payer');
+  });
+
+  // Contract 1.3: a person's own pick names it (personal) in place of a vote, and they are its payer.
+  const pick = { person_id: 'p_priya', card_id: 'c_flights_priya', option_id: 'opt_flight_1' };
+  it("opens a personal approval's pay link for its person alone", async () => {
+    const ticket = { jti: 'ap_ticket_ok_1', decision_id: null, personal: pick, payer_person_id: 'p_priya' };
+    const approval = signTestApproval(ticket);
+    expect(await reasonOf(payBody({ approval, approval_id: ticket.jti, payer_person_id: 'p_rahul' }))).toBe('wrong_payer');
+    expect((await payLink(payBody({ approval, approval_id: ticket.jti, payer_person_id: 'p_priya' }))).statusCode).toBe(200);
+  });
+
+  it('refuses a personal approval whose payer is not its person, or one that names a vote too', async () => {
+    const claims = Object.fromEntries(Object.entries(spendVector().claims).filter(([k]) => k !== 'decision_id'));
+    const notTheirs = signRawApproval({ ...claims, jti: 'ap_ticket_bad_1', personal: pick, payer_person_id: 'p_rahul' });
+    expect(await reasonOf(payBody({ approval: notTheirs, approval_id: 'ap_ticket_bad_1' }))).toBe('bad_approval');
+    const both = signRawApproval({ ...spendVector().claims, jti: 'ap_ticket_bad_2', personal: { ...pick, person_id: 'p_rahul' } });
+    expect(await reasonOf(payBody({ approval: both, approval_id: 'ap_ticket_bad_2' }))).toBe('bad_approval');
   });
 
   it('refuses another currency', async () => {

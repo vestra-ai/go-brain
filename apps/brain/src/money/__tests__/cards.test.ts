@@ -29,7 +29,7 @@ describe('pay card', () => {
       fallback_text: 'Rahul, approve ₹54,200 to ixigo: Villa Sol, Anjuna for Villa Sol, 3 nights, 6 to 9 Nov. Free cancellation until 1 Nov.',
     });
     expect(card.actions).toEqual([
-      { action_id: 'approve', label: 'Approve', style: 'primary', only_for_person_ids: ['p_rahul'] },
+      { action_id: 'approve', label: 'Pay with ixigo money', style: 'primary', only_for_person_ids: ['p_rahul'] },
       { action_id: 'decline', label: 'Decline', style: 'secondary', only_for_person_ids: ['p_rahul'] },
     ]);
   });
@@ -90,5 +90,16 @@ describe('mandate and ticket cards', () => {
     const card = ticketCard({ cardId: 'c_t', bookingId: 'b_villa', title: 'Villa Sol, 3 nights', ref: 'IXG-7Q2K9', refundableUntil: '2026-11-01T18:29:59Z' });
     expect(C.Card.parse(card)).toEqual(card);
     expect(card.fallback_text).toBe('Booked: Villa Sol, 3 nights. Ref IXG-7Q2K9. Free cancellation until 1 Nov.');
+  });
+
+  it('a simulated booking (a stay from ixigo.com, on the test rail) says so on its ticket, with Go\'s own reference', () => {
+    const card = ticketCard({ cardId: 'c_t', bookingId: 'b_sau', title: 'Saudades Homestays, 3 nights', ref: 'SIM-1A2B3C4D', refundableUntil: null, simulated: true });
+    expect(C.Card.parse(card)).toEqual(card);
+    expect(card.fallback_text).toBe('Booked (simulated): Saudades Homestays, 3 nights. Ref SIM-1A2B3C4D.');
+  });
+
+  it('a mandate says first when the price moved since the vote', () => {
+    const card = mandateCard({ cardId: 'c_m', decisionId: 'd_villa', what: 'Villa Sol', capMinor: 6200000, currency: 'INR', refundableOnly: false, payerName: 'Rahul', moved: 'Villa Sol is ₹56,000 on ixigo now, up from ₹54,200 on the vote.' });
+    expect(card.fallback_text).toBe('Villa Sol is ₹56,000 on ixigo now, up from ₹54,200 on the vote. Ready to book Villa Sol: up to ₹62,000, Rahul pays. Rahul, open Go to say yes.');
   });
 });

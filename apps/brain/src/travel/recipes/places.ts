@@ -1,12 +1,15 @@
 /**
- * The places Go can search on ixigo.com, as ixigo's own codes: airports, railway stations, bus cities and hotel
- * locations. A place not in these tables is refused with the list of places that work, never guessed; live lookups
- * through ixigo's own search boxes come later.
+ * The places Go has searched on ixigo.com, as ixigo's own codes: airports, railway stations, bus cities and hotel
+ * locations. This is a cache, never a gate. The tables below seed it with places ixigo gave Go before; a search that ran
+ * ixigo's own form adds what ixigo resolved (learnPlace, kept in travel_places). A flight may also come with the
+ * airport code the model knows, in brackets ("London (LHR)"). A place in none of these is unknown_place, and the search
+ * answers with ixigo's own page for that kind of search, where the group searches it.
  */
 import { TravelError } from '../mcp-travel.js';
+import type { TravelKind } from '../travel.js';
 
 /** "  North Goa (GOX) " as "north goa (gox)": lower case, single spaces. */
-const norm = (text: string): string => text.trim().toLowerCase().replace(/\s+/g, ' ');
+export const norm = (text: string): string => text.trim().toLowerCase().replace(/\s+/g, ' ');
 
 /** A code people or the model wrote in brackets, "Goa (GOX)", or the whole text when it is a code. */
 function codeIn(text: string): string | null {
@@ -14,15 +17,51 @@ function codeIn(text: string): string | null {
   return m?.[1]?.toUpperCase() ?? null;
 }
 
+/** The words for a place, without a code in brackets: "London (LHR)" as "london". */
+export const wordsOf = (text: string): string => norm(text.replace(/\([^)]*\)$/, ''));
+
 function resolve<T>(text: string, codes: Record<string, T>, words: Record<string, string>): T | null {
   const code = codeIn(text);
   if (code && code in codes) return codes[code]!;
-  const word = norm(text.replace(/\([^)]*\)$/, ''));
-  const byWord = words[word];
+  const byWord = words[wordsOf(text)];
   return byWord ? codes[byWord]! : null;
 }
 
-const listOf = (names: string[]): string => [...new Set(names)].join(', ');
+// ── what ixigo resolved ──────────────────────────────────────────────────────
+
+/** What ixigo's form resolved a place to, for each kind of search. */
+export interface LearnedPlace { flights: Airport; trains: Station; buses: BusCity; stays: StayLocation }
+
+/** Places ixigo resolved, by kind and the words people used. The same for every trip: they are ixigo's public codes. */
+const learned: { [K in TravelKind]: Map<string, LearnedPlace[K]> } = {
+  flights: new Map(), trains: new Map(), buses: new Map(), stays: new Map(),
+};
+const LEARNED_MAX = 5_000;
+
+/** Keeps a place ixigo resolved, so the next search for the same words goes straight to its results page. */
+export function learnPlace<K extends TravelKind>(kind: K, text: string, place: LearnedPlace[K]): void {
+  const map = learned[kind];
+  map.delete(wordsOf(text));
+  map.set(wordsOf(text), place);
+  while (map.size > LEARNED_MAX) {
+    const oldest = map.keys().next().value;
+    if (oldest === undefined) break;
+    map.delete(oldest);
+  }
+}
+
+/** Whether ixigo resolved these words for this kind of search before: a cache, so no lookup is needed for them. */
+export function isLearned(kind: TravelKind, text: string): boolean {
+  return learned[kind].has(wordsOf(text));
+}
+
+/** For tests: forgets every place ixigo resolved. */
+export function forgetLearnedPlaces(): void {
+  for (const map of Object.values(learned)) map.clear();
+}
+
+const unknown = (what: string, text: string): TravelError =>
+  new TravelError('unknown_place', `Go has no ixigo ${what} code for "${text.slice(0, 60)}" yet.`);
 
 // ── airports ─────────────────────────────────────────────────────────────────
 
@@ -42,10 +81,13 @@ const AIRPORT_WORDS: Record<string, string> = {
   kolkata: 'CCU', calcutta: 'CCU', ahmedabad: 'AMD', jaipur: 'JAI', kochi: 'COK', cochin: 'COK',
 };
 
+/** An airport ixigo resolved before; else the airport code the model gave in brackets, "London (LHR)", as it is. */
 export function airportOf(text: string): Airport {
-  const a = resolve(text, AIRPORTS, AIRPORT_WORDS);
-  if (!a) throw new TravelError('unknown_place', `Go can search ixigo flights for these places: ${listOf(Object.values(AIRPORTS).map((x) => x.city))}. "${text.slice(0, 60)}" is not one yet.`);
-  return a;
+  const a = resolve(text, AIRPORTS, AIRPORT_WORDS) ?? learned.flights.get(wordsOf(text));
+  if (a) return a;
+  const given = /^(.+?)\s*\(([A-Z]{3})\)$/.exec(text.trim());
+  if (given) return { code: given[2]!, city: given[1]!.trim() };
+  throw unknown('airport', text);
 }
 
 // ── railway stations ─────────────────────────────────────────────────────────
@@ -70,9 +112,13 @@ const STATION_WORDS: Record<string, string> = {
 };
 
 export function stationOf(text: string): Station {
-  const s = resolve(text, STATIONS, STATION_WORDS);
-  if (!s) throw new TravelError('unknown_place', `Go can search ixigo trains for these places: Delhi, Mumbai, Goa, Pune, Bengaluru, Chennai, Kolkata, Hyderabad, Ahmedabad, Jaipur, Kochi. "${text.slice(0, 60)}" is not one yet.`);
-  return s;
+  const s = resolve(text, STATIONS, STATION_WORDS) ?? learned.trains.get(wordsOf(text));
+  if (s) return s;
+  // A station with its own Indian Railways code, as the model or ixigo's list writes it ("Udaipur City (UDZ)"), like an
+  // airport's: a train search never waits on the box for it.
+  const given = /^(.+?)\s*\(([A-Z]{2,5})\)$/.exec(text.trim());
+  if (given) return { code: given[2]!, name: given[1]!.trim() };
+  throw unknown('station', text);
 }
 
 // ── bus cities (AbhiBus ids, from ixigo's bus search box) ────────────────────
@@ -86,8 +132,8 @@ const BUS_WORDS: Record<string, string> = {
 };
 
 export function busCityOf(text: string): BusCity {
-  const c = BUS_CITIES[BUS_WORDS[norm(text)] ?? ''];
-  if (!c) throw new TravelError('unknown_place', `Go can search ixigo buses between ${listOf(Object.values(BUS_CITIES).map((x) => x.name))}. "${text.slice(0, 60)}" is not one yet.`);
+  const c = BUS_CITIES[BUS_WORDS[norm(text)] ?? ''] ?? learned.buses.get(wordsOf(text));
+  if (!c) throw unknown('bus city', text);
   return c;
 }
 
@@ -132,6 +178,9 @@ const GOA_HALVES: Record<GoaHalf, string[]> = {
   ],
 };
 
+/** The places in each half of Goa, for a stays search inside one half (until areas come from ixigo's own filter). */
+export const goaHalves = (): Record<GoaHalf, string[]> => GOA_HALVES;
+
 /** The half of Goa a place is in, from its name; null when the name doesn't say. */
 export function goaHalfOf(text: string): GoaHalf | null {
   const t = norm(text);
@@ -151,7 +200,12 @@ const GOA_AREAS = [
 export function stayPlaceOf(text: string): StayPlace {
   const short = norm(text).replace(/,?\s*goa$/, '');
   const name = GOA_AREAS.includes(short) ? short : GOA_AREAS.includes(norm(text)) ? norm(text) : null;
-  if (!name) throw new TravelError('unknown_place', `Go can search ixigo stays in Goa and its areas (North Goa, South Goa, Anjuna, Vagator and others). "${text.slice(0, 60)}" is not one yet.`);
+  if (!name) {
+    // Outside the Goa seed: the location ixigo resolved for these words.
+    const location = learned.stays.get(wordsOf(text));
+    if (!location) throw unknown('hotel location', text);
+    return { location, areas: [], half: null };
+  }
   if (name === 'goa') return { location: GOA, areas: [], half: null };
   // A half of Goa is all of Goa, its stays then checked against the half's places: ixigo's area codes don't add up.
   if (name === 'north goa') return { location: GOA, areas: [], half: 'north' };
@@ -161,8 +215,10 @@ export function stayPlaceOf(text: string): StayPlace {
   return { location: GOA, areas: code ? [code] : [], half: goaHalfOf(name) };
 }
 
-/** An airport's city from the table, for a page that shows only codes. */
-export const airportCity = (code: string): string | null => AIRPORTS[code]?.city ?? null;
+/** An airport's city from the seed or what ixigo resolved, for a page that shows only codes. */
+export function airportCity(code: string): string | null {
+  return AIRPORTS[code]?.city ?? [...learned.flights.values()].find((a) => a.code === code)?.city ?? null;
+}
 
 /** The place names (not codes) Go knows for a kind of search, longest first: what the travel ask reader looks for. */
 export function placeWords(kind: 'flights' | 'trains' | 'buses' | 'stays'): string[] {

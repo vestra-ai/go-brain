@@ -4,7 +4,7 @@ import { bookedLine, categoryFor, clip, declinedLine, failedLine, money, plain, 
 const CODES: RefusalCode[] = [
   'decision_not_found', 'decision_not_closed', 'no_mandate', 'payer_declined', 'payer_has_not_confirmed', 'currency_mismatch',
   'over_cap', 'not_refundable', 'approval_outstanding', 'no_vote', 'wrong_offer', 'not_bookable', 'not_bookable_yet', 'already_paid', 'no_travel',
-  'hold_failed', 'rail_not_ready', 'vault_refused', 'server_down', 'closed',
+  'hold_failed', 'rail_not_ready', 'vault_refused', 'server_down', 'closed', 'not_in_trip', 'already_booked',
 ];
 
 describe('money words', () => {
@@ -17,6 +17,15 @@ describe('money words', () => {
 
   it('writes a short date in India time', () => {
     expect(shortDate('2026-11-01T18:29:59Z')).toBe('1 Nov');
+  });
+
+  // Keshav, 11 Oct: "make it a proper travel agent… why this whining": no offer to phone (calls are off), no "book on
+  // ixigo yourself", no "ask me again".
+  it('never pushes the work back: no phoning, no booking it yourself, no asking again', () => {
+    const say = (code: RefusalCode, extra: { link?: string; kind?: string } = {}) => refusalWords(code, { payer: 'Rahul', what: 'Villa Sol', ...extra }).text;
+    expect(say('not_bookable')).toBe('I found this one on the web, so it can\'t be booked through me. Want the closest ones on ixigo, which I can book?');
+    expect(say('server_down')).toBe("I couldn't reach the trip just now, so nothing was charged. Want me to try again now?");
+    for (const code of CODES) expect(say(code, { link: 'https://www.ixigo.com/x', kind: 'train' })).not.toMatch(/call them|yourself|ask me again/i);
   });
 
   it('takes em dashes out and cuts long text', () => {
@@ -45,19 +54,25 @@ describe('money words', () => {
     expect(refusalWords('decision_not_found', { payer: 'Rahul', what: 'it' }).say).toBe(false);
   });
 
-  it('hands over the link for group flights, trains and buses, which Go does not book this week (master §9 "Cut now")', () => {
+  it('points to View on ixigo in the details on the card for group flights, trains and buses, which Go does not book this week (master §9 "Cut now"), never a link', () => {
     expect(refusalWords('not_bookable_yet', { payer: 'Rahul', what: 'IndiGo 6E 2134', kind: 'flight', link: 'https://www.ixigo.com/flights/6e-2134' })).toEqual({
-      text: "I can't book flights for the whole group yet. Here's the link to book them yourselves: https://www.ixigo.com/flights/6e-2134",
+      text: "I can't book flights for the whole group yet. View on ixigo, in its details on its card, opens each one set up for you.",
       say: true,
     });
     // No link from the travel layer: just the first sentence.
     expect(refusalWords('not_bookable_yet', { payer: 'Rahul', what: 'Rajdhani 12432', kind: 'train' }).text).toBe("I can't book trains for the whole group yet.");
+    // Where Go books each person's own flight (BOOKING), a group flight says how theirs is booked, never "book on ixigo".
+    expect(refusalWords('not_bookable_yet', { payer: 'Rahul', what: 'IndiGo 6E 2134', kind: 'flight', link: 'https://www.ixigo.com/flights/6e-2134', own: true }).text).toBe(
+      "Flights are each person's own, so there's no one payment for the group: each of you taps I'll take this on your own flights card, and I book it.",
+    );
     expect(refusalWords('not_bookable_yet', { payer: 'Rahul', what: 'Volvo sleeper', kind: 'bus' }).text).toBe("I can't book buses for the whole group yet.");
   });
 
-  it('says what happened after a payment in one short line', () => {
-    expect(bookedLine({ title: 'Villa Sol, 3 nights', payer: 'Rahul', amount: '₹54,200', people: 5 })).toBe(
-      'Booked Villa Sol, 3 nights! Rahul paid ₹54,200, split between all 5.',
+  it('says what happened after a payment in one short line, never the money, which the Server posts itself', () => {
+    expect(bookedLine({ title: 'Villa Sol, 3 nights' })).toBe('Booked Villa Sol, 3 nights!');
+    // A stay from ixigo.com, booked on Go's test rail only: the receipt says so, and never claims an ixigo booking.
+    expect(bookedLine({ title: 'Saudades Homestays, 3 nights', simulated: true })).toBe(
+      'Booked (simulated): Saudades Homestays, 3 nights. A test payment only; nothing was booked on ixigo.',
     );
     expect(failedLine({ payer: 'Rahul', what: 'Villa Sol', reason: 'card_declined' })).toBe(
       "Rahul, the payment for Villa Sol didn't go through (the bank declined the card). Nothing was charged. Want to try again?",

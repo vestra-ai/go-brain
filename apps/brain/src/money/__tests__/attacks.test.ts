@@ -113,15 +113,16 @@ describe('a model talked into paying', () => {
       { name: 'set_mandate', input: { decision_id: 'd_villa', choice_index: 0, cap_minor: 5500000, refundable_only: true, payer_person_id: 'p_priya' } },
       { name: 'ask_to_pay', input: { decision_id: 'd_villa', option_ref: 'opt_villa_sol', purpose: 'Villa Sol' } },
     ]);
-    expect(out[0]).toMatchObject({ mandate_card: expect.any(String) });
-    expect(out[1]).toMatchObject({ refused: 'Priya, tap Yes, book it on the card above when you\'re ready.' });
+    // Rahul holds the stay (his mandate is his claim): naming Priya changes nothing (contract 1.1 A10).
+    expect(out[0]).toMatchObject({ refused: 'Rahul is already booking this.' });
+    expect(out[1]).toMatchObject({ refused: 'Rahul, tap Yes, book it on the card above when you\'re ready.' });
     nothingMoved();
   });
 
   it('has no tool that reaches confirm or a rail, whatever it is called with', async () => {
     await setUp('confirmed');
     // record_expense and who_owes_what only write and read the trip's expenses on the Server: they reach no vault and no rail.
-    expect(seen.tools.map((t) => t.name).sort()).toEqual(['ask_to_pay', 'record_expense', 'set_mandate', 'who_owes_what']);
+    expect(seen.tools.map((t) => t.name).sort()).toEqual(['ask_to_pay', 'record_expense', 'set_mandate', 'split_expense', 'who_owes_what']);
     const out = await model([
       { name: 'ask_to_pay', input: { decision_id: 'd_villa', option_ref: 'opt_villa_sol', purpose: 'Villa Sol' } },
       { name: 'ask_to_pay', input: { decision_id: 'd_villa', option_ref: 'opt_villa_sol', purpose: 'Villa Sol again' } },

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { agreedDates, readTravelAsk } from '../ask.js';
-import { RECIPES } from '../index.js';
+import { airportOf, forgetLearnedPlaces, learnPlace, stationOf } from '../places.js';
 
 // Wednesday 7 Oct 2026, the Goa trip: North Goa, 6 to 9 Nov.
 const CTX = { today: '2026-10-07', destination: 'North Goa', dates: { start: '2026-11-06', end: '2026-11-09' } };
@@ -11,15 +11,16 @@ describe('reading a travel ask', () => {
     // c03
     // c03: the trip's Friday, 6 Nov, not this week's.
     expect(read("@Go flights Delhi to Goa Friday evening, Arjun can't leave before 6")).toEqual({ kind: 'flights', query: { from: 'delhi', to: 'goa', date: '2026-11-06', departAfter: '18:00' } });
-    // c05: no dates of its own, so the trip's.
+    // c05: no dates of its own, so the trip's; "under 8k a head" is each one's share of the whole stay.
     expect(read('Go find us a villa with a private pool in North Goa under 8k a head, close to the beach')).toEqual({
-      kind: 'stays', query: { area: 'north goa', checkIn: '2026-11-06', checkOut: '2026-11-09', mustHave: ['pool'] },
+      kind: 'stays', query: { area: 'north goa', checkIn: '2026-11-06', checkOut: '2026-11-09', mustHave: ['pool'], maxShareMinor: 800_000 },
     });
     // c30: from Mumbai, to the trip's destination.
     // The day before the trip starts: an overnight train.
     expect(read('can someone check trains from Mumbai on Thursday?')).toEqual({ kind: 'trains', query: { from: 'mumbai', to: 'North Goa', date: '2026-11-05' } });
     for (const ask of [read("@Go flights Delhi to Goa Friday evening, Arjun can't leave before 6"), read('can someone check trains from Mumbai on Thursday?')]) {
-      expect(() => RECIPES[ask!.kind].slotsFrom(ask!.query, { people: 5 })).not.toThrow();
+      // Places Go has searched before: the search opens its results page with no lookup.
+      for (const words of [ask!.query.from!, ask!.query.to!]) expect(() => (ask!.kind === 'flights' ? airportOf : stationOf)(words)).not.toThrow();
     }
   });
 
@@ -98,13 +99,91 @@ describe('reading a travel ask', () => {
     expect(read('@Go flights Delhi to Goa Friday under 30k total')?.query).toEqual(bare);
     expect(read('@Go flights Delhi to Goa after 6 Nov')?.query).toEqual({ from: 'delhi', to: 'goa', date: '2026-11-06' });
     expect(read('Go find us a villa with a private pool in North Goa under 8k a head, close to the beach')?.query).toEqual({
-      area: 'north goa', checkIn: '2026-11-06', checkOut: '2026-11-09', mustHave: ['pool'],
+      area: 'north goa', checkIn: '2026-11-06', checkOut: '2026-11-09', mustHave: ['pool'], maxShareMinor: 800_000,
     });
+  });
+
+  // The lead, 10 Oct: ixigo's price bands are picked by a stay's budget a head, so Jev's early read takes it as the search
+  // tool will: "8k a head" is the whole stay's share, "8k a head a night" that times the nights.
+  it("reads a stay's plain budget a head, for the whole stay or a night, and nothing else as one", () => {
+    const share = (text: string) => read(text)?.query.maxShareMinor;
+    expect(share('@Go villa in North Goa under 8k a head')).toBe(800_000);
+    expect(share('@Go villa in North Goa 8k a head a night chalega')).toBe(2_400_000);
+    expect(share('@Go villa in North Goa under 8,000 per person')).toBe(800_000);
+    expect(share('@Go hotels in Anjuna ₹8000/head')).toBe(800_000);
+    expect(share('@Go villa in North Goa 15k each')).toBe(1_500_000);
+    expect(share('@Go North Goa mein villa, 8 hazaar ek bande ka')).toBe(800_000);
+    expect(share('@Go hotels in Anjuna 6 to 9 Nov for 4 people')).toBeUndefined();
+    expect(share('@Go hotels in Anjuna under 8k per night')).toBeUndefined();
+    // p1-a's review: "each night" and "each room" are a room's price, and a lakh is written 1,20,000.
+    expect(share('@Go villa in North Goa under 8k each night')).toBeUndefined();
+    expect(share('@Go villa in North Goa 8k each room')).toBeUndefined();
+    expect(share('@Go villa in North Goa 1,20,000 per head')).toBe(12_000_000);
   });
 
   it("takes Jev's kind when it is sure, over the kind words", () => {
     expect(readTravelAsk('@Go Mumbai se Goa kal kuch hai kya', { ...CTX, kind: 'buses' })).toEqual({ kind: 'buses', query: { from: 'mumbai', to: 'goa', date: '2026-10-08' } });
     expect(readTravelAsk('@Go flights and a villa for Friday from Delhi to Goa', { ...CTX, kind: 'flights' })?.kind).toBe('flights');
+  });
+
+  it("never puts the trip's destination in for a place the tables don't know: the composer looks that one up", () => {
+    // The 8 Oct drill: "hotels in Manali" searched Goa, and Go offered Goa unasked.
+    expect(read('@Go hotels in Manali for our dates')).toBeNull();
+    expect(read('@Go a resort near Dharamshala 6 to 9 Nov')).toBeNull();
+    expect(read('can someone check trains from Mumbai to Kota on Thursday?')).toBeNull();
+    // No other place named: the trip's destination, as before.
+    expect(read('@Go a villa with a pool for our dates')?.query).toMatchObject({ area: 'North Goa', mustHave: ['pool'] });
+    expect(read('@Go hotels near the beach for our dates')?.query).toMatchObject({ area: 'North Goa' });
+    expect(read('@Go stays in our budget in November')?.query).toMatchObject({ area: 'North Goa' });
+    expect(read('can someone check trains from Mumbai on Thursday?')?.query).toMatchObject({ from: 'mumbai', to: 'North Goa' });
+  });
+
+  it("takes the ends of a journey as written when Jev is sure of the kind, for ixigo's box to resolve: any city starts early", () => {
+    const sure = (text: string, kind: 'buses' | 'trains' | 'stays') => readTravelAsk(text, { ...CTX, kind, asWritten: true });
+    // 10 Oct: no table knows Bangalore, so the line started nothing, and the composer's own search ran 2 s later.
+    expect(readTravelAsk('@Go buses from Bangalore to Goa on Friday night, AC sleeper', { ...CTX, kind: 'buses' })).toBeNull();
+    expect(sure('@Go buses from Bangalore to Goa on Friday night, AC sleeper', 'buses')).toMatchObject({ kind: 'buses', query: { from: 'bangalore', to: 'goa', date: '2026-11-06' } });
+    // Either order, Hinglish, two words, and one end to the trip's destination.
+    expect(sure('trains to Goa from Kota on 6 Nov', 'trains')).toMatchObject({ query: { from: 'kota', to: 'goa', date: '2026-11-06' } });
+    expect(sure('Hubli se Goa ki bus Friday ko', 'buses')).toMatchObject({ query: { from: 'hubli', to: 'goa', date: '2026-11-06' } });
+    expect(sure('buses from Hubli Dharwad to Goa on 6 Nov', 'buses')).toMatchObject({ query: { from: 'hubli dharwad', to: 'goa', date: '2026-11-06' } });
+    expect(sure('buses from Belagavi on Friday', 'buses')).toMatchObject({ query: { from: 'belagavi', to: 'North Goa', date: '2026-11-06' } });
+    // Words that are never a place end it, or give none: no search on a guess.
+    expect(sure('buses from tomorrow to Friday', 'buses')).toBeNull();
+    expect(sure('kal se Goa ki bus dekho Friday', 'buses')).toBeNull();
+    expect(sure('I want to go by bus from home on Friday', 'buses')).toBeNull();
+    // A stay's place is the trip's or one the tables know: Manali is still the composer's to look up.
+    expect(sure('hotels in Manali for our dates', 'stays')).toBeNull();
+  });
+
+  it('reads a city ixigo resolved before with no word from Jev: what was looked up is a cache, and nothing new is', () => {
+    const line = '@Go buses from Bangalore to Goa on Friday';
+    expect(read(line)).toBeNull();
+    learnPlace('buses', 'Bangalore', { name: 'Bengaluru', id: 7 });
+    try {
+      expect(read(line)).toEqual({ kind: 'buses', query: { from: 'bangalore', to: 'goa', date: '2026-11-06' } });
+      // Another city, never resolved: still nothing without Jev's sure kind.
+      expect(read('@Go buses from Hubli to Goa on Friday')).toBeNull();
+    } finally {
+      forgetLearnedPlaces();
+    }
+  });
+
+  it('starts no search for a watch the group asks Go to keep: that is watch_ixigo, in the turn (8 Oct drill)', () => {
+    expect(read('@Go let us know if a pool stay in North Goa for our dates goes under ₹3,000')).toBeNull();
+    expect(read('@Go tell us when the Mumbai to Goa bus on 6 Nov drops below 900')).toBeNull();
+    expect(read('@Go keep an eye on villas in North Goa for our dates')).toBeNull();
+    expect(read('@Go can you watch trains from Mumbai to Goa on 6 Nov for us')).toBeNull();
+    // The plain ask still starts.
+    expect(read('@Go a villa with a pool in North Goa for our dates')?.kind).toBe('stays');
+  });
+
+  it("starts no search for ixigo's offers: another job, not a list (staging, 8 Oct: Go's only answer was a stays card)", () => {
+    expect(read('@Go any ixigo offers on hotels right now?')).toBeNull();
+    expect(read('@Go any deals or coupons on flights Delhi to Goa on Friday?')).toBeNull();
+    expect(read('@Go a bus Mumbai to Goa on 6 Nov, any discount?')).toBeNull();
+    // The plain ask still starts.
+    expect(read('@Go hotels in Anjuna for our dates')?.kind).toBe('stays');
   });
 
   it('gives nothing for less than one whole search of one kind', () => {

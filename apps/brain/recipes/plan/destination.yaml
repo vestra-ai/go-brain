@@ -1,0 +1,68 @@
+id: plan.destination
+title: Places to visit and things to do in a destination, its best time to go, the weather by month and places to eat, from ixigo's guide
+asks:
+  - best time to visit goa
+  - good places to eat in goa
+  - what to do in goa
+  - goa ke famous jagah kaun si hain
+inputs:
+  place: { kind: text, about: "the destination as people said it, such as Goa" }
+  kind: { kind: choice, optional: true, from_page: true, about: "the kind of place to visit, as the guide's own chips: beach, nature, scenic, market, historical, religious or museum" }
+auth: none
+changes_state: false
+# ixigo's guide page, /plan/{slug}: server-rendered, its props in the Next.js flight payload the page carries in its
+# scripts. The same payload, asked with the header "RSC: 1", answers in about 0.4 s (the fast speed, to come).
+let:
+  slug: "$lowercase($replace($trim(place), /[^A-Za-z0-9]+/, '-'))"
+page: /plan/{$slug}
+fast: { url: "/plan/{$slug}", headers: { RSC: "1" }, format: rsc }
+# The page's own document, up to Bash's 1 MB (a guide page is about 333 KB). Its parts carry the guide in pieces: the
+# best time and the weather by month in one, each list ("Places To Visit", "Places To Eat") as a widget of its own. A
+# place with no guide still answers, with no bestTime in it: no rows, which the ixigo tool says plainly.
+capture:
+  - { match: "/plan/{$slug}$", max_bytes: 1000000 }
+read:
+  rows: { from: "/plan/{$slug}$", format: next_html, list: "$exists($find($, 'bestTime')) ? { 'page': $ }" }
+answer:
+  as: facts
+  title: "{place}"
+  max: 1
+  # Places To Visit and Places To Eat are ixigo's own, with ratings: the only places Go names for the destination. The
+  # photo is the page's own: the first of its hero's photos (imagedelivery.net, 8 Oct), else the first place to visit's.
+  each: |
+    (
+      /* A kind asked, as the guide's own chip ("Beach", "Historical"), keeps those places only. */
+      $kind := ($k := $lowercase($trim($inputs.kind)); $k in ['beach', 'beaches'] ? 'beach' : $k in ['nature', 'scenic', 'market', 'historical', 'religious', 'museum'] ? $k : $k in ['markets', 'shopping'] ? 'market' : $k in ['history', 'heritage', 'forts', 'fort'] ? 'historical' : $k in ['temples', 'temple', 'churches', 'church'] ? 'religious' : $k in ['museums'] ? 'museum' : $k in ['viewpoints', 'viewpoint', 'views'] ? 'scenic' : $k in ['waterfalls', 'wildlife', 'parks'] ? 'nature');
+      $guide := $find(page, 'bestTime');
+      $widget := function($t) { $findAll(page, 'widget').widget[title = $t] };
+      $hero := $find(page, 'photos').photos[0];
+      $visit := $widget("Places To Visit").data[0].(photo ? photo : image);
+      /* 10 Oct B3, up to twelve: the hero's first as the place itself, then each place to visit's by its name, then more of the hero's. */
+      $heroes := $find(page, 'photos').photos[$type($) = "string"];
+      $spots := [$widget("Places To Visit").data[$type(photo) = "string" or $type(image) = "string"].{ "url": photo ? photo : image, "label": name }];
+      {
+        "destination": $find(page, 'destination').destination,
+        "photo": $type($hero) = "string" ? $hero : ($type($visit) = "string" ? $visit),
+        "photos": $append($append($count($heroes) > 0 ? [{ "url": $heroes[0], "label": $find(page, 'destination').destination }] : [], $spots), [$heroes[[1..11]].{ "url": $ }])[[0..11]],
+        "best_time": $guide.bestTime,
+        /* The same months as numbers, 1 to 12 (place_info's best_months): the guide's popularMonthRange, [from, to) pairs
+           such as [[1, 4], [11, 13]] for "November - March". */
+        "best_months": ($ranges := $lookup($guide, 'popularMonthRange'); [$filter([1..12], function($m) { $count($filter($ranges, function($r) {
+          $type($r) = "array" and $count($r) = 2 and $type($r[0]) = "number" and $type($r[1]) = "number"
+            ? ($r[0] <= $m and $m < $r[1]) or ($r[0] <= $m + 12 and $m + 12 < $r[1]) : false
+        })) > 0 })]),
+        "weather_by_month": [$guide.weatherHistory.(month & ": " & $string(weatherAqi.min) & " to " & $string(weatherAqi.max) & " C. " & summary)],
+        "places_to_visit": [$widget("Places To Visit").data[$not($exists($kind)) or $lowercase(type) = $kind].(
+          name & " (" & $join([$exists($num(rating)) ? $string($num(rating)), type ? $lowercase(type)], ", ") & ")" & (description ? ": " & description : "")
+        )],
+        "places_to_eat": [$widget("Places To Eat").data.(name & ($exists($num(rating)) ? " (" & $string($num(rating)) & ")" : ""))],
+        "ideas": [$widget("Ideas To Plan Your Trip").data.name],
+        "faq": [$findAll(page, 'heading')[$type(content) = "string"].(
+          heading & " " & $trim($replace($replace($replace(content, /<[^>]+>/, " "), /&nbsp;|&amp;/, " "), /\s+/, " "))
+        )]
+      }
+    )
+ttl_minutes: 60
+samples: { page: plan.destination.html, fast: plan.destination.rsc.txt }
+measured: { fast_ms: 437, page_ms: 5100, flow_ms: null }
+notes: The payload carries the page's apikey, deviceId and uuid; the engine drops them before anything reads the body.

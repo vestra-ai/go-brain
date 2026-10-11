@@ -9,6 +9,12 @@ export const TravelEnv = z.object({
   TRAVEL_MODE: z.enum(['ixigo', 'ixigo_web', 'fake']).optional(),
   /** How Go reads ixigo.com: a job on the trip's computer, or Bash's browser fetch. The TRAVEL_RUNNER switch can change it. */
   TRAVEL_RUNNER: z.enum(['agent_job', 'browser_fetch']).optional(),
+  /** How many browser fetches Go runs at once on a trip's computer (Bash's cap). The BROWSER_FETCH_SLOTS switch can change it. */
+  BROWSER_FETCH_SLOTS: z.enum(['1', '2', '3', '4']).optional(),
+  /** Whether Go keeps the watches a group asks for on ixigo. Off unless set; staging sets on. The RECIPE_WATCHES switch can change it. */
+  RECIPE_WATCHES: z.enum(['off', 'on']).optional(),
+  /** Whether Go books flights and stays on ixigo's own pages up to their pay button. Off unless set. The BOOKING switch can change it. */
+  BOOKING: z.enum(['off', 'on']).optional(),
   IXIGO_MCP_URL: z.url().optional(),
   IXIGO_MCP_TOKEN: z.string().min(1).optional(),
 });

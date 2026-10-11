@@ -21,7 +21,7 @@ beforeAll(async () => {
     PORT: '0', DATABASE_URL: process.env.DATABASE_URL, GO_SIGNING_SECRET: SECRET, GO_PUBLIC_URL: 'http://127.0.0.1',
     ANTHROPIC_API_KEY: 'test-key', LOG_LEVEL: 'silent',
   });
-  built = await buildBrain(env, { pool: db.pool, anthropic: model.client, logger: false, timings: { deskPollMs: 50 } });
+  built = await buildBrain(env, { pool: db.pool, anthropic: model.client, logger: false, timings: { deskPollMs: 50, typingMinMs: 0 } });
   await registerRoom(built.brain);
   ({ port } = await built.start());
   server = await rawServer(`ws://127.0.0.1:${port}/v1/socket?instance=boot-test`, SECRET, (method, params) => {
@@ -41,7 +41,7 @@ afterAll(async () => {
 describe('boot', () => {
   it('serves /v1/health', async () => {
     const r = await fetch(`http://127.0.0.1:${port}/v1/health`);
-    expect(await r.json()).toEqual({ ok: true, contract: '1.0.0' });
+    expect(await r.json()).toEqual({ ok: true, contract: '1.3.0' });
   });
 
   it('hands every lane the model client it was given, so side passes use the same fake or recorder', async () => {

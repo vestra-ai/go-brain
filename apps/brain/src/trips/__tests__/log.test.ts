@@ -22,6 +22,57 @@ describe('TripLog', () => {
     expect(rows[0]?.n).toBe(1);
   });
 
+  it("appends on connections of its own: a main pool with none free never holds send_event's answer", async () => {
+    const busy = { query: () => new Promise(() => {}), connect: () => new Promise(() => {}) } as never;
+    const log = createTripLog({ pool: busy, appendPool: db.pool, log: silentLog, now: () => new Date() });
+    const e = ev(1, 'trip.created', { trip: goaSnapshot({ trip_id: 't_own_pool' }) }, 't_own_pool');
+    expect(await log.append(e, { instance: 'server-1', server: 'vestra-staging' })).toBe('new');
+    const { rows } = await db.pool.query('select last_seq, server_instance, server_name from trips where trip_id = $1', ['t_own_pool']);
+    expect(rows[0]).toEqual({ last_seq: 1, server_instance: 'server-1', server_name: 'vestra-staging' });
+  });
+
+  // Prod, 11 Oct 07:24Z: the Server redeployed and its socket's instance (its container) changed. Every older trip kept
+  // waiting for the old instance: "no socket from the Server is open", then "a turn failed".
+  it("moves the trip's home to the socket each event comes on, a repeat too; an event with no socket keeps it", async () => {
+    const log = createTripLog({ pool: db.pool, log: silentLog, now: () => new Date() });
+    const T = 't_rehome_log';
+    const home = async () => (await db.pool.query('select server_instance, server_name from trips where trip_id = $1', [T])).rows[0];
+    const first = ev(1, 'trip.created', { trip: goaSnapshot({ trip_id: T }) }, T);
+    expect(await log.append(first, { instance: 'ca6989a06930-80' })).toBe('new');
+    expect(await home()).toEqual({ server_instance: 'ca6989a06930-80', server_name: null });
+    // The Server redeployed: its next event comes on the new instance's socket.
+    const next = ev(2, 'message.created', { message: msg(2, 'p_rahul', 'hi') }, T);
+    expect(await log.append(next, { instance: 'fb0da31b49f7-80' })).toBe('new');
+    expect(await home()).toEqual({ server_instance: 'fb0da31b49f7-80', server_name: null });
+    // A repeat the Server resends from yet another socket moves it too; one with no socket leaves it.
+    expect(await log.append(next, { instance: 'c0ffee000000-80', server: 'prod' })).toBe('duplicate');
+    expect(await home()).toEqual({ server_instance: 'c0ffee000000-80', server_name: 'prod' });
+    expect(await log.append(ev(3, 'message.created', { message: msg(3, 'p_rahul', 'ok') }, T))).toBe('new');
+    expect(await home()).toEqual({ server_instance: 'c0ffee000000-80', server_name: 'prod' });
+  });
+
+  // Prod, 11 Oct 08:13Z: a trip that only got taps after its Server's redeploy kept its old instance, and a login tap's
+  // card never went out. A request that names the trip moves its home as an event does.
+  it("moves the trip's home to the socket a request naming it came on, never across named Servers; no trip, no move", async () => {
+    const log = createTripLog({ pool: db.pool, log: silentLog, now: () => new Date() });
+    const T = 't_rehome_tap';
+    const home = async () => (await db.pool.query('select server_instance, server_name from trips where trip_id = $1', [T])).rows[0];
+    await log.append(ev(1, 'trip.created', { trip: goaSnapshot({ trip_id: T }) }, T), { instance: 'ca6989a06930-80' });
+    expect(await log.rehome(T, { instance: 'fb0da31b49f7-80' })).toEqual({ instance: 'fb0da31b49f7-80', server: null });
+    expect(await home()).toEqual({ server_instance: 'fb0da31b49f7-80', server_name: null });
+    // Already there: nothing moves, nothing for the link to follow.
+    expect(await log.rehome(T, { instance: 'fb0da31b49f7-80' })).toBeNull();
+    // The Server starts giving its name: the trip takes it.
+    expect(await log.rehome(T, { instance: 'fb0da31b49f7-80', server: 'prod' })).toEqual({ instance: 'fb0da31b49f7-80', server: 'prod' });
+    // Another named Server, or a socket with no name, never takes a named Server's trip; another replica of it does.
+    expect(await log.rehome(T, { instance: 'drill-1', server: 'drill' })).toBeNull();
+    expect(await log.rehome(T, { instance: 'rahul-mac-rev4' })).toBeNull();
+    expect(await home()).toEqual({ server_instance: 'fb0da31b49f7-80', server_name: 'prod' });
+    expect(await log.rehome(T, { instance: 'c0ffee000000-80', server: 'prod' })).toEqual({ instance: 'c0ffee000000-80', server: 'prod' });
+    expect(await log.rehome('t_rehome_none', { instance: 'fb0da31b49f7-80' })).toBeNull();
+    expect((await db.pool.query('select 1 from trips where trip_id = $1', ['t_rehome_none'])).rowCount).toBe(0);
+  });
+
   it('ignores an event id that comes again for another trip, and warns naming both trips', async () => {
     const warned: Array<Record<string, unknown>> = [];
     const log = createTripLog({ pool: db.pool, log: { ...silentLog, warn: (obj) => warned.push(obj as Record<string, unknown>) }, now: () => new Date() });

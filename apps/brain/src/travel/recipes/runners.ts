@@ -1,41 +1,254 @@
 /**
- * Two ways to run a recipe in the trip's own browser. The browser fetch is Bash's model-free call: the page opens in a
- * background tab and the page's own data calls come back, in 3 to 8 s. The agent job is the fallback: a /v1 job on the
- * go-recipe deployment opens the page and runs the recipe's page script, in 25 to 55 s, so nothing waits on it inline.
- * The TRAVEL_RUNNER switch picks one on every search. Either way, what comes back goes through the recipe's checks, and
- * the run reports its steps (onProgress) for the live search card.
+ * How Go reads a page in the trip's own browser: Bash's browser fetch, a model-free call. The page opens in a background
+ * tab, its steps are worked, and the page's own data calls come back with the address it ended on, in 3 to 8 s. The
+ * recipe engine (book/engine.ts) decides what to open and reads what comes back. The /v1 agent job is for the long tail,
+ * beyond the recipe book.
  */
-import { createHash } from 'node:crypto';
-import type { Switches } from '../../admin/switches.js';
 import { V1Error, type V1Client } from '../../tasks/v1-client.js';
 import { TravelError } from '../mcp-travel.js';
 import type { LiveFrame, OnProgress } from './progress.js';
-import { AGENT_MAX_ROWS, bodiesFor, snapshotText, type Capture, type FetchPlan, type Recipe, type RecipeOption } from './recipe.js';
+import { bodiesFor, IXIGO, type Capture, type CaptureSpec, type FetchPlan, type Step } from './recipe.js';
 
-export interface RecipeRun {
-  options: RecipeOption[];
-  /** When the page was read. */
-  checkedAt: string;
-  ms: number;
+/** A page's own call, as a recipe's fast speed makes it: a path on ixigo, or a full https address the deployment allows. */
+export interface PageCall {
+  url: string;
+  method: 'GET' | 'POST';
+  headers?: Record<string, string>;
+  body?: string;
+}
+
+/**
+ * What a Bash call says about itself, for the run strip (book/run-event.ts): the calls it kept and, for a page, where its
+ * time went. Statuses, times and addresses only (the strip drops their queries); a failure by its status and code.
+ */
+export interface FetchTrace {
+  /** When the call to Bash was made, in epoch ms. */
+  started_at: number;
+  elapsed_ms: number;
+  woke?: boolean;
+  /** In ms from when the call reached Bash. */
+  timings?: { wake_ms: number; nav_ms: number | null; first_capture_ms: number | null; done_ms: number } | null;
+  calls: Array<{ method?: 'GET' | 'POST'; url: string; status: number; at_ms?: number; ms?: number }>;
+  /** A call that failed: its status (504, 409, …) and Bash's code, or where a timeout stopped ("ran out of time at 3 type"). */
+  failed?: { status: number; why: string };
+}
+
+/** onProgress: pictures of the page, for the live search card; onTrace: where the time went, for the run strip. Both
+ *  called, never awaited. */
+export interface ReadOptions {
+  signal?: AbortSignal;
+  onProgress?: OnProgress;
+  onTrace?: (t: FetchTrace) => void;
+  /** Its place among fetches waiting for one of the computer's slots: lower goes first (a composite's trains before its
+   *  buses); the same, first come first served. None is 0. */
+  priority?: number;
+  /** The run's id, which Bash's browser watch names the fetch's tab by, so the live view labels the tab's tile with its run. */
+  tag?: string;
+  /**
+   * A page a person is waiting on: its tab stays open on its page after the answer, as the trip's warm tab (WARM_TAB_MS).
+   * ixigo draws what it answered about 2 s after its data (8 Oct probe: the hotel list 2.1 s after the accommodations
+   * call), after Bash has answered, so a tab closed at the answer only ever showed the live view ixigo's skeleton. The
+   * answer never waits for the drawing; the next page call runs in this tab with no page load.
+   */
+  keepOpen?: boolean;
+  /** With keepOpen, for a live card: one more picture of the kept tab once ixigo has drawn it (LOOK_AFTER_MS, `drawn`). */
+  look?: boolean;
+  /**
+   * A person watches: the page opens on the browser's stage (Bash's stage), in front, in the one tab every watched read
+   * uses (STAGE_TAB), its steps done where the room's live view sees them, and the page left on screen STAGE_MS after.
+   */
+  stage?: boolean;
+  /**
+   * The trip account's own page (an auth: login recipe's: My Trips, the help centre's bookings): a tab the browser watch
+   * never shows, stage or not (Bash's private), and no picture of it taken. A Bash that predates private refuses it, and
+   * the read fails: never read where the room could see it (the lead, 10 Oct).
+   */
+  private?: boolean;
+  /**
+   * The caller reads another way when the page catches nothing (a filtered stays search reads its page again unfiltered,
+   * backend.ts): such a page is never asked twice here, and throws NothingCaughtError.
+   */
+  fallsBack?: boolean;
+  /** What the read is, for the log when its time runs out: its recipe, its conditions, its yes-or-no lets. No words, no dates. */
+  about?: Record<string, string | boolean | string[]>;
 }
 
 export interface RecipeRunner {
-  name: 'browser_fetch' | 'agent_job';
-  /** onProgress: the run's steps, for the live search card; called, never awaited. */
-  run<S>(tripId: string, recipe: Recipe<S>, slots: S, o?: { signal?: AbortSignal; onProgress?: OnProgress }): Promise<RecipeRun>;
+  name: 'browser_fetch';
+  /** Opens a page, works its steps and brings back the calls the plan keeps, and the address the page ended on. */
+  read(tripId: string, url: string, plan: FetchPlan, o?: ReadOptions): Promise<{ captures: Capture[]; finalUrl: string }>;
+  /**
+   * Makes a page's own call from the trip's warm ixigo tab (Bash's page_fetch), keeping the tab open for the next one;
+   * with no tab kept, it opens ixigo's home first. The call's answer, as a capture.
+   */
+  pageFetch?(tripId: string, call: PageCall, o?: Omit<ReadOptions, 'onProgress'>): Promise<Capture>;
+  /** Whether page calls are worth trying now: false for a while after a Bash without page_fetch refused one. */
+  canPageFetch?(): boolean;
+  /** Whether a click that picks one card's button (near_text, nth) is worth sending: false for a while after a Bash refused one. */
+  canPickOne?(): boolean;
+  /** A new trip's computer's first ixigo visit, before anyone asks (COLD_COMPUTER below). Throws when ixigo did not answer. */
+  prime?(tripId: string): Promise<void>;
+  /**
+   * A hand-off the person finishes themselves (the ixigo login), with no model: the page opens in FRONT of their window on
+   * the trip's computer (Bash's front), its steps run, and its tab stays there for them, kept under `tab`. A page that ran
+   * out of time stays open for them all the same, with what it caught. `check`: one call from inside the page before the
+   * steps (one byte, its status, as capture `check`). Throws a TravelError when Bash would not open it. challenged: the
+   * page stayed on Cloudflare's check (CLOUDFLARE), and the caller closes it: it is never the person's. device: desktop
+   * opens the site's desktop page (Bash's front_device), the one every other fetch on the browser reads; a Bash without
+   * it opens the phone page, and the answer says which ran.
+   */
+  handOff?(
+    tripId: string, url: string, plan: FetchPlan, o: { keepOpenMs: number; tab: string; check?: PageCall; device?: 'desktop'; crop?: CropTo },
+  ): Promise<{ captures: Capture[]; challenged?: true; device?: 'phone' | 'desktop' }>;
+  /** Closes a hand-off's tab, so the person's own window is on top again; nothing when it is already gone. */
+  release?(tripId: string, tab: string): Promise<void>;
+  /**
+   * Which cookies of these names the trip's browser holds for an allowed site, and until when (Bash's GET
+   * /v1/users/{id}/browser/cookies): names and expiry only, never a value, with no page opened, so a person signing in
+   * on a hand-off is never disturbed. expiresAt in ms; null for a cookie that lasts while the browser runs. Null when
+   * Bash can't say (a Bash without the read, a computer that didn't answer).
+   */
+  cookies?(tripId: string, domain: string, names: string[]): Promise<Array<{ name: string; expiresAt: number | null }> | null>;
+  /**
+   * Steps on the page the stage already holds (Bash's url-less fetch on the stage tab), with the calls the page they lead
+   * to makes caught as for a read: a person's click on what the room is watching, a stay's card on the results opening its
+   * page in the same tab. What Bash answers, as read() gives it; a stage with no page open is a TravelError.
+   */
+  onStage?(tripId: string, plan: FetchPlan, o?: ReadOptions): Promise<{ captures: Capture[]; finalUrl: string }>;
+  /**
+   * Whether the stage shows the page its last read opened, read in full: false once that read failed or ran out of time
+   * (the stage holds a page that never drew its results), once steps on the stage moved it on, or past STAGE_MS. Steps
+   * that click on what the room watches (a top pick's card) are worth sending only then (exam, 10 Oct: a click on a pick
+   * the stage didn't show looked for it for the fetch's whole 20 s).
+   */
+  stageReady?(tripId: string): boolean;
+  /** When a page this trip's computer opened last met Cloudflare's check (CLOUDFLARE), in ms; null when none has. */
+  lastChallenge?(tripId: string): number | null;
+  /**
+   * One page call from inside the kept tab of that name (Bash's page_fetch on it, no url), keeping the tab keepOpenMs
+   * more: one byte of its answer, for its status. Null when no tab is kept under that name.
+   */
+  tabCall?(tripId: string, tab: string, call: PageCall, keepOpenMs: number): Promise<Capture | null>;
+  /**
+   * Steps on the kept hand-off tab of that name, kept in front for keepOpenMs more (Bash's url-less front fetch): a tap or
+   * two on a page the person already watches. Best effort: a step not found (Bash's time runs out with the tab kept) or a
+   * tab already gone is nothing; anything else Bash refuses is a TravelError.
+   */
+  tabSteps?(tripId: string, tab: string, steps: Step[], o: { keepOpenMs: number; timeoutMs: number; crop?: CropTo }): Promise<void>;
+}
+
+/**
+ * The one element of a desktop hand-off's page a person's screen shows (Bash's front_crop, bash #4654), such as a site's
+ * sign-in dialog: a phone sees it at about 1:1, never the whole desktop page (the App team, 10 Oct: "a laptop view").
+ */
+export interface CropTo {
+  role?: string;
+  name?: string;
+  text?: string;
 }
 
 export interface RunnerDeps {
   v1: Pick<V1Client, 'call'>;
-  computer: { userIdFor(tripId: string): string; ensureUser(tripId: string): Promise<string> };
+  /**
+   * The trip's browser (tasks/browsers.ts): the /v1 user whose Chrome every fetch here runs in, the organizer's own,
+   * shared by all of their trips; again makes it on /v1 once more, when /v1 said it does not know it.
+   */
+  browser: { userFor(tripId: string): Promise<string>; again(tripId: string): Promise<string> };
   now: () => Date;
   sleep?: (ms: number) => Promise<void>;
   log: { warn(obj: object, msg: string): void };
+  /** How many browser fetches Go runs at once on one trip's computer: Bash's own cap (the BROWSER_FETCH_SLOTS switch). */
+  slots?: () => number;
 }
 
 const nap = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms).unref());
 
+/** Bash's cap on a computer's fetches at once, until it says otherwise: two. */
+export const DEFAULT_SLOTS = 2;
+/** Bash refused a fetch because all its own are taken (409 browser_busy): Go waits as long as Bash says, this many times. */
+export const BUSY_TRIES = 5;
+const BUSY_WAIT_MS = 1_000;
+
+/**
+ * Go's own count of the fetches running on each computer (by its /v1 user, whatever trip or run asks), so it asks Bash
+ * for no more at once than Bash runs: a fetch over the count waits here for one to end, first come first served, instead
+ * of being refused. A fetch that is waiting when its signal aborts leaves without asking Bash anything.
+ */
+function fetchSlots(slots: () => number): (box: string, signal?: AbortSignal, priority?: number) => Promise<() => void> {
+  const running = new Map<string, number>();
+  const waiting = new Map<string, Array<{ go: () => void; priority: number }>>();
+  const room = (box: string): boolean => (running.get(box) ?? 0) < Math.max(1, slots());
+  const pump = (box: string): void => {
+    const queue = waiting.get(box);
+    while (queue?.length && room(box)) {
+      running.set(box, (running.get(box) ?? 0) + 1);
+      queue.shift()!.go();
+    }
+    if (queue?.length === 0) waiting.delete(box);
+  };
+  return async (box, signal, priority = 0) => {
+    if (signal?.aborted) throw signal.reason;
+    if (room(box) && !waiting.has(box)) {
+      running.set(box, (running.get(box) ?? 0) + 1);
+    } else {
+      await new Promise<void>((resolve, reject) => {
+        const queue = waiting.get(box) ?? [];
+        waiting.set(box, queue);
+        const stop = (): void => {
+          queue.splice(queue.indexOf(entry), 1);
+          if (queue.length === 0) waiting.delete(box);
+          reject(signal!.reason);
+        };
+        const entry = {
+          priority,
+          go: (): void => {
+            signal?.removeEventListener('abort', stop);
+            resolve();
+          },
+        };
+        signal?.addEventListener('abort', stop, { once: true });
+        // After every waiting fetch of its priority or a lower one; then whoever is first goes, if there is room (the
+        // slots were raised while fetches waited).
+        const at = queue.findIndex((w) => w.priority > priority);
+        queue.splice(at === -1 ? queue.length : at, 0, entry);
+        pump(box);
+      });
+    }
+    let freed = false;
+    return () => {
+      if (freed) return;
+      freed = true;
+      const left = (running.get(box) ?? 1) - 1;
+      if (left > 0) running.set(box, left);
+      else running.delete(box);
+      pump(box);
+    };
+  };
+}
+
+/** A promise, or the signal's reason once it aborts, whichever comes first. */
+function untilAborted(p: Promise<void>, signal: AbortSignal | undefined): Promise<void> {
+  if (!signal) return p;
+  return new Promise((resolve, reject) => {
+    if (signal.aborted) return reject(signal.reason);
+    const stop = (): void => reject(signal.reason);
+    signal.addEventListener('abort', stop, { once: true });
+    void p.then(() => {
+      signal.removeEventListener('abort', stop);
+      resolve();
+    });
+  });
+}
+
+/** How long Bash says to wait before asking again when its fetches are all taken. */
+function busyWaitMs(err: V1Error): number {
+  const said = Number(err.detail?.['retry_after_ms']);
+  return Number.isFinite(said) && said > 0 ? Math.min(said, 5_000) : (err.retryAfterMs ?? BUSY_WAIT_MS);
+}
+const isBusy = (err: unknown): boolean => err instanceof V1Error && err.status === 409 && err.code === 'browser_busy';
+
 export const OUT_OF_CREDIT = "Go's account for the trip's computer is out of credit.";
+export const PAYMENT_PAGE_BLOCKED = "That's the payment page, and Go never opens it; the payer finishes on ixigo.";
 
 // ── the browser fetch ────────────────────────────────────────────────────────
 
@@ -44,15 +257,294 @@ export const OUT_OF_CREDIT = "Go's account for the trip's computer is out of cre
  * matters for a sleeping box, where a stays search ran past 13 s on staging.
  */
 export const FETCH_TIMEOUT_MS = 20_000;
-/** A person used the browser in the last 4 s: Go waits that out once, then gives up. */
-export const IN_USE_WAIT_MS = 4_000;
+/** A cookie read: one read of the browser on a computer that is up. */
+export const COOKIES_TIMEOUT_MS = 5_000;
+/** A browser's cookie read answered this recently is the answer for every wait that asks for the same names. */
+export const COOKIES_SHARE_MS = 1_500;
 
-interface FetchAnswer { final_url: string; elapsed_ms: number; woke: boolean; captures: Capture[]; frames?: LiveFrame[] }
+/**
+ * How long Bash waits past a plan's required captures for its optional ones (a recipe's `required: false`), when the plan
+ * names no grace of its own. Without a grace Bash takes no `required` and waits for every capture: an optional call the
+ * page never makes held the read to FETCH_TIMEOUT_MS (staging, 10 Oct: hotels.details p50 23.7 s, trains.between and the
+ * plain offers read about 20 s). With it, an optional capture is kept when it comes and never blocks when it doesn't.
+ */
+export const OPTIONAL_GRACE_MS = 1_500;
+
+/** A capture as Bash's browser fetch takes it. */
+export interface BashCapture {
+  match: string;
+  required?: boolean;
+  max_bytes?: number;
+  sse?: 'last';
+  min_count?: number;
+  max_count?: number;
+}
+
+/**
+ * A plan's captures as Bash takes them, and its grace: every field the recipe set, the same on every path (a page read,
+ * the stage, a hand-off). `required` goes only with a grace, or for a capture never waited for (besides); a plan with an
+ * optional capture and a required one takes OPTIONAL_GRACE_MS when it names none. One whose captures are all optional
+ * keeps Bash's wait for every one: Bash refuses a fetch with none required (the recipe lint, book/__tests__, refuses
+ * such a recipe).
+ */
+export function bashCaptures(
+  plan: FetchPlan,
+  size: (c: CaptureSpec) => { max_bytes?: number; sse?: 'last' } = (c) => ({ ...(c.max_bytes ? { max_bytes: c.max_bytes } : {}), ...(c.sse ? { sse: c.sse } : {}) }),
+): { capture: BashCapture[]; grace_ms?: number } {
+  const waited = plan.capture.filter((c) => !c.besides);
+  const optional = waited.some((c) => !c.required) && waited.some((c) => c.required);
+  const grace = plan.graceMs ?? (optional ? OPTIONAL_GRACE_MS : undefined);
+  return {
+    capture: plan.capture.map((c) => ({
+      match: c.match,
+      ...(grace ? { required: c.besides ? false : c.required } : c.besides ? { required: false } : {}),
+      ...size(c),
+      ...(c.min_count ? { min_count: c.min_count } : {}),
+      ...(c.max_count ? { max_count: c.max_count } : {}),
+    })),
+    ...(grace ? { grace_ms: grace } : {}),
+  };
+}
+/** How wide Bash takes a fetch's pictures: the width of its window, so a picture is sharp at its own size, never stretched. */
+export const FRAME_WIDTH = 1280;
+/** Pictures a second Go asks Bash's watch for: its most, since Bash shares them across the open tabs (6 gave about 3 a tab). */
+export const WATCH_FPS = 10;
+/** A person used the browser in the last 4 s (Bash's quiet window): Go asks again past it. */
+export const IN_USE_WAIT_MS = 5_000;
+/**
+ * How long a read waits for the browser while a person has it (ixigo's login open on Go's screen, on a Bash from before
+ * reads ran behind it; a person driving it on Watch): as long as a login is held open there. It never fails for it: the
+ * live card says so once, a search outlives its turn (tools.ts handOver) and its card goes up when it lands. Its signal,
+ * when it has one, ends the wait sooner.
+ */
+export const IN_USE_PATIENCE_MS = 10 * 60_000;
+/** A hand-off's own page asks again this many times while the person is still typing on Watch (staging, 9 Oct, 18:52). */
+export const HANDOFF_IN_USE_TRIES = 3;
+/** How long a page call may take before the run falls to the page speed: it answers in about 0.4 s on a warm tab. */
+export const FAST_TIMEOUT_MS = 5_000;
+/**
+ * How long the warm ixigo tab stays open after a page call, or after a page a person waited on (keepOpen): the next call
+ * within it needs no page load, and the live view sees the page drawn.
+ */
+export const WARM_TAB_MS = 120_000;
+/** The stage's tab (ReadOptions.stage): one for the trip's browser, every watched read opening its page in it. */
+export const STAGE_TAB = 'stage';
+/** How long the stage stays on its last page after a read, on screen for the room, until the next one takes it. */
+export const STAGE_MS = 300_000;
+/**
+ * How long Go stops trying page calls after Bash refused one as a request it doesn't take (a 400: a Bash with no
+ * page_fetch yet), or answered with no page call in it. Once Bash has page_fetch, they resume within this, with no deploy
+ * of Go's.
+ */
+export const FAST_UNSUPPORTED_MS = 10 * 60_000;
+/**
+ * How long Go leaves a click's within_ms out after a Bash refused it (one that predates it: its steps take no unknown
+ * field): the click then looks once, as before. Once Bash has it, it is sent again within this, with no deploy of Go's.
+ */
+export const LOOK_UNSUPPORTED_MS = 10 * 60_000;
+
+/** The steps with no within_ms: what an optional click is on a Bash that predates it, a single look. */
+export const withoutLook = (steps: Step[]): Step[] =>
+  steps.map((s) => {
+    if (s.op !== 'click' || s.within_ms === undefined) return s;
+    const { within_ms: _within, ...once } = s;
+    return once;
+  });
+
+/**
+ * How long Go sends no click that picks one match among many (near_text, nth) after a Bash refused one: a Bash before
+ * bash #4637, whose click step takes no unknown key, refuses the whole fetch before it opens anything. Such a click is
+ * never sent as a plain one, which would take the page's first match: another bus's card.
+ */
+export const NEAR_UNSUPPORTED_MS = 10 * 60_000;
+
+/** A click that picks one match among many: a bus card's own "Select Seats". */
+const picksOne = (s: Step): boolean => s.op === 'click' && (s.near_text !== undefined || s.nth !== undefined);
+
+/** Bash refused the fetch for a click's near_text or nth: its 400 names that step (param "steps.2", "steps.2.near_text"). */
+function refusedNear(err: V1Error, steps: Step[] | undefined): boolean {
+  if (err.status !== 400 || err.code !== 'invalid_request' || !steps) return false;
+  const param = err.detail?.['param'];
+  const at = typeof param === 'string' ? /^steps\.(\d+)(?:\.|$)/.exec(param) : null;
+  const step = at ? steps[Number(at[1])] : undefined;
+  return step !== undefined && picksOne(step);
+}
+
+/** A fetch whose click must pick one card's button, on a Bash that can't yet (NEAR_UNSUPPORTED_MS): never run. */
+export class NearUnsupportedError extends TravelError {
+  constructor() {
+    super('refused', "The trip's browser can't click one card's own button yet.");
+  }
+}
+
+/** Bash refused the fetch for a click's within_ms: its 400 names that step (param "steps.0"), never by its message. */
+function refusedLook(err: V1Error, steps: Step[] | undefined): boolean {
+  if (err.status !== 400 || err.code !== 'invalid_request' || !steps) return false;
+  const param = err.detail?.['param'];
+  const at = typeof param === 'string' ? /^steps\.(\d+)(?:\.|$)/.exec(param) : null;
+  const step = at ? steps[Number(at[1])] : undefined;
+  return step?.op === 'click' && step.within_ms !== undefined;
+}
+
+/** Bash's most for one body; past it, up to 4 MB, only an event stream's last event with sse "last". */
+export const BASH_MAX_BYTES = 1_048_576;
+/**
+ * How long Go sends no sse "last" after a Bash refused it (one that predates it: its captures take no unknown field): the
+ * stream then comes whole, cut at Bash's most, and the reader takes the union of its complete events. Once Bash has it, it
+ * is sent again within this, with no deploy of Go's.
+ */
+export const SSE_UNSUPPORTED_MS = 10 * 60_000;
+
+/** A capture as a Bash with no sse "last" takes it: no sse, and no more than Bash's most. */
+const withoutSse = <C extends { sse?: 'last'; max_bytes?: number }>(c: C): C => {
+  if (c.sse === undefined) return c;
+  const { sse: _sse, ...rest } = c;
+  return { ...rest, ...(c.max_bytes !== undefined && c.max_bytes > BASH_MAX_BYTES ? { max_bytes: BASH_MAX_BYTES } : {}) } as C;
+};
+
+/** Bash refused the fetch for a capture's sse: its 400 names that capture (param "capture.0"), never by its message. */
+function refusedSse(err: V1Error, capture: ReadonlyArray<{ match: string; sse?: 'last' }>): boolean {
+  if (err.status !== 400 || err.code !== 'invalid_request') return false;
+  const param = err.detail?.['param'];
+  const at = typeof param === 'string' ? /^capture\.(\d+)(?:\.|$)/.exec(param) : null;
+  return at !== null && capture[Number(at[1])]?.sse !== undefined;
+}
+/**
+ * COLD_COMPUTER. A computer's Chrome on its first ixigo visit, with none of ixigo's cookies, can draw a page that never
+ * makes its search call (staging, 8 Oct: a new trip's first stays search sat 12 s on skeletons under ixigo's popup, with
+ * nothing caught). So a new trip's computer visits ixigo once at setup (prime: the home page, its popup closed if it is
+ * there, one call from inside the page), and a page that runs out of time with nothing caught is asked once more at once:
+ * the second visit is warm. A warm computer's too (staging, 9 Oct: a logged-in computer's stays page caught nothing for
+ * 20 s at 14:54, and the same computer read stays in 8 s at 14:55), unless the read's caller has another way (fallsBack:
+ * a filtered stays search, which reads the page again unfiltered, backend.ts). How long the prime may take, a computer
+ * just made waking included.
+ */
+export const PRIME_TIMEOUT_MS = 15_000;
+/**
+ * When the look at a kept page goes, after the answer: ixigo drew the hotel list 2.1 s after its data on a cold box
+ * (8 Oct probe), and Bash answers about 1.3 s after the data, so this is past the drawing with room to spare.
+ */
+export const LOOK_AFTER_MS = 2_500;
+/** The look's own time: a tab already open and one tiny call inside it. */
+export const LOOK_TIMEOUT_MS = 5_000;
+/**
+ * The look's pictures, taken through Bash's settle window (its most). Without one, a look ends about 0.3 s after it starts
+ * and Bash waits only 100 ms for the picture still being taken, so it came back with none (the 8 Oct verify of #242: the
+ * card kept the skeleton). With it, three pictures of the drawn page in about 1 s (probe: 155, 496 and 836 ms, 116 KB).
+ */
+export const LOOK_SETTLE_MS = 700;
+/** The one call a look makes inside the tab: Bash takes no fetch without a call or a capture, and ixigo's icon is the smallest. */
+const LOOK_STEP = { op: 'page_fetch', url: '/favicon.ico', method: 'GET', capture_as: 'look', max_bytes: 1_000 };
+
+/**
+ * CLOUDFLARE. ixigo sits behind Cloudflare, which now and then answers a page load with its own check ("Just a moment...")
+ * instead of the page: about 1 in 7 front loads on a staging box (8 Oct), where every box leaves through one address.
+ * The page's own document then answers 403 (or 503) at the address asked, and the page makes none of its calls. So every
+ * page Go opens keeps its document's answer too (pageDoc: one byte, its status, never waited for). A check that passes
+ * in the page (a real browser's usually does, in about 5 s) loads it again (200), so the last answer says, and that load
+ * keeps its whole time. A page still on the check when its time ran out is opened again CHALLENGE_WAIT_MS later, at most
+ * CHALLENGE_TRIES more times, while the loads fit in twice the page's own time (challengeTime: a hand-off's 12 s makes
+ * 24 s before Watch or its card) with at least CHALLENGE_LOAD_MS for the next. It is never read as anything, and never
+ * handed to a person. ixigo's own "too many requests" (429 on the document, staging 9 Oct: the morning computer's
+ * hotels page at 18:01 and 18:04, the page then making no call for 20 s) is waited out the same way.
+ */
+export const CHALLENGE_WAIT_MS = 1_000;
+/** The trips whose last check Go remembers (lastChallenge). */
+const CHECKED_TRIPS_MAX = 1_000;
+export const CHALLENGE_TRIES = 2;
+/** The least a load again may have: a check that passes takes about 5 s, then the page's own calls about 3 s. */
+export const CHALLENGE_LOAD_MS = 8_000;
+/** How long all of a page's loads may take, from the first one's start: twice the page's own time. */
+export const challengeTime = (pageMs: number): number => 2 * pageMs;
+/**
+ * The time the next load gets, Go waits CHALLENGE_WAIT_MS first: the page's own, or what is left of challengeTime; null
+ * when that is less than CHALLENGE_LOAD_MS, or the tries are used up.
+ */
+function nextLoadMs(pageMs: number, started: number, now: number, loadsAgain: number): number | null {
+  const left = started + challengeTime(pageMs) - now - CHALLENGE_WAIT_MS;
+  return loadsAgain >= CHALLENGE_TRIES || left < CHALLENGE_LOAD_MS ? null : Math.min(pageMs, left);
+}
+export const CHALLENGED = "ixigo asked the trip's computer to wait a moment.";
+/** A read whose page stayed on the check: unreachable, saying so; a caller that must tell it from other failures asks for this class. */
+export class ChallengedError extends TravelError {
+  constructor() {
+    super('unreachable', CHALLENGED);
+  }
+}
+/**
+ * A read whose caller falls back (ReadOptions.fallsBack) and whose page ran out of time having caught nothing but its own
+ * document: ixigo never sent its data. Unreachable as any timeout, so a caller with no other way says it as ever.
+ */
+export class NothingCaughtError extends TravelError {
+  constructor() {
+    super('unreachable', 'ixigo took too long to answer.');
+  }
+}
+/**
+ * The capture of a page's own document: its path, to the end. Bash matches it on any allowed site's response whose path
+ * ends so (the home page's "/$" takes an API path ending in "/" too), so up to 4 are kept, and challenged reads only the
+ * page's own.
+ */
+export const pageDoc = (url: string): string => `${new URL(url).pathname}$`;
+const docCapture = (doc: string) => ({ match: doc, required: false, max_bytes: 1, max_count: 4 });
+/**
+ * The match Go's own capture of the page's document takes, or null when the plan already captures that document by the
+ * very same match (a page read as its document: a train's schedule or running status, a station's trains, Tatkal). Then
+ * the plan's capture is the document's, its status read for Cloudflare's check as any, and nothing is added or taken
+ * out: Bash answers each matching capture under its match, so taking Go's own out took the plan's too, and every such
+ * page read nothing (staging, 10 Oct 10:14Z: trains.running_status and trains.schedule, caps []).
+ *
+ * Its cost: such a page's document is a required capture, and Bash answers once each required capture has its first
+ * answer, so when Cloudflare's check passes inside the tab only the check's 403 is kept, and challenged() opens the page
+ * once more (Go's own one-byte copy was not required, and saw the 200 come after). Raising the plan's max_count does not
+ * keep the 200: Bash has answered by then. A grace would (Bash waits it out for every capture's max_count), but every
+ * read of a clean page, whose document comes once, would then wait out the whole grace: a rare reopen costs less.
+ */
+export const docMatch = (url: string, capture: ReadonlyArray<{ match: string }>): string | null => {
+  const doc = pageDoc(url);
+  return capture.some((c) => c.match === doc) ? null : doc;
+};
+/**
+ * Whether the page ended on Cloudflare's check, or ixigo's "too many requests": the last answer at the page's own address
+ * (its origin and path exactly, the query aside: the check's own load again adds one) was 403, 429 or 503. Another
+ * response its match took is never it.
+ */
+export function challenged(captures: Capture[], pageUrl: string): boolean {
+  const page = new URL(pageUrl);
+  const own = (c: Capture): boolean => {
+    if (c.match !== pageDoc(pageUrl)) return false;
+    try {
+      const at = new URL(c.url);
+      return at.origin === page.origin && at.pathname === page.pathname;
+    } catch {
+      return false;
+    }
+  };
+  const last = captures.filter(own).sort((a, b) => a.at_ms - b.at_ms).at(-1)?.status;
+  return last === 403 || last === 429 || last === 503;
+}
+
+interface FetchAnswer {
+  final_url: string;
+  elapsed_ms: number;
+  woke: boolean;
+  timings?: FetchTrace['timings'];
+  captures: Capture[];
+  frames?: LiveFrame[];
+  /** With a timeout: where the fetch was when the time ran out ("3 type"). */
+  step?: string;
+}
 
 const isFrame = (f: unknown): f is LiveFrame =>
   typeof f === 'object' && f !== null && typeof (f as LiveFrame).jpeg_base64 === 'string' && typeof (f as LiveFrame).page_url === 'string';
 
 /** The pictures a timed-out fetch did take, which Bash sends with its partial captures. */
+/** A timed-out fetch that caught nothing at all but its page's own document. */
+function caughtNothing(err: V1Error, doc: string | null): boolean {
+  const captures = (err.detail?.['partial'] as { captures?: unknown } | undefined)?.captures;
+  return !Array.isArray(captures) || captures.every((c) => (c as Capture | null)?.match === doc);
+}
+
 function partialFrames(err: V1Error): LiveFrame[] {
   const frames = (err.detail?.['partial'] as { frames?: unknown } | undefined)?.frames;
   return Array.isArray(frames) ? frames.filter(isFrame) : [];
@@ -60,201 +552,643 @@ function partialFrames(err: V1Error): LiveFrame[] {
 
 const isCapture = (c: unknown): c is Capture =>
   typeof c === 'object' && c !== null && typeof (c as Capture).url === 'string' && typeof (c as Capture).body === 'string' && typeof (c as Capture).status === 'number';
+/** What a timed-out fetch did catch. */
+const partialCaptures = (err: V1Error): Capture[] => {
+  const captures = (err.detail?.['partial'] as { captures?: unknown } | undefined)?.captures;
+  return Array.isArray(captures) ? captures.filter(isCapture) : [];
+};
+/**
+ * A timed-out page that showed Cloudflare's Turnstile: its document said 200 (staging, 10 Oct 05:02Z, ixigo's flight status
+ * page), so challenged() can't see it, and its calls never came. Bash says the page called the check's host. Read as a
+ * check: opened again after a wait, never read, never handed to the person.
+ */
+const turnstiled = (err: V1Error): boolean => (err.detail?.['partial'] as { challenge?: unknown } | undefined)?.challenge === 'turnstile';
 
-/** A failed fetch as Go says it; on a timeout, the captures it did get when every required one is among them. */
-function fetchFailed<S>(err: V1Error, recipe: Recipe<S>, tripId: string, log: RunnerDeps['log']): Capture[] {
+/**
+ * A failed fetch as Go says it; on a timeout, the captures it did get when every required one is among them. A read that
+ * falls back (fallsBack), whose page caught nothing but its document (doc), throws NothingCaughtError.
+ */
+function fetchFailed(
+  err: V1Error, what: { id: string; capture: CaptureSpec[] }, tripId: string, log: RunnerDeps['log'], o: Pick<ReadOptions, 'fallsBack' | 'about'> & { doc: string | null },
+): Capture[] {
   if (err.status === 504) {
-    const partial = (err.detail?.['partial'] as { captures?: unknown } | undefined)?.captures;
-    const got = Array.isArray(partial) ? partial.filter(isCapture).map((c) => ({ ...c, truncated: c.truncated === true })) : [];
-    if (recipe.capture.every((c) => !c.required || bodiesFor(got, c.match).length > 0)) return got;
-    throw new TravelError('unreachable', 'ixigo took too long to answer. Try again in a moment.');
+    const partial = (err.detail?.['partial'] as { captures?: unknown; step?: unknown } | undefined) ?? {};
+    const got = Array.isArray(partial.captures) ? partial.captures.filter(isCapture).map((c) => ({ ...c, truncated: c.truncated === true })) : [];
+    if (what.capture.every((c) => !c.required || bodiesFor(got, c.match, c.sse !== undefined).length > 0)) return got;
+    // Bash's words ("stopped at 2 wait_for"), where it stopped, what it caught by then (statuses only) and what the read
+    // was: the admin log keeps them. Bash's words go under bash: Railway's log takes a field named message for the line's
+    // own, and lost the step (9 Oct, 14:55).
+    log.warn({
+      tripId, page: what.id, bash: err.message.slice(0, 300), ...(typeof partial.step === 'string' ? { step: partial.step } : {}),
+      caught: got.map((c) => `${c.match === o.doc ? 'document' : 'call'} ${c.status}`), ...(o.about ? { read: o.about } : {}),
+    }, 'travel: a page ran out of time');
+    if (o.fallsBack && caughtNothing(err, o.doc)) throw new NothingCaughtError();
+    throw new TravelError('unreachable', 'ixigo took too long to answer.');
   }
   if (err.status === 402) throw new TravelError('refused', OUT_OF_CREDIT);
-  if (err.status === 409) throw new TravelError('unreachable', "Someone is using the trip's computer's browser. Try again in a moment.");
-  if (err.status === 503) throw new TravelError('unreachable', "The trip's computer did not wake up in time. Try again in a moment.");
+  if (isBusy(err)) throw new TravelError('unreachable', "The trip's computer is busy with other searches.");
+  if (err.status === 409) throw new TravelError('unreachable', "Someone is using the trip's computer's browser.");
+  if (err.status === 503) throw new TravelError('unreachable', "The trip's computer did not wake up in time.");
+  // Bash's block on ixigo's payment page (#4591): never a fault of Go's setup, and never a page Go opens.
+  if (err.status === 403 && err.code === 'page_blocked') throw new TravelError('refused', PAYMENT_PAGE_BLOCKED);
   if (err.status === 400 || err.status === 403) {
     // Go's own setup or request is wrong (ixigo.com not allowed, a bad recipe): the admin log says so, the room hears less.
-    log.warn({ tripId, recipe: recipe.id, code: err.code, message: err.message }, 'travel: the browser fetch refused a recipe');
+    log.warn({ tripId, page: what.id, code: err.code, message: err.message }, 'travel: the browser fetch refused a page');
     throw new TravelError('refused', err.status === 403 ? "The trip's computer is not allowed on ixigo.com yet." : 'This ixigo search could not start.');
   }
   throw new TravelError('unreachable', err.message.slice(0, 200));
 }
 
 export function createBrowserFetchRunner(d: RunnerDeps): RecipeRunner {
+  /** Each browser's cookie read out now, or last answered (cookies, below), by the browser and the names it asks for. */
+  const cookieReads = new Map<string, { read: Promise<Array<{ name: string; expiresAt: number | null }> | null>; answeredAt: number | null }>();
   const sleep = d.sleep ?? nap;
-  return {
-    name: 'browser_fetch',
-    async run(tripId, recipe, slots, o = {}) {
-      const started = d.now().getTime();
-      const url = recipe.url(slots);
-      o.onProgress?.({ type: 'opening', recipeId: recipe.id, url });
-      const plan: FetchPlan = recipe.fetchFor?.(slots) ?? { capture: recipe.capture, ...(recipe.steps ? { steps: recipe.steps } : {}) };
-      const body = {
-        url,
-        // required is Go's own: Bash waits for every capture, and Go decides what a timed-out fetch can still answer.
-        capture: plan.capture.map((c) => ({
-          match: c.match,
-          ...(c.max_bytes ? { max_bytes: c.max_bytes } : {}),
-          ...(c.min_count ? { min_count: c.min_count } : {}),
-          ...(c.max_count ? { max_count: c.max_count } : {}),
-        })),
-        ...(plan.steps ? { steps: plan.steps } : {}),
-        timeout_ms: plan.timeoutMs ?? FETCH_TIMEOUT_MS,
-        // Pictures of the page as it loads, about one every 700 ms, for the live search card.
-        frames: {},
-      };
-      const fetchCaptures = async (): Promise<Capture[]> => {
-        let userId = d.computer.userIdFor(tripId);
-        for (let tries = 0; ; tries++) {
-          try {
-            const answer = await d.v1.call<FetchAnswer>('POST', `/v1/users/${userId}/browser/fetch`, { body, ...(o.signal ? { signal: o.signal } : {}) });
-            // Pictures of the page come when Bash sends them; until then the card shows its steps alone.
-            if (Array.isArray(answer.frames) && answer.frames.length > 0) o.onProgress?.({ type: 'frames', frames: answer.frames });
-            return answer.captures;
-          } catch (err) {
-            if (!(err instanceof V1Error)) throw err;
-            // Once only: a trip whose user /v1 does not have yet, or a person who just used the browser.
-            if (tries === 0 && err.status === 404 && err.code === 'user_not_found') {
-              userId = await d.computer.ensureUser(tripId);
-              continue;
-            }
-            if (tries === 0 && err.status === 409 && err.code === 'browser_in_use') {
-              await sleep(IN_USE_WAIT_MS);
-              continue;
-            }
-            // A timed-out fetch's pictures go to the card as a finished one's do, whatever its captures can answer.
-            if (err.status === 504) {
-              const frames = partialFrames(err);
-              if (frames.length > 0) o.onProgress?.({ type: 'frames', frames });
-            }
-            return fetchFailed(err, recipe, tripId, d.log);
-          }
-        }
-      };
-      const captures = await fetchCaptures();
-      o.onProgress?.({ type: 'captured', ms: d.now().getTime() - started });
-      const options = recipe.extract(captures, slots);
-      const at = d.now();
-      return { options, checkedAt: at.toISOString(), ms: at.getTime() - started };
-    },
+  const slot = fetchSlots(d.slots ?? (() => DEFAULT_SLOTS));
+  /** When each trip's computer last met Cloudflare's check, newest last; bounded. */
+  const checkedAt = new Map<string, number>();
+  const metCheck = (tripId: string): void => {
+    checkedAt.delete(tripId);
+    checkedAt.set(tripId, d.now().getTime());
+    while (checkedAt.size > CHECKED_TRIPS_MAX) checkedAt.delete(checkedAt.keys().next().value!);
   };
-}
 
-// ── the agent job (the fallback) ─────────────────────────────────────────────
-
-/** computer_snapshot answers up to 15,000 characters before it pages to a file. */
-const SNAPSHOT_MAX_CHARS = 16_000;
-
-/** /v1 allows about 60 calls a minute a key: one look a second, for one job, leaves room for everything else. */
-export const AGENT_POLL_MS = 1_000;
-/** A job took 25 to 53 s on staging; past this it is stopped. Nothing waits on it inline (the search tool goes on). */
-export const AGENT_WAIT_MS = 90_000;
-
-/** What the job returns: the script's rows, or, when computer_eval was held or refused, a snapshot's text to read in Go. */
-const ROWS_SCHEMA = {
-  type: 'object',
-  properties: {
-    rows: { type: 'array', items: { type: 'object' }, maxItems: AGENT_MAX_ROWS },
-    snapshot: { type: 'string', maxLength: SNAPSHOT_MAX_CHARS },
-  },
-  additionalProperties: false,
-};
-
-interface Turn { id: string; work?: Array<{ task_id: string }> }
-/** One line of a conversation, as GET /v1/conversations/{id}/messages lists them: the work is on Bash's line of the turn. */
-interface Line { turn_id: string; work?: Array<{ task_id: string }> }
-interface Task { status: 'queued' | 'working' | 'waiting' | 'done' | 'failed'; result?: { data?: unknown } | null }
-
-/** The job's one message: the page, the text that shows its results are in, and the script, exactly as Go wrote them. */
-export const recipeMessage = (url: string, readyText: string, script: string): string =>
-  `Open this page with computer_navigate:\n${url}\n\n` +
-  `Then call computer_wait with the text ${JSON.stringify(readyText)} and timeoutMs 15000, so the results are on the page.\n\n` +
-  'Then call computer_eval with this script as its `expression` argument, exactly as written, and return what it returns as rows:\n\n' +
-  `${script}\n\n` +
-  'If computer_eval is refused, or waits for a person to allow it, call computer_snapshot with full set to true instead, and return ' +
-  'what it shows, exactly as it shows it, as snapshot (and no rows).';
-
-export function createAgentJobRunner(d: RunnerDeps & { deploymentId: string | null }): RecipeRunner {
-  const sleep = d.sleep ?? nap;
-  async function runJob<S>(tripId: string, recipe: Recipe<S>, slots: S, o: { signal?: AbortSignal; onProgress?: OnProgress }): Promise<RecipeRun> {
-    if (!d.deploymentId) throw new TravelError('refused', 'The fallback travel search is not set up yet (VESTRA_RECIPE_DEPLOYMENT_ID).');
-    const started = d.now().getTime();
-    const userId = await d.computer.ensureUser(tripId);
-    const url = recipe.url(slots);
-    o.onProgress?.({ type: 'opening', recipeId: recipe.id, url });
-    // One job per search: a resend of the same start finds the same conversation and message.
-    const run = createHash('sha256').update(`${tripId}|${url}|${started}`).digest('hex').slice(0, 24);
-    const metadata = { go_trip_id: tripId, go_recipe: recipe.id };
-    const conversation = await d.v1.call<{ id: string }>('POST', '/v1/conversations', {
-      idempotencyKey: `go-recipe-conv-${run}`,
-      body: { user_id: userId, deployment: d.deploymentId, metadata },
-    });
-    const turn = await d.v1.call<Turn>('POST', `/v1/conversations/${conversation.id}/messages`, {
-      idempotencyKey: `go-recipe-msg-${run}`,
-      body: { message: recipeMessage(url, recipe.readyText, recipe.agentExtractor), output_schema: ROWS_SCHEMA, hand_off: 'always', metadata },
-    });
-    let taskId = turn.work?.[0]?.task_id ?? null;
-    // The conversation is this search's alone, so stopping it stops its job, whether or not Go has learnt the job's id yet.
-    const stop = async (why: string): Promise<void> => {
+  /**
+   * A Bash call, asked again while Bash says its fetches are all taken (one Go doesn't count, or a cap lowered), inside
+   * the fetch's own time: once its signal aborts, it asks no more. A person using the browser (browser_in_use) is not this.
+   */
+  async function patient<T>(call: () => Promise<T>, signal: AbortSignal | undefined): Promise<T> {
+    for (let busy = 0; ; busy++) {
       try {
-        const r = await d.v1.call<{ stopped_work?: string[] }>('POST', `/v1/conversations/${conversation.id}/stop`, { idempotencyKey: `go-recipe-stop-${run}` });
-        d.log.warn({ tripId, recipe: recipe.id, conversationId: conversation.id, stopped: r?.stopped_work ?? [] }, `travel: stopped a recipe job (${why})`);
+        return await call();
       } catch (err) {
-        d.log.warn({ err, tripId, recipe: recipe.id, conversationId: conversation.id }, `travel: stopping a recipe job (${why}) failed`);
-      }
-    };
-    let data: unknown;
-    for (;;) {
-      if (o.signal?.aborted) {
-        await stop('called off');
-        throw new TravelError('unreachable', 'The search was called off.');
-      }
-      if (d.now().getTime() - started >= AGENT_WAIT_MS) {
-        await stop('too slow');
-        throw new TravelError('unreachable', 'ixigo took too long to answer. Try again in a moment.');
-      }
-      await sleep(AGENT_POLL_MS);
-      if (!taskId) {
-        const lines = await d.v1.call<{ data: Line[] }>('GET', `/v1/conversations/${conversation.id}/messages`);
-        taskId = lines.data.find((l) => l.turn_id === turn.id && (l.work?.length ?? 0) > 0)?.work?.[0]?.task_id ?? null;
-        continue;
-      }
-      const task = await d.v1.call<Task>('GET', `/v1/tasks/${taskId}`);
-      if (task.status === 'done') {
-        data = task.result?.data;
-        break;
-      }
-      if (task.status === 'failed') throw new TravelError('refused', "The trip's computer could not read ixigo's page.");
-      // It waits on an approval or a question: a page read never needs one, so it is stopped, not left waiting.
-      if (task.status === 'waiting') {
-        await stop('it stopped to ask');
-        throw new TravelError('refused', "The trip's computer stopped to ask something while reading ixigo's page.");
+        if (!(err instanceof V1Error) || !isBusy(err) || busy >= BUSY_TRIES || signal?.aborted) throw err;
+        await sleep(busyWaitMs(err));
       }
     }
-    o.onProgress?.({ type: 'captured', ms: d.now().getTime() - started });
-    const out = data as { rows?: unknown; snapshot?: unknown } | null | undefined;
-    // The script's rows; else the snapshot's text, read by the recipe's own reader. Either way the rows are checked.
-    const rows = out?.rows === undefined && typeof out?.snapshot === 'string' ? recipe.readPage(snapshotText(out.snapshot), []).slice(0, AGENT_MAX_ROWS) : out?.rows;
-    const options = recipe.fromAgent(rows, slots);
-    const at = d.now();
-    return { options, checkedAt: at.toISOString(), ms: at.getTime() - started };
   }
 
-  return {
-    name: 'agent_job',
-    async run(tripId, recipe, slots, o = {}) {
+  /**
+   * The trip's one stage, one page at a time (the App team's room, 11 Oct: three asks close together each opened its page
+   * in the one stage tab, so the next one's page replaced the running one's, and that card ended Stopped). A read, steps
+   * or a look on the stage wait here for the one before them, never replacing its page: a read that waits tells its card
+   * it is next in line ('queued'), then that its turn came ('turn'). Taken before a slot, so a waiting read holds none.
+   */
+  const stageTail = new Map<string, Promise<void>>();
+  async function stageTurn<T>(tripId: string, o: Pick<ReadOptions, 'signal' | 'onProgress'>, run: () => Promise<T>): Promise<T> {
+    const before = stageTail.get(tripId);
+    let done!: () => void;
+    const mine = new Promise<void>((resolve) => {
+      done = resolve;
+    });
+    const tail = (before ?? Promise.resolve()).then(() => mine);
+    stageTail.set(tripId, tail);
+    try {
+      if (before) {
+        o.onProgress?.({ type: 'queued' });
+        await untilAborted(before, o.signal);
+        o.onProgress?.({ type: 'turn' });
+      }
+      return await run();
+    } finally {
+      done();
+      if (stageTail.get(tripId) === tail) stageTail.delete(tripId);
+    }
+  }
+
+  /** A fetch on the trip's computer, once one of its slots is free; the slot frees when the fetch ends, however it ends. */
+  async function inSlot<T>(tripId: string, o: Pick<ReadOptions, 'signal' | 'priority'>, run: () => Promise<T>): Promise<T> {
+    const free = await slot(await d.browser.userFor(tripId), o.signal, o.priority);
+    try {
+      return await run();
+    } finally {
+      free();
+    }
+  }
+
+  /** The computers a fetch of Go's has read ixigo on (COLD_COMPUTER), which the log tells from cold ones. */
+  const warm = new Set<string>();
+  /** Until when a click's within_ms is left out: Bash refused it (LOOK_UNSUPPORTED_MS). */
+  let noLookUntil = 0;
+  /** Until when no capture's sse "last" is sent: Bash refused it (SSE_UNSUPPORTED_MS). */
+  let noSseUntil = 0;
+  /** A capture's size, and its sse "last" unless a Bash refused it lately (then no more than Bash's most). */
+  const sizeOf = (c: CaptureSpec): { max_bytes?: number; sse?: 'last' } => {
+    const size = { ...(c.max_bytes ? { max_bytes: c.max_bytes } : {}), ...(c.sse ? { sse: c.sse } : {}) };
+    return c.sse && d.now().getTime() < noSseUntil ? withoutSse(size) : size;
+  };
+  /** Until when a hand-off opens the phone page however asked: Bash refused front_device (LOOK_UNSUPPORTED_MS). */
+  let noDesktopUntil = 0;
+  /** Until when a hand-off's screen shows its whole page however asked: Bash refused front_crop (LOOK_UNSUPPORTED_MS). */
+  let noCropUntil = 0;
+  /** front_crop for a desktop hand-off's body, unless a Bash refused it lately. */
+  const cropOf = (crop: CropTo | undefined): { front_crop?: CropTo } => (crop && d.now().getTime() >= noCropUntil ? { front_crop: crop } : {});
+  /**
+   * A Bash that predates front_crop refuses it before it opens anything. An unknown key at the body's top has no param
+   * (its path is the body's): a 400 invalid_request with none, or one at front_crop, while it is sent is taken as that,
+   * before any older field (front_crop is the newest). None asked for a while; the caller sends the body again without.
+   */
+  const refusedCrop = (err: unknown, body: object, tripId: string): boolean => {
+    const param = err instanceof V1Error ? String(err.detail?.['param'] ?? '') : '';
+    if (!(err instanceof V1Error && err.status === 400 && err.code === 'invalid_request' && 'front_crop' in body && (param === '' || param.startsWith('front_crop')))) return false;
+    noCropUntil = d.now().getTime() + LOOK_UNSUPPORTED_MS;
+    d.log.warn({ tripId }, "travel: this Bash can't show one element of a hand-off yet (bash #4654); its screen shows the page");
+    return true;
+  };
+  /** Until when a fetch with a click that picks one match is not sent: Bash refused one (NEAR_UNSUPPORTED_MS). */
+  let noNearUntil = 0;
+  /** A fetch whose click picks one match, while this Bash is known not to take it: refused before anything is sent. */
+  const nearRefused = (steps: Step[] | undefined): void => {
+    if (steps?.some(picksOne) && d.now().getTime() < noNearUntil) throw new NearUnsupportedError();
+  };
+  /** Bash refused such a click: none sent for a while, and this fetch refused. */
+  const nearUnsupported = (tripId: string): never => {
+    noNearUntil = d.now().getTime() + NEAR_UNSUPPORTED_MS;
+    d.log.warn({ tripId }, "travel: this Bash can't click one card's own button yet (bash #4637); none is sent for a while");
+    throw new NearUnsupportedError();
+  };
+
+  /** One browser fetch: the page opened, its steps worked, and the calls the plan names kept. */
+  async function fetchPage(
+    tripId: string,
+    url: string,
+    plan: FetchPlan,
+    what: { id: string; capture: CaptureSpec[] },
+    o: ReadOptions,
+  ): Promise<{ captures: Capture[]; finalUrl: string }> {
+    nearRefused(plan.steps);
+    const steps = plan.steps && d.now().getTime() < noLookUntil ? withoutLook(plan.steps) : plan.steps;
+    const doc = docMatch(url, plan.capture);
+    // required is Go's own: Go decides what a timed-out fetch can still answer. A grace (the plan's, or OPTIONAL_GRACE_MS
+    // for an optional capture) says which are required, so Bash answers once they are in and the rest have had the grace.
+    const asked = bashCaptures(plan, sizeOf);
+    let body = {
+      url,
+      capture: [...asked.capture, ...(doc ? [docCapture(doc)] : [])],
+      ...(steps ? { steps } : {}),
+      timeout_ms: plan.timeoutMs ?? FETCH_TIMEOUT_MS,
+      ...(asked.grace_ms ? { grace_ms: asked.grace_ms } : {}),
+      // Pictures of the page as it loads, about one every 700 ms, for the live search card, and one once it settles when
+      // the recipe says how long that takes. None of a private page, whose tab the browser watch never shows either.
+      ...(o.private ? { private: true } : { frames: { width: FRAME_WIDTH, ...(plan.settleMs ? { settle_ms: plan.settleMs } : {}) } }),
+      ...(o.tag ? { tag: o.tag } : {}),
+      // Under Bash's default name, the one the page calls take: one warm tab a trip, never one more toward Bash's cap.
+      ...(o.stage ? { stage: true, tab: STAGE_TAB, keep_open_ms: STAGE_MS } : o.keepOpen ? { keep_open_ms: WARM_TAB_MS } : {}),
+    };
+    let userId = await d.browser.userFor(tripId);
+    let askedAgain = false;
+    let waited = false;
+    const pageMs = body.timeout_ms;
+    const started = d.now().getTime();
+    let checks = 0;
+    /**
+     * CLOUDFLARE: the page opened again after a wait, with the time left for it, while it fits and the caller still waits;
+     * else a read that fails, saying so.
+     */
+    const againAfterCheck = async (): Promise<void> => {
+      metCheck(tripId);
+      const next = nextLoadMs(pageMs, started, d.now().getTime(), checks);
+      if (next === null || o.signal?.aborted) {
+        d.log.warn({ tripId, page: what.id, loads: checks + 1 }, "travel: ixigo's page stayed on Cloudflare's check");
+        throw new ChallengedError();
+      }
+      checks += 1;
+      d.log.warn({ tripId, page: what.id, again: checks, ms: next }, "travel: ixigo's page was Cloudflare's check; opening it again");
+      await sleep(CHALLENGE_WAIT_MS);
+      body = { ...body, timeout_ms: next };
+    };
+    for (let tries = 0; ; tries++) {
+      const startedAt = d.now().getTime();
       try {
-        return await runJob(tripId, recipe, slots, o);
+        const answer = await patient(() => d.v1.call<FetchAnswer>('POST', `/v1/users/${userId}/browser/fetch`, { body, ...(o.signal ? { signal: o.signal } : {}) }), o.signal);
+        const calls = answer.captures.map((c) => ({ url: c.url, status: c.status, at_ms: c.at_ms }));
+        // CLOUDFLARE: its pictures never go to the card, and the page is opened again.
+        if (challenged(answer.captures, url)) {
+          o.onTrace?.({ started_at: startedAt, elapsed_ms: answer.elapsed_ms, woke: answer.woke, timings: answer.timings ?? null, calls, failed: { status: 0, why: 'challenge' } });
+          await againAfterCheck();
+          continue;
+        }
+        const captures = answer.captures.filter((c) => c.match !== doc);
+        if (captures.length > 0) warm.add(userId);
+        // Pictures of the page come when Bash sends them; until then the card shows its steps alone.
+        if (Array.isArray(answer.frames) && answer.frames.length > 0) o.onProgress?.({ type: 'frames', frames: answer.frames });
+        o.onTrace?.({ started_at: startedAt, elapsed_ms: answer.elapsed_ms, woke: answer.woke, timings: answer.timings ?? null, calls });
+        const finalUrl = typeof answer.final_url === 'string' ? answer.final_url : url;
+        if ((o.keepOpen || o.stage) && o.look && o.onProgress) look(tripId, finalUrl, startedAt, o.onProgress, o.tag, o.stage === true);
+        return { captures, finalUrl };
       } catch (err) {
         if (!(err instanceof V1Error)) throw err;
-        throw err.status === 402 ? new TravelError('refused', OUT_OF_CREDIT) : new TravelError('unreachable', err.message.slice(0, 200));
+        // A Bash that predates private refuses it before it opens anything (an unknown key at the body's top: no param, or
+        // one at private). The account's page is then not read at all, never where the room could see it.
+        const param = String(err.detail?.['param'] ?? '');
+        if (o.private && err.status === 400 && err.code === 'invalid_request' && (param === '' || param.startsWith('private'))) {
+          throw new TravelError('refused', "The trip's ixigo account is read only where nobody else can see it, and Go's computer can't do that yet.");
+        }
+        // Once only: a trip whose user /v1 does not have yet, or a person who just used the browser.
+        if (tries === 0 && err.status === 404 && err.code === 'user_not_found') {
+          userId = await d.browser.again(tripId);
+          continue;
+        }
+        // A person has the browser: wait for them, never "didn't work" (staging, 9 Oct: a login left open refused every
+        // search on the person's browser for 10 minutes, and Go fell back to a slow job).
+        if (err.status === 409 && err.code === 'browser_in_use' && !o.signal?.aborted && d.now().getTime() - started < IN_USE_PATIENCE_MS) {
+          if (!waited) o.onProgress?.({ type: 'waiting' });
+          waited = true;
+          await sleep(IN_USE_WAIT_MS);
+          continue;
+        }
+        // A Bash before bash #4637 refuses a click that picks one card's button, before it opens anything: never sent as a
+        // plain click (another card's), and none sent for a while.
+        if (body.steps && refusedNear(err, body.steps)) nearUnsupported(tripId);
+        // A Bash that predates within_ms refuses the whole fetch before it opens anything: the same fetch again with its
+        // optional clicks looking once, as before, and none sent for a while.
+        if (body.steps && refusedLook(err, body.steps)) {
+          noLookUntil = d.now().getTime() + LOOK_UNSUPPORTED_MS;
+          body = { ...body, steps: withoutLook(body.steps) };
+          d.log.warn({ tripId, page: what.id }, "travel: this Bash takes no within_ms on a click yet; its optional clicks look once");
+          continue;
+        }
+        // The same for a capture's sse "last": the stream whole, cut at Bash's most, read as the union of its events.
+        if (refusedSse(err, body.capture)) {
+          noSseUntil = d.now().getTime() + SSE_UNSUPPORTED_MS;
+          body = { ...body, capture: body.capture.map(withoutSse) };
+          d.log.warn({ tripId, page: what.id }, "travel: this Bash takes no sse on a capture yet; the stream comes whole, cut at 1 MB");
+          continue;
+        }
+        // CLOUDFLARE: a page still on the check when its time ran out, opened again; never its pictures.
+        if (err.status === 504 && (challenged(partialCaptures(err), url) || turnstiled(err))) {
+          o.onTrace?.(failedTrace(startedAt, d.now().getTime(), err));
+          await againAfterCheck();
+          continue;
+        }
+        // A page that caught nothing (COLD_COMPUTER): once more, now that the computer has been to ixigo, cold or warm;
+        // never for a caller with another way (fallsBack), which hears NothingCaughtError at once.
+        if (err.status === 504 && !askedAgain && !o.fallsBack && caughtNothing(err, doc) && !o.signal?.aborted) {
+          askedAgain = true;
+          o.onTrace?.(failedTrace(startedAt, d.now().getTime(), err));
+          d.log.warn({ tripId, page: what.id, cold: !warm.has(userId) }, 'travel: a page caught nothing; asking once more');
+          continue;
+        }
+        // A timed-out fetch's pictures go to the card as a finished one's do, whatever its captures can answer.
+        if (err.status === 504) {
+          const frames = partialFrames(err);
+          if (frames.length > 0) o.onProgress?.({ type: 'frames', frames });
+        }
+        o.onTrace?.(failedTrace(startedAt, d.now().getTime(), err));
+        return { captures: fetchFailed(err, what, tripId, d.log, { doc, ...(o.fallsBack ? { fallsBack: true } : {}), ...(o.about ? { about: o.about } : {}) }).filter((c) => c.match !== doc), finalUrl: url };
       }
+    }
+  }
+
+  /**
+   * The page as ixigo drew it, for the live card. ixigo draws its list about 2 s after its data, after Bash has answered
+   * (the 8 Oct probe), so the answer's pictures are its skeleton: one more picture of the kept tab, LOOK_AFTER_MS on. A
+   * screenshot of the tab, not a page load: the tab is taken for one tiny call inside it and kept again as the warm tab.
+   * Only a picture of the same page is told, timed from the page's fetch; a look that fails, or finds the tab taken or on
+   * another page (a later search kept its own), tells nothing, and the card keeps the picture it has. Never awaited.
+   */
+  function look(tripId: string, pageUrl: string, fetchStarted: number, onProgress: OnProgress, tag: string | undefined, stage = false): void {
+    const body = {
+      steps: [LOOK_STEP], timeout_ms: LOOK_TIMEOUT_MS, frames: { width: FRAME_WIDTH, settle_ms: LOOK_SETTLE_MS }, ...(tag ? { tag } : {}),
+      // The stage's page, looked at where it is, and left there.
+      ...(stage ? { stage: true, tab: STAGE_TAB, keep_open_ms: STAGE_MS } : { keep_open_ms: WARM_TAB_MS }),
+    };
+    // On the stage, a look takes its turn too: a page the next ask opens never meets it in the tab.
+    const inTurn = (run: () => Promise<void>): Promise<void> => (stage ? stageTurn(tripId, {}, run) : run());
+    void sleep(LOOK_AFTER_MS)
+      .then(() => inTurn(() => inSlot(tripId, {}, async () => {
+        const lookStarted = d.now().getTime();
+        const answer = await d.v1.call<FetchAnswer>('POST', `/v1/users/${await d.browser.userFor(tripId)}/browser/fetch`, { body });
+        const frames = (Array.isArray(answer.frames) ? answer.frames.filter(isFrame) : [])
+          .filter((f) => f.page_url === pageUrl)
+          .map((f) => ({ ...f, at_ms: lookStarted - fetchStarted + f.at_ms }));
+        if (frames.length > 0) onProgress({ type: 'drawn', frames });
+      })))
+      .catch((err: unknown) => d.log.warn({ tripId, err: String(err instanceof Error ? err.message : err).slice(0, 200) }, 'travel: a look at the drawn page found nothing'));
+  }
+
+  /** Until when page calls are skipped: Bash said it can't make them. */
+  let unsupportedUntil = 0;
+  const unsupported = (): TravelError => {
+    unsupportedUntil = d.now().getTime() + FAST_UNSUPPORTED_MS;
+    return new TravelError('unreachable', "fast unavailable: Bash's answer had no page call");
+  };
+
+  /** One page call from the warm tab; with none kept, the same call on a tab opened at ixigo's home. */
+  async function pageFetch(tripId: string, call: PageCall, o: Omit<ReadOptions, 'onProgress'>): Promise<Capture> {
+    if (d.now().getTime() < unsupportedUntil) throw new TravelError('unreachable', 'fast unavailable: this Bash takes no page calls');
+    const step = { op: 'page_fetch', url: call.url, method: call.method, ...(call.headers ? { headers: call.headers } : {}), ...(call.body ? { body: call.body } : {}), capture_as: 'fast', max_bytes: 1_000_000 };
+    // Never asked again on browser_busy: a page call is for speed, so a busy one fails at once and the run falls to the
+    // page, which waits its turn.
+    const userId = await d.browser.userFor(tripId);
+    const ask = (open: boolean) =>
+      d.v1.call<FetchAnswer>('POST', `/v1/users/${userId}/browser/fetch`, {
+        body: { ...(open ? { url: `${IXIGO}/` } : {}), steps: [step], keep_open_ms: WARM_TAB_MS, timeout_ms: FAST_TIMEOUT_MS, ...(o.tag ? { tag: o.tag } : {}) },
+        ...(o.signal ? { signal: o.signal } : {}),
+      });
+    let answer: FetchAnswer;
+    let startedAt = d.now().getTime();
+    try {
+      answer = await ask(false);
+    } catch (err) {
+      if (!(err instanceof V1Error) || !(err.status === 409 && err.code === 'no_open_tab')) {
+        o.onTrace?.(failedTrace(startedAt, d.now().getTime(), err));
+        // A request this Bash doesn't take: no page call is tried again for a while.
+        if (err instanceof V1Error && err.status === 400) unsupportedUntil = d.now().getTime() + FAST_UNSUPPORTED_MS;
+        throw pageCallFailed(err);
+      }
+      startedAt = d.now().getTime();
+      try {
+        answer = await ask(true);
+      } catch (again) {
+        o.onTrace?.(failedTrace(startedAt, d.now().getTime(), again));
+        if (again instanceof V1Error && again.status === 400) unsupportedUntil = d.now().getTime() + FAST_UNSUPPORTED_MS;
+        throw pageCallFailed(again);
+      }
+    }
+    // A Bash whose answer has no page call in it (one without page_fetch, or a shape Go doesn't know): fast is unavailable.
+    if (!Array.isArray(answer.captures)) throw unsupported();
+    const got = answer.captures.find((c) => c.match === 'fast');
+    // The call's own time is when its answer was in, from when Bash had the ask: the tab was already open.
+    o.onTrace?.({
+      started_at: startedAt, elapsed_ms: answer.elapsed_ms, woke: answer.woke, timings: answer.timings ?? null,
+      calls: got ? [{ method: call.method, url: got.url || call.url, status: got.status, at_ms: got.at_ms, ms: got.at_ms }] : [],
+      ...(got ? {} : { failed: { status: 0, why: 'no answer to the page call' } }),
+    });
+    if (!got || got.status < 200 || got.status >= 300 || got.truncated) throw new TravelError('unreachable', `ixigo's page call answered ${got ? got.status : 'nothing'}.`);
+    warm.add(userId);
+    return got;
+  }
+
+  /** COLD_COMPUTER's prime: ixigo's home on the trip's computer, its popup closed, and one call from inside the page. */
+  async function prime(tripId: string): Promise<void> {
+    const userId = await d.browser.userFor(tripId);
+    // The person's browser serves all of their trips: one Go has read ixigo on already needs no first visit.
+    if (warm.has(userId)) return;
+    const body = {
+      url: `${IXIGO}/`,
+      steps: [{ op: 'click', name: 'Close modal', optional: true }, { op: 'page_fetch', url: '/', method: 'GET', capture_as: 'prime', max_bytes: 1_000 }],
+      timeout_ms: PRIME_TIMEOUT_MS,
+    };
+    // A refusal or a timeout throws as Bash says it: setup tries again, and the first search still has its one retry.
+    const answer = await d.v1.call<FetchAnswer>('POST', `/v1/users/${userId}/browser/fetch`, { body });
+    if (!Array.isArray(answer.captures) || !answer.captures.some((c) => c.match === 'prime')) {
+      throw new TravelError('unreachable', "ixigo's page did not answer on the trip's computer.");
+    }
+    warm.add(userId);
+  }
+
+  async function handOff(
+    tripId: string, url: string, plan: FetchPlan, o: { keepOpenMs: number; tab: string; check?: PageCall; device?: 'desktop'; crop?: CropTo },
+  ): Promise<{ captures: Capture[]; challenged?: true; device?: 'phone' | 'desktop' }> {
+    // The check first, from inside the page as soon as it is there (one byte, its status), then the plan's own steps.
+    const check = o.check ? [{ op: 'page_fetch', url: o.check.url, method: o.check.method, capture_as: 'check', max_bytes: 1 }] : [];
+    const steps = [...check, ...(plan.steps ?? [])];
+    const doc = docMatch(url, plan.capture);
+    const asked = bashCaptures(plan, sizeOf);
+    let body = {
+      url,
+      capture: [...asked.capture, ...(doc ? [docCapture(doc)] : [])],
+      ...(steps.length ? { steps } : {}),
+      timeout_ms: plan.timeoutMs ?? FETCH_TIMEOUT_MS,
+      ...(asked.grace_ms ? { grace_ms: asked.grace_ms } : {}),
+      front: true,
+      // The site's desktop page (Bash's front_device): a login made on its phone page is its phone client's, which its
+      // desktop pages, where every other fetch reads, refused within the hour (ixigo, staging 10 Oct).
+      ...(o.device === 'desktop' && d.now().getTime() >= noDesktopUntil ? { front_device: 'desktop' as const, ...cropOf(o.crop) } : {}),
+      keep_open_ms: o.keepOpenMs,
+      tab: o.tab,
+    };
+    const pageMs = body.timeout_ms;
+    const started = d.now().getTime();
+    let inUse = 0;
+    for (let checks = 0; ; checks++) {
+      let captures: Capture[];
+      let turnstile = false;
+      try {
+        const answer = await d.v1.call<FetchAnswer>('POST', `/v1/users/${await d.browser.userFor(tripId)}/browser/fetch`, { body });
+        captures = Array.isArray(answer.captures) ? answer.captures : [];
+      } catch (err) {
+        if (refusedCrop(err, body, tripId)) {
+          body = Object.fromEntries(Object.entries(body).filter(([k]) => k !== 'front_crop')) as typeof body;
+          checks -= 1;
+          continue;
+        }
+        // A Bash that predates front_device refuses it before it opens anything: an unknown key at the body's top has no
+        // param (its path is the body's), so any 400 invalid_request with none, or one at front_device, while it is sent
+        // is taken as that (another refusal comes back again without it, and is thrown then). The phone page, as before,
+        // and none asked for a while.
+        const param = err instanceof V1Error ? String(err.detail?.['param'] ?? '') : '';
+        if (err instanceof V1Error && err.status === 400 && err.code === 'invalid_request' && 'front_device' in body && (param === '' || param.startsWith('front_device'))) {
+          noDesktopUntil = d.now().getTime() + LOOK_UNSUPPORTED_MS;
+          body = Object.fromEntries(Object.entries(body).filter(([k]) => k !== 'front_device' && k !== 'front_crop')) as typeof body;
+          checks -= 1;
+          d.log.warn({ tripId, tab: o.tab }, "travel: this Bash takes no desktop hand-off yet; the phone page opens");
+          continue;
+        }
+        // The person is still typing on Watch (Bash's 4 s window): "I'm logged in" tapped right after the code waits it out.
+        if (err instanceof V1Error && err.status === 409 && err.code === 'browser_in_use' && inUse < HANDOFF_IN_USE_TRIES) {
+          inUse += 1;
+          checks -= 1;
+          await sleep(IN_USE_WAIT_MS);
+          continue;
+        }
+        // Bash keeps a timed-out tab: the page is in front for the person, with what it caught.
+        if (!(err instanceof V1Error) || err.status !== 504) throw pageCallFailed(err);
+        captures = partialCaptures(err);
+        turnstile = turnstiled(err);
+      }
+      if (!challenged(captures, url) && !turnstile) {
+        // Which page opened, said to a caller that asked for one (a Bash without front_device opens the phone page).
+        return { captures: captures.filter((c) => c.match !== doc), ...(o.device ? { device: 'front_device' in body ? 'desktop' as const : 'phone' as const } : {}) };
+      }
+      metCheck(tripId);
+      // CLOUDFLARE: never handed to the person. Opened again after a wait, a new page in front, with the time left for
+      // it; still on it when no load fits, the caller closes it and says so.
+      const next = nextLoadMs(pageMs, started, d.now().getTime(), checks);
+      if (next === null) {
+        d.log.warn({ tripId, tab: o.tab, loads: checks + 1 }, "travel: a hand-off's page stayed on Cloudflare's check");
+        return { captures: [], challenged: true };
+      }
+      d.log.warn({ tripId, tab: o.tab, again: checks + 1, ms: next }, "travel: a hand-off's page was Cloudflare's check; opening it again");
+      await sleep(CHALLENGE_WAIT_MS);
+      body = { ...body, timeout_ms: next };
+    }
+  }
+
+  /** A fetch with no url on the hand-off's tab and no keep: one call from inside its page, then the tab closes. */
+  async function release(tripId: string, tab: string): Promise<void> {
+    try {
+      await d.v1.call<FetchAnswer>('POST', `/v1/users/${await d.browser.userFor(tripId)}/browser/fetch`, {
+        body: { tab, steps: [{ op: 'page_fetch', url: '/', method: 'GET', capture_as: 'close', max_bytes: 1 }], timeout_ms: FAST_TIMEOUT_MS },
+      });
+    } catch (err) {
+      // Its time ran out, or Chrome restarted: no tab is kept under that name, and nothing is left to close.
+      if (err instanceof V1Error && err.status === 409 && err.code === 'no_open_tab') return;
+      throw pageCallFailed(err);
+    }
+  }
+
+  async function onStage(tripId: string, plan: FetchPlan, o: ReadOptions): Promise<{ captures: Capture[]; finalUrl: string }> {
+    nearRefused(plan.steps);
+    const asked = bashCaptures(plan, sizeOf);
+    let body = {
+      tab: STAGE_TAB,
+      stage: true,
+      keep_open_ms: STAGE_MS,
+      capture: asked.capture,
+      steps: plan.steps ?? [],
+      timeout_ms: plan.timeoutMs ?? FETCH_TIMEOUT_MS,
+      ...(asked.grace_ms ? { grace_ms: asked.grace_ms } : {}),
+      frames: { width: FRAME_WIDTH, ...(plan.settleMs ? { settle_ms: plan.settleMs } : {}) },
+      ...(o.tag ? { tag: o.tag } : {}),
+    };
+    for (;;) {
+      try {
+        const userId = await d.browser.userFor(tripId);
+        const answer = await patient(() => d.v1.call<FetchAnswer>('POST', `/v1/users/${userId}/browser/fetch`, { body, ...(o.signal ? { signal: o.signal } : {}) }), o.signal);
+        if (Array.isArray(answer.frames) && answer.frames.length > 0) o.onProgress?.({ type: 'frames', frames: answer.frames });
+        return { captures: answer.captures, finalUrl: typeof answer.final_url === 'string' ? answer.final_url : '' };
+      } catch (err) {
+        // A Bash with no sse "last" yet: the same steps again, the stream whole (SSE_UNSUPPORTED_MS).
+        if (err instanceof V1Error && body.capture.some((c) => c.sse !== undefined) && refusedSse(err, body.capture)) {
+          noSseUntil = d.now().getTime() + SSE_UNSUPPORTED_MS;
+          body = { ...body, capture: body.capture.map(withoutSse) };
+          continue;
+        }
+        if (err instanceof V1Error && err.status === 409 && err.code === 'no_open_tab') throw new TravelError('unreachable', 'The stage has no page open.');
+        if (err instanceof V1Error && refusedNear(err, body.steps)) nearUnsupported(tripId);
+        throw err instanceof V1Error ? new TravelError('unreachable', `The stage's step did not answer (${err.status}).`) : err;
+      }
+    }
+  }
+
+  async function tabSteps(tripId: string, tab: string, steps: Step[], o: { keepOpenMs: number; timeoutMs: number; crop?: CropTo }): Promise<void> {
+    // A fetch is its steps and a call: one byte of the home page closes it.
+    const done = { op: 'page_fetch', url: '/', method: 'GET', capture_as: 'steps_done', max_bytes: 1 };
+    let body: Record<string, unknown> = { tab, steps: [...steps, done], front: true, keep_open_ms: o.keepOpenMs, timeout_ms: o.timeoutMs, ...cropOf(o.crop) };
+    for (;;) {
+      try {
+        await d.v1.call<FetchAnswer>('POST', `/v1/users/${await d.browser.userFor(tripId)}/browser/fetch`, { body });
+        return;
+      } catch (err) {
+        if (refusedCrop(err, body, tripId)) {
+          body = Object.fromEntries(Object.entries(body).filter(([k]) => k !== 'front_crop'));
+          continue;
+        }
+        if (err instanceof V1Error && (err.status === 504 || (err.status === 409 && err.code === 'no_open_tab'))) return;
+        throw pageCallFailed(err);
+      }
+    }
+  }
+
+  async function tabCall(tripId: string, tab: string, call: PageCall, keepOpenMs: number): Promise<Capture | null> {
+    const step = { op: 'page_fetch', url: call.url, method: call.method, ...(call.headers ? { headers: call.headers } : {}), ...(call.body ? { body: call.body } : {}), capture_as: 'tab_call', max_bytes: 1 };
+    try {
+      const answer = await d.v1.call<FetchAnswer>('POST', `/v1/users/${await d.browser.userFor(tripId)}/browser/fetch`, {
+        body: { tab, steps: [step], keep_open_ms: keepOpenMs, timeout_ms: FAST_TIMEOUT_MS },
+      });
+      return (Array.isArray(answer.captures) ? answer.captures : []).find((c) => c.match === 'tab_call') ?? null;
+    } catch (err) {
+      if (err instanceof V1Error && err.status === 409 && err.code === 'no_open_tab') return null;
+      throw pageCallFailed(err);
+    }
+  }
+
+  // trip → when a stage read last answered in full; gone once one fails or steps on the stage move it on (stageReady).
+  const stageRead = new Map<string, number>();
+
+  return {
+    name: 'browser_fetch',
+    async read(tripId, url, plan, o = {}) {
+      const read = (): Promise<{ captures: Capture[]; finalUrl: string }> => inSlot(tripId, o, async () => {
+        try {
+          const got = await fetchPage(tripId, url, plan, { id: new URL(url).pathname, capture: plan.capture }, o);
+          if (o.stage) stageRead.set(tripId, d.now().getTime());
+          return got;
+        } catch (err) {
+          if (o.stage) stageRead.delete(tripId);
+          throw err;
+        }
+      });
+      return o.stage ? stageTurn(tripId, o, read) : read();
+    },
+    pageFetch: (tripId, call, o = {}) => inSlot(tripId, o, () => pageFetch(tripId, call, o)),
+    canPageFetch: () => d.now().getTime() >= unsupportedUntil,
+    canPickOne: () => d.now().getTime() >= noNearUntil,
+    prime: (tripId) => inSlot(tripId, {}, () => prime(tripId)),
+    handOff: (tripId, url, plan, o) => inSlot(tripId, {}, () => handOff(tripId, url, plan, o)),
+    release: (tripId, tab) => inSlot(tripId, {}, () => release(tripId, tab)),
+    // No slot: one read of the browser, no page, and the sign-in wait reads it every few seconds. One read per browser at
+    // a time, shared: the waits of an organizer's trips (one browser) take a read already out, or one answered within
+    // COOKIES_SHARE_MS, so Bash counts one read however many trips wait on it.
+    cookies: async (tripId, domain, names) => {
+      const user = await d.browser.userFor(tripId);
+      const key = `${user} ${domain} ${names.join(',')}`;
+      const had = cookieReads.get(key);
+      if (had && (had.answeredAt === null || d.now().getTime() - had.answeredAt < COOKIES_SHARE_MS)) return had.read;
+      const entry: { read: Promise<Array<{ name: string; expiresAt: number | null }> | null>; answeredAt: number | null } = { read: Promise.resolve(null), answeredAt: null };
+      entry.read = (async () => {
+        try {
+          const answer = await d.v1.call<{ cookies?: Array<{ name: string; expires_at: string | null }> }>(
+            'GET',
+            `/v1/users/${user}/browser/cookies`,
+            { query: { domain, names: names.join(',') }, signal: AbortSignal.timeout(COOKIES_TIMEOUT_MS) },
+          );
+          return (answer.cookies ?? []).map((c) => ({ name: c.name, expiresAt: c.expires_at === null ? null : Date.parse(c.expires_at) }));
+        } catch {
+          // A Bash without the read (404), a computer that didn't answer, a slow one: the wait reads again, or falls back.
+          return null;
+        } finally {
+          entry.answeredAt = d.now().getTime();
+        }
+      })();
+      cookieReads.set(key, entry);
+      return entry.read;
+    },
+    tabCall: (tripId, tab, call, keepOpenMs) => inSlot(tripId, {}, () => tabCall(tripId, tab, call, keepOpenMs)),
+    tabSteps: (tripId, tab, steps, o) => inSlot(tripId, {}, () => tabSteps(tripId, tab, steps, o)),
+    lastChallenge: (tripId) => checkedAt.get(tripId) ?? null,
+    onStage: (tripId, plan, o = {}) =>
+      stageTurn(tripId, o, () => inSlot(tripId, o, () => onStage(tripId, plan, o))).finally(() => {
+        // Its steps moved the stage on (a pick's own page), or left it who knows where: no more clicks on the results.
+        stageRead.delete(tripId);
+      }),
+    stageReady: (tripId) => {
+      const at = stageRead.get(tripId);
+      return at !== undefined && d.now().getTime() - at < STAGE_MS;
     },
   };
 }
 
-/** The runner the TRAVEL_RUNNER switch names now. */
-export function runnerFor(switches: Pick<Switches, 'get'>, runners: { browserFetch: RecipeRunner; agentJob: RecipeRunner }): RecipeRunner {
-  return switches.get('TRAVEL_RUNNER') === 'browser_fetch' ? runners.browserFetch : runners.agentJob;
+/**
+ * A Bash call that failed, for the run strip: its status and code, never its message. A timeout carries what the page did
+ * before the time ran out (Bash's partial): when the computer woke, when the page showed, the calls kept, where it stopped.
+ */
+function failedTrace(startedAt: number, endedAt: number, err: unknown): FetchTrace {
+  if (!(err instanceof V1Error)) return { started_at: startedAt, elapsed_ms: endedAt - startedAt, calls: [], failed: { status: 0, why: 'failed' } };
+  const partial: Partial<FetchAnswer> = (err.status === 504 ? (err.detail?.['partial'] as Partial<FetchAnswer> | undefined) : undefined) ?? {};
+  const { step, elapsed_ms: elapsed, woke, timings, captures } = partial;
+  const why = err.status === 504 ? `ran out of time${typeof step === 'string' ? ` at ${step}` : ''}` : err.code;
+  return {
+    started_at: startedAt,
+    elapsed_ms: typeof elapsed === 'number' ? elapsed : endedAt - startedAt,
+    ...(typeof woke === 'boolean' ? { woke } : {}),
+    timings: timings ?? null,
+    calls: Array.isArray(captures) ? captures.filter(isCapture).map((c) => ({ url: c.url, status: c.status, at_ms: c.at_ms })) : [],
+    failed: { status: err.status, why },
+  };
 }
 
+/**
+ * A page call that failed, as a TravelError: the run then falls to the page speed. Bash's own status and code name it
+ * ("fast unavailable: Bash answered 400 invalid_request" from a Bash without page_fetch), never its message, which may
+ * be a schema's ("Invalid input: expected string, received undefined").
+ */
+function pageCallFailed(err: unknown): TravelError {
+  if (err instanceof TravelError) return err;
+  if (err instanceof V1Error) {
+    if (err.status === 402) return new TravelError('refused', OUT_OF_CREDIT);
+    return new TravelError('unreachable', `fast unavailable: Bash answered ${err.status} ${err.code}`);
+  }
+  return new TravelError('unreachable', `fast unavailable: ${String(err).slice(0, 160)}`);
+}

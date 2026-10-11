@@ -6,8 +6,16 @@ export const GO_MCP_SLUG = 'go-trip';
 export const GO_DEPLOYMENT_SLUG = 'go-trip-task';
 /** The fallback travel search: one page opened and read on the trip's computer, on a model of its own. */
 export const GO_RECIPE_SLUG = 'go-recipe';
-/** Where Bash's browser fetch may go for Go's travel search ("ixigo.com" covers www.ixigo.com). */
-export const GO_BROWSER_DOMAINS = ['ixigo.com'] as const;
+/**
+ * Where Bash's browser fetch may go for Go's travel search ("ixigo.com" covers www.ixigo.com). ixigo's train pages read
+ * their data from ixigotrainsapi.confirmtkt.com (p4's train recipes time out without it).
+ */
+export const GO_BROWSER_DOMAINS = ['ixigo.com', 'ixigotrainsapi.confirmtkt.com'] as const;
+/**
+ * Where the trip's browser never goes, enforced by Bash (#4591): ixigo's payment page opens with a saved card chosen and
+ * "Securely Pay" one click away. Go never pays on ixigo; the payer finishes there on their own phone.
+ */
+export const GO_BLOCKED_PATHS = ['ixigo.com/payments/'] as const;
 
 /** Go's MCP tools that only read. An approval for one of them is answered yes; anything else no. */
 export const GO_READ_ONLY_TOOLS = ['trip', 'person', 'recall', 'search_flights', 'search_trains', 'search_buses', 'search_stays'] as const;
@@ -28,9 +36,9 @@ export const GO_TASK_INSTRUCTIONS = `You are the trip's computer for Go, the AI 
 - Go's trip tools are on the go-trip server. Use mcp_search to find them and mcp_invoke to call them.
 - trip: the destination, the dates, who is coming and what the group decided. Read it first when the job needs trip facts.
 - person and recall: what the group said about someone, or about a topic, with message numbers.
-- search_flights and search_stays (and search_trains and search_buses when mcp_search lists them): travel search with live prices in paise. For a stay, a flight, a train or a bus, take your choices from them first: Go can book an option only if it came from these tools. Every result has an offer_id, and a stay also has total_paise, the price of the whole stay. Then use the web for what they do not show (reviews, distances, photos, house rules) to pick the best ones.
+- search_flights and search_stays (and search_trains and search_buses when mcp_search lists them): travel search with live prices in paise. For a stay, a flight, a train or a bus, take your choices from them first: Go can book an option only if it came from these tools. Copy each result's offer_id exactly: one read off ixigo.com comes back with offer_id null and its ixigo page as source_url. A stay also has total_paise, the price of the whole stay. Then read ixigo.com for what they do not show (reviews, distances, photos, house rules) to pick the best ones.
 - note: when you learn a lasting fact about someone in the group (for example a food need they mentioned), you may suggest it with note and the id of the message that proves it. Go decides whether to keep it.
-- Browse the web when Go's tools do not cover the job: reviews, photos, opening hours, a place's own website.
+- Work on ixigo.com only. Never open another travel or booking site (MakeMyTrip, Booking.com, Airbnb, Google Flights or any other) or a search engine. When Go's tools do not cover the job (reviews, photos, a stay's rooms and rules), read it on ixigo.com.
 
 ## Never
 - Never pay, book, reserve or start a checkout. Go books only after the group votes and the payer approves on their own phone. If the job seems to need a booking, return the options instead.
@@ -43,8 +51,8 @@ export const GO_TASK_INSTRUCTIONS = `You are the trip's computer for Go, the AI 
 ## The answer
 - Finish by returning the answer in exactly the shape the output schema asks for. Go turns it into a card in the chat.
 - For options (stays, flights, trains, buses, places, restaurants, activities): return at most 5, best first. Give each a short title under 60 characters, the price in paise as a whole number when you know it (12,800 rupees is 1280000), what the price covers ("per night", "per person"), up to four highlights under 40 characters each ("Private pool", "8 min to the beach"), the area, a rating if you saw one, an https image URL if you have one, and one sentence on why it fits.
-- Every pick has offer_id and total_paise. For a stay, a flight, a train or a bus, offer_id is the one Go's search tool gave for it, copied exactly, and total_paise is the whole price in paise: the whole stay for a stay (copy it from search_stays), every traveller's fare for a journey.
-- If you found a stay or a journey only on the open web, set offer_id to null, give the page it came from as source_url, and give total_paise if you saw it (else null). Go shows it as found on the web: the group can vote on it, but Go cannot book it, and can offer to call the place instead.
+- Every pick has offer_id and total_paise. For a stay, a flight, a train or a bus, offer_id is what Go's search tool gave for it, copied exactly (null for one it read off ixigo.com, with that page as source_url), and total_paise is the whole price in paise: the whole stay for a stay (copy it from search_stays), every traveller's fare for a journey.
+- Return only stays and journeys from Go's search tools or read on ixigo.com, never one from another site. One you read on ixigo.com that the tools did not give: offer_id null, its ixigo.com page as source_url, and total_paise if you saw it (else null).
 - For places, restaurants and activities, offer_id is null, and total_paise is the price for the group if you saw one, else null.
 - Prices must be ones you saw during this job. If you could not check a price, leave it out.
 - If nothing fits, return an empty list and say why in the summary.
@@ -69,8 +77,9 @@ export const GO_DENY_TOOLS = [
 export const GO_WEBHOOK_EVENTS = ['task.started', 'task.completed', 'task.failed', 'task.stopped', 'interaction.created', 'interaction.resolved', 'interaction.expired'] as const;
 
 /**
- * browserFetch: allow Bash's browser fetch on ixigo.com, through the trip user's default deployment. Only once Bash's
- * browser fetch is on the target, since /v1 refuses a manifest key it does not know.
+ * browserFetch: allow Bash's browser fetch on ixigo.com, through the trip user's default deployment, and block ixigo's
+ * payment page. Only once Bash's browser fetch and blocked_paths (#4591) are on the target, since /v1 refuses a manifest
+ * key it does not know.
  */
 export function goTaskManifest(o: { mcpServerId: string; model: string; denyTools: boolean; browserFetch?: boolean }): Record<string, unknown> {
   return {
@@ -84,7 +93,7 @@ export function goTaskManifest(o: { mcpServerId: string; model: string; denyTool
     memory: { mode: 'none' },
     limits: { spend_per_task_usd: 2 },
     ...(o.denyTools ? { deny_tools: [...GO_DENY_TOOLS] } : {}),
-    ...(o.browserFetch ? { browser: { allowed_domains: [...GO_BROWSER_DOMAINS] } } : {}),
+    ...(o.browserFetch ? { browser: { allowed_domains: [...GO_BROWSER_DOMAINS], blocked_paths: [...GO_BLOCKED_PATHS] } } : {}),
   };
 }
 
@@ -98,7 +107,8 @@ export const GO_RECIPE_INSTRUCTIONS = `You run one travel search for Go on this 
 - Do nothing else: no other pages, no clicks, no typing, no searching, no sign-in. Never book, pay or start a checkout.`;
 
 /** The go-recipe deployment: one page and one script per job, nothing else, on a fast model. */
-export function goRecipeManifest(o: { model: string; denyTools: boolean }): Record<string, unknown> {
+/** browserFetch: the same gate as go-trip-task's; Bash's block on ixigo's payment page covers the job's own browsing too. */
+export function goRecipeManifest(o: { model: string; denyTools: boolean; browserFetch?: boolean }): Record<string, unknown> {
   return {
     instructions: GO_RECIPE_INSTRUCTIONS,
     language: 'en',
@@ -108,5 +118,6 @@ export function goRecipeManifest(o: { model: string; denyTools: boolean }): Reco
     memory: { mode: 'none' },
     limits: { spend_per_task_usd: 0.5 },
     ...(o.denyTools ? { deny_tools: [...GO_DENY_TOOLS] } : {}),
+    ...(o.browserFetch ? { browser: { blocked_paths: [...GO_BLOCKED_PATHS] } } : {}),
   };
 }

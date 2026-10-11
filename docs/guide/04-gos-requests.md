@@ -6,7 +6,7 @@ Go uses these requests for everything it does in a trip: reading the trip and th
 
 ## The methods
 
-Go sends 18 methods. Every one names its trip with `trip_id`.
+Go sends 19 methods. Every one names its trip with `trip_id`.
 
 | Method | What it does | Result | Event the server then sends |
 |---|---|---|---|
@@ -20,12 +20,14 @@ Go sends 18 methods. Every one names its trip with `trip_id`.
 | `update_trip` | Changes the title, destination, dates, vibe, stay or the itinerary. | `WriteResult` | `trip.updated` |
 | `open_vote` | Opens a vote. | `OpenDecisionResult` | `decision.opened` |
 | `close_vote` | Closes a vote now and returns the result. | `CloseDecisionResult` | `decision.closed` |
+| `add_vote_options` (1.3) | Adds options to an open vote, for the options "See more" brought. | `WriteResult` | `decision.options_added` |
 | `set_mandate` | Sets what the group allowed for a closed choice vote: the choice, the cap, refundable only, and who pays. | `WriteResult` | `mandate.set` |
 | `add_record_line` | Adds an agreed, open or doing line to the trip record. | `AddRecordLineResult` | `record.changed` |
 | `update_record_line` | Changes a line Go wrote, or marks it done. | `WriteResult` | `record.changed` |
 | `add_booking` | Records a confirmed booking. | `AddBookingResult` | `booking.changed` |
 | `update_booking` | Changes or cancels a booking. | `WriteResult` | `booking.changed` |
 | `add_expense` | Records something someone paid for, split between people. | `AddExpenseResult` | `expense.changed` |
+| `update_expense` | Changes who an expense is split between (and its note). The amount and the payer never change. | `WriteResult` | `expense.changed` |
 | `request_spend_approval` | Runs the spend check. Answers with a signed, one-use spend approval for the vault, or the reason why not. | `SpendApproved` or `SpendDenied` | None |
 | `cancel_spend_approval` | Releases a spend approval Go will not use, so it can never be used. | `Ok` | None |
 
@@ -230,12 +232,14 @@ Every write that changes the trip adds one to the trip's change number, answers 
 | `update_trip` | `WriteResult` | `trip.updated`, with `changed` listing the fields sent and `by` Go |
 | `open_vote` | `OpenDecisionResult` | `decision.opened`, `by` Go |
 | `close_vote` | `CloseDecisionResult` | `decision.closed` with reason `closed_by_go`, then `record.changed` for the decided line, `by` system |
+| `add_vote_options` | `WriteResult` | `decision.options_added`, `by` Go |
 | `set_mandate` | `WriteResult` | `mandate.set` |
 | `add_record_line` | `AddRecordLineResult` | `record.changed` with change `added`, `by` Go |
 | `update_record_line` | `WriteResult` | `record.changed` with change `done` when `status` becomes `done`, otherwise `updated`, `by` Go |
 | `add_booking` | `AddBookingResult` | `booking.changed` with change `added`, `by` Go, then `record.changed` for the booked line, `by` system |
 | `update_booking` | `WriteResult` | `booking.changed` with change `cancelled` or `updated`, `by` Go |
 | `add_expense` | `AddExpenseResult` | `expense.changed` with change `added`, `by` Go |
+| `update_expense` | `WriteResult` | `expense.changed` with change `updated`, `by` Go |
 | `request_spend_approval` | `SpendApproved` or `SpendDenied` (no `seq`) | None. An approval is not a change anyone sees in the trip. |
 | `cancel_spend_approval` | `Ok` (no `seq`) | None |
 
@@ -827,6 +831,7 @@ The result:
 | `card` | A card, as described in [Cards](06-cards.md). |
 | `reply_to` | The message Go is answering, if any. |
 | `mentions` | People Go names in the text. Each one gets a push. |
+| `visible_to_person_ids` | Contract 1.2: only these people see the message (1 to 30, all in the trip). Leave it out for everyone. See [A message only some people see](#a-message-only-some-people-see-contract-12). |
 
 What the server does:
 1. Stores the message with Go as the author (`{"kind": "go"}`), the next change number as both `seq` and `updated_seq`, and the card exactly as it arrived.
@@ -839,6 +844,7 @@ What the server does:
 |---|---|
 | The params have text, a card, or both. | `422` `invalid` |
 | Every person in `mentions` is in the trip. | `422` `invalid` |
+| Every person in `visible_to_person_ids` is in the trip. | `422` `invalid` |
 | `reply_to`, if set, is a message in this trip. | `422` `invalid` |
 | A record card's id (`decision_id`, `booking_id` or `expense_id`) is in this trip. | `422` `invalid` |
 | A mandate card's vote has a mandate. | `409` `conflict` |
@@ -849,6 +855,34 @@ Good to know:
 - Send the pushes and the live update once, after the transaction commits, and not again for a repeated `request_id`.
 - `mentions_go` is `false` on Go's own messages.
 - The server pins an open vote and a mandate waiting for its payer from its own rows, so Go leaves `for_person_ids` out of vote and mandate cards.
+
+#### A message only some people see (contract 1.2)
+
+Some of what Go says is for one person only: a traveller's own flight options, their booking steps, or a note about their own account ("your ixigo money applies here"). Go posts it with `visible_to_person_ids`:
+
+<!-- schema: PostMessage -->
+```json
+{
+  "request_id": "rq_flights_priya_1",
+  "trip_id": "t_goa",
+  "text": "Your flights from Pune, Priya",
+  "visible_to_person_ids": ["p_priya"],
+  "card": {
+    "card_id": "c_flights_priya",
+    "kind": "notice",
+    "tone": "info",
+    "title": "3 flights from Pune on Fri 6 Nov",
+    "body": "IndiGo 6E 2134 from ₹4,890, the cheapest. All three land in Goa before 2 pm.",
+    "fallback_text": "3 flights from Pune on Fri 6 Nov",
+    "for_person_ids": ["p_priya"]
+  }
+}
+```
+
+- The app shows the message only to those people: in the room, live, in their "needs you" list and on the cards screen. To everyone else it doesn't exist, so nobody else can tap, reply to or react to it.
+- It still takes a change number and its `message.created` event. `read_messages` returns it to Go with the field set.
+- Visibility is fixed when the message is posted. `replace_card` keeps it.
+- A card that should stay visible to the room, with buttons only one person can press, leaves `visible_to_person_ids` out and uses the card's `for_person_ids` and each action's `only_for_person_ids` instead.
 
 ### `replace_card`: replace a card in place
 
@@ -1129,6 +1163,31 @@ What the server does:
 Good to know:
 - An anonymous vote shows totals only. Nobody sees who voted for what, including Go: `decision.voted` events and the snapshot leave out `person_id`, `option_index` and `votes`.
 - `option_ref` is Go's own reference for an option (such as an ixigo offer), so it can book the winner. The server stores it and gives it back unchanged.
+- 1.3: for the group's stays or places, Go opens the vote first, one option a card option with `option_ref` the card option's `option_id` and its photos, details and prices copied, then posts the options card with that `decision_id`. The app draws a Vote button on each option and the tally on the card. Travel options (flights, trains, buses) are never put to a vote: they are each traveller's own.
+
+### `add_vote_options`: add options to an open vote (1.3)
+
+When someone taps "See more" on an options card that is in a vote, Go posts a new options card with options not shown before and adds them to the same vote, so both messages show Vote buttons for one vote:
+
+<!-- schema: AddVoteOptions -->
+```json
+{
+  "request_id": "go_more_01JA9QK2",
+  "trip_id": "t_goa",
+  "decision_id": "d_12",
+  "options": [
+    { "label": "Casa Lua", "option_ref": "opt_14", "price_minor": 4500000, "currency": "INR", "photos": [{ "url": "https://brain.go.example/img/casa-lua-pool.jpg", "label": "Pool" }] }
+  ]
+}
+```
+
+The server answers with the change's `seq` (a `WriteResult`) and sends `decision.options_added`. The new options take the next indexes, and votes already cast stay.
+
+| Check | Error when it fails |
+|---|---|
+| The vote exists in this trip. | `404` `not_found` |
+| The vote is open. | `409` `conflict` |
+| The vote has at most 20 options in all. | `422` `invalid` |
 
 ### `close_vote`: close a vote now
 
@@ -1431,6 +1490,41 @@ Good to know:
 - The server does all the money maths: shares, totals and the fewest transfers. Go reads the result from `money` in the snapshot and never works it out itself.
 - People add expenses in the app too, like Kabir's airport cab (`e_cab`). Go gets those as `expense.changed` with `by` that person.
 - Go cannot remove an expense. People can, in the app, and Go then gets `expense.changed` with change `removed`.
+- Go never adds a second expense to change how one is split: that counts the cost twice. It sends `update_expense`.
+
+### `update_expense`: change who an expense is split between
+
+`update_expense` changes who an expense that stands is split between, and its note when one is sent. It is the app's Fix the split, done by Go. Go sends it when someone asks for a new split, such as "split it evenly" after the villa was recorded for Rahul alone. The amount and the payer never change.
+
+Here Go splits the villa Rahul paid for between all five. The params are an `UpdateExpense`:
+
+<!-- schema: UpdateExpense -->
+```json
+{
+  "request_id": "rq_split_villa_1",
+  "trip_id": "t_goa",
+  "expense_id": "e_villa",
+  "split_person_ids": ["p_rahul", "p_priya", "p_arjun", "p_meher", "p_kabir"]
+}
+```
+
+The result is the change number. The expense as it now stands comes in the `expense.changed` event:
+
+<!-- schema: WriteResult -->
+```json
+{ "seq": 81 }
+```
+
+The server works out the trip's money again and sends `expense.changed` with change `updated` and `"by": {"kind": "go"}`.
+
+| Rule | If it fails |
+|---|---|
+| The expense is in this trip and has not been removed. | `404` `not_found` |
+| Every person in `split_person_ids` is in the trip. | `422` `invalid` |
+
+Good to know:
+- A repeat with the same `request_id` changes the expense once and gets the same answer.
+- A server from before this request answers `-32601`. Go then says it cannot change the split yet, and never adds a second expense instead.
 
 ## Spend approvals
 
@@ -1470,6 +1564,7 @@ The params are a `RequestSpendApproval`:
 | `merchant` | Who is paid, as the payer will see it in the vault. |
 | `purpose` | What the payment is for, as the payer will see it in the vault. |
 | `refundable_until` | When free cancellation ends. Required when the mandate is refundable only. |
+| `personal` | Contract 1.3, a person's own pick (their ticket, or a seat or bag at check-in): `{ person_id, card_id, option_id }` in place of `decision_id`. That person is the payer. See [A person's own pick](08-money-and-the-vault.md#a-persons-own-pick-contract-13). |
 
 #### The approved result
 

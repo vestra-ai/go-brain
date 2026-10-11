@@ -94,6 +94,7 @@ Here is what happens when Priya asks Go for flights. Every step between the serv
 | [Money and the vault](08-money-and-the-vault.md) | The spend check, spend approvals, the payer's Face ID, and what each side checks | Everyone |
 | [Flows](09-flows.md) | Step-by-step diagrams of the big moments | Everyone |
 | [Build and test](10-build-and-test.md) | Setting up, proving your signing code, connecting by hand, the fake Go, and what done means | Everyone |
+| [Contract 1.1](11-contract-1-1.md) | What 1.1 adds: option details, round trips, quick replies, flexible votes, locations, booking documents, checklists, call recordings, expense answers and paybacks | Everyone |
 
 ## Where the contract lives in this repo
 
@@ -142,7 +143,7 @@ event = models.Event.model_validate(frame["params"]).root  # in a send_event req
 
 ## Changing the contract
 
-The contract is version `1.0.0`. Within version 1, changes only add things: a new optional field, a new event type, a new card kind, a new method. Nothing is renamed or removed, so code written today keeps working. Both sides ignore fields they do not know, and skip event types and card kinds they do not know. A side that receives a request for a method it does not know answers with the error code `-32601`, and the sender skips what it wanted to do. That is how a new method can ship on one side before the other side supports it.
+The contract is version `1.3.0` (what 1.1 added is in [Contract 1.1](11-contract-1-1.md); 1.2 adds `not_in_trip` and `already_booked` ([Money](08-money-and-the-vault.md)), and `visible_to_person_ids` ([Go's requests](04-gos-requests.md)); 1.3 adds a person's own pick in place of 1.2's ticket approval ([Money](08-money-and-the-vault.md#a-persons-own-pick-contract-13)), and rev 5's richer choices: up to 10 options with "See more" and a vote on the card ([Cards](06-cards.md#options), [`add_vote_options`](04-gos-requests.md)), a working card's live view, the embedded vault, `place_info` and `get_option_details` ([Your requests](05-your-requests.md))). Within version 1, changes only add things: a new optional field, a new event type, a new card kind, a new method. Nothing is renamed or removed, so code written today keeps working. Both sides ignore fields they do not know, and skip event types and card kinds they do not know. A side that receives a request for a method it does not know answers with the error code `-32601`, and the sender skips what it wanted to do. That is how a new method can ship on one side before the other side supports it.
 
 To change it:
 

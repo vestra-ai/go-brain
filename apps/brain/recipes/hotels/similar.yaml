@@ -1,0 +1,47 @@
+id: hotels.similar
+title: Stays like one stay, nearby, as ixigo's own page suggests them, with their price, rating and area
+asks:
+  - anything similar to this villa but cheaper
+  - other places like that hotel
+  - aisa hi koi aur hotel dikhao
+inputs:
+  hotel: { kind: option, about: "the stay, one of Go's search results" }
+auth: none
+changes_state: false
+# The stay's own page (see hotels.details): its similar call lists the stays ixigo shows under it, for the same dates.
+let:
+  hotel_id: '$groups(hotel, "^(?:https://www\\.ixigo\\.com)?/hotels/(\\d+)/details\\?")[0]'
+  hotel_query: '$groups(hotel, "^(?:https://www\\.ixigo\\.com)?/hotels/\\d+/details\\?([^#\\s]*)$")[0]'
+  hotel_name: '$decodeUrlComponent($groups(hotel, "[?&]hName=([^&#]*)")[0])'
+page: /hotels/{$hotel_id}/details?{$hotel_query|raw}
+capture:
+  - "/accommodations/recommendation/similar/{$hotel_id}$"
+read:
+  rows: { from: "/accommodations/recommendation/similar/{$hotel_id}$", list: '($type($) = "array" ? $[0] : $).data.recommendationInventoryInfo[$not(isSameHotel = true)]' }
+answer:
+  as: facts
+  title: "Stays like {$hotel_name ? $hotel_name : 'this one'}"
+  max: 10
+  each: |
+    (
+      $fare := fareDetail;
+      $rating := $num(userRating);
+      ($type(hotelId) = "number" and $type(name) = "string") ? {
+        "name": $trim(name),
+        "area": locality,
+        "kind": accommodationType,
+        "stars": starRating,
+        "rating_out_of_10": $rating > 0 ? $rating,
+        "reviews": userRatingCount > 0 ? userRatingCount,
+        "price_per_night": $type($fare.displayedBaseFare) = "number" ? $rupees($fare.displayedBaseFare) & " a room" & ($type($fare.taxesAndFees) = "number" ? " plus " & $rupees($round($fare.taxesAndFees)) & " taxes and fees" : ""),
+        "free_cancellation": isCancellationAvailable,
+        "breakfast": isFreeBreakfastAvailable,
+        "distance": distanceFromSearchedEntity
+      }
+    )
+ttl_minutes: 10
+samples: { page: hotels.similar.json }
+measured: { fast_ms: 154, page_ms: 2240, flow_ms: null }
+notes: >-
+  Each row has the shape of a hotels.search row. A stay ixigo has nothing like answers an empty data object. To show
+  one of these as an option, search stays in its area.

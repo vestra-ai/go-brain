@@ -68,7 +68,7 @@ export interface Said {
 }
 
 /** What Go says when it will not pay, in its own voice. The model may reword it; it may never offer another way to pay. */
-export function refusalWords(code: RefusalCode, c: { payer: string; what: string; amount?: string; cap?: string; kind?: string; link?: string }): Said {
+export function refusalWords(code: RefusalCode, c: { payer: string; what: string; amount?: string; cap?: string; kind?: string; link?: string; own?: boolean }): Said {
   const yes = (text: string): Said => ({ text, say: true });
   switch (code) {
     case 'decision_not_found':
@@ -91,19 +91,34 @@ export function refusalWords(code: RefusalCode, c: { payer: string; what: string
       return yes(`I can't find free cancellation on ${c.what} now. Want me to look for a refundable rate?`);
     case 'approval_outstanding':
       return yes(`${c.payer}, the payment for ${c.what} is already waiting on the card above.`);
+    case 'already_booked':
+      // Never "wait": nothing is pending. A second payment would charge twice.
+      return yes(`${c.what} is booked already. To book it again, cancel that booking first.`);
+    case 'not_in_trip':
+      return yes(`${c.payer} isn't in this trip any more, so I can't take a payment for their ticket. Nothing was charged.`);
+    case 'no_pick':
+      // Contract 1.3 (G3): the Server grants a person's own payment only for an option they tapped on their own card in the
+      // last 30 minutes, at most its price plus 5%.
+      return yes(`${c.payer}, pick ${c.what} again on your card: it has been a while, or the price moved. Nothing was charged.`);
     case 'wrong_offer':
       return yes(`That isn't what the group voted for. I can only pay for ${c.what}.`);
     case 'not_bookable':
-      // An option from ixigo.com (TRAVEL_MODE ixigo_web) carries its own page there, where the group books it.
+      // An option from ixigo.com (TRAVEL_MODE ixigo_web) has its own page there, in its details on its card (rev 5 R5's
+      // View on ixigo): a link is never in the words (the door takes any out).
       return yes(
         c.link
-          ? `${c.what} is booked on ixigo, not here. Here's the link to book it yourselves: ${c.link}`
-          : "I found this one on the web, so I can't book it here. Want me to call them instead?",
+          ? `${c.what} is booked on ixigo, not here: View on ixigo, in its details on its card, opens it there.`
+          : "I found this one on the web, so it can't be booked through me. Want the closest ones on ixigo, which I can book?",
       );
     case 'not_bookable_yet': {
-      // A fare is per person, so one payment for the group would be wrong: the group books these on ixigo themselves.
+      // A fare is per person, so one payment for the group would be wrong. Where Go books each person's own flight
+      // (BOOKING on for the trip: own), each of them picks theirs on their own card and Go books it; otherwise the group
+      // books these on ixigo themselves.
+      if (c.own && (c.kind ?? 'flight') === 'flight') {
+        return yes("Flights are each person's own, so there's no one payment for the group: each of you taps I'll take this on your own flights card, and I book it.");
+      }
       const first = `I can't book ${c.kind === 'train' ? 'trains' : c.kind === 'bus' ? 'buses' : 'flights'} for the whole group yet.`;
-      return yes(c.link ? `${first} Here's the link to book them yourselves: ${c.link}` : first);
+      return yes(c.link ? `${first} View on ixigo, in its details on its card, opens each one set up for you.` : first);
     }
     case 'already_paid':
       return yes(`${c.what} is already booked.`);
@@ -117,9 +132,9 @@ export function refusalWords(code: RefusalCode, c: { payer: string; what: string
       // No pay page was opened: the payment never started.
       return yes("I couldn't start this payment, so nothing was charged.");
     case 'server_down':
-      return yes("I couldn't reach the trip just now. Nothing was charged. Ask me again in a moment.");
+      return yes("I couldn't reach the trip just now, so nothing was charged. Want me to try again now?");
     case 'closed':
-      return yes('That payment is already closed. Ask me again for a fresh one.');
+      return yes('That payment is already closed. Want a fresh one?');
   }
 }
 
@@ -136,9 +151,20 @@ export function failReasonWords(reason: string | null): string {
   }
 }
 
-export function bookedLine(o: { title: string; payer: string; amount: string; people: number }): string {
-  const split = o.people > 1 ? `, split between all ${o.people}` : '';
-  return `Booked ${o.title}! ${o.payer} paid ${o.amount}${split}.`;
+/**
+ * The line on a booking's ticket. Who paid, how much and how it is split is never in it: the Server posts its own money
+ * line for each expense Go adds (rev 4 A4; the Server team's GO-TEAM-FINAL §8: "the room shows both").
+ */
+export function bookedLine(o: { title: string; simulated?: boolean }): string {
+  // A booking on Go's test rail only (a stay from ixigo.com) says so: nothing was booked on ixigo, nothing real was paid.
+  if (o.simulated) return `Booked (simulated): ${o.title}. A test payment only; nothing was booked on ixigo.`;
+  return `Booked ${o.title}!`;
+}
+
+/** A traveller's own ticket, paid through the vault (contract 1.2). On Go's test rails nothing real was paid or booked. */
+export function ticketPaidLine(o: { what: string; payer: string; amount: string; simulated: boolean }): string {
+  if (o.simulated) return `Paid (simulated): ${o.what}. ${o.payer}'s test payment of ${o.amount}; nothing was booked on ixigo.`;
+  return `${o.payer} paid ${o.amount} for ${o.what}.`;
 }
 
 export function failedLine(o: { payer: string; what: string; reason: string | null }): string {
@@ -159,6 +185,8 @@ export const TOASTS = {
   notReady: "This payment isn't ready yet.",
   fresh: 'That one timed out. Setting up a fresh payment.',
   restart: 'Setting up a fresh payment.',
+  /** A traveller's ticket has no vote to ask again from: its own flow asks afresh. */
+  ticketRunOut: 'That payment ran out. Tap Book it again for a fresh one.',
   noPage: "Couldn't open the payment page. Try again.",
   declinedDone: 'Declined. Nothing was charged.',
   confirming: "We're confirming this payment with the bank. Don't pay again.",

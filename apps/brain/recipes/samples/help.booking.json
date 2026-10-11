@@ -1,0 +1,102 @@
+{
+  "status": "SUCCESS",
+  "length": 7,
+  "data": [
+    {
+      "productType": "FLIGHT",
+      "bookingId": "BOOKING-ID-NEVER-READ-1",
+      "paymentTransactionId": "NEVER-READ",
+      "userId": "NEVER-READ",
+      "providerName": "ixigo",
+      "userEmail": "never.read@example.com",
+      "userPhone": "9000000000",
+      "firstName": "NEVER-READ",
+      "lastName": "NEVER-READ",
+      "bookingInfo": { "pnr": "NEVERREAD", "source": { "country": "IN", "name": "Mumbai" }, "destination": { "country": "IN", "name": "Goa" }, "eticketPath": "/NEVER-READ" },
+      "createdEpochTime": 1791000000000,
+      "invoiceUrl": "https://www.ixigo.com/NEVER-READ",
+      "journeyType": "ROUND_TRIP",
+      "subType": "DOMESTIC",
+      "cancelled": false,
+      "refundable": true,
+      "international": false,
+      "tripStatus": "CONFIRMED",
+      "firstReturnSegmentIndex": 1,
+      "allowCancellation": true,
+      "allowReschedule": true,
+      "allowNameChange": false,
+      "availingFreeCancellation": true,
+      "segments": [
+        {
+          "airlineCode": "6E", "airlineName": "IndiGo", "flightNumber": "2134", "origin": "Mumbai", "destination": "Goa",
+          "departAirportCode": "BOM", "arriveAirportCode": "GOX", "scheduledDeparture": 1793929200000, "scheduledArrival": 1793933700000,
+          "departureTerminal": "2", "arrivalTerminal": "1", "flightStatusCode": "SCHEDULED",
+          "checkinUrl": "https://www.goindigo.in/checkin/NEVERREAD/NEVER-READ?pnr=NEVERREAD",
+          "baggage": { "checkinLuggage": "15 Kg", "handLuggage": "7 Kg" }
+        },
+        {
+          "airlineCode": "6E", "airlineName": "IndiGo", "flightNumber": "5329", "origin": "Goa", "destination": "Mumbai",
+          "departAirportCode": "GOX", "arriveAirportCode": "BOM", "scheduledDeparture": 1794229800000, "scheduledArrival": 1794234900000,
+          "departureTerminal": "1", "arrivalTerminal": "2", "flightStatusCode": "SCHEDULED",
+          "baggage": { "checkinLuggage": "15 Kg", "handLuggage": "7 Kg" }
+        }
+      ],
+      "passengers": [{ "id": "NEVER-READ", "firstName": "NEVER-READ", "lastName": "NEVER-READ", "name": "NEVER-READ", "status": "CONFIRMED" }],
+      "eticketUrl": "https://www.ixigo.com/NEVER-READ"
+    },
+    {
+      "productType": "HOTEL",
+      "bookingId": "BOOKING-ID-NEVER-READ-2",
+      "userEmail": "never.read@example.com",
+      "hotelName": "Villa Sol",
+      "cityName": "Goa",
+      "checkinDate": "2026-11-06",
+      "checkoutDate": "2026-11-09",
+      "bookingStatus": "BOOKING_SUCCESS",
+      "paymentType": "BOOK_WITH_ZERO_PAYMENT",
+      "refundable": true,
+      "allowCancellation": true
+    },
+    {
+      "productType": "CAB",
+      "bookingId": "BOOKING-ID-NEVER-READ-3",
+      "title": "Sedan",
+      "pickupLocation": "Goa Mopa Airport",
+      "dropoffLocation": "NEVER-READ, Anjuna",
+      "travelDate": 1793934600000,
+      "status": "CONFIRMED"
+    },
+    {
+      "productType": "FLIGHT",
+      "bookingId": "BOOKING-ID-NEVER-READ-4",
+      "bookingInfo": { "pnr": "NEVERREAD", "source": { "country": "IN", "name": "Delhi" }, "destination": { "country": "IN", "name": "Goa" } },
+      "tripStatus": "COMPLETED",
+      "cancelled": false,
+      "segments": [
+        { "airlineCode": "AI", "airlineName": "Air India", "flightNumber": "883", "origin": "Delhi", "destination": "Goa", "departAirportCode": "DEL", "arriveAirportCode": "GOI", "scheduledDeparture": 1766205000000, "scheduledArrival": 1766209800000 }
+      ]
+    },
+    {
+      "productType": "FLIGHT",
+      "bookingId": "BOOKING-ID-NEVER-READ-5",
+      "bookingInfo": { "pnr": "NEVERREAD", "source": { "country": "IN", "name": "Mumbai" }, "destination": { "country": "IN", "name": "Bengaluru" } },
+      "tripStatus": "CONFIRMED",
+      "segments": [
+        { "airlineCode": "6E", "airlineName": "IndiGo", "flightNumber": "5101", "origin": "Mumbai", "destination": "Bengaluru", "departAirportCode": "BOM", "arriveAirportCode": "BLR", "scheduledDeparture": 1794022200000, "scheduledArrival": 1794031200000 }
+      ]
+    },
+    {
+      "productType": "TRAIN",
+      "bookingId": "BOOKING-ID-NEVER-READ-6",
+      "trainCode": "10103",
+      "trainName": "Mandovi Express",
+      "bookingInfo": { "pnr": "NEVERREAD", "source": { "code": "CSMT", "name": "Mumbai CSMT" }, "destination": { "code": "MAO", "name": "Madgaon, Goa" }, "scheduledBoardTime": 1793897100000 },
+      "status": { "code": "NOT CONFIRMED" }
+    },
+    {
+      "productType": "ABHIBUS",
+      "bookingId": "BOOKING-ID-NEVER-READ-7",
+      "status": "AB_BOOKING_SUCCESS"
+    }
+  ]
+}

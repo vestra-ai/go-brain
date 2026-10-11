@@ -4,7 +4,7 @@ This page is for whoever runs Go this week. It says where Go runs, what each set
 
 Two words used below:
 
-- **Production** and **staging** are the two environments of the Railway project `go`. Production's Go is the one the real trip and the demo use. Staging runs the same services and takes every new version first, with the live smoke and the rehearsals; production is never used for drills.
+- **Production** and **staging** are the two environments of the Railway project `go`. Production's Go is the one the real trip and the demo use. Staging runs the same services and takes every new version first, with the live smoke. Drills run on production, each on its own trip and people, never on a real trip.
 - **A variable** is a setting on a Railway service. Values live only in Railway. Never paste a value into a chat, a doc, a commit or a log.
 
 ## The Railway project
@@ -214,6 +214,17 @@ GO_REHEARSAL_URL=https://brain-staging-e92c.up.railway.app GO_STAGE_URL=https://
 
 The single quotes matter: the token is read inside the command's environment, never typed or shown. The only thing the runner does to production's Go is the warm-up before the demo (`--warm --trip <real trip id>`, with `--environment production` and `GO_STAGE_URL`): one health read, no trip and no message.
 
+## Learn the idea places
+
+The Server's ideas on the home screen ask Go `place_info`, which answers only from places Go has learned. To have the ideas' photos, map and best months ready before anyone looks, learn them ahead, once, on the Go that Server talks to, in your ixigo queue turn:
+
+```bash
+GO_URL=https://brain-staging-e92c.up.railway.app \
+  railway run --service brain --environment staging -- sh -c 'GO_ADMIN_TOKEN="$ADMIN_TOKEN" pnpm --filter @go/sim learn-places'
+```
+
+It makes one new trip of its own (its own computer, no dates, so no stays search), waits a minute for the computer, then learns each place through that trip with `POST /admin/places/learn`: ixigo's place box once and its guide once or twice a place, one place every few seconds. It prints what `place_info` will answer for each and stops at the first refusal. A place ixigo's place box can't settle on (Kerala, Ladakh: many of its entries fit the word) is learned from ixigo's guide for the word alone, with photos and best months but no map position, and never becomes a trip's destination. A few of the Server's names ixigo knows only by other words are learned from its guide under those words and kept under the Server's name: Ladakh as Leh Ladakh, Andaman as Andaman and Nicobar (`IXIGO_WORDS` in `apps/brain/src/travel/place-info.ts`). A place neither knows is skipped. Name places after the command to learn only those. A place already learned loads nothing.
+
 ## Roll back
 
 1. Find the last good version: the deployment list (`railway deployment list --service brain --environment production`) and its messages, or `git log origin/build`.
@@ -239,7 +250,7 @@ Four switches change how Go behaves on stage without a redeploy. Go reads them o
 | `TRAVEL_MODE` | `ixigo`, `fake` | Where flights and stays come from. `fake` is our test inventory: say so on stage. | `fake` |
 | `PAY_RAIL` | `ixigo`, `stripe_test`, `fake` | How a payment is charged. `stripe_test` charges a test card; `fake` charges nothing. | `fake` |
 | `CALLS_MODE` | `off`, `allowlist` | Whether Go may phone anyone. `allowlist` means only the numbers in `CALLS_ALLOWLIST`. | `off` |
-| `REFLEX_LIVE` | `off`, empty, or questions like `q1,q2,q3,q5,q7` | Which of Jev's quick-read questions act live; the others only watch. `off` makes no Jev call at all. | `q1,q2,q4,q5,q6,q7,q8,q10` |
+| `REFLEX_LIVE` | `off`, empty, or questions like `q1,q2,q3,q5,q7` | Which of Jev's quick-read questions act live; the others only watch. `off` makes no Jev call at all. | `q1,q2,q4,q5,q6,q7,q8,q10,q11` |
 
 A switch takes the first of these that has a value:
 

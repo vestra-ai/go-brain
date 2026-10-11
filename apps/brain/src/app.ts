@@ -21,8 +21,13 @@ import type { Env } from './env.js';
 import type { Memory } from './memory/memory.js';
 import type { Pay } from './money/pay.js';
 import { unsureReflex, type Reflex } from './reflex/reflex.js';
+import type { Browsers } from './tasks/browsers.js';
 import type { Tasks } from './tasks/tasks.js';
+import type { RecipeStat } from './travel/book/engine.js';
+import type { IxigoLogin } from './travel/login.js';
+import type { TripWatches } from './travel/recipe-watches.js';
 import type { RecipeRunner } from './travel/recipes/runners.js';
+import type { ScreenStream } from './travel/screen-feed.js';
 import type { Travel } from './travel/travel.js';
 import { createGoneTrips } from './trips/gone.js';
 import { createMessageHooks, type MessageHooks } from './trips/hooks.js';
@@ -61,6 +66,11 @@ export interface Brain {
   switches: Switches;
   /** P1 sets an all-unsure stub; P2 replaces it. */
   reflex: Reflex;
+  /**
+   * True once Go's post of a card has answered (door/cards.ts posted), waiting at most withinMs: for a card a lane changes
+   * from work that runs while the turn posting it still goes (the top pick's photos). Set by P1.
+   */
+  cardPosted?: (tripId: string, cardId: string, withinMs: number) => Promise<boolean>;
   /** Set by P2. */
   memory?: Memory;
   /** Set by P4. */
@@ -68,10 +78,46 @@ export interface Brain {
   /** Set by P4. */
   tasks?: Tasks;
   /**
-   * Set by P4's tasks lane, which owns the trip's computer: the two ways to run an ixigo.com recipe on it, and keepWarm,
-   * which holds the computer awake while the trip talks (Bash's warm keep_ms).
+   * Set by P4's tasks lane, which owns the computers. All of these use the trip's browser, the organizer's own computer
+   * shared by all of their trips (tasks/browsers.ts), never the trip's job computer: the browser fetch the recipe engine
+   * reads ixigo.com pages with; keepWarm, which holds the computer awake for two minutes (Bash's warm keep_ms), which only travel's
+   * warmForTravel calls; start, which makes the trip's computer (or wakes it) with no hold, for travel's setup step and a
+   * watch's check, and says whether it was up ('ready'), is on its way ('waking'), or was woken in the last minute
+   * ('skipped'); prime, the computer's first ixigo visit, travel's next setup step (it throws when ixigo did not answer);
+   * and watch, Bash's browser watch of the trip's computer (never a wake), for the live view's screen (screen-feed.ts).
    */
-  recipeRunners?: { browserFetch: RecipeRunner; agentJob: RecipeRunner; keepWarm(tripId: string): void };
+  recipeRunners?: {
+    browserFetch: RecipeRunner;
+    keepWarm(tripId: string): void;
+    /** Holds the trip's computer awake keepMs once it is up (Bash's warm keep_ms), for the keepalive while people talk. */
+    keepAwake?(tripId: string, keepMs: number): Promise<'ready' | 'waking'>;
+    /**
+     * A person is active in the trip before typing (they opened its room after a while, or tapped a card): its computer
+     * is held awake as when they post (tasks/awake.ts), so their first ask never waits for it to wake. Fire and forget.
+     */
+    roomActive?(tripId: string): void;
+    start(tripId: string): Promise<'ready' | 'waking' | 'skipped'>;
+    prime(tripId: string): Promise<void>;
+    watch(tripId: string, signal: AbortSignal): Promise<ScreenStream>;
+    /**
+     * A fresh 15-minute session on the trip's screen, in control or to view (POST /v1/sessions): the ixigo login's Watch.
+     * driver: user puts a control screen in the person's hands from the first frame, with no Take control.
+     */
+    screen(tripId: string, mode: 'view' | 'control', o?: { driver?: 'user' }): Promise<{ id?: string; url: string; expires_at: string }>;
+    /** Ends a session now (DELETE /v1/sessions/{id}): its Watch closes itself, and its control ends with it. */
+    endScreen?(sessionId: string): Promise<void>;
+    /** Where the trip's browser's ixigo login stands: one browser, and one login, for every trip of its organizer. */
+    login?: Pick<Browsers, 'login' | 'setLogin' | 'loggedInSince'>;
+  };
+  /** Set by P4's travel lane: how fast each ixigo recipe answers, for the admin's health view. */
+  recipeStats?: () => RecipeStat[];
+  /** Set by the travel lane: the watches groups asked for that are going, per trip, for the admin's health view. */
+  recipeWatches?: () => Promise<TripWatches[]>;
+  /**
+   * Set by the travel lane: the trip's ixigo login (travel/login.ts). personGone logs the trip's computer out of ixigo
+   * when the login is that person's: travel calls it when they leave; "Forget me" in the trip should call it too.
+   */
+  ixigoLogin?: Pick<IxigoLogin, 'personGone'>;
   /** Set by P5. */
   pay?: Pay;
   /** The daily model budget (MODEL_DAILY_BUDGET_USD). buildBrain always sets it; it is optional only so lane test doubles need not. */
@@ -96,6 +142,8 @@ export interface Timings {
   /** How often the daily model budget re-reads today's spend from the database. */
   budgetRefreshMs: number;
   turnTimeoutMs: number;
+  /** The least an untagged turn's typing shows before its post (composer TYPING_MIN_MS). */
+  typingMinMs: number;
   linkTimeoutMs: number;
   waitForSocketMs: number;
 }
@@ -113,6 +161,7 @@ export const DEFAULT_TIMINGS: Timings = {
   pruneMs: 60_000,
   budgetRefreshMs: 60_000,
   turnTimeoutMs: 20_000,
+  typingMinMs: 1_200,
   linkTimeoutMs: 2_500,
   waitForSocketMs: 15_000,
 };
@@ -160,15 +209,30 @@ export async function buildBrain(env: Env, o: BuildOptions = {}): Promise<Built>
       await cards.observe(method, params, result, stored);
       await gone.answered(method, params);
     },
-    onFail: async (method, params, err) => {
+    onFail: async (method, params, err, instance) => {
       await cards.failed(method, params);
-      await gone.failed(method, params, err);
+      await gone.failed(method, params, err, instance);
     },
   });
   const guard = createReplayGuard({ pool, now });
-  const door = createDoor({ http, secret: env.GO_SIGNING_SECRET, guard, link, log, now, pingMs: t.pingMs, idleMs: t.idleMs });
+  const door = createDoor({
+    http, secret: env.GO_SIGNING_SECRET, guard, link, log, now, pingMs: t.pingMs, idleMs: t.idleMs,
+    // A request that names a trip came from the Server that has it now: the trip's home follows it in trips (never across
+    // named Servers: trips/log.ts), and the link with it, so the request's own replies, waiting for a socket, go there.
+    // Read at each request: the tasks lane sets the trip computer's hold after the door is made.
+    onTripActive: (tripId, from) => {
+      tripLog.rehome(tripId, from).then(
+        (home) => home && link.rehome(tripId, home),
+        (err: unknown) => log.warn({ err, trip: tripId }, "a trip's home did not move"),
+      );
+      brain.recipeRunners?.roomActive?.(tripId);
+    },
+  });
   const taps = createTapRouter({ pool, cards, log });
-  const tripLog = createTripLog({ pool, log, now });
+  // send_event's answer waits on one write only, on connections of its own: never behind the work of earlier events on
+  // the main pool (GO-TEAM-FINAL §6, 10 Oct: mandate.set took 2,142 ms, the promise is 2 s).
+  const appendPool = o.pool ? undefined : createPool(env.DATABASE_URL, { max: 2 });
+  const tripLog = createTripLog({ pool, log, now, ...(appendPool ? { appendPool } : {}) });
   const packs = createPacks({ pool, link, log, now });
   const hooks = createMessageHooks(log);
   const setup = createSetup({ pool, log, now });
@@ -179,7 +243,11 @@ export async function buildBrain(env: Env, o: BuildOptions = {}): Promise<Built>
   const context = createContext(log);
   const speak = createSpeak({ pool, link, now, everyMs: t.typingEveryMs });
   const switches = createSwitches({
-    pool, now, env: { TRAVEL_MODE: env.TRAVEL_MODE, TRAVEL_RUNNER: env.TRAVEL_RUNNER, PAY_RAIL: env.PAY_RAIL, CALLS_MODE: env.CALLS_MODE, REFLEX_LIVE: env.REFLEX_LIVE },
+    pool, now,
+    env: {
+      TRAVEL_MODE: env.TRAVEL_MODE, TRAVEL_RUNNER: env.TRAVEL_RUNNER, PAY_RAIL: env.PAY_RAIL, CALLS_MODE: env.CALLS_MODE, REFLEX_LIVE: env.REFLEX_LIVE,
+      BROWSER_FETCH_SLOTS: env.BROWSER_FETCH_SLOTS, RECIPE_WATCHES: env.RECIPE_WATCHES, BOOKING: env.BOOKING,
+    },
   });
 
   // One model client for the composer and every lane's side passes: a test's fake or the bench's recorder reaches all of them.
@@ -192,6 +260,7 @@ export async function buildBrain(env: Env, o: BuildOptions = {}): Promise<Built>
   };
   const brain: Brain = {
     env, pool, log, now, http, anthropic, onStop, door, taps, tripLog, packs, setup, desk, tools, context, hooks, switches, reflex: unsureReflex, budget,
+    cardPosted: cards.posted,
   };
 
   const composer = createComposer({
@@ -202,6 +271,7 @@ export async function buildBrain(env: Env, o: BuildOptions = {}): Promise<Built>
     claimNew: desk.claimNew,
     release: desk.release,
     turnTimeoutMs: t.turnTimeoutMs,
+    typingMinMs: t.typingMinMs,
   });
   desk.setRunner(o.wrapTurn ? o.wrapTurn(composer.runTurn) : composer.runTurn, composer.giveUp);
 
@@ -211,6 +281,8 @@ export async function buildBrain(env: Env, o: BuildOptions = {}): Promise<Built>
     reflex: () => brain.reflex,
     runningTasks: async (tripId) => (await brain.tasks?.running(tripId)) ?? [],
     waitMs: t.waitMs,
+    away: (tripId) => link.away(tripId),
+    rehome: (tripId, home) => link.rehome(tripId, home),
   });
   door.handle('send_event', intake.sendEvent);
   door.handle('card_tap', taps.handle);
@@ -259,6 +331,7 @@ export async function buildBrain(env: Env, o: BuildOptions = {}): Promise<Built>
       if (listening) await http.close();
       await intake.idle();
       if (!o.pool) await pool.end();
+      await appendPool?.end();
     },
   };
 }

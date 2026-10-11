@@ -1,7 +1,7 @@
 import * as C from '@go/contract';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { markConfirming, markFailed, markPaid, reconcile, sweepPayments } from '../finish.js';
-import { getPayment, transition, unsettled } from '../store.js';
+import { getPayment, patchPayment, transition, unsettled } from '../store.js';
 import { FakeCallError, moneyKit, type MoneyKit } from './kit.js';
 
 let k: MoneyKit;
@@ -25,6 +25,54 @@ const paid = async () => {
   const row = await markPaid(k.deps, { tripId: 't_goa', approvalId, railRef: `fake_${approvalId}` });
   if (row) await reconcile(k.deps, row.payment_id);
 };
+
+describe("the rooms a stay's expenses split by (REV4 B6)", () => {
+  const PICKED = [
+    { label: 'Deluxe room', person_ids: ['p_rahul', 'p_priya', 'p_arjun'], price_minor: 3_600_000 },
+    { label: 'Standard room', person_ids: ['p_meher', 'p_kabir'], price_minor: 1_800_000 },
+  ];
+
+  it('are the ones picked when the payment was asked: the rooms card closes at payment, and a later pick changes nothing', async () => {
+    const r2 = await moneyKit();
+    try {
+      let picked: typeof PICKED | null = PICKED;
+      r2.deps.rooms = async (row) => (row.decision_id === 'd_villa' && row.option_ref ? picked : null);
+      const asked = await r2.ask();
+      if (!('cardId' in asked)) throw new Error(asked.refused);
+      expect((await getPayment(r2.pool, asked.paymentId))?.rooms).toEqual(PICKED);
+      // A tap on the card after the payment was asked: never what the finish reads.
+      picked = [{ label: 'Villa', person_ids: ['p_rahul'], price_minor: 1 }];
+      const approval = [...r2.server.approvals.keys()][0] as string;
+      const row = await markPaid(r2.deps, { tripId: 't_goa', approvalId: approval, railRef: `fake_${approval}` });
+      await reconcile(r2.deps, row!.payment_id);
+      expect(r2.server.writesOf('add_expense').map((w) => [w.params.split_person_ids, w.params.amount_minor])).toEqual([
+        [['p_rahul', 'p_priya', 'p_arjun'], 3_613_333],
+        [['p_meher', 'p_kabir'], 1_806_667],
+      ]);
+    } finally {
+      await r2.drop();
+    }
+  });
+
+  it('are none when nobody picked, or the pick did not read: the payment is asked all the same, one expense across everyone', async () => {
+    for (const [rooms, kept] of [
+      [async () => null, []],
+      [async () => {
+        throw new Error('the rooms cards table is busy');
+      }, null],
+    ] as const) {
+      const r2 = await moneyKit();
+      try {
+        r2.deps.rooms = rooms;
+        const asked = await r2.ask();
+        if (!('cardId' in asked)) throw new Error(asked.refused);
+        expect((await getPayment(r2.pool, asked.paymentId))?.rooms).toEqual(kept);
+      } finally {
+        await r2.drop();
+      }
+    }
+  });
+});
 
 describe('a paid payment', () => {
   it('confirms the hold, records the booking and the expense, updates the pay card and posts the ticket', async () => {
@@ -56,15 +104,30 @@ describe('a paid payment', () => {
       note: 'Villa Sol, 3 nights',
       split_person_ids: ['p_rahul', 'p_priya', 'p_arjun', 'p_meher', 'p_kabir'],
       booking_id: bookingId,
+      // 1.1 B4: paid through the vault, so the Server records it approved at once, never pending.
+      approval_id: approvalId,
     });
     const card = C.PayCard.parse(k.server.cards.get(cardId));
     expect(card.state).toBe('paid');
     expect(card.actions ?? null).toBeNull();
     const ticket = k.server.posts.at(-1);
-    expect(ticket?.text).toBe('Booked Villa Sol, 3 nights! Rahul paid ₹54,200, split between all 5.');
+    // What was booked, never the money: the Server posts its own line for the expense (GO-TEAM-FINAL §8).
+    expect(ticket?.text).toBe('Booked Villa Sol, 3 nights!');
+    expect(k.server.writesOf('post_message').at(-1)?.params.mentions ?? []).toEqual([]);
     expect(ticket?.card).toMatchObject({ kind: 'ticket', card_id: `c_ticket_${approvalId}`, booking_id: bookingId });
     expect(await getPayment(k.pool, paymentId)).toMatchObject({ state: 'paid', booking_id: bookingId, ticket_posted_at: expect.any(Date) });
     expect(await unsettled(k.pool, k.now())).toEqual([]);
+  });
+
+  // Saket's test, 11 Oct: the stay comes first. Once it is booked, Go wakes for each person's flights, once.
+  it('the stay booked and its ticket up, Go wakes for the next step once', async () => {
+    const woke: Array<{ tripId: string; bookingId: string; title: string }> = [];
+    const deps = { ...k.deps, stayBooked: async (tripId: string, b: { bookingId: string; title: string }) => void woke.push({ tripId, ...b }) };
+    for (let i = 0; i < 2; i++) {
+      const row = await markPaid(deps, { tripId: 't_goa', approvalId, railRef: `fake_${approvalId}` });
+      if (row) await reconcile(deps, row.payment_id);
+    }
+    expect(woke).toEqual([{ tripId: 't_goa', bookingId: k.server.trip('t_goa').bookings[0]?.booking_id, title: 'Villa Sol, 3 nights' }]);
   });
 
   it('does every step once when the vault calls back twice', async () => {
@@ -85,6 +148,61 @@ describe('a paid payment', () => {
     expect(k.server.writesOf('add_booking')).toHaveLength(1);
     expect(k.server.writesOf('add_expense')).toHaveLength(1);
     expect((await getPayment(k.pool, paymentId))?.ticket_posted_at).not.toBeNull();
+  });
+
+  // REV4 B6: the group shared the villa's rooms (B5's arrangement), so each room's people owe their own room's part.
+  const ROOMS = [
+    { label: 'Deluxe room', person_ids: ['p_rahul', 'p_priya'], price_minor: 2_400_000 },
+    { label: 'Deluxe room', person_ids: ['p_arjun', 'p_meher'], price_minor: 2_400_000 },
+    { label: 'Standard room', person_ids: ['p_kabir'], price_minor: 1_800_000 },
+  ];
+
+  it('adds one expense a room when the group shared the rooms, each its part of what was paid, split between its people', async () => {
+    // The rooms the payment kept when it was asked.
+    await patchPayment(k.pool, paymentId, { rooms: ROOMS }, k.now());
+    await paid();
+    const expenses = k.server.writesOf('add_expense').map((w) => w.params);
+    expect(expenses).toHaveLength(3);
+    expect(expenses.map((e) => [e.request_id, e.amount_minor, e.split_person_ids, e.note])).toEqual([
+      [`go_paid_${approvalId}_expense_room1`, 1_970_909, ['p_rahul', 'p_priya'], 'Villa Sol, 3 nights, Deluxe room'],
+      [`go_paid_${approvalId}_expense_room2`, 1_970_909, ['p_arjun', 'p_meher'], 'Villa Sol, 3 nights, Deluxe room'],
+      [`go_paid_${approvalId}_expense_room3`, 1_478_182, ['p_kabir'], 'Villa Sol, 3 nights, Standard room'],
+    ]);
+    const bookingId = k.server.trip('t_goa').bookings[0]?.booking_id;
+    for (const e of expenses) expect(e).toMatchObject({ paid_by_person_id: 'p_rahul', currency: 'INR', category: 'stay', booking_id: bookingId, approval_id: approvalId });
+    expect(expenses.reduce((s, e) => s + Number(e.amount_minor), 0)).toBe(5_420_000);
+    expect(k.server.posts.at(-1)?.text).toBe('Booked Villa Sol, 3 nights!');
+    expect((await getPayment(k.pool, paymentId))?.expense_id).toBe(k.server.trip('t_goa').expenses[0]?.expense_id);
+  });
+
+  it("adds each room's expense once, whether the vault calls back twice or a room's expense fails halfway", async () => {
+    await patchPayment(k.pool, paymentId, { rooms: ROOMS }, k.now());
+    // The second room's expense fails once: the first is in, the rest are not.
+    const request = k.deps.link.request.bind(k.deps.link);
+    let calls = 0;
+    k.deps.link = { ...k.deps.link, request: (async (method: string, params: Record<string, unknown>) => {
+      if (method === 'add_expense' && ++calls === 2) throw new FakeCallError(503, 'the Server is busy');
+      return request(method as never, params as never);
+    }) as unknown as typeof k.deps.link.request };
+    await paid();
+    expect(await getPayment(k.pool, paymentId)).toMatchObject({ expense_id: null, attempts: 1 });
+    await sweepPayments(k.deps);
+    await paid();
+    await reconcile(k.deps, paymentId);
+    expect(k.server.writesOf('add_expense').map((w) => w.params.request_id)).toEqual([
+      `go_paid_${approvalId}_expense_room1`, `go_paid_${approvalId}_expense_room2`, `go_paid_${approvalId}_expense_room3`,
+    ]);
+    expect(k.server.trip('t_goa').expenses).toHaveLength(3);
+    expect(k.server.posts.filter((p) => p.card?.kind === 'ticket')).toHaveLength(1);
+  });
+
+  it('adds one expense across everyone when no rooms were picked, or the rooms cannot split it', async () => {
+    await patchPayment(k.pool, paymentId, { rooms: [] }, k.now());
+    await paid();
+    expect(k.server.writesOf('add_expense').map((w) => w.params)).toEqual([
+      expect.objectContaining({ request_id: `go_paid_${approvalId}_expense`, amount_minor: 5_420_000, split_person_ids: ['p_rahul', 'p_priya', 'p_arjun', 'p_meher', 'p_kabir'] }),
+    ]);
+    expect(k.server.posts.at(-1)?.text).toBe('Booked Villa Sol, 3 nights!');
   });
 
   it('keeps trying when the travel layer has not confirmed yet', async () => {
@@ -125,6 +243,8 @@ describe('a payment that did not happen', () => {
     expect(k.server.posts.at(-1)?.text).toBe(
       "Rahul, the payment for Villa Sol didn't go through (the bank declined the card). Nothing was charged. Want to try again?",
     );
+    // Go addresses the payer, so the line carries the mention and Rahul gets a push.
+    expect(k.server.writesOf('post_message').at(-1)?.params.mentions).toEqual(['p_rahul']);
   });
 
   it('ignores a failure for a payment that already went through', async () => {
@@ -141,6 +261,24 @@ describe('a payment that did not happen', () => {
     expect(k.vault.voids).toEqual([approvalId]);
     expect(k.server.cards.get(cardId)).toMatchObject({ state: 'declined' });
     expect(k.server.posts.filter((p) => p.text === 'Holding off on Villa Sol for now.')).toHaveLength(1);
+  });
+
+  // The Server team's GO-TEAM-FINAL §6: after Decline the card kept live Approve and Decline for 46 s, while the release
+  // waited on a failed vault call and the sweep. The card goes first now.
+  it('after a decline the card says so at once, with no buttons, even while the vault cannot be reached', async () => {
+    await transition(k.pool, paymentId, ['waiting'], 'declined', { release_reason: 'payer_declined' }, k.now());
+    k.vault.failVoid = true;
+    await reconcile(k.deps, paymentId);
+    const card = C.PayCard.parse(k.server.cards.get(cardId));
+    expect(card.state).toBe('declined');
+    expect(card.actions ?? []).toEqual([]);
+    expect(k.server.writesOf('cancel_spend_approval')).toEqual([]);
+    // The sweep releases it later, and the card is not replaced again.
+    const replaced = k.server.writesOf('replace_card').length;
+    k.vault.failVoid = false;
+    await reconcile(k.deps, paymentId);
+    expect(k.server.writesOf('cancel_spend_approval')).toHaveLength(1);
+    expect(k.server.writesOf('replace_card')).toHaveLength(replaced);
   });
 
   it('releases nothing until the vault has stopped the pay links, then does both once', async () => {

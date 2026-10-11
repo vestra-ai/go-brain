@@ -4,7 +4,7 @@ import { GOA_SNAPSHOT, goaFreshTrip } from '../goa.js';
 import { SocketCallError } from '../server-socket.js';
 import { TEST_SPEND_PRIVATE_KEY_PEM, TEST_SPEND_PUBLIC_KEY_PEM } from '../test-spend-key.js';
 import { confirmMandate, declineMandate, openVote, setMandate, vote } from '../state/decisions.js';
-import { addBooking, addExpense, cancelSpendApproval, recomputeMoney, requestSpendApproval, spendCheck, updateBooking } from '../state/money.js';
+import { addBooking, addExpense, cancelSpendApproval, recomputeMoney, requestSpendApproval, spendCheck, updateBooking, updateExpense } from '../state/money.js';
 import { TripState } from '../state/trip-state.js';
 
 const everyone = ['p_rahul', 'p_priya', 'p_arjun', 'p_meher', 'p_kabir'];
@@ -129,6 +129,77 @@ describe('the spend check', () => {
   });
 });
 
+// Contract 1.3 (G3): a person's own pick is never voted on. The FakeServer grants it on the Server's rules: that person
+// tapped that option on their own card of Go's in the last 30 minutes, the amount is at most its price plus 5%, and nothing
+// else is approved or booked for the pick. It signs `personal` in place of decision_id, and that person is the payer.
+describe("a person's own pick", () => {
+  const pick = { person_id: 'p_meher', card_id: 'c_flights_meher', option_id: 'opt_flight_2' };
+  const personalAsk = (over: Record<string, unknown> = {}) => ({
+    request_id: 'rq_t', trip_id: 't_goa', personal: pick, amount_minor: 753600, currency: 'INR', merchant: 'ixigo',
+    purpose: 'IndiGo 6E2150, Fri 6 Nov, for Meher', ...over,
+  }) as never;
+  /** Go's flights card for Meher alone, and her tap on its second flight. */
+  function picked(o: { tap?: boolean; forPerson?: string } = {}) {
+    const { s, clock } = setUp();
+    const option = (n: number, price: number) => ({ option_id: `opt_flight_${n}`, title: `Flight ${n}`, price_minor: price, currency: 'INR', highlights: [] });
+    // The room keeps the card as Go sent it (the raw request), as the Server does.
+    const post = {
+      request_id: 'rq_card', trip_id: 't_goa', text: 'Meher, your flights from Mumbai',
+      card: { card_id: 'c_flights_meher', kind: 'options', fallback_text: 'Flights', title: 'Your flights', option_kind: 'flight', checked_at: new Date(start).toISOString(), for_person_ids: [o.forPerson ?? 'p_meher'], options: [option(1, 690000), option(2, 717800)] },
+    };
+    s.postMessage(post as never, post);
+    if (o.tap !== false) s.recordTap('p_meher', 'c_flights_meher', 'opt_flight_2');
+    return { s, clock };
+  }
+
+  it('is granted for the option its person tapped on their own card, signed for them as its payer, and the vault can read it', () => {
+    const { s } = picked();
+    const r = requestSpendApproval(s, personalAsk(), TEST_SPEND_PRIVATE_KEY_PEM).result;
+    if (r.status !== 'approved') throw new Error(`denied: ${r.reason}`);
+    const read = verifySpendApproval(r.approval, TEST_SPEND_PUBLIC_KEY_PEM, Math.floor(start / 1000) + 1);
+    if (!read.ok) throw new Error(read.reason);
+    expect(read.claims).toMatchObject({ personal: pick, payer_person_id: 'p_meher', amount_minor: 753600 });
+    expect(read.claims.decision_id ?? null).toBeNull();
+    expect(s.approvals.get(r.approval_id)).toMatchObject({ decision_id: null, personal: pick, payer_person_id: 'p_meher' });
+  });
+
+  it('is denied no_pick with no tap, a tap over 30 minutes old, a card that is not theirs, or more than the price plus 5%', () => {
+    const denied = (s: TripState, over: Record<string, unknown> = {}) => requestSpendApproval(s, personalAsk(over), TEST_SPEND_PRIVATE_KEY_PEM).result;
+    expect(denied(picked({ tap: false }).s)).toMatchObject({ status: 'denied', reason: 'no_pick' });
+    const late = picked();
+    late.clock.advance(31 * 60_000);
+    expect(denied(late.s)).toMatchObject({ status: 'denied', reason: 'no_pick' });
+    expect(denied(picked({ forPerson: 'p_rahul' }).s)).toMatchObject({ status: 'denied', reason: 'no_pick' });
+    // 717,800 plus 5% is 753,690: a paisa more is too much.
+    expect(denied(picked().s, { amount_minor: 753691 })).toMatchObject({ status: 'denied', reason: 'no_pick' });
+    expect(denied(picked().s, { personal: { ...pick, person_id: 'p_stranger' } })).toMatchObject({ status: 'denied', reason: 'not_in_trip' });
+  });
+
+  it("allows one approval a pick at a time, books with no vote paid by its person, and never twice", () => {
+    const { s } = picked();
+    const r = requestSpendApproval(s, personalAsk(), TEST_SPEND_PRIVATE_KEY_PEM).result;
+    if (r.status !== 'approved') throw new Error(`denied: ${r.reason}`);
+    expect(requestSpendApproval(s, personalAsk({ request_id: 'rq_t2' }), TEST_SPEND_PRIVATE_KEY_PEM).result).toMatchObject({ reason: 'approval_outstanding' });
+    const flight = (extra: Record<string, unknown>) => booking(undefined as never, r.approval_id, {
+      kind: 'flight', title: 'IndiGo 6E2150', amount_minor: 753600, payer_person_id: 'p_meher', for_person_ids: ['p_meher'], decision_id: undefined, ...extra,
+    });
+    expect(err(() => addBooking(s, flight({ payer_person_id: 'p_rahul' }))).code).toBe(409);
+    expect(err(() => addBooking(s, flight({ decision_id: closedVote(s) }))).code).toBe(409);
+    expect(s.approvals.get(r.approval_id)!.used).toBe(false);
+    addBooking(s, flight({}));
+    expect(s.approvals.get(r.approval_id)!.used).toBe(true);
+    expect(requestSpendApproval(s, personalAsk({ request_id: 'rq_t3' }), TEST_SPEND_PRIVATE_KEY_PEM).result).toMatchObject({ reason: 'already_booked' });
+  });
+});
+
+describe('a vote that is booked already', () => {
+  it('is denied already_booked, never approval_outstanding: a second payment would charge twice', () => {
+    const { s, id } = readyToPay();
+    addBooking(s, booking(id, undefined));
+    expect(spendCheck(s, ask(id))).toBe('already_booked');
+  });
+});
+
 describe('bookings', () => {
   it('records a paid booking, marks the approval used, and turns the decided line into the booked line', () => {
     const { s, id } = readyToPay();
@@ -190,6 +261,25 @@ describe('expenses and the money maths', () => {
     expect(err(() => addExpense(s, { ...cab, split_person_ids: ['p_stranger'] })).code).toBe(422);
     expect(err(() => addExpense(s, { ...cab, split_person_ids: [...cab.split_person_ids], booking_id: 'b_nope' })).code).toBe(422);
     expect(err(() => addExpense(s, { ...cab, split_person_ids: [...cab.split_person_ids], currency: 'USD' })).code).toBe(422);
+  });
+
+  // Saket's trip, 11 Oct: "split it evenly" added a second expense, and the trip's spend counted the stay one and a half
+  // times. update_expense changes the expense that stands.
+  it("changes an expense's split in place: the spend is the same, the transfers move, its note when given", () => {
+    const { s } = setUp();
+    const stay = addExpense(s, { request_id: 'rq_st', trip_id: 't_goa', paid_by_person_id: 'p_rahul', amount_minor: 4969200, currency: 'INR', note: 'Villa Sol', category: 'stay', split_person_ids: ['p_rahul'] });
+    expect(s.trip.money.transfers).toEqual([]);
+    const done = updateExpense(s, { request_id: 'rq_up', trip_id: 't_goa', expense_id: stay.result.expense_id, split_person_ids: everyone });
+    expect(done.events[0]).toMatchObject({ type: 'expense.changed', data: { change: 'updated', by: { kind: 'go' }, expense: { split_person_ids: everyone, note: 'Villa Sol' } } });
+    expect(done.result).toEqual({ seq: done.events[0]!.seq });
+    expect(s.trip.expenses[0]).toMatchObject({ expense_id: stay.result.expense_id, amount_minor: 4969200, split_person_ids: everyone });
+    expect(s.trip.expenses).toHaveLength(1);
+    expect(s.trip.money.spent_minor).toBe(4969200);
+    expect(s.trip.money.transfers.map((t) => [t.from_person_id, t.amount_minor])).toEqual(['p_priya', 'p_arjun', 'p_meher', 'p_kabir'].map((p) => [p, 993840]));
+    updateExpense(s, { request_id: 'rq_up2', trip_id: 't_goa', expense_id: stay.result.expense_id, split_person_ids: ['p_rahul', 'p_priya'], note: 'Villa Sol, two of us' });
+    expect(s.trip.expenses[0]!.note).toBe('Villa Sol, two of us');
+    expect(err(() => updateExpense(s, { request_id: 'rq_up3', trip_id: 't_goa', expense_id: 'e_nope', split_person_ids: everyone })).code).toBe(404);
+    expect(err(() => updateExpense(s, { request_id: 'rq_up4', trip_id: 't_goa', expense_id: stay.result.expense_id, split_person_ids: ['p_stranger'] })).code).toBe(422);
   });
 
   it("reproduces the money in the guide's Goa trip exactly", () => {

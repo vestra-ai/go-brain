@@ -1,0 +1,73 @@
+id: offers.details
+title: "One ixigo offer's terms: its code, what it takes off, who it is for, until when, and how to use it"
+asks:
+  - what's the hdfc offer exactly
+  - minimum amount for the AUSFD code
+  - how do we use IXIHDFC3
+  - can we use the RBL code on a Tuesday
+  - is offer ki terms kya hain
+inputs:
+  offer: { kind: text, about: "the offer's name on ixigo, as offers.list or hotels.offers gives it, such as ausfd_hotels" }
+auth: none
+changes_state: false
+# An offer's own page, /offers/{name}: an older Next.js page with the offer in its __NEXT_DATA__ script. A name is kept
+# as ixigo writes it (IXRBLD is one). Its terms are HTML lists, read as one line an item.
+let:
+  slug: "$replace($trim($replace(offer, /^.*\\/offers\\//, '')), /[^A-Za-z0-9_-]+/, '')"
+page: /offers/{$slug}
+# The fast speed takes the same page's document from the trip's warm tab.
+fast: { url: "/offers/{$slug}", format: next_data }
+capture:
+  - { match: "/offers/{$slug}$", max_bytes: 1000000 }
+read:
+  rows: { from: "/offers/{$slug}$", format: next_data, list: '($type($) = "array" ? $[0] : $).props.pageProps.offerDetails' }
+answer:
+  as: facts
+  title: "{offer}"
+  max: 1
+  each: |
+    (
+      $items := function($html) { $match($html, /<li>([\s\S]*?)<\/li>/).groups[0].$trim($replace($replace($replace($, /<[^>]+>/, ""), /&nbsp;/, " "), /\s+/, " ")) };
+      $lines := $append($append($items(about), $items(tnc)), $items(howToAvail));
+      /* The days it works on (the page's "Offer Validity: Every Sunday, Thursday, Friday & Saturday"): its own field when
+         the offer has one, else the line of its terms that names them. The least the booking must come to, from its line. */
+      $names := ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+      /* recurringDay is the days as seven 0s and 1s from Sunday ("1000111" is Sunday, Thursday, Friday and Saturday, as
+         /offers/IXRBLD says, 10 Oct); every day says nothing. */
+      $days := $type(recurringDay) = "string" and $contains(recurringDay, /^[01]{7}$/)
+        ? ($on := [$filter([0..6], function($i) { $substring(recurringDay, $i, 1) = "1" })]; $count($on) < 7 and $count($on) > 0 ? $join($map($on, function($i) { $names[$i] }), ", "))
+        : ($type(recurringDay) = "array" ? $join(recurringDay.$string($), ", ") : ($type(recurringDay) = "string" and recurringDay != "" ? recurringDay));
+      /* The page's own table: "Min. Booking ₹5,000", "EMI Tenures No". */
+      $table := metaData.customOfferFields[$type(fieldName) = "string"];
+      $dayLine := $lines[$contains($, /\b(valid|applicable|available)\b[^.]*\b((mon|tues|wednes|thurs|fri|satur|sun)days?|weekends?|weekdays?)\b/i)][0];
+      $minLine := $lines[$contains($, /\bminimum\b[^.]*₹/i)][0];
+      /* The most it takes off: the table's when it has one, else the amount right after "up to" or "maximum (discount)
+         of" in its first line that says one ("Flat 50% Off up to ₹500", "upto Rs.300"), never another amount in that
+         line (a minimum). */
+      $maxField := $table[$contains(fieldName, /^max(imum)?\.?\s*(discount|cashback|off|savings?)/i)][0].fieldValue;
+      $upTo := /\b(?:up\s?to|maximum(?:\s+(?:discount|cashback|off|savings?))?(?:\s+of)?|max\.?\s+(?:discount|cashback|off|savings?)(?:\s+of)?)\s*(?:₹|rs\.?|inr)\s?(\d[\d,]*)/i;
+      $maxLine := $lines[$contains($, $upTo)][0];
+      $type(title) = "string" ? {
+        "offer": title,
+        "code": offerCode,
+        "for": product ? $lowercase(product),
+        "bank": paymentType,
+        "from": startDate ? $fromMillis($toMillis(startDate), '[D] [MNn,*-3] [Y]', '+0530'),
+        "until": endDate ? $fromMillis($toMillis(endDate), '[D] [MNn,*-3] [Y]', '+0530'),
+        "journey": journeyType ? $lowercase(journeyType),
+        "valid_on": $days ? $days : $dayLine,
+        "min_booking": $table[fieldName = "Min. Booking"].fieldValue ? $table[fieldName = "Min. Booking"].fieldValue : ($minLine ? $match($minLine, /₹\s?[\d,]+/)[0].match),
+        "max_off": $maxField ? $maxField : ($maxLine ? "₹" & $match($maxLine, $upTo)[0].groups[0]),
+        "table": $count($table) > 0 ? [$table.(fieldName & ": " & fieldValue)],
+        "about": [$items(about)],
+        "how_to_use": [$items(howToAvail)],
+        "terms": [$items(tnc)],
+        "slabs": slabs ? $string(slabs)
+      }
+    )
+ttl_minutes: 60
+samples: { page: offers.details.html }
+measured: { fast_ms: 203, page_ms: 1880, flow_ms: null }
+notes: >-
+  Every offer says the person must be logged in, apply the code at booking and pay with the named card. An EMI offer's
+  slabs (amount, months, discount) come as a table.

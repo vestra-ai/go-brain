@@ -74,6 +74,31 @@ describe('catch_up', () => {
     expect(jev.asked).toHaveLength(0);
   });
 
+  // Rev 5 R5: a shared thing's options card is its vote, with no vote card beside it.
+  it('links a vote to the options card that is the vote', async () => {
+    const onCard = messages.map((m) => (m.message_id === 'm_0170'
+      ? { ...m, card: { card_id: 'c_opts', kind: 'options', option_kind: 'activity', title: 'Beach day', fallback_text: 'Beach day', checked_at: '2026-10-05T10:00:00Z', options: [], decision_id: 'd_beach' } as unknown as C.Card }
+      : m));
+    const handler = catchUpHandler({ pool: db.pool, packs: fakePacks({ t_c7: packOf(onCard, trip('t_c7')) }), jev: jevAnswering({}), log: silentLog });
+    const res = await handler({ trip_id: 't_c7', person_id: 'p_meher', since: '2026-10-05T05:00:00Z' }, meta);
+    expect(res.items[0]).toEqual({ kind: 'needs_you', text: 'Vote: Beach day on Sunday?', message_id: 'm_0170' });
+  });
+
+  it("never lists a person's own question as Go asking them: it is \"You asked\", whoever the line names (Server team, 10 Oct)", async () => {
+    // The line names its asker as the one asked, and its proof says who wrote it only through the message.
+    const own = [rl({ line_id: 'r_bakery', kind: 'open', text: 'A good bakery near Anjuna?', person_ids: ['p_arjun'], proof: [{ message_id: 'm_0172', person_id: null }], updated_at: '2026-10-05T12:30:00Z' })];
+    const pack = packOf([...messages, msg(172, 'p_arjun', 'is there a good bakery near Anjuna?')], trip('t_c6', own));
+    const handler = catchUpHandler({ pool: db.pool, packs: fakePacks({ t_c6: pack }), jev: jevAnswering({}), log: silentLog });
+    const arjun = await handler({ trip_id: 't_c6', person_id: 'p_arjun', since: '2026-10-05T05:00:00Z' }, meta);
+    expect(arjun.items.filter((i) => i.kind === 'needs_you').map((i) => i.text)).toEqual(['Vote: Beach day on Sunday?']);
+    expect(arjun.items).toContainEqual({ kind: 'open', text: 'You asked: Scuba on Saturday?', message_id: 'm_0149' });
+    expect(arjun.items).toContainEqual({ kind: 'open', text: 'You asked: A good bakery near Anjuna?', message_id: 'm_0172' });
+    expect(arjun.summary).toBe('While you were away, 1 booking went through. 1 thing needs you.');
+    // Asked of someone else, it still needs them: Meher sees Arjun's scuba question as hers to answer.
+    const meher = await handler({ trip_id: 't_c6', person_id: 'p_meher', since: '2026-10-05T05:00:00Z' }, meta);
+    expect(meher.items).toContainEqual({ kind: 'needs_you', text: 'Go is asking you: Scuba on Saturday?', message_id: 'm_0149' });
+  });
+
   it('asks Jev to rank the rest when there is more than fits, and keeps people\'s words out of the questions', async () => {
     const extra = [
       rl({ line_id: 'r_dinner', kind: 'agreed', text: 'Dinner at Thalassa on Saturday', updated_at: '2026-10-05T11:00:00Z' }),

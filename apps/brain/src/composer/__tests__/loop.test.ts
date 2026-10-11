@@ -5,9 +5,11 @@ import { fakeLink } from '../../__tests__/fixtures/fake-link.js';
 import { goaSnapshot, msg } from '../../__tests__/fixtures/goa.js';
 import { withSchema } from '../../db/test-db.js';
 import type { TextBlock, TurnLimits } from '../context.js';
+import type { DeskItem } from '../../desk/desk.js';
 import { countMarkers, MAX_ROUNDS, runLoop, type LoopInput } from '../loop.js';
+import { defersACheck, promisesNextStep } from '../next-step.js';
 import { roomTools } from '../room-tools.js';
-import { makeTurnCtx, SAY_NOTHING, type QuickTool } from '../tools.js';
+import { makeTurnCtx, SAY_NOTHING, type QuickTool, type TurnCtx } from '../tools.js';
 
 const HOUR = { type: 'ephemeral', ttl: '1h' } as const;
 const SYSTEM: TextBlock[] = [{ type: 'text', text: 'You are Go.', cache_control: HOUR }];
@@ -48,6 +50,34 @@ function setup(script: Script, more: Partial<LoopInput> = {}, limits: TurnLimits
 }
 const markersIn = (body: any) => countMarkers(body.system, body.tools, body.messages);
 
+describe('the reply after a refused call (8 Oct rerun)', () => {
+  const noter: QuickTool<{ who: string }> = {
+    name: 'noter', description: 'Notes a job against a name.', input: z.object({ who: z.string() }),
+    claims: /\bnoted\b/i,
+    run: async (a) => (a.who === 'arjun' ? { refused: 'only Arjun can say so', tell_the_room: SAY_NOTHING } : { saved: 'r_1' }),
+  };
+  const told = "The noter call was refused, so I'll just say it here.\n\nNoted, Arjun has the speaker. Arjun, can you confirm?";
+
+  it("drops the sentences that narrate a quiet refusal or claim the refused tool's work; the rest is the reply", async () => {
+    const { run } = setup([{ tools: [{ name: 'noter', input: { who: 'arjun' } }] }, { text: told }], { tools: [noter] });
+    expect((await run()).text).toBe('Arjun, can you confirm?');
+  });
+
+  it("keeps a claim when the claiming tool wasn't called this turn, even when another tool refused quietly", async () => {
+    // A plain "Noted" with no record call stays: only a tool that was called, and refused every time, loses its claims.
+    const none = setup([{ text: 'Noted, Priya, a pool it is.' }], { tools: [noter, echo] });
+    expect((await none.run()).text).toBe('Noted, Priya, a pool it is.');
+    const blocker: QuickTool<{ say: string }> = { ...echo, name: 'blocker', run: async () => ({ refused: 'no', tell_the_room: SAY_NOTHING }) };
+    const other = setup([{ tools: [{ name: 'blocker', input: { say: 'x' } }] }, { text: 'Noted, Priya, a pool it is.' }], { tools: [noter, blocker] });
+    expect((await other.run()).text).toBe('Noted, Priya, a pool it is.');
+  });
+
+  it('keeps a claim when the tool went through in the turn', async () => {
+    const { run } = setup([{ tools: [{ name: 'noter', input: { who: 'kabir' } }] }, { text: 'Noted, Kabir has the cab.' }], { tools: [noter] });
+    expect((await run()).text).toBe('Noted, Kabir has the cab.');
+  });
+});
+
 describe('the composer loop', () => {
   it('two or more calls in a reply that share a round summary get one tally line after their results; a lone call gets none', async () => {
     const tally = (rs: Array<{ content: string; isError: boolean }>): string => `${rs.length} looks: ${rs.map((r) => (JSON.parse(r.content) as { said: string }).said).join(', ')}`;
@@ -73,12 +103,13 @@ describe('the composer loop', () => {
     const r = await run();
     expect(r).toMatchObject({ text: 'Hello!', silent: false, rounds: 1, stopReason: 'end_turn' });
     const body = bodies[0];
-    expect(body.max_tokens).toBe(1024);
-    expect(body.thinking).toEqual({ type: 'between_tools' });
+    expect(body.max_tokens).toBe(2048);
+    expect(body.thinking).toEqual({ type: 'adaptive' });
+    expect(body.output_config).toEqual({ effort: 'low' });
     expect(body.tool_choice).toEqual({ type: 'auto' });
     expect(body.system).toEqual([{ type: 'text', text: 'You are Go.', cache_control: { type: 'ephemeral', ttl: '1h' } }]);
     expect(body.messages).toEqual([{ role: 'user', content: [...USER.slice(0, -1), { ...USER.at(-1), cache_control: { type: 'ephemeral' } }] }]);
-    expect(body.tools.map((t: any) => t.name)).toEqual(['echo', 'react', 'open_vote', 'close_vote', 'update_trip', 'stay_silent']);
+    expect(body.tools.map((t: any) => t.name)).toEqual(['echo', 'react', 'open_vote', 'close_vote', 'update_trip', 'offer_replies', 'stay_silent']);
     for (const t of body.tools) {
       expect(t.input_schema.type).toBe('object');
       expect(t.input_schema.$schema).toBeUndefined();
@@ -90,7 +121,18 @@ describe('the composer loop', () => {
     const { bodies, run } = setup([{ text: 'Hi' }], { model: 'claude-haiku-4-5' });
     await run();
     expect(bodies[0].thinking).toBeUndefined();
-    expect(bodies[0].max_tokens).toBe(1024);
+    expect(bodies[0].output_config).toBeUndefined();
+    expect(bodies[0].max_tokens).toBe(2048);
+  });
+
+  it("thinking goes back to the model as it came, first in its round, and never into the room's words", async () => {
+    const { bodies, run } = setup([{ thinking: 'sig_1', tools: [echoCall('a')] }, { thinking: 'sig_2', text: 'Done.' }]);
+    const r = await run();
+    expect(r.text).toBe('Done.');
+    const said = bodies[1].messages[1];
+    expect(said.role).toBe('assistant');
+    expect(said.content[0]).toEqual({ type: 'thinking', thinking: '', signature: 'sig_1' });
+    expect(said.content[1]).toMatchObject({ type: 'tool_use', name: 'echo' });
   });
 
   it('a tool round runs the calls together and puts one rolling marker on the newest block', async () => {
@@ -118,13 +160,28 @@ describe('the composer loop', () => {
     expect(ctx.outcome).toMatchObject({ silent: true, reactions: 1 });
   });
 
-  it('stops after 4 rounds, and no request ever carries more than 4 markers', async () => {
+  it('stops after 4 rounds of tools, and no request ever carries more than 4 markers', async () => {
     const { bodies, run } = setup(() => ({ tools: [echoCall('again')] }));
     const r = await run();
-    expect(bodies).toHaveLength(MAX_ROUNDS);
-    expect(r).toMatchObject({ rounds: 4, stopReason: 'max_rounds' });
+    // 4 rounds that may call tools, then the closing round, which may not.
+    expect(bodies).toHaveLength(MAX_ROUNDS + 1);
+    expect(bodies.slice(0, MAX_ROUNDS).every((b) => (b as { tool_choice: { type: string } }).tool_choice.type === 'auto')).toBe(true);
+    expect((bodies[MAX_ROUNDS] as { tool_choice: { type: string } }).tool_choice).toEqual({ type: 'none' });
+    expect(r).toMatchObject({ rounds: MAX_ROUNDS + 1, stopReason: 'max_rounds' });
     for (const b of bodies) expect(markersIn(b)).toBeLessThanOrEqual(4);
     expect(markersIn(bodies[3])).toBe(3);
+  });
+
+  // Staging drill, 10 Oct: a turn that ran out of rounds posted its last round's working ("The message ID format is "",
+  // so I'll use that as the proof."), written before its tool calls. The closing round writes the reply instead.
+  it("never posts the working a tool round wrote: out of rounds, the closing round's words are the reply", async () => {
+    let n = 0;
+    const { run } = setup(() => {
+      n += 1;
+      return n <= MAX_ROUNDS ? { text: 'The message ID format is "", so I\'ll use that as the proof.', tools: [echoCall('again')] } : { text: 'Locked in: about 26k each.' };
+    });
+    const r = await run();
+    expect(r).toMatchObject({ text: 'Locked in: about 26k each.', stopReason: 'max_rounds' });
   });
 
   it('gives bad arguments back to the model to fix', async () => {
@@ -139,6 +196,13 @@ describe('the composer loop', () => {
     const { bodies, run } = setup([{ tools: [{ name: 'pay_now', input: {} }] }, { text: 'ok' }]);
     await run();
     expect(bodies[1].messages[2].content[0]).toMatchObject({ is_error: true, content: 'There is no tool named pay_now.' });
+  });
+
+  it("an unknown tool named after something of a tool's own gets that tool's hint: what to call instead", async () => {
+    const hinting: QuickTool<{ say: string }> = { ...echo, misnamed: (name) => (name.startsWith('echo.') ? 'echo.loud is a way of echo: call echo.' : undefined) };
+    const { bodies, run } = setup([{ tools: [{ name: 'echo.loud_placeholder', input: {} }] }, { text: 'ok' }], { tools: [hinting] });
+    await run();
+    expect(bodies[1].messages[2].content[0]).toMatchObject({ is_error: true, content: 'echo.loud is a way of echo: call echo.' });
   });
 
   it('a turn with limits refuses any other tool and never runs it; stay_silent always works; the definitions never change', async () => {
@@ -168,9 +232,72 @@ describe('the composer loop', () => {
     expect(limited.bodies[0].system).toEqual(free.bodies[0].system);
   });
 
+  it('ends the turn on a tool that answered itself with its card and line: no model round after it', async () => {
+    const line = 'Pool stays in North Goa for 6 to 9 Nov, from ₹4,334 a night.';
+    const answering: QuickTool<{ say: string }> = {
+      ...echo,
+      name: 'search_stays',
+      run: async (_a, ctx) => {
+        ctx.cards.push({ card_id: 'c_opt_1', kind: 'options' } as never);
+        ctx.lines.push(line);
+        ctx.answered = true;
+        return { answered: true };
+      },
+    };
+    const { bodies, ctx, run } = setup([{ tools: [{ name: 'search_stays', input: { say: 'x' } }] }, { text: 'never asked' }], { tools: [answering] });
+    const r = await run();
+    expect(bodies).toHaveLength(1);
+    expect(r).toMatchObject({ text: line, rounds: 1, stopReason: 'cards_up' });
+    // The tool saw that it was its round's only call.
+    expect(ctx.roundTools).toEqual(['search_stays']);
+  });
+
   it('when the last round writes nothing, the latest earlier text is the answer', async () => {
     const { run } = setup([{ text: 'Opening a vote now!', tools: [echoCall('x')] }, {}]);
     expect((await run()).text).toBe('Opening a vote now!');
+  });
+
+  // Without thinking, a model writes its working as text before its tool calls (12 of 12 probe turns, 10 Oct); the Server
+  // team saw it in the room on the 7 Oct build (GO-TEAM-FINAL §8). Sonnet 5.5 thinks; any other model gets this guard.
+  describe("without thinking, a tool round's words are its working and never the reply", () => {
+    const working = "Priya asked for a villa search, so I'll run it.";
+
+    it('not when the last round writes nothing', async () => {
+      const { bodies, run } = setup([{ text: working, tools: [echoCall('x')] }, {}], { model: 'claude-haiku-4-5' });
+      const r = await run();
+      expect(bodies[0].thinking).toBeUndefined();
+      expect(r.text).toBe('');
+    });
+
+    it("not with a card that has no line, while the card's own line still is", async () => {
+      const carding = (line: string | null): QuickTool<{ say: string }> => ({
+        ...echo,
+        name: 'show_card',
+        endsTurn: true,
+        run: async (_a, ctx) => {
+          ctx.cards.push({ card_id: 'c_1', kind: 'options' } as never);
+          if (line) ctx.lines.push(line);
+          return { shown: 1 };
+        },
+      });
+      const call = [{ name: 'show_card', input: { say: 'x' } }];
+      const bare = setup([{ text: working, tools: call }], { model: 'claude-haiku-4-5', tools: [carding(null)] });
+      expect(await bare.run()).toMatchObject({ text: '', stopReason: 'cards_up' });
+      const lined = setup([{ text: working, tools: call }], { model: 'claude-haiku-4-5', tools: [carding('Three villas with a pool.')] });
+      expect(await lined.run()).toMatchObject({ text: 'Three villas with a pool.', stopReason: 'cards_up' });
+    });
+
+    it('not when the budget stops the turn after a tool round', async () => {
+      let holds = 0;
+      const budget = { reserve: () => (++holds === 1 ? { settle: async () => {} } : null) };
+      const { run } = setup([{ text: working, tools: [echoCall('x')] }, { text: 'never asked' }], { model: 'claude-haiku-4-5', budget });
+      expect(await run()).toMatchObject({ text: '', stopReason: 'over_budget' });
+    });
+
+    it("a final round's own words are still the reply", async () => {
+      const { run } = setup([{ text: working, tools: [echoCall('x')] }, { text: 'Three villas in Anjuna, all with a pool.' }], { model: 'claude-haiku-4-5' });
+      expect((await run()).text).toBe('Three villas in Anjuna, all with a pool.');
+    });
   });
 
   it('sums the usage of every round, with the cost', async () => {
@@ -181,6 +308,18 @@ describe('the composer loop', () => {
     const { usage } = await run();
     expect(usage).toMatchObject({ input: 110, cacheRead: 8_100, cacheWrite: 200, output: 30 });
     expect(usage.costUsd).toBeGreaterThan(0);
+  });
+
+  it("times every round for the turn's log: its tools, first token, whole reply, output tokens and stop", async () => {
+    const { run } = setup([
+      { tools: [echoCall('x')], usage: { output_tokens: 15 } },
+      { text: 'ok', usage: { output_tokens: 25 } },
+    ]);
+    const { timings } = await run();
+    expect(timings).toEqual([
+      { tools: ['echo'], firstTokenMs: expect.any(Number), modelMs: expect.any(Number), toolMs: expect.any(Number), output: 15, stop: 'tool_use' },
+      { tools: [], firstTokenMs: expect.any(Number), modelMs: expect.any(Number), toolMs: 0, output: 25, stop: 'end_turn' },
+    ]);
   });
 
   it('the turn\'s signal stops a slow model', async () => {
@@ -207,5 +346,119 @@ describe('the composer loop', () => {
     expect(second.messages.at(-1).content.at(-1).cache_control).toEqual({ type: 'ephemeral' });
     for (const body of bodies) expect(markersIn(body)).toBeLessThanOrEqual(4);
     expect(markersIn(first)).toBe(3);
+  });
+});
+
+/** The turn was woken by Arjun's line #3, said to Go (namesGo) or read as for Go (asksGo). */
+function askedBy(ctx: TurnCtx, text: string, payload: Record<string, unknown> = { namesGo: true }): void {
+  ctx.pack = { ...ctx.pack, messages: [msg(3, 'p_arjun', text)] };
+  ctx.wake = [{ id: `msg:${ctx.tripId}:m_3`, tripId: ctx.tripId, kind: 'message', ref: 'm_3', payload: { messageId: 'm_3', ...payload } } as unknown as DeskItem];
+}
+const silence = { tools: [{ name: 'stay_silent', input: { reason: 'nothing to add' } }] };
+
+describe('never silent on a direct ask (EXAM, 10 Oct: #8, #15, #24 ended in stay_silent)', () => {
+  it('refuses stay_silent while the ask that woke the turn has no answer: the turn goes on and answers it', async () => {
+    for (const payload of [{ namesGo: true }, { asksGo: true }]) {
+      const { bodies, ctx, run } = setup([silence, { text: "Which villa, Arjun? There's no vote yet; the top pick was Summerville." }]);
+      askedBy(ctx, '@Go book the villa we liked yesterday, total kitna padega?', payload);
+      const r = await run();
+      expect(r.silent).toBe(false);
+      expect(r.text).toBe("Which villa, Arjun? There's no vote yet; the top pick was Summerville.");
+      expect(bodies[1].messages[2].content[0]).toMatchObject({ is_error: true });
+      expect(bodies[1].messages[2].content[0].content).toContain('Arjun asked you directly (#3): never stay silent on it.');
+      // Keshav, 11 Oct ("why this whining"): the nearest thing done, never what Go can't do.
+      expect(bodies[1].messages[2].content[0].content).toContain('or do the nearest thing you can now and say what you did.');
+      expect(bodies[1].messages[2].content[0].content).not.toContain("can't do");
+    }
+  });
+
+  it('refuses it once: a second stay_silent ends the turn (the model may know a person already answered)', async () => {
+    const { bodies, ctx, run } = setup([silence]);
+    askedBy(ctx, '@Go can Arjun board at Nizamuddin instead of New Delhi?');
+    const r = await run();
+    expect(r.silent).toBe(true);
+    expect(bodies).toHaveLength(2);
+  });
+
+  it('lets the turn end silent for thanks, after a ✅ that noted the line, or after a tool that answers in the room itself', async () => {
+    const thanks = setup([silence]);
+    askedBy(thanks.ctx, '@Go thanks 🙏');
+    expect((await thanks.run()).silent).toBe(true);
+    const noted = setup([{ tools: [{ name: 'react', input: { message_id: 'm_3', emoji: '✅' } }] }, silence]);
+    askedBy(noted.ctx, "@Go I'm veg btw");
+    expect((await noted.run()).silent).toBe(true);
+    const running: QuickTool<{ from?: string | undefined }> = {
+      name: 'compare_ways', description: 'Compares the ways there.', input: z.object({ from: z.string().optional() }),
+      run: async () => ({ running: true, tell_the_room: SAY_NOTHING }),
+    };
+    const ways = setup([{ tools: [{ name: 'compare_ways', input: {} }] }, silence], { tools: [running, ...roomTools({ now: () => new Date(), pool: db.pool })] });
+    askedBy(ways.ctx, '@Go sab log kaise pahunchenge?');
+    expect((await ways.run()).silent).toBe(true);
+    // A line nobody said to Go may end in silence, as before.
+    const aside = setup([silence]);
+    askedBy(aside.ctx, 'which bus drops closest to our villa?', {});
+    expect((await aside.run()).silent).toBe(true);
+  });
+});
+
+describe('a next step a reply promises is taken or asked, never left (EXAM, 10 Oct: #18)', () => {
+  it('gives a reply that promises a search next one more round, once', async () => {
+    const promised = "Here are the outbound non-stops, and I'll search the Mon 9 Nov return next.";
+    const { bodies, run } = setup([{ text: promised }, { text: 'Here are the outbound non-stops. Want me to look at the Mon 9 Nov return too?' }]);
+    const r = await run();
+    expect(r.text).toBe('Here are the outbound non-stops. Want me to look at the Mon 9 Nov return too?');
+    expect(JSON.stringify(bodies[1].messages.at(-1))).toContain('It promises a next step');
+    // Once: a reply that promises again goes out as it is.
+    const again = setup([{ text: promised }]);
+    expect((await again.run()).text).toBe(promised);
+  });
+
+  it("keeps a card whose line promises a next step, and takes the step in one more round", async () => {
+    const card: QuickTool<{ line: string }> = {
+      name: 'show_card', description: 'Shows a card.', input: z.object({ line: z.string() }), endsTurn: true,
+      run: async (a, ctx) => {
+        ctx.cards.push({ card_id: 'c_out', kind: 'notice', fallback_text: 'Outbound flights' } as never);
+        ctx.lines.push(a.line);
+        return { ok: true };
+      },
+    };
+    const { ctx, run } = setup(
+      [{ tools: [{ name: 'show_card', input: { line: "Here are the outbound flights, and I'll search the return next." } }] }, { text: 'Here are the outbound flights. Want the return too?' }],
+      { tools: [card, ...roomTools({ now: () => new Date(), pool: db.pool })] },
+    );
+    const r = await run();
+    expect(r.text).toBe('Here are the outbound flights. Want the return too?');
+    expect(ctx.cards).toHaveLength(1);
+  });
+
+  it('reads only a step promised for now, not one tied to later or offered', () => {
+    expect(promisesNextStep("I'll search the Mon 9 Nov return next.")).toBe(true);
+    expect(promisesNextStep("Next, I'll check the return flights.")).toBe(true);
+    expect(promisesNextStep("I'll re-check the fare at booking and tell you if it moved.")).toBe(false);
+    expect(promisesNextStep("Only refundable is easy: I'll set it that way when the vote closes.")).toBe(false);
+    expect(promisesNextStep('Chaho to main Friday ke Jaipur to Goa flights check kar deta hoon.')).toBe(false);
+    expect(promisesNextStep('Want me to search the return next?')).toBe(false);
+  });
+});
+
+describe('a check a reply left undone is run in the same turn (the exam re-run, 10 Oct: #11, #20)', () => {
+  it("gives a reply that says it hasn't run a check, or offers to, one more round, once", async () => {
+    for (const said of [
+      "Not looking likely: the 3A is at WL 54. These are today's waitlists, and I haven't run a confirmation-chance check on any of them.",
+      'Yes, Flat 12% off with an ICICI credit card EMI, till 31 Dec. I can pull up the full terms if you want them.',
+    ]) {
+      const { bodies, run } = setup([{ text: said }, { text: 'Checked just now: a 41% chance it confirms.' }]);
+      const r = await run();
+      expect(r.text).toBe('Checked just now: a 41% chance it confirms.');
+      expect(JSON.stringify(bodies[1].messages.at(-1))).toContain("trains.confirm_chance; an offer's terms: offers.details");
+    }
+  });
+
+  it('reads only a check the reply itself left undone, never an offer of something else', () => {
+    expect(defersACheck("I haven't run a confirmation-chance check on any of them.")).toBe(true);
+    expect(defersACheck('I can pull up the full terms if you want them.')).toBe(true);
+    expect(defersACheck('I checked the terms: no code needed.')).toBe(false);
+    expect(defersACheck('Want me to look at the Mon 9 Nov return too?')).toBe(false);
+    expect(defersACheck('I can book it once Rahul taps Yes.')).toBe(false);
   });
 });

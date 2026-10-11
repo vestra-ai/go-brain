@@ -4,6 +4,7 @@
  * read "unsure". Question 8 can only raise caution.
  */
 import type { JevAnswer } from './jev.js';
+import { LIVE_RECIPES } from './live-gate.js';
 import { REACTIONS, RECIPE_CHOICES, type QuestionName, type RecipeChoice } from './questions.js';
 import type { ReflexRead, Sure } from './reflex.js';
 import type { SecretKind } from './secrets.js';
@@ -17,8 +18,10 @@ export interface CodeFacts {
   hasTasks: boolean;
   /** A line about money (money-line.ts): it always reaches the model, whatever Jev says. */
   money: boolean;
-  /** Only emoji, a laugh, an ok, or a greeting or sign-off (small-talk.ts): read only when Jev has no answer. */
+  /** Only emoji, a laugh, an ok, or a greeting or sign-off (small-talk.ts): banter by code alone, unless it answers Go. */
   smallTalk?: boolean;
+  /** Go's line is the one just before it: a bare "ok" or 👍 may be the yes to Go's offer, so it is never banter by code. */
+  answersGo?: boolean;
 }
 export type RiskWhy = 'spend' | 'steer' | 'secret';
 type Answers = Record<string, JevAnswer> | null;
@@ -48,6 +51,12 @@ const atMost = (p: number, bar: number): boolean => Number.isFinite(p) && p <= b
 const allAtMost = (ps: number[], bar: number): boolean => ps.every((p) => atMost(p, bar));
 const anyAtLeast = (ps: number[], bar: number): boolean => ps.some((p) => atLeast(p, bar));
 
+/**
+ * Jev reads the line as moving the plan (question 6, live): a question to the group about the trip that is not settled
+ * yet, or agreeing to a plan. Go may answer it, offer the next step or offer a vote, so the turn decides.
+ */
+const movesPlan = (a: Answers, b: Bars): boolean => anyAtLeast([noulP(a, 'q6_open'), noulP(a, 'q6_agreed')], b.for_go.planMin);
+
 function readForGo(a: Answers, f: CodeFacts, b: Bars): Sure<boolean> {
   if (f.namesGo) return sure(true);
   const addressed = noulP(a, 'q1_addressed');
@@ -55,9 +64,9 @@ function readForGo(a: Answers, f: CodeFacts, b: Bars): Sure<boolean> {
   // A line about money is never read as not for Go: only a turn records an expense or asks what it was for.
   if (!f.money) {
     if (atLeast(chatter, b.for_go.chatterMin) && atMost(addressed, b.for_go.addressedMaxForChatter)) return sure(false);
-    // No one spoke to Go (a fact, a plan, friends talking): not for Go, though not chatter. The chatter answer must be
-    // well formed too, so an odd answer still reads unsure.
-    if (atMost(addressed, b.for_go.notAddressedMax) && Number.isFinite(chatter)) return sure(false);
+    // No one spoke to Go (a fact, friends talking): not for Go, though not chatter, unless the line moves the plan. The
+    // chatter answer must be well formed too, so an odd answer still reads unsure.
+    if (atMost(addressed, b.for_go.notAddressedMax) && Number.isFinite(chatter) && !movesPlan(a, b)) return sure(false);
     // No answer from Jev (a timeout or an error): small talk ("gn 😴", "haha 😂") says nothing to Go; any other line wakes.
     if (!Number.isFinite(addressed) && !Number.isFinite(chatter) && f.smallTalk) return sure(false);
   }
@@ -122,6 +131,36 @@ function readReaction(a: Answers, b: Bars): Sure<string | null> {
   return top.o === 'none' ? sure(null) : sure(REACTIONS[top.o]);
 }
 
+/** Pure banter or an acknowledgement: question 1's chatter bar, or small talk when Jev has no answer. Never a money line. */
+function readBanter(a: Answers, f: CodeFacts, b: Bars): Sure<boolean> {
+  if (f.namesGo || f.money) return sure(false);
+  // A bare ok, haha, gn or emoji carries nothing, whatever Jev's chatter answer: Go jumps in on most lines, never these
+  // (the bench's guard, 10 Oct). Right after Go's own line it may be the yes to an offer, so Jev and the turn decide.
+  if (f.smallTalk && !f.answersGo) return sure(true);
+  const addressed = noulP(a, 'q1_addressed');
+  const chatter = noulP(a, 'q1_chatter');
+  if (atLeast(chatter, b.for_go.chatterMin) && atMost(addressed, b.for_go.addressedMaxForChatter)) return sure(true);
+  return unsure();
+}
+
+/** Something Go can do with the line: a line naming Go or about money always is; otherwise question 11 above or below its bars. */
+function readActionable(a: Answers, f: CodeFacts, b: Bars): Sure<boolean> {
+  if (f.namesGo || f.money) return sure(true);
+  const p = noulP(a, 'q11_actionable');
+  if (atLeast(p, b.actionable.yesMin)) return sure(true);
+  if (atMost(p, b.actionable.noMax)) return sure(false);
+  return unsure();
+}
+
+/**
+ * A line Go leaves to the people, with no turn: question 11 sure there is nothing in it for Go, or question 1 sure it is
+ * banter while question 11 isn't sure there is something (trips/intake.ts wakesComposer, proactive/openings.ts).
+ */
+export function leftToPeople(read: Pick<ReflexRead, 'banter' | 'actionable'>): boolean {
+  if (read.actionable?.sure) return read.actionable.value === false;
+  return read.banter?.sure === true && read.banter.value === true;
+}
+
 /** One clear winner: at least the pick bar, and no other option up to the rival bar. */
 function readRecipe(a: Answers, b: Bars): Sure<RecipeChoice | null> {
   const ranked = [...RECIPE_CHOICES, 'none' as const]
@@ -132,6 +171,14 @@ function readRecipe(a: Answers, b: Bars): Sure<RecipeChoice | null> {
   if (!top || top.m < b.recipe.pickMin) return unsure();
   if (ranked.slice(1).some((x) => x.m >= b.recipe.rivalMax)) return unsure();
   return top.o === 'none' ? sure(null) : sure(top.o);
+}
+
+/**
+ * Question 10 as it acts: a sure pick of a choice still in shadow acts as "none", not one of the live choices, which is
+ * what Jev said for such a line before it had a choice of its own. Unsure and the live choices act as read.
+ */
+export function liveRecipe(r: Sure<RecipeChoice | null>, live: readonly RecipeChoice[] = LIVE_RECIPES): Sure<RecipeChoice | null> {
+  return r.sure && r.value !== null && !live.includes(r.value) ? sure(null) : r;
 }
 
 function readRisky(a: Answers, f: CodeFacts, b: Bars): { risky: Sure<boolean>; why: RiskWhy[] } {
@@ -167,6 +214,7 @@ export function readAnswers(
   const opening = [noulP(a, 'q9_group_question'), noulP(a, 'q9_circles'), noulP(a, 'q9_someone_look')];
   const would: ReflexRead = {
     forGo: readForGo(a, facts, bars),
+    banter: readBanter(a, facts, bars),
     complete: readComplete(a, facts, bars),
     size: readSize(a, bars),
     taskId: readTask(a, facts, taskKeys, bars),
@@ -176,6 +224,7 @@ export function readAnswers(
     risky: risk.risky,
     opening: anyAtLeast(opening, bars.opening.yesMin) ? sure(true) : allAtMost(opening, bars.opening.noMax) ? sure(false) : unsure(),
     recipe: readRecipe(a, bars),
+    actionable: readActionable(a, facts, bars),
     riskWhy: risk.why,
   };
   return { would, p: flatten(a) };
@@ -185,6 +234,7 @@ export function readAnswers(
 export function codeOnly(facts: CodeFacts): ReflexRead {
   return {
     forGo: facts.namesGo ? sure(true) : unsure(),
+    banter: facts.namesGo ? sure(false) : unsure(),
     complete: unsure(),
     size: unsure(),
     taskId: facts.hasTasks ? unsure() : sure(null),
@@ -194,6 +244,7 @@ export function codeOnly(facts: CodeFacts): ReflexRead {
     risky: facts.secretKinds.length ? sure(true) : unsure(),
     opening: unsure(),
     recipe: unsure(),
+    actionable: facts.namesGo || facts.money ? sure(true) : unsure(),
     riskWhy: facts.secretKinds.length ? ['secret'] : [],
   };
 }
@@ -203,6 +254,7 @@ export function applyLive(would: ReflexRead, live: ReadonlySet<QuestionName>, fa
   const base = codeOnly(facts);
   return {
     forGo: live.has('for_go') ? would.forGo : base.forGo,
+    banter: (live.has('for_go') ? would.banter : base.banter) ?? unsure(),
     complete: live.has('complete') ? would.complete : base.complete,
     size: live.has('size') ? would.size : base.size,
     taskId: live.has('task') ? would.taskId : base.taskId,
@@ -211,7 +263,8 @@ export function applyLive(would: ReflexRead, live: ReadonlySet<QuestionName>, fa
     reaction: live.has('reaction') ? would.reaction : base.reaction,
     risky: live.has('risky') ? would.risky : base.risky,
     opening: live.has('opening') ? would.opening : base.opening,
-    recipe: (live.has('recipe') ? would.recipe : base.recipe) ?? unsure(),
+    recipe: (live.has('recipe') ? liveRecipe(would.recipe ?? unsure()) : base.recipe) ?? unsure(),
+    actionable: (live.has('actionable') ? would.actionable : base.actionable) ?? unsure(),
     riskWhy: live.has('risky') ? (would.riskWhy ?? []) : (base.riskWhy ?? []),
   };
 }

@@ -42,33 +42,6 @@ describe("the trip's computer", () => {
     expect(fake.users.get(userId)?.default_deployment).toBe('dep_go');
   });
 
-  it('warms the computer, rides a warm from the last minute, and warms again after it', async () => {
-    expect(await computer.warm('t_goa')).toBe('waking');
-    expect(await computer.warm('t_goa')).toBe('skipped');
-    clock.advance(61_000);
-    expect(await computer.warm('t_goa')).toBe('waking');
-    expect(fake.callsTo('POST', /\/warm$/)).toHaveLength(2);
-  });
-
-  it('asks Bash to hold the box with keep_ms, never skipped as a repeat, and still counted as a wake', async () => {
-    const before = fake.callsTo('POST', /\/warm$/).length;
-    await computer.warm('t_goa', { keepMs: 120_000 });
-    await computer.warm('t_goa', { keepMs: 120_000 });
-    const warms = fake.callsTo('POST', /\/warm$/).slice(before);
-    expect(warms).toHaveLength(2);
-    expect(warms[0]!.body).toEqual({ keep_ms: 120_000 });
-    // A plain warm right after is still a repeat.
-    expect(await computer.warm('t_goa')).toBe('skipped');
-  });
-
-  it('keeps to 8 computers waking at once across trips', async () => {
-    clock.advance(120_000);
-    for (let i = 0; i < 8; i += 1) await computer.warm(`t_warm_${i}`);
-    await expect(computer.warm('t_warm_9')).rejects.toThrow(/warm_limit/);
-    clock.advance(91_000);
-    expect(await computer.warm('t_warm_9')).toBe('waking');
-  });
-
   it('opens one conversation for each job, on the go-trip-task deployment, the same one when a hand-off runs again', async () => {
     const a = await computer.conversation('t_goa', 'gt_conv_a');
     const again = await computer.conversation('t_goa', 'gt_conv_a');
@@ -106,12 +79,14 @@ describe("the trip's computer", () => {
     expect(await tokens.tripFor(token)).toBeNull();
   });
 
-  it('adds the setup steps computer.user, then computer.warm', async () => {
+  it("adds the setup step computer.user, and a new trip's box is not woken", async () => {
     const setup = new FakeSetup();
     addComputerSteps(setup, computer);
-    expect(setup.steps.map((s) => [s.name, s.after])).toEqual([['computer.user', undefined], ['computer.warm', 'computer.user']]);
+    expect(setup.steps.map((s) => [s.name, s.after])).toEqual([['computer.user', undefined]]);
+    const warmsBefore = fake.callsTo('POST', /\/warm$/).length;
     clock.advance(120_000);
     await setup.ensureTrip('t_new');
     expect(fake.users.has(v1UserIdFor('t_new'))).toBe(true);
+    expect(fake.callsTo('POST', /\/warm$/)).toHaveLength(warmsBefore);
   });
 });

@@ -11,6 +11,8 @@ export const PayLinkBody = z.object({
   trip_id: Id,
   payer_person_id: Id,
   payer_name: z.string().min(1).max(80).nullish(),
+  /** The group agreed to it first: its vote, among more than one person (Go's payments row). The pay page says so only then. */
+  group_agreed: z.boolean().nullish(),
   hold: z.object({
     hold_id: z.string().min(1).max(200),
     amount_minor: z.int().positive().max(2_147_483_647),
@@ -56,6 +58,8 @@ export async function openPayLink(
   if (c.jti !== body.approval_id) return refuse('bad_approval', "the approval's jti is not the approval_id Go sent");
   if (c.trip_id !== body.trip_id) return refuse('wrong_trip');
   if (c.payer_person_id !== body.payer_person_id) return refuse('wrong_payer');
+  // A personal approval (1.3) is its person's own pick: its pay link is theirs alone.
+  if (c.personal != null && c.personal.person_id !== body.payer_person_id) return refuse('wrong_payer');
   if (body.hold.currency !== c.currency) return refuse('currency_mismatch');
   if (body.hold.amount_minor > c.amount_minor) return refuse('over_amount');
   if (Date.parse(body.hold.expires_at) <= now.getTime() + 60_000) return refuse('hold_expiring');
@@ -69,11 +73,11 @@ export async function openPayLink(
   await ensurePerson(db, body.payer_person_id, now, body.payer_name ?? undefined);
   await db.query(
     `insert into pay_requests (approval_id, jti, trip_id, payer_person_id, approval, amount_minor, currency, merchant, hold_id,
-       hold_expires_at, payment_kind, created_at)
-     values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12) on conflict (approval_id) do nothing`,
+       hold_expires_at, payment_kind, created_at, group_agreed)
+     values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13) on conflict (approval_id) do nothing`,
     [
       body.approval_id, c.jti, c.trip_id, c.payer_person_id, body.approval, body.hold.amount_minor, body.hold.currency,
-      body.hold.merchant, body.hold.hold_id, new Date(body.hold.expires_at), body.hold.payment_kind, now,
+      body.hold.merchant, body.hold.hold_id, new Date(body.hold.expires_at), body.hold.payment_kind, now, body.group_agreed ?? null,
     ],
   );
   const stored = await db.query<{ jti: string; hold_id: string; amount_minor: number; approval: string }>(

@@ -1,9 +1,11 @@
 import * as C from '@go/contract';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { SocketCallError } from '../../door/rpc.js';
 import { statsRegistry } from '../../stats/sources.js';
 import { createPay, type PayEngine } from '../engine.js';
 import { paymentsNow } from '../now.js';
 import { registerMoneyWith } from '../register.js';
+import { NOT_AVAILABLE_YET } from '../vault-link.js';
 import { fakeBrain } from './fake-brain.js';
 import { goaTrip, moneyKit, type MoneyKit } from './kit.js';
 
@@ -30,8 +32,8 @@ describe('registerMoney', () => {
     const { brain, seen } = fakeBrain({ pool: k.pool, link: k.server, travel: k.travel, trips: k.server.trips });
     await registerMoneyWith({ fetch: vaultFetch, sweepEveryMs: 0 })(brain);
     expect(brain.pay).toBeDefined();
-    expect(seen.tools.map((t) => t.name).sort()).toEqual(['ask_to_pay', 'record_expense', 'set_mandate', 'who_owes_what']);
-    expect([...seen.taps.keys()].sort()).toEqual(['pay:approve', 'pay:decline']);
+    expect(seen.tools.map((t) => t.name).sort()).toEqual(['ask_to_pay', 'record_expense', 'set_mandate', 'split_expense', 'who_owes_what']);
+    expect([...seen.taps.keys()].sort()).toEqual(['notice:claim', 'pay:approve', 'pay:decline']);
     expect([...seen.handlers.keys()]).toEqual(['vault_link']);
     expect(seen.nows.map((n) => [n.name, n.order])).toEqual([['payments', 40]]);
     expect(seen.listeners).toHaveLength(1);
@@ -73,12 +75,36 @@ describe('registerMoney', () => {
     expect(C.Link.parse(link)).toEqual({ url: 'https://vault.test/l/abc', expires_at: '2026-10-05T09:05:00.000Z' });
   });
 
+  it('answers 1.1\'s add_documents "not available yet" (409 conflict), with any context, and asks the vault nothing', async () => {
+    const { brain, seen } = fakeBrain({ pool: k.pool, link: k.server });
+    await registerMoneyWith({ fetch: vaultFetch, sweepEveryMs: 0 })(brain);
+    const asked = C.CreateLink.parse({ kind: 'vault', person_id: 'p_rahul', start: 'add_documents', context: { trip_id: 't_goa', purpose: 'visa' } });
+    const err = await seen.handlers.get('vault_link')?.(asked, { instance: 'sim', frameId: 'gs_2' }).then(() => null, (e: unknown) => e);
+    expect(err).toBeInstanceOf(SocketCallError);
+    expect(err).toMatchObject({ code: 409, dataCode: 'conflict', message: NOT_AVAILABLE_YET });
+  });
+
+  it('opens 1.3\'s display "embedded" for any start (only the App may frame a vault page); sheet is as before', async () => {
+    const { brain, seen } = fakeBrain({ pool: k.pool, link: k.server });
+    await registerMoneyWith({ fetch: vaultFetch, sweepEveryMs: 0 })(brain);
+    const home = C.CreateLink.parse({ kind: 'vault', person_id: 'p_rahul', start: 'home', display: 'embedded' });
+    expect(C.Link.safeParse(await seen.handlers.get('vault_link')?.(home, { instance: 'sim', frameId: 'gs_3' })).success).toBe(true);
+    expect(vaultBodies.at(-1)).toMatchObject({ person_id: 'p_rahul', start: 'home', display: 'embedded' });
+    // Card entry embedded too (11 Oct, the App's demo): the vault asked as for any link.
+    const card = C.CreateLink.parse({ kind: 'vault', person_id: 'p_rahul', start: 'add_card', display: 'embedded' });
+    expect(C.Link.safeParse(await seen.handlers.get('vault_link')?.(card, { instance: 'sim', frameId: 'gs_card' })).success).toBe(true);
+    expect(vaultBodies.at(-1)).toMatchObject({ person_id: 'p_rahul', start: 'add_card', display: 'embedded' });
+    const sheet = C.CreateLink.parse({ kind: 'vault', person_id: 'p_rahul', start: 'add_card', display: 'sheet' });
+    expect(C.Link.safeParse(await seen.handlers.get('vault_link')?.(sheet, { instance: 'sim', frameId: 'gs_4' })).success).toBe(true);
+    expect(vaultBodies.at(-1)).toMatchObject({ person_id: 'p_rahul', start: 'add_card', display: 'sheet' });
+  });
+
   it('stays off without the vault settings', async () => {
     const { brain, seen } = fakeBrain({ pool: k.pool, link: k.server, env: { VAULT_URL: undefined } });
     await registerMoneyWith({ fetch: vaultFetch, sweepEveryMs: 0 })(brain);
     expect(brain.pay).toBeUndefined();
     // Paying stays off, but what people say they paid is still recorded and read back: that needs no vault.
-    expect(seen.tools.map((t) => t.name).sort()).toEqual(['record_expense', 'who_owes_what']);
+    expect(seen.tools.map((t) => t.name).sort()).toEqual(['record_expense', 'split_expense', 'who_owes_what']);
     expect(seen.stoppers).toEqual([]);
   });
 
@@ -140,10 +166,25 @@ describe('the payments block of right now', () => {
     );
   });
 
+  // Ankur, 12 Oct 00:14 IST: a place vote won, and Go said "I found this one on the web, so it can't be booked through
+  // me", read off this block. A place, a thing to do or a vote of plain words is nothing anyone pays for.
+  it('says nothing about a winner nobody pays for: a place, or a vote of plain words (dates)', async () => {
+    const offer = k.travel.offer.bind(k.travel);
+    Object.assign(k.travel, { offer: async (id: string) => ({ ...(await offer(id))!, offerId: null, kind: 'place' as never, title: 'Denpasar' }) });
+    const place = await paymentsNow({ pool: k.pool, packs: packs(goaTrip('closed')), now: k.now, travel: () => k.travel }).render('t_goa', []);
+    expect(place ?? '').not.toContain('d_villa');
+    expect(place ?? '').not.toMatch(/can't be booked|found this one on the web|can't book it|set_mandate/);
+    const dates = goaTrip('closed');
+    const plain = { ...dates, decisions: dates.decisions.map((x) => ({ ...x, options: x.options.map((o) => ({ ...o, option_ref: null })) })) };
+    const words = await paymentsNow({ pool: k.pool, packs: packs(plain), now: k.now, travel: () => k.travel }).render('t_goa', []);
+    expect(words ?? '').not.toContain('d_villa');
+  });
+
   it('a check that failed just now does not mark the winner unbookable: the usual set_mandate line', async () => {
     k.travel.failOffer = true;
     const text = await paymentsNow({ pool: k.pool, packs: packs(goaTrip('closed')), now: k.now, travel: () => k.travel }).render('t_goa', []);
-    expect(k.travel.looked).toEqual(['opt_villa_sol']);
+    // Checked once more at once before it counts as failed (the lead, 11 Oct: nobody should have to ask again for a hiccup).
+    expect(k.travel.looked).toEqual(['opt_villa_sol', 'opt_villa_sol']);
     expect(text).toContain('Vote d_villa closed and Villa Sol won. Once the group says who pays, use set_mandate');
     expect(text).not.toContain("Go can't book it");
   });
@@ -172,7 +213,11 @@ describe('the payments block of right now', () => {
     expect(await paymentsNow({ pool: k.pool, packs: packs(goaTrip('open')), now: k.now }).render('t_goa', [])).toBeNull();
     await k.ask();
     const text = await paymentsNow({ pool: k.pool, packs: packs(), now: k.now }).render('t_goa', []);
-    expect(text).toMatch(/Waiting on Rahul to approve ₹54,200 for Villa Sol on pay card c_pay_d_villa_trigger_1; the approval runs out at 2:40 pm\./);
+    // In the trip's time (IST), and how to send a fresh one when the payer can't see it (prod, 10 Oct 21:06Z).
+    expect(text).toContain(
+      "Waiting on Rahul to approve ₹54,200 for Villa Sol on pay card c_pay_d_villa_trigger_1, in this chat; the approval runs out at 2:40 pm. " +
+        "If they say they can't see it, or declined it by mistake, call ask_to_pay with again: true for a fresh one; say a fresh one is up only once it answers with its card.",
+    );
     expect(text).not.toContain('Ready to pay');
   });
 });

@@ -1,6 +1,7 @@
 import { createPrivateKey, createPublicKey, sign, verify } from 'node:crypto';
 import { z } from 'zod';
 import { Currency, Id, IsoDateTime, PositiveAmountMinor } from './common.js';
+import { PersonalPick } from './to-server.js';
 
 /**
  * The signed spend approval: the Server's half of the two keys.
@@ -15,6 +16,22 @@ import { Currency, Id, IsoDateTime, PositiveAmountMinor } from './common.js';
  * with header exactly {"alg":"EdDSA","typ":"go-spend+jws"}.
  */
 export const MAX_APPROVAL_TTL_SECONDS = 600;
+
+/**
+ * Which payment the claims are for: a group's vote (decision_id), or 1.3's personal pick (personal: the person, Go's card
+ * and the option they tapped; that person is the payer). Null when they say exactly one; else what is wrong.
+ */
+export function spendFormProblem(c: {
+  decision_id?: string | null | undefined;
+  personal?: { person_id: string } | null | undefined;
+  payer_person_id: string;
+}): string | null {
+  const vote = c.decision_id != null;
+  const personal = c.personal != null;
+  if (vote === personal) return 'exactly one of decision_id and personal';
+  if (personal && c.payer_person_id !== c.personal!.person_id) return "a personal approval's payer is the person who picked";
+  return null;
+}
 const ALLOWED_CLOCK_SKEW_SECONDS = 30;
 const HEADER = { alg: 'EdDSA', typ: 'go-spend+jws' } as const;
 
@@ -24,7 +41,10 @@ export const SpendApprovalClaims = z
     aud: z.literal('go-vault'),
     jti: z.string().min(8).max(64),
     trip_id: Id,
-    decision_id: Id,
+    /** The group's vote. Exactly one of decision_id and personal. */
+    decision_id: Id.nullish(),
+    /** 1.3, a person's own pick: who, Go's card and the option they tapped. That person is always the payer. */
+    personal: PersonalPick.nullish(),
     payer_person_id: Id,
     /** The most this payment may be. */
     amount_minor: PositiveAmountMinor,
@@ -39,7 +59,12 @@ export const SpendApprovalClaims = z
   .refine((c) => c.exp > c.iat && c.exp - c.iat <= MAX_APPROVAL_TTL_SECONDS, {
     message: `exp must be after iat and at most ${MAX_APPROVAL_TTL_SECONDS} seconds later`,
   })
-  .meta({ id: 'SpendApprovalClaims', description: 'What the Server signs. exp is at most 600 seconds after iat.' });
+  .refine((c) => spendFormProblem(c) === null, { message: "a group approval names its vote; a personal one names the person's pick, and they are the payer" })
+  .meta({
+    id: 'SpendApprovalClaims',
+    description:
+      "What the Server signs. exp is at most 600 seconds after iat. A group approval carries decision_id; 1.3's personal approval carries personal (the person, Go's card and the option they picked) instead, and its payer is that person.",
+  });
 export type SpendApprovalClaims = z.infer<typeof SpendApprovalClaims>;
 
 const b64 = (v: string | Buffer): string => Buffer.from(v).toString('base64url');

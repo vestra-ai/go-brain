@@ -1,5 +1,7 @@
 // The admin page: one screen for the operator at the side of the stage. Plain HTML forms and no script, light and
 // readable on a laptop. Everything shown is escaped, and phone numbers are masked.
+import type { RecipeStat } from '../travel/book/engine.js';
+import type { TripWatches } from '../travel/recipe-watches.js';
 import type { ProbeResult } from './health.js';
 import type { SwitchName } from './switches.js';
 
@@ -18,6 +20,10 @@ export interface AdminView {
   calls: { mode: string; deployed: boolean; allowlist: Array<{ name: string | null; masked: string }> };
   note: string | null;
   docsUrl: string;
+  /** How fast each ixigo recipe answers, at each speed, since Go started. */
+  recipes: RecipeStat[];
+  /** The watches groups asked for that are going, per trip. */
+  watches?: TripWatches[];
 }
 
 export const SWITCH_CHOICES: Record<SwitchName, Array<{ value: string; label: string }>> = {
@@ -30,8 +36,12 @@ export const SWITCH_CHOICES: Record<SwitchName, Array<{ value: string; label: st
     { value: '', label: 'none live, all watching' },
     { value: 'q1,q2,q3', label: 'q1,q2,q3' },
     { value: 'q1,q2,q3,q8', label: 'q1,q2,q3,q8' },
-    { value: 'q1,q2,q3,q4,q5,q6,q7,q8,q9,q10', label: 'all ten' },
+    { value: 'q1,q2,q4,q5,q6,q7,q8,q10,q11', label: 'the ones that passed (q11 actionable included)' },
+    { value: 'q1,q2,q3,q4,q5,q6,q7,q8,q9,q10,q11', label: 'all eleven' },
   ],
+  BROWSER_FETCH_SLOTS: [{ value: '2', label: '2 (Bash runs two at once)' }, { value: '4', label: '4 (Bash runs four at once)' }, { value: '1', label: '1 (one page at a time)' }],
+  RECIPE_WATCHES: [{ value: 'off', label: 'off' }, { value: 'on', label: 'on (Go keeps the watches groups ask for)' }],
+  BOOKING: [{ value: 'off', label: 'off (Book it opens ixigo; a stay is booked as before)' }, { value: 'on', label: "on (Go books flights and stays on ixigo's pages, up to Pay)" }],
 };
 
 export const SWITCH_MEANING: Record<SwitchName, string> = {
@@ -40,6 +50,9 @@ export const SWITCH_MEANING: Record<SwitchName, string> = {
   PAY_RAIL: 'How a payment is charged. stripe_test charges a test card; fake charges nothing.',
   CALLS_MODE: 'Whether Go may phone anyone. allowlist means only the numbers listed under Calls.',
   REFLEX_LIVE: 'Which quick-read questions act live; the others only watch. off stops the quick read altogether.',
+  BROWSER_FETCH_SLOTS: "How many ixigo pages Go opens at once on a trip's computer. Match Bash's own cap: more than it runs wait their turn.",
+  RECIPE_WATCHES: 'Whether Go keeps an eye on ixigo when a group asks ("tell us when it confirms"): a page an hour a watch, three watches a trip at most.',
+  BOOKING: "Whether Go books on ixigo's own pages, on the stage, up to ixigo's pay button: a person's own flight from Book it, and the group's voted stay from Yes, book it. off: a flight's Book it opens ixigo. instances:a,b turns it on only for trips from those Server instances.",
 };
 
 export const esc = (s: string): string =>
@@ -107,7 +120,7 @@ function callsBlock(v: AdminView): string {
   if (!v.calls.deployed) return '<p>Calls are not deployed on this Go yet, so Go cannot phone anyone.</p>';
   const listed = v.calls.allowlist.map((c) => `${esc(c.name ?? 'No name')} (${esc(c.masked)})`).join(', ');
   if (v.calls.mode === 'allowlist' && v.calls.allowlist.length === 0) {
-    return '<p class="warn">CALLS_ALLOWLIST is empty, so Go will refuse every call. Add the villa number before the call beat.</p>';
+    return '<p class="warn">CALLS_ALLOWLIST is empty, so Go offers no calls at all. Add the villa number before the call beat.</p>';
   }
   if (v.calls.mode === 'allowlist') return `<p>Calls go only to: ${listed}.</p>`;
   return `<p>Calls are off. Switch CALLS_MODE to allowlist for the call beat.${listed ? ` The list has: ${listed}.` : ''}</p>`;
@@ -120,18 +133,39 @@ function actionsBlock(v: AdminView): string {
     ? `<select name="person_id">${v.people.map((p) => `<option value="${esc(p.id)}">${esc(p.name)}</option>`).join('')}</select>`
     : '<input name="person_id" placeholder="p_arjun" required>';
   return `<div class="card"><b>Fire a watch</b>
-<p>A flight delay for one person. Go's notice says "Simulated for the demo", and the presenter says so too.</p>
+<p>A flight delay for one person. Go's notice says "Simulated for the demo", and the presenter says so too. "Now lands at" is in the trip's own time; with it, the notice says when they land and moves what the note times around it.</p>
 <form method="post" action="${esc(link('/admin/fire-watch', v))}">${trip}
 <div class="grid">
 <label>Person ${person}</label>
 <label>Flight <input name="label" value="IndiGo 6E 2134"></label>
 <label>Late by, minutes <input name="delay_minutes" value="120" inputmode="numeric"></label>
+<label>Now lands at <input type="datetime-local" name="lands_at"></label>
 <label>Note <input name="note" placeholder="The airport cab is booked for 9 pm"></label>
 </div><button>Fire a watch</button></form></div>
 <div class="card"><b>Between rehearsals</b>
 <form method="post" action="${esc(link('/admin/stop-jobs', v))}">${trip}<button class="quiet">Stop all running jobs for this trip</button></form>
 <p></p>
-<form method="post" action="${esc(link('/admin/decline-pay', v))}">${trip}<button class="quiet">Decline the waiting pay card</button></form></div>`;
+<form method="post" action="${esc(link('/admin/decline-pay', v))}">${trip}<button class="quiet">Decline the waiting pay card</button></form>
+<p></p>
+<form method="post" action="${esc(link('/admin/check-computer', v))}">${trip}<button class="quiet">Check this trip's computer (wakes it)</button></form></div>`;
+}
+
+/** Each ixigo recipe's numbers: the middle and slow end of its last runs, at each speed, and how many failed. */
+function recipesBlock(recipes: RecipeStat[]): string {
+  if (recipes.length === 0) return '<p>No recipe has run since Go started.</p>';
+  const ms = (n: number | null): string => (n === null ? 'none yet' : `${n} ms`);
+  const rows = recipes
+    .map((r) => `<tr><td>${esc(r.recipe)}</td><td>${esc(r.speed)}</td><td class="num">${ms(r.p50_ms)}</td><td class="num">${ms(r.p90_ms)}</td><td class="num">${r.runs}</td><td class="num">${r.failed}</td></tr>`)
+    .join('\n');
+  return `<table><tr><th>Recipe</th><th>Speed</th><th>p50</th><th>p90</th><th>Runs</th><th>Failed</th></tr>\n${rows}</table>`;
+}
+
+/** The watches groups asked Go to keep on ixigo: per trip, how many are going and when the next is checked (IST). */
+function watchesBlock(watches: TripWatches[]): string {
+  if (watches.length === 0) return '<p>No watch is going.</p>';
+  const at = (iso: string): string => new Date(iso).toLocaleString('en-GB', { timeZone: 'Asia/Kolkata', hour12: false, day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
+  const rows = watches.map((w) => `<tr><td>${esc(w.trip_id)}</td><td class="num">${w.active}</td><td>${esc(at(w.next_check_at))}</td></tr>`).join('\n');
+  return `<table><tr><th>Trip</th><th>Watches</th><th>Next check</th></tr>\n${rows}</table>`;
 }
 
 export function renderAdminPage(v: AdminView): string {
@@ -154,6 +188,10 @@ ${v.note ? `<p class="note">${esc(v.note)}</p>` : ''}
 <h2>Health</h2>
 <table>${health}</table>
 <p>Each check waits at most 1.5 s. Reload the page to check again.</p>
+<h2>Recipes</h2>
+${recipesBlock(v.recipes)}
+<h2>Watches</h2>
+${watchesBlock(v.watches ?? [])}
 <h2>Switches</h2>
 ${v.switches.map((s) => switchRow(v, s)).join('\n')}
 <div class="row"><div><b>DEMO_ROOM</b><p>Which room is on stage: the App on the phones, or the dev room (pnpm --filter @go/sim room). Chosen on the laptop, not in Go.</p></div><div class="now">on the laptop</div><div></div><div></div></div>

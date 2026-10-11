@@ -1,0 +1,139 @@
+{
+ "data": {
+  "returning": null,
+  "going": {
+   "origin": "DEL",
+   "destination": "GOI",
+   "startDate": "22-10-2026",
+   "endDate": "21-11-2026",
+   "results": [
+    {
+     "airline": "Air-India Express",
+     "airlineCode": "IX",
+     "flightNumber": "IX1817",
+     "date": "22-10-2026",
+     "found": 1791393074000,
+     "fare": 10194.0,
+     "providerId": "1057",
+     "searchId": "07102026224114000$1057",
+     "newSource": true
+    },
+    {
+     "airline": "Air-India Express",
+     "airlineCode": "IX",
+     "flightNumber": "IX1049",
+     "date": "23-10-2026",
+     "found": 1791393558000,
+     "fare": 10194.0,
+     "providerId": "1057",
+     "searchId": "07102026224918000$1057",
+     "newSource": true
+    },
+    {
+     "airline": "IndiGo",
+     "airlineCode": "6E",
+     "flightNumber": "6E2271",
+     "date": "24-10-2026",
+     "found": 1791393321000,
+     "fare": 8618.0,
+     "providerId": "1044",
+     "searchId": "07102026224521000$1044",
+     "newSource": true
+    },
+    {
+     "airline": "Air-India Express",
+     "airlineCode": "IX",
+     "flightNumber": "IX1108",
+     "date": "25-10-2026",
+     "found": 1791393539000,
+     "fare": 7148.0,
+     "providerId": "1057",
+     "searchId": "07102026224859000$1057",
+     "newSource": true
+    },
+    {
+     "airline": "Air-India Express",
+     "airlineCode": "IX",
+     "flightNumber": "IX1021",
+     "date": "26-10-2026",
+     "found": 1791392555000,
+     "fare": 7148.0,
+     "providerId": "1057",
+     "searchId": "07102026223235000$1057",
+     "newSource": true
+    },
+    {
+     "airline": "Air India",
+     "airlineCode": "AI",
+     "flightNumber": "AI487",
+     "date": "27-10-2026",
+     "found": 1791391844000,
+     "fare": 8524.0,
+     "providerId": "1063",
+     "searchId": "07102026222044000$1063",
+     "newSource": true
+    },
+    {
+     "airline": "Air-India Express",
+     "airlineCode": "IX",
+     "flightNumber": "IX1021",
+     "date": "28-10-2026",
+     "found": 1791392504000,
+     "fare": 7148.0,
+     "providerId": "1057",
+     "searchId": "07102026223144000$1057",
+     "newSource": true
+    },
+    {
+     "airline": "Air-India Express",
+     "airlineCode": "IX",
+     "flightNumber": "IX1021",
+     "date": "29-10-2026",
+     "found": 1791391575000,
+     "fare": 7148.0,
+     "providerId": "1057",
+     "searchId": "07102026221615000$1057",
+     "newSource": true
+    },
+    {
+     "airline": "IndiGo",
+     "airlineCode": "6E",
+     "flightNumber": "6E357",
+     "date": "30-10-2026",
+     "found": 1791390782000,
+     "fare": 7689.0,
+     "providerId": "1044",
+     "searchId": "07102026220302000$1044",
+     "newSource": true
+    },
+    {
+     "airline": "Air-India Express",
+     "airlineCode": "IX",
+     "flightNumber": "IX1108",
+     "date": "31-10-2026",
+     "found": 1791389939000,
+     "fare": 7148.0,
+     "providerId": "1057",
+     "searchId": "07102026214859000$1057",
+     "newSource": true
+    }
+   ],
+   "ranges": {
+    "R": [
+     8947,
+     10194
+    ],
+    "G": [
+     0,
+     7148
+    ],
+    "Y": [
+     7149,
+     8946
+    ]
+   }
+  },
+  "showOutlook": true
+ },
+ "errors": null
+}

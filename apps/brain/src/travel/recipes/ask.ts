@@ -2,17 +2,19 @@
  * A cheap read of a travel ask, in English and Hinglish, so Go can start the search the moment the message lands:
  * "@Go flights Delhi to Goa Friday" is flights from Delhi to Goa on the trip's Friday, or the coming one once the trip's
  * dates are past. On a trip with no dates yet, a day of the week is not read: "Friday" could be this week's or the
- * trip's, and only the chat says which. It reads only the places the recipes' tables know and plain dates; anything
+ * trip's, and only the chat says which. It reads the places the recipes' tables know and plain dates; for a kind Jev
+ * is sure of under ixigo_web, places as written too ("from Bangalore to Goa"), for ixigo's own box to resolve. Anything
  * less than a whole ask gives null, and the composer searches as usual.
  * A journey's clear conditions are read too, so the answer the turn gets already holds them and show_options is the one
  * call: a clock time with am or pm ("after 7 pm", "arriving by 10 am"), "evening" (after 5 pm), "can't leave before 6"
  * (after 6 pm), non-stop, and a price cap per person ("under 6k"). A bare "after 7" is not read: it could be either.
- * A stay's pool, breakfast or free cancellation is read, since ixigo filters on those and the list depends on them; its
- * price ("8k a head") and "near the beach" are left to the model.
+ * A stay's pool, breakfast or free cancellation is read, since ixigo filters on those and the list depends on them, and
+ * a plain budget a head ("under 8k a head" for the whole stay, "8k a head a night" for each night), since ixigo's price
+ * bands are picked by it; "near the beach" is left to the model.
  */
 import type { TravelKind, TravelQuery } from '../travel.js';
 import { addDays } from './recipe.js';
-import { airportOf, placeWords, stationOf } from './places.js';
+import { airportOf, isLearned, placeWords, stationOf } from './places.js';
 
 export interface TravelAsk { kind: TravelKind; query: TravelQuery }
 
@@ -25,6 +27,12 @@ export interface AskContext {
   dates?: { start: string; end: string } | null;
   /** The kind of search, when Jev is sure of it (question 10): it wins over the kind words, which miss some Hinglish. */
   kind?: TravelKind;
+  /**
+   * Places as the person wrote them ("from Bangalore to Goa", "Hubli se Goa"), for a kind Jev is sure of under
+   * ixigo_web: the engine resolves the words through ixigo's own box (the kind's lookup recipe, kept answers first), so
+   * a city no table knows starts early too. Never for a stay, whose place is the trip's or one the tables know.
+   */
+  asWritten?: boolean;
 }
 
 const KINDS: Array<[TravelKind, RegExp]> = [
@@ -34,8 +42,12 @@ const KINDS: Array<[TravelKind, RegExp]> = [
   ['stays', /\b(hotels?|stays?|villas?|resorts?|homestays?|airbnbs?|places? to stay)\b/i],
 ];
 
-/** Another job for Go about the same things: a vote, a booking, a payment, a reminder. Never a search to start. */
-const NOT_A_SEARCH = /\b(vote|votes|voting|poll|book|booked|booking|pay|paid|payment|cancel|remind)\b/i;
+/** Another job for Go about the same things: a vote, a booking, a payment, a reminder, ixigo's offers ("any ixigo offers on
+ *  hotels right now?" started a stays search on staging, 8 Oct, and its card was Go's only answer). Never a search to start. */
+const NOT_A_SEARCH = /\b(vote|votes|voting|poll|book|booked|booking|pay|paid|payment|cancel|remind|offers?|deals?|discounts?|coupons?|promos?|cashback)\b/i;
+/** A watch the group asks Go to keep ("let us know if a pool stay goes under 3k", "tell us when it confirms"): the
+ *  composer's watch_ixigo, never a search started early (8 Oct drill: one ran, failed, and cost a load and 12 s). */
+export const A_WATCH = /\b(let (us|me) know (if|when)|tell (us|me) (if|when)|notify|alert (us|me)|keep an eye|watch(ing)?|bata(na|dena) (jab|agar))\b/i;
 
 const WEEKDAYS: Record<string, number> = {
   sunday: 0, monday: 1, tuesday: 2, tues: 2, wednesday: 3, weds: 3, thursday: 4, thurs: 4, friday: 5, fri: 5, saturday: 6,
@@ -46,7 +58,7 @@ const DAY = '(\\d{1,2})(?:st|nd|rd|th)?';
 
 const escape = (s: string): string => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
-interface Found { at: number; end: number }
+export interface Found { at: number; end: number }
 
 /** "6 Nov" near today as YYYY-MM-DD: this year if that is not past, else next year. Null for no such day. */
 function dayOf(day: number, month: number, today: string): string | null {
@@ -70,7 +82,7 @@ function tripsWeekday(weekday: number, today: string, trip: AskContext['dates'])
 }
 
 /** Every date the text names, in the order it names them. */
-function datesIn(lower: string, today: string, trip: AskContext['dates'] = null): Array<Found & { day: string }> {
+export function datesIn(lower: string, today: string, trip: AskContext['dates'] = null): Array<Found & { day: string }> {
   const out: Array<Found & { day: string }> = [];
   const add = (at: number, end: number, day: string | null): void => {
     if (day && !out.some((d) => at < d.end && end > d.at)) out.push({ at, end, day });
@@ -120,8 +132,58 @@ export function agreedDates(record: ReadonlyArray<{ kind: string; status: string
   return { start, end };
 }
 
-/** The places of this kind the text names, in order, by their names in the tables (and airport or station codes in capitals). */
-function placesIn(text: string, kind: TravelKind): Array<Found & { name: string }> {
+/** Words that end a place written out, or are never one: dates and times, joining words, asks, the kinds. */
+const NEVER_A_PLACE = new Set([
+  'on', 'at', 'by', 'for', 'in', 'this', 'next', 'coming', 'tomorrow', 'today', 'tonight', 'kal', 'aaj', 'parso', 'morning',
+  'evening', 'night', 'afternoon', 'noon', 'subah', 'shaam', 'raat', 'dopahar', 'weekend', 'and', 'or', 'then', 'via', 'to',
+  'from', 'se', 'tak', 'ke', 'ki', 'ka', 'ko', 'mein', 'me', 'main', 'par', 'pe', 'liye', 'wali', 'wala', 'wale', 'pehle',
+  'baad', 'the', 'a', 'an', 'any', 'some', 'our', 'my', 'us', 'please', 'pls', 'plz', 'go', 'check', 'see', 'find', 'show',
+  'book', 'get', 'dekh', 'dekho', 'lo', 'do', 'batao', 'koi', 'kya', 'hai', 'hain', 'is', 'are', 'there', 'what', 'which',
+  'how', 'when', 'can', 'could', 'would', 'will', 'home', 'back', 'here', 'yahan', 'wahan', 'ghar', 'flight', 'flights',
+  'fly', 'train', 'trains', 'bus', 'buses', 'busses', 'hotel', 'hotels', 'stay', 'stays', 'ticket', 'tickets', 'ac', 'non',
+  'sleeper', 'seater', 'volvo', 'cheap', 'cheapest', 'direct', 'nonstop', 'return', 'under', 'below', 'above', 'after',
+  'before', 'around', 'about', 'with', 'without', 'only',
+]);
+const A_DAY_WORD = new RegExp(
+  `^(?:${Object.keys(WEEKDAYS).join('|')}|jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|june?|july?|aug(?:ust)?|sept?(?:ember)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)$`,
+);
+const notAPlace = (word: string): boolean => NEVER_A_PLACE.has(word) || A_DAY_WORD.test(word);
+
+/** A place as written from `at`: up to three words, to the first that is never a place's (a comma or a digit ends it too). */
+function writtenAt(lower: string, at: number): (Found & { name: string }) | null {
+  const word = /\s*([a-z][a-z'-]*)/y;
+  word.lastIndex = at;
+  const words: string[] = [];
+  let start = -1;
+  let end = at;
+  for (let m = word.exec(lower); m && words.length < 3; m = word.exec(lower)) {
+    if (notAPlace(m[1]!)) break;
+    if (start < 0) start = m.index + m[0].length - m[1]!.length;
+    words.push(m[1]!);
+    end = m.index + m[0].length;
+  }
+  return words.length > 0 ? { at: start, end, name: words.join(' ') } : null;
+}
+
+/** The ends of a journey as written: after "from", "to" or "se", and the one word before "se" ("Hubli se Goa"). */
+function writtenEnds(lower: string): Array<Found & { name: string }> {
+  const out: Array<Found & { name: string }> = [];
+  for (const m of lower.matchAll(/\b(?:from|to|se)\s+/g)) {
+    const p = writtenAt(lower, m.index + m[0].length);
+    if (p) out.push(p);
+  }
+  for (const m of lower.matchAll(/(?<![a-z'-])([a-z][a-z'-]*)\s+se\b/g)) {
+    if (!notAPlace(m[1]!)) out.push({ at: m.index, end: m.index + m[1]!.length, name: m[1]! });
+  }
+  return out;
+}
+
+/**
+ * The places of this kind the text names, in order, by their names in the tables (and airport or station codes in
+ * capitals), and the ends of a journey as written whose words ixigo resolved before (a cache: nothing is looked up);
+ * asWritten, every end as written, where no table's name is (AskContext.asWritten).
+ */
+export function placesIn(text: string, kind: TravelKind, asWritten = false): Array<Found & { name: string }> {
   const lower = text.toLowerCase();
   const out: Array<Found & { name: string }> = [];
   for (const word of placeWords(kind)) {
@@ -141,6 +203,11 @@ function placesIn(text: string, kind: TravelKind): Array<Found & { name: string 
       } catch {
         // a word in capitals, not a code Go knows
       }
+    }
+  }
+  if (kind !== 'stays') {
+    for (const p of writtenEnds(lower)) {
+      if ((asWritten || isLearned(kind, p.name)) && !out.some((q) => p.at < q.end && p.end > q.at)) out.push(p);
     }
   }
   return out.sort((a, b) => a.at - b.at);
@@ -188,6 +255,28 @@ function conditionsIn(lower: string, kind: TravelKind): Partial<TravelQuery> {
   return out;
 }
 
+/** Words after "in", "at", "near", "around" or "to" that never name a place: "in our budget", "near the beach", "in Dec". */
+export const NOT_PLACES = new Set([
+  'our', 'the', 'this', 'that', 'these', 'those', 'my', 'your', 'their', 'his', 'her', 'its', 'some', 'any', 'all', 'one',
+  'budget', 'total', 'cash', 'advance', 'time', 'each', 'there', 'here', 'town', 'city', 'centre', 'center', 'see', 'stay',
+  'january', 'february', 'march', 'april', 'may', 'june', 'july', 'august', 'september', 'october', 'november', 'december',
+  'jan', 'feb', 'mar', 'apr', 'jun', 'jul', 'aug', 'sep', 'sept', 'oct', 'nov', 'dec',
+]);
+
+/**
+ * Whether the text names a place the tables don't know where the trip's destination would stand in ("hotels in Manali",
+ * "trains from Mumbai to Kota"): then the destination is not the ask's, and the composer, which looks any place up on
+ * ixigo, searches instead. A word after one of these words counts unless it is part of the destination's name or never
+ * names a place.
+ */
+function namesAnotherPlace(lower: string, destination: string, before: string[]): boolean {
+  const dest = new Set(destination.toLowerCase().split(/[^a-z]+/).filter(Boolean));
+  for (const m of lower.matchAll(new RegExp(`\\b(?:${before.join('|')})\\s+([a-z][a-z-]{2,})`, 'g'))) {
+    if (!NOT_PLACES.has(m[1]!) && !dest.has(m[1]!)) return true;
+  }
+  return false;
+}
+
 /** The must-haves ixigo filters a stay search on, as people say them. */
 const STAY_NEEDS: Array<[NonNullable<TravelQuery['mustHave']>[number], RegExp]> = [
   ['pool', /\bpool\b/],
@@ -202,20 +291,41 @@ export function guestsIn(lower: string): number | undefined {
   return n >= 1 && n <= 30 ? n : undefined;
 }
 
+/**
+ * A stay's money a head: "8k a head", "8,000 per person", "1,20,000 per head", "₹8000 each" (never "8k each night", a
+ * room's price), "8 hazaar ek bande"; and "a night" after it.
+ */
+const HEAD_MONEY = /(?:₹|rs\.?\s*)?(\d{1,2}(?:,\d{2})*,\d{3}|\d{1,3}(?:,\d{3})+|\d+(?:\.\d+)?)\s*(k|thousand|hazaar|hajaar)?\s*(?:(?:a|per|\/|ek)\s*)?(?:head|person|pp|bande|banda|each(?!\s+(?:night|day|raat|room)\b))\b(\s*(?:a|per|\/)\s*(?:night|raat))?/;
+
+/**
+ * A stay's budget a head, in paise, for the whole stay: "under 8k a head" as said, "8k a head a night" times the nights
+ * (tools.ts maps the model's two arguments the same way). Only a plain one: a range or a total for the group is the
+ * model's to read.
+ */
+export function shareIn(lower: string, checkIn: string, checkOut: string): number | undefined {
+  const m = HEAD_MONEY.exec(lower);
+  if (!m) return undefined;
+  const amount = Number(m[1]!.replace(/,/g, '')) * (m[2] ? 1000 : 1);
+  if (!Number.isFinite(amount) || amount < 500 || amount > 10_000_000) return undefined;
+  const nights = Math.round((Date.parse(`${checkOut}T00:00:00Z`) - Date.parse(`${checkIn}T00:00:00Z`)) / 86_400_000);
+  return Math.round(amount * 100) * (m[3] ? Math.max(1, nights) : 1);
+}
+
 /** The ask in a message, or null when it is not one whole search of one kind. */
 export function readTravelAsk(text: string, ctx: AskContext): TravelAsk | null {
-  if (NOT_A_SEARCH.test(text)) return null;
+  if (NOT_A_SEARCH.test(text) || A_WATCH.test(text)) return null;
   const kinds = ctx.kind ? [ctx.kind] : KINDS.filter(([, re]) => re.test(text)).map(([k]) => k);
   if (kinds.length !== 1) return null;
   const kind = kinds[0]!;
   const lower = text.toLowerCase();
-  const places = placesIn(text, kind);
+  const places = placesIn(text, kind, ctx.asWritten === true);
   const dates = datesIn(lower, ctx.today, ctx.dates ?? null);
   const guests = guestsIn(lower);
   const extra = guests ? { guests } : {};
 
   if (kind === 'stays') {
-    const area = places[0]?.name ?? ctx.destination;
+    // The trip's destination only when the ask names no other place: "hotels in Manali" is never Goa's.
+    const area = places[0]?.name ?? (ctx.destination && !namesAnotherPlace(lower, ctx.destination, ['in', 'at', 'near', 'around']) ? ctx.destination : undefined);
     let checkIn = dates[0]?.day;
     let checkOut = dates[1]?.day;
     const nights = /\b(\d{1,2})\s*(nights?|raat)\b/.exec(lower);
@@ -223,7 +333,8 @@ export function readTravelAsk(text: string, ctx: AskContext): TravelAsk | null {
     if (!checkIn && ctx.dates) [checkIn, checkOut] = [ctx.dates.start, ctx.dates.end];
     if (!area || !checkIn || !checkOut || checkOut <= checkIn) return null;
     const needs = STAY_NEEDS.filter(([, re]) => re.test(lower)).map(([need]) => need);
-    return { kind, query: { area, checkIn, checkOut, ...extra, ...(needs.length ? { mustHave: needs } : {}) } };
+    const share = shareIn(lower, checkIn, checkOut);
+    return { kind, query: { area, checkIn, checkOut, ...extra, ...(needs.length ? { mustHave: needs } : {}), ...(share ? { maxShareMinor: share } : {}) } };
   }
 
   const date = dates[0]?.day;
@@ -236,8 +347,8 @@ export function readTravelAsk(text: string, ctx: AskContext): TravelAsk | null {
   if (places.length >= 2) {
     const [a, b] = [places[0]!, places[1]!];
     [from, to] = isFrom(b) && !isFrom(a) ? [b.name, a.name] : [a.name, b.name];
-  } else if (places.length === 1 && isFrom(places[0]!) && ctx.destination) {
-    // "trains from Mumbai on Thursday": to the trip's destination.
+  } else if (places.length === 1 && isFrom(places[0]!) && ctx.destination && !namesAnotherPlace(lower, ctx.destination, ['to'])) {
+    // "trains from Mumbai on Thursday": to the trip's destination; "from Mumbai to Kota" names another, which the composer looks up.
     [from, to] = [places[0]!.name, ctx.destination];
   }
   if (!from || !to || from === to) return null;

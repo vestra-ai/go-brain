@@ -18,9 +18,27 @@ export const Attachment = z
       name: z.string().min(1).max(200),
       mime: z.string().min(1).max(100),
       size_bytes: z.int().nonnegative(),
+      /** 1.1: how long it plays, for audio and video (a voice note). */
+      duration_s: z.number().nonnegative().nullish(),
     }).meta({ id: 'FileAttachment' }),
+    /** 1.1: a shared location. */
+    z.object({
+      kind: z.literal('location'),
+      lat: z.number().min(-90).max(90),
+      lng: z.number().min(-180).max(180),
+      name: z.string().min(1).max(120).nullish(),
+      address: z.string().min(1).max(200).nullish(),
+    }).meta({ id: 'LocationAttachment' }),
   ])
   .meta({ id: 'Attachment', discriminator: { propertyName: 'kind' } });
+
+/**
+ * 1.1: a reply the App offers under Go's message, as a chip. Tapping it posts `text` (or the label, when there is no
+ * text) as the tapper's own message: Go hears it as an ordinary message.created.
+ */
+export const QuickReply = z
+  .object({ label: z.string().min(1).max(40), text: z.string().min(1).max(500).nullish() })
+  .meta({ id: 'QuickReply' });
 
 /** A reaction on a message. `person_id` is null when Go reacted (Go's own reactions come back as events too). */
 export const Reaction = z.object({ emoji: z.string().min(1).max(16), person_id: Id.nullish() }).meta({ id: 'Reaction' });
@@ -52,6 +70,10 @@ export const Message = z
     reactions: z.array(Reaction).max(100),
     /** Only on Go's messages. */
     card: Card.nullish(),
+    /** 1.1: only on Go's messages, as Go posted them. */
+    quick_replies: z.array(QuickReply).max(6).nullish(),
+    /** 1.2: only on Go's messages that only some people can see, as Go posted them. Absent: everyone sees it. */
+    visible_to_person_ids: z.array(Id).min(1).max(30).nullish(),
     /** True when the author paused Go: the text and attachments are left out on purpose. */
     withheld: z.boolean(),
     deleted: z.boolean(),
@@ -76,6 +98,13 @@ export const PostMessage = z
     reply_to: Id.nullish(),
     /** People Go names in the text. They get a push. */
     mentions: z.array(Id).max(30).nullish(),
+    /** 1.1: up to six replies the App offers under the message. The Server keeps them on the Message. */
+    quick_replies: z.array(QuickReply).max(6).nullish(),
+    /**
+     * 1.2: only these people (1 to 30, all in the trip) see the message: in the room, in their "needs you" list and on the
+     * cards screen. To everyone else it doesn't exist. Absent: everyone, as before. Fixed when posted: replace_card keeps it.
+     */
+    visible_to_person_ids: z.array(Id).min(1).max(30).nullish(),
   })
   .refine((m) => m.text != null || m.card != null, { message: 'a message needs text, a card, or both' })
   .meta({ id: 'PostMessage', description: 'Needs text, a card, or both.' });

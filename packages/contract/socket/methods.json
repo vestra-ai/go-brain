@@ -1,5 +1,5 @@
 {
-  "contract": "1.0.0",
+  "contract": "1.3.0",
   "path": "/v1/socket",
   "protocol": "JSON-RPC 2.0 over WebSocket",
   "methods": [
@@ -73,6 +73,24 @@
       "params": "CreateLink",
       "result": "Link",
       "answer_within_seconds": 2,
+      "sends_event": null
+    },
+    {
+      "name": "place_info",
+      "direction": "to_go",
+      "summary": "What a place is like, for the ideas on the home screen: its photos, a tag, the way there from a city and the best months.",
+      "params": "PlaceInfoRequest",
+      "result": "PlaceInfo",
+      "answer_within_seconds": 3,
+      "sends_event": null
+    },
+    {
+      "name": "get_option_details",
+      "direction": "to_go",
+      "summary": "Everything about one option on a card, for its Details page: more than the card carries.",
+      "params": "GetOptionDetails",
+      "result": "OptionFullDetails",
+      "answer_within_seconds": 3,
       "sends_event": null
     },
     {
@@ -166,6 +184,15 @@
       "sends_event": "decision.closed"
     },
     {
+      "name": "add_vote_options",
+      "direction": "to_server",
+      "summary": "1.3: add options to an open vote, for the options \"See more\" brought. At most 20 in all; votes cast stay.",
+      "params": "AddVoteOptions",
+      "result": "WriteResult",
+      "answer_within_seconds": 2,
+      "sends_event": "decision.options_added"
+    },
+    {
       "name": "set_mandate",
       "direction": "to_server",
       "summary": "Set what the group allowed for a closed choice vote: the choice, the cap, refundable only, and who pays.",
@@ -216,6 +243,15 @@
       "summary": "Record something someone paid for, split between people.",
       "params": "AddExpense",
       "result": "AddExpenseResult",
+      "answer_within_seconds": 2,
+      "sends_event": "expense.changed"
+    },
+    {
+      "name": "update_expense",
+      "direction": "to_server",
+      "summary": "Change who an expense is split between (and its note): the App's Fix the split, done by Go. The amount and the payer never change.",
+      "params": "UpdateExpense",
+      "result": "WriteResult",
       "answer_within_seconds": 2,
       "sends_event": "expense.changed"
     },

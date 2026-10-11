@@ -2,6 +2,8 @@ import type Anthropic from '@anthropic-ai/sdk';
 import type { AnthropicLike, StreamLike } from '../../composer/anthropic.js';
 
 export interface Reply {
+  /** A thinking block first, with this signature and no text (the API's default display). */
+  thinking?: string;
   text?: string;
   tools?: Array<{ name: string; input: unknown }>;
   usage?: Partial<{ input_tokens: number; output_tokens: number; cache_read_input_tokens: number; cache_creation_input_tokens: number }>;
@@ -45,6 +47,7 @@ export function fakeAnthropic(script: Script, side: (body: any) => string = () =
         const r: Reply = typeof script === 'function' ? script(body, n) : (script[Math.min(n, script.length - 1)] ?? {});
         const tools = r.tools ?? [];
         const content = [
+          ...(r.thinking ? [{ type: 'thinking', thinking: '', signature: r.thinking }] : []),
           ...(r.text ? [{ type: 'text', text: r.text, citations: null }] : []),
           ...tools.map((t, k) => ({ type: 'tool_use', id: `toolu_${n}_${k}`, name: t.name, input: t.input, caller: { type: 'direct' } })),
         ];
@@ -76,7 +79,10 @@ export function fakeAnthropic(script: Script, side: (body: any) => string = () =
             await wait();
             if (r.throws) throw r.throws;
             if (r.text) yield { type: 'content_block_delta', index: 0, delta: { type: 'text_delta', text: r.text } };
-            for (let k = 0; k < tools.length; k++) yield { type: 'content_block_delta', index: k + 1, delta: { type: 'input_json_delta', partial_json: '{}' } };
+            for (let k = 0; k < tools.length; k++) {
+              yield { type: 'content_block_start', index: k + 1, content_block: { type: 'tool_use', id: `toolu_${n}_${k}`, name: tools[k]!.name, input: {} } };
+              yield { type: 'content_block_delta', index: k + 1, delta: { type: 'input_json_delta', partial_json: '{}' } };
+            }
           },
           async finalMessage() {
             if (r.throws) throw r.throws;

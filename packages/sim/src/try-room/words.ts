@@ -1,8 +1,11 @@
 // What the try room says to a visitor, in one place so the words guard (apps/brain/src/__tests__/words.test.ts) reads
 // all of it.
 
-/** What is real and what is not. TRY_SIMULATED_LINE replaces it without a new build. */
+/** What is real and what is not, in a room without Go Live. TRY_SIMULATED_LINE replaces it without a new build. */
 export const SIMULATED_LINE = "ixigo search, the trip's computer and payments are simulated in this demo; the model is real.";
+
+/** The same for a Go Live room (TRY_LIVE=1): ixigo search and the trip's computer are real there; only payment is blocked. */
+export const LIVE_LINE = "ixigo searches are real and run on the trip's own computer. Payments are blocked in this demo.";
 
 /** Example messages under the message box: a tap puts one in the box. */
 export const HINTS: readonly string[] = [
@@ -10,6 +13,17 @@ export const HINTS: readonly string[] = [
   '@Go find a villa with a pool in North Goa',
   "@Go what's still open for this trip?",
   '@Go put the dates to a vote',
+];
+
+/**
+ * The hints in a Go Live room: only asks that work end to end on live ixigo today. No flights while ixigo turns away
+ * flight searches from the trip computer's address (403).
+ */
+export const LIVE_HINTS: readonly string[] = [
+  '@Go find a villa with a pool in North Goa',
+  '@Go any trains from Mumbai on the 5th night?',
+  '@Go put the dates to a vote',
+  "@Go what's still open for this trip?",
 ];
 
 /** UTC midnight, when the daily counts start again, is 05:30 in India. */

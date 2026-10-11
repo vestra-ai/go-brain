@@ -2,6 +2,7 @@ import { generateKeyPairSync } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { signSpendApproval, verifySpendApproval, type SpendApprovalClaims } from '../spend-approval.js';
+import { RequestSpendApproval } from '../to-server.js';
 
 const vector = JSON.parse(readFileSync(new URL('../../test-vectors/spend-approval.json', import.meta.url), 'utf8')) as {
   private_key_pem: string; public_key_pem: string; claims: SpendApprovalClaims; token: string; verify_at: number;
@@ -41,5 +42,35 @@ describe('spend approval', () => {
   });
   it('refuses garbage', () => {
     expect(verifySpendApproval('not.a.token!', vector.public_key_pem)).toEqual({ ok: false, reason: 'malformed' });
+  });
+});
+
+// Contract 1.3 (G3): a person's own pick is never voted on. Go asks with `personal` (the person, Go's card, the option
+// they tapped); the Server signs it in place of decision_id, and that person is always the payer.
+describe('the personal form (1.3)', () => {
+  const pick = { person_id: 'p_meher', card_id: 'c_flights_meher', option_id: 'opt_flight_2' };
+  const personal = (over: Partial<SpendApprovalClaims> = {}): SpendApprovalClaims =>
+    claims({ decision_id: null, personal: pick, payer_person_id: 'p_meher', ...over });
+
+  it('signs and verifies a personal approval for the person who picked', () => {
+    const k = keys();
+    const token = signSpendApproval(personal(), k.priv);
+    expect(verifySpendApproval(token, k.pub, at)).toMatchObject({ ok: true, claims: { personal: pick, payer_person_id: 'p_meher' } });
+  });
+
+  it("will not sign one another person pays, one that names a vote too, or one that names neither", () => {
+    const k = keys();
+    expect(() => signSpendApproval(personal({ payer_person_id: 'p_rahul' }), k.priv)).toThrow();
+    expect(() => signSpendApproval(personal({ decision_id: 'd_villa' }), k.priv)).toThrow();
+    expect(() => signSpendApproval(claims({ decision_id: null }), k.priv)).toThrow();
+  });
+
+  it('takes the personal request, and the vote request exactly as before; 1.2\'s ticket form is gone', () => {
+    const base = { request_id: 'rq_1', trip_id: 't_goa', amount_minor: 753600, currency: 'INR', merchant: 'ixigo', purpose: 'IndiGo 6E 2134, Fri 6 Nov, for Meher' };
+    expect(RequestSpendApproval.safeParse({ ...base, personal: pick }).success).toBe(true);
+    expect(RequestSpendApproval.safeParse({ ...base, decision_id: 'd_villa' }).success).toBe(true);
+    expect(RequestSpendApproval.safeParse({ ...base, personal: { person_id: 'p_meher', card_id: 'c_1' } }).success).toBe(false);
+    expect(RequestSpendApproval.safeParse({ ...base, kind: 'ticket', for_person_id: 'p_meher' }).success).toBe(false);
+    expect(RequestSpendApproval.safeParse(base).success).toBe(false);
   });
 });

@@ -25,11 +25,35 @@ export interface PayLinkInput {
   tripId: string;
   payerPersonId: string;
   payerName: string;
+  /** The group agreed to it first (its vote, among more than one person): the vault's pay page says so only then. */
+  groupAgreed: boolean;
   hold: { holdId: string; amountMinor: number; currency: string; merchant: string; paymentKind: PaymentKind; expiresAt: string };
 }
 
+/** A travel detail by its name in the vault (p5's #485): what a booking's ask sends its form to show, and nothing else. */
+export type TravelField = 'first_name' | 'last_name' | 'gender' | 'dob' | 'irctc_user_id';
+
+/** A person's travel details as on their ID, kept in their vault: only ever typed into a booking's own form. */
+export interface TravelDetails {
+  firstName: string;
+  lastName: string;
+  gender: 'male' | 'female';
+  /** YYYY-MM-DD. */
+  dob: string;
+  /** Their IRCTC user ID, for a train ticket's own form on ixigo (never its password); absent until they add it. */
+  irctcUserId?: string;
+}
+
 export interface VaultClient {
-  homeLink(i: { personId: string; start: 'home' | 'add_card' | 'add_login' }): Promise<{ url: string; expiresAt: string }>;
+  /** display embedded: the home the App frames (the vault answers 409 for any other start); sheet, the default: the browser sheet. */
+  /** fields (add_travel, #485): the form shows exactly those, and any required one not saved yet; a home link ignores them. */
+  homeLink(i: { personId: string; start: 'home' | 'add_card' | 'add_login' | 'add_travel'; display?: 'sheet' | 'embedded'; fields?: TravelField[] }): Promise<{ url: string; expiresAt: string }>;
+  /**
+   * A person's travel details for a ticket of their own Go is booking (booking.travellerPersonId is them; the vault refuses
+   * anyone else; booking.ref is the flight booking's run id), or null when they kept none. The values go only into the booking's own form: never a log line, the
+   * model, memory, a card or a picture.
+   */
+  travelDetails(i: { tripId: string; personId: string; booking: { ref: string; travellerPersonId: string; purpose: string } }): Promise<TravelDetails | null>;
   /** A refusal's `detail` says why, in words for the logs and the payments row (never for the room). */
   payLink(
     i: PayLinkInput,
@@ -43,6 +67,10 @@ export interface VaultClient {
 const LinkAnswer = z.object({ url: z.url({ protocol: /^https?$/ }), expires_at: z.iso.datetime({ offset: true }) });
 const Refusal = z.object({ error: z.object({ reason: z.string(), detail: z.string().max(300).optional() }) });
 const BothKeys = z.object({ charged_approval_ids: z.array(z.string()), without_both_keys: z.int().nonnegative() });
+const TravelAnswer = z.object({
+  first_name: z.string().min(1), last_name: z.string().min(1), gender: z.enum(['male', 'female']), dob: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  irctc_user_id: z.string().min(1).max(60).nullish(),
+});
 
 export function vaultClient(o: { baseUrl: string; secret: string; fetch?: typeof fetch; now?: () => Date; timeoutMs?: number }): VaultClient {
   const send = o.fetch ?? fetch;
@@ -68,7 +96,7 @@ export function vaultClient(o: { baseUrl: string; secret: string; fetch?: typeof
 
   return {
     async homeLink(i) {
-      const r = await call('POST', '/internal/links', { person_id: i.personId, start: i.start }, o.timeoutMs ?? 1_500);
+      const r = await call('POST', '/internal/links', { person_id: i.personId, start: i.start, display: i.display, ...(i.fields?.length ? { fields: i.fields } : {}) }, o.timeoutMs ?? 1_500);
       if (r.status !== 200) throw new Error(`the vault answered ${r.status}`);
       const link = LinkAnswer.parse(r.data);
       return { url: link.url, expiresAt: link.expires_at };
@@ -84,6 +112,7 @@ export function vaultClient(o: { baseUrl: string; secret: string; fetch?: typeof
             trip_id: i.tripId,
             payer_person_id: i.payerPersonId,
             payer_name: i.payerName,
+            group_agreed: i.groupAgreed,
             hold: {
               hold_id: i.hold.holdId,
               amount_minor: i.hold.amountMinor,
@@ -113,6 +142,21 @@ export function vaultClient(o: { baseUrl: string; secret: string; fetch?: typeof
     async voidPayLinks(approvalId) {
       const r = await call('POST', '/internal/pay-links/void', { approval_id: approvalId }, o.timeoutMs ?? 2_000);
       if (r.status !== 200) throw new Error(`the vault answered ${r.status}`);
+    },
+    async travelDetails(i) {
+      const r = await call(
+        'POST',
+        '/internal/travel-details',
+        { trip_id: i.tripId, person_id: i.personId, booking: { ref: i.booking.ref, traveller_person_id: i.booking.travellerPersonId, purpose: i.booking.purpose } },
+        o.timeoutMs ?? 2_000,
+      );
+      if (r.status === 404) return null;
+      // Never the answer in an error: its values are the person's.
+      if (r.status === 403) throw new Error("the vault reads a person's travel details only for a ticket of their own");
+      if (r.status !== 200) throw new Error(`the vault answered ${r.status}`);
+      const t = TravelAnswer.safeParse(r.data);
+      if (!t.success) throw new Error('the vault answered travel details in a shape Go does not read');
+      return { firstName: t.data.first_name, lastName: t.data.last_name, gender: t.data.gender, dob: t.data.dob, ...(t.data.irctc_user_id ? { irctcUserId: t.data.irctc_user_id } : {}) };
     },
     async bothKeys() {
       const r = await call('GET', '/internal/both-keys', null, o.timeoutMs ?? 2_000);

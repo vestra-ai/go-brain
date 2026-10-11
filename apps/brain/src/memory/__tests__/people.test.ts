@@ -9,8 +9,10 @@ import { checkFact } from '../checker.js';
 import { countFacts, forgottenUpTo, saveFact, type NewFact } from '../facts.js';
 import { createFold } from '../fold.js';
 import { drawPage } from '../pages.js';
+import { forgotElsewhere, forgotElsewhereNote, forgotElsewhereNow, forgotElsewhereUpTo } from '../forget-elsewhere.js';
 import { emptyCatchUp, peopleHandlers } from '../people.js';
 import { recall } from '../recall.js';
+import { picksOf, recordPick } from '../../travel/picks.js';
 import { scriptedSide, seedMessages } from './test-kit.js';
 
 let db: { pool: Pool; drop: () => Promise<void> };
@@ -156,6 +158,63 @@ describe('forget_person (master §10 item 5)', () => {
     expect((await db.pool.query("SELECT count(*)::int AS n FROM story_lines WHERE trip_id = 't_manali'")).rows[0].n).toBe(0);
   });
 
+  it("lets go of the person's ticket picks: the trip's with the trip, every one without a trip id", async () => {
+    const pick = (tripId: string) =>
+      recordPick(db.pool, { tripId, personId: 'p_arjun', kind: 'flight', way: 'BOM-GOX', optionId: `opt_${tripId}`, title: 'IndiGo 6E 5310', journey: null, pickedAt: new Date('2026-10-10T08:00:00Z') });
+    await pick('t_goa');
+    await pick('t_manali');
+    await h.forget_person({ person_id: 'p_arjun', trip_id: 't_goa' }, meta);
+    expect((await picksOf(db.pool, 't_goa')).filter((p) => p.personId === 'p_arjun')).toEqual([]);
+    expect((await picksOf(db.pool, 't_manali')).map((p) => p.personId)).toEqual(['p_arjun']);
+    await h.forget_person({ person_id: 'p_arjun' }, meta);
+    expect((await picksOf(db.pool, 't_manali')).filter((p) => p.personId === 'p_arjun')).toEqual([]);
+  });
+
+  it('tells only the person, on a notice pinned to them that names nobody, in each trip it forgets; a card that fails never fails the forget', async () => {
+    const told: Array<{ tripId: string; personId: string; card: C.Card }> = [];
+    const telling = peopleHandlers({
+      pool: db.pool, packs, fold: { redactPerson: async () => 0, storyMentions: async () => 0 }, now: () => new Date('2026-10-08T12:00:00Z'), log: silentLog,
+      tellPerson: async (tripId, personId, card) => {
+        told.push({ tripId, personId, card });
+        if (tripId === 't_manali') throw new Error('the Server is away');
+      },
+    });
+    await saveFact(db.pool, fact({ personId: 'p_meher', tripId: 't_goa', topic: 'food', text: 'Vegetarian', messageId: null, source: 'join' }));
+    await saveFact(db.pool, fact({ personId: 'p_meher', tripId: 't_manali', topic: 'food', text: 'Vegetarian', messageId: null, source: 'join' }));
+    expect(await telling.forget_person({ person_id: 'p_meher', trip_id: 't_goa' }, meta)).toMatchObject({ remaining_facts: 0 });
+    expect(told.map((t) => [t.tripId, t.personId])).toEqual([['t_goa', 'p_meher']]);
+    const card = told[0]!.card;
+    expect(C.Card.safeParse(card).success).toBe(true);
+    expect(card).toMatchObject({ kind: 'notice', for_person_ids: ['p_meher'] });
+    expect(card.card_id.length).toBeLessThanOrEqual(64);
+    // It says "you", never a name: nothing anyone can read on it says who used Forget me (for_person_ids is the pin).
+    const words = JSON.stringify({ ...card, for_person_ids: null });
+    for (const name of ['Meher', 'p_meher', 'Kabir', 'Priya']) expect(words).not.toContain(name);
+    // Everywhere: one card per trip, and the trip whose card failed is still forgotten.
+    await saveFact(db.pool, fact({ personId: 'p_meher', tripId: 't_goa', topic: 'food', text: 'Vegan now', messageId: null, source: 'join' }));
+    expect(await telling.forget_person({ person_id: 'p_meher' }, meta)).toMatchObject({ remaining_facts: 0 });
+    expect(told.slice(1).map((t) => t.tripId).sort()).toEqual(['t_goa', 't_manali']);
+    expect(await countFacts(db.pool, 'p_meher', null)).toBe(0);
+  });
+
+  it("lets go of the trip's ixigo login in each trip it forgets, and a login that can't be let go never fails the forget", async () => {
+    const gone: Array<[string, string]> = [];
+    const withLogin = peopleHandlers({
+      pool: db.pool, packs, fold: { redactPerson: async () => 0, storyMentions: async () => 0 }, now: () => new Date(), log: silentLog,
+      loginGone: async (tripId, personId) => {
+        gone.push([tripId, personId]);
+        if (tripId === 't_manali') throw new Error('the login card could not be replaced');
+      },
+    });
+    await saveFact(db.pool, fact({ personId: 'p_rahul', tripId: 't_goa', topic: 'food', text: 'Loves prawns', messageId: null, source: 'join' }));
+    await saveFact(db.pool, fact({ personId: 'p_rahul', tripId: 't_manali', topic: 'food', text: 'Loves momos', messageId: null, source: 'join' }));
+    expect(await withLogin.forget_person({ person_id: 'p_rahul', trip_id: 't_goa' }, meta)).toEqual({ deleted_facts: 1, remaining_facts: 0 });
+    expect(gone).toEqual([['t_goa', 'p_rahul']]);
+    // Everywhere: each trip Go still holds anything of theirs in (Manali, here), and one that throws still answers.
+    expect(await withLogin.forget_person({ person_id: 'p_rahul' }, meta)).toEqual({ deleted_facts: 1, remaining_facts: 0 });
+    expect(gone.slice(1)).toEqual([['t_manali', 'p_rahul']]);
+  });
+
   it('refuses to answer, and changes nothing, when something would be left', async () => {
     await saveFact(db.pool, fact({ personId: 'p_arjun', topic: 'flights', text: 'No early flights', messageId: null, source: 'join' }));
     const stubborn = peopleHandlers({
@@ -165,6 +224,34 @@ describe('forget_person (master §10 item 5)', () => {
     const err = await stubborn.forget_person({ person_id: 'p_arjun', trip_id: 't_goa' }, meta).catch((e: unknown) => e);
     expect((err as SocketCallError).code).toBe(500);
     expect(await countFacts(db.pool, 'p_arjun', 't_goa')).toBe(1);
+  });
+
+  it("reaches the person's other trips when their facts carried there: Go's own words about them there are hidden (staging, 10 Oct)", async () => {
+    const plain = peopleHandlers({ pool: db.pool, packs, fold: { redactPerson: async () => 0, storyMentions: async () => 0 }, now: () => new Date('2026-10-10T01:14:00Z'), log: silentLog });
+    // Carry-over off: the trip's facts never showed in another trip, so nothing else is marked.
+    await saveFact(db.pool, fact({ personId: 'p_meher', tripId: 't_manali', topic: 'flights', text: 'Dislikes early flights', messageId: null, source: 'join' }));
+    expect(await plain.forget_person({ person_id: 'p_meher', trip_id: 't_goa' }, meta)).toMatchObject({ remaining_facts: 0 });
+    expect(await forgotElsewhere(db.pool, 't_manali')).toEqual([]);
+    // Carry-over on: the other trip is marked, and its turns hear it under "right now", naming nobody's facts. (An
+    // earlier test deleted her Manali food fact; a Manali seat answer is hers to keep.)
+    await saveFact(db.pool, fact({ personId: 'p_priya', tripId: 't_manali', topic: 'seats', text: 'Aisle seat', messageId: null, source: 'join' }));
+    await plain.update_person({ person_id: 'p_priya', carry_over: true }, meta);
+    expect(await plain.forget_person({ person_id: 'p_priya', trip_id: 't_goa' }, meta)).toMatchObject({ remaining_facts: 0 });
+    expect(await forgotElsewhere(db.pool, 't_manali')).toEqual(['p_priya']);
+    expect(await forgotElsewhere(db.pool, 't_goa')).toEqual([]);
+    // Up to Manali's newest message (#21) when she forgot: Go's messages there that name her, up to it, are hidden.
+    expect(await forgotElsewhereUpTo(db.pool, 't_manali')).toEqual(new Map([['p_priya', 21]]));
+    expect(await forgotElsewhereUpTo(db.pool, 't_goa')).toEqual(new Map());
+    const note = await forgotElsewhereNow({ pool: db.pool, packs }).render('t_manali', []);
+    expect(note).toBe(
+      'Priya had Go forget what it learned about them in another trip, so your earlier messages here that named Priya are hidden. ' +
+        'About Priya, use only what they or the group say in this trip and what "right now" shows. Never mention the forget or the hidden messages.',
+    );
+    expect(await forgotElsewhereNow({ pool: db.pool, packs }).render('t_goa', [])).toBeNull();
+    // Her Manali facts are hers to keep: only the Goa trip was forgotten.
+    expect(await countFacts(db.pool, 'p_priya', 't_manali')).toBe(1);
+    expect(forgotElsewhereNote(['Priya', 'Arjun'])).toContain('Priya and Arjun had Go forget');
+    expect(forgotElsewhereNote([])).toBeNull();
   });
 });
 

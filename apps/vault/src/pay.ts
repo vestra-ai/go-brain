@@ -25,7 +25,8 @@ export type PayRefusal =
   | 'currency_mismatch'
   | 'over_amount'
   | 'hold_expiring'
-  | 'no_card';
+  | 'no_card'
+  | 'otp_wrong';
 
 export type ApproveResult =
   | { state: 'paid'; railRef: string }
@@ -45,11 +46,14 @@ interface PayRequestRow {
   merchant: string;
   hold_expires_at: Date;
   payment_kind: RailKind;
+  /** Go's word that the group agreed first; null on an older pay link. */
+  group_agreed: boolean | null;
 }
 
 async function payRequest(db: Db, approvalId: string): Promise<PayRequestRow | null> {
   const r = await db.query<PayRequestRow>(
-    `select approval_id, jti, trip_id, payer_person_id, approval, amount_minor, currency, merchant, hold_expires_at, payment_kind
+    `select approval_id, jti, trip_id, payer_person_id, approval, amount_minor, currency, merchant, hold_expires_at, payment_kind,
+       group_agreed
      from pay_requests where approval_id = $1`,
     [approvalId],
   );
@@ -78,6 +82,8 @@ export type PayInfo =
       refundable_until: string | null;
       card: { brand: string; last4: string } | null;
       expires_at: string;
+      /** The group agreed to it first: the page says so. Never for a person's own ticket or a trip of one. */
+      group_agreed: boolean;
     };
 
 /** What the pay page shows: read from the signed approval itself, and the amount the hold will charge. */
@@ -96,6 +102,8 @@ export async function payInfo(d: PayDeps, token: string): Promise<PayInfo> {
     refundable_until: check.claims.refundable_until ?? null,
     card: card ? { brand: card.brand, last4: card.last4 } : null,
     expires_at: link.expires_at.toISOString(),
+    // Go's word; an older pay link goes by whether the approval names a vote (a personal one never does).
+    group_agreed: pr.group_agreed ?? check.claims.decision_id != null,
   };
   if (!(await hasPasskey(d.pool, link.person_id))) return { state: 'no_passkey', ...shown };
   if (!card) return { state: 'no_card', ...shown };
@@ -165,13 +173,15 @@ async function startAttempt(d: PayDeps, now: Date, linkId: string, a: AttemptRow
 /** The pay check. Every step runs in this order and the first failure stops the payment. */
 export async function approvePayment(
   d: PayDeps,
-  input: { token: string; challengeId: string; response: AuthenticationResponseJSON },
+  input: { token: string; challengeId: string; response: AuthenticationResponseJSON; otp?: string },
 ): Promise<ApproveResult> {
   const now = d.now();
   // 1. The link is valid, unused and unexpired.
   const found = await payLink(d, input.token);
   if ('problem' in found) return { state: 'refused', reason: found.problem };
   const { link, pr } = found;
+  // The demo's bank code, asked on the page after Face ID: checked before the passkey, so a mistyped code costs no Face ID.
+  if (d.otp !== undefined && input.otp !== d.otp) return { state: 'refused', reason: 'otp_wrong' };
 
   const refuse = async (reason: PayRefusal, personId: string, keys: { passkey: boolean; approval: boolean }): Promise<ApproveResult> => {
     await logUnlock(d.pool, now, {
@@ -214,8 +224,10 @@ export async function approvePayment(
   const used = await d.pool.query('select 1 from used_approvals where jti = $1', [c.jti]);
   if ((used.rowCount ?? 0) > 0) return refuse('used', who, { passkey: true, approval: false });
 
-  // 6. The payer the Server approved is the person who unlocked.
+  // 6. The payer the Server approved is the person who unlocked. A personal approval (1.3) is its person's own pick: only
+  // they pay it, whoever else holds the link.
   if (c.payer_person_id !== who) return refuse('not_the_payer', who, { passkey: true, approval: false });
+  if (c.personal != null && c.personal.person_id !== who) return refuse('not_the_payer', who, { passkey: true, approval: false });
 
   // 7. The charge is within the approval, in the same currency, while the hold still stands.
   if (pr.currency !== c.currency) return refuse('currency_mismatch', who, { passkey: true, approval: false });

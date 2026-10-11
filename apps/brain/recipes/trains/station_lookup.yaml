@@ -1,0 +1,42 @@
+id: trains.station_lookup
+title: A railway station or a city's stations, as ixigo's train box knows them
+asks:
+  - jaipur
+  - udaipur city
+inputs:
+  words: { kind: text, about: the place as the person said it }
+keeps: trains
+box:
+  # The suggestion call itself, opened as the page: no box to find, type into or wait on (the 8 Oct drill: typing
+  # into the box timed out on the box's browser). The box below is how a person does it, for the flow speed.
+  open: "/action/content/trainstation?searchFor=trainstationsLatLon&anchor=false&value={words}"
+  page: /trains
+  type:
+    from:
+      - { op: type, role: searchbox, name: Enter Origin, text: "{words}" }
+      - { op: wait_for, match: searchFor=trainstationsLatLon }
+    to:
+      - { op: type, role: searchbox, name: Enter Destination, text: "{words}" }
+      - { op: wait_for, match: searchFor=trainstationsLatLon }
+capture:
+  - { match: searchFor=trainstationsLatLon, min_count: 1, max_count: 6, max_bytes: 200000 }
+answer:
+  as: places
+  suggestions:
+    words_param: value
+    list: $
+    # "Jaipur - All stations(JP)", "Udaipur City (UDZ)": the code is in the brackets.
+    name: e
+    line: "c ? c : ''"
+    all: "$contains(e, /all stations/i)"
+    country: "'India'"
+    skip: |
+      $not($contains(e, /\(([A-Z0-9]{1,6})\)\s*$/))
+    place: |
+      (
+        $g := $groups(e, "^(.*?)\\s*\\(([A-Z0-9]{1,6})\\)\\s*$");
+        $name := $replace($g[0], /\s*-?\s*all stations\s*$/i, "");
+        { "code": $g[1], "name": $trim($name) ? $trim($name) : e }
+      )
+samples: { udaipur: trains.station_lookup.udaipur.json, jaipur: trains.station_lookup.jaipur.json }
+notes: A station's name is not always its city's ("Udaipur City (UDZ)", not "Udaipur (UDPU)"), so the pick never matches stations by name.

@@ -4,8 +4,9 @@ import { ixigoPage } from '../travel/cards.js';
 import type { Travel } from '../travel/travel.js';
 import { GROUP_FARES } from './ask.js';
 import { mandateCard } from './cards.js';
+import { askersOf, claimCard, claimCardId } from './claims.js';
 import type { MoneyDeps } from './deps.js';
-import { money, refusalWords } from './words.js';
+import { money, refusalWords, shortDate } from './words.js';
 
 /** The price plus up to 10%, rounded down to a whole ₹1,000 and never below the price: the most Go sets on its own. */
 export function marginCap(priceMinor: number): number {
@@ -53,6 +54,23 @@ export function amountsSaid(messages: Message[], group: { heads: number; nights:
 }
 
 /**
+ * A check of an option on ixigo that didn't answer: what happened, and the one question to ask (Keshav, 11 Oct: "make it
+ * a proper travel agent… why this whining"; it was "Try again in a moment", work pushed back to the person).
+ */
+export const checkFailed = (label: string): string => `ixigo didn't answer when I checked ${label}, so nothing is set up or charged. Want me to check again now?`;
+
+/**
+ * What a group pays for: a stay Go books, and a fare (each traveller books their own, said so). A place, food, a thing to
+ * do or a cab the group picked is nothing anyone pays for, and a vote of plain words (dates, a name, yes or no) is none
+ * either: money says nothing about those (Ankur, 12 Oct 00:14 IST: a place vote won, and Go said "I found this one on the
+ * web, so it can't be booked through me", from money's own note on the closed vote).
+ */
+const PAID_KINDS: ReadonlySet<string> = new Set(['stay', ...GROUP_FARES]);
+/** For the model alone, never the room's words: nothing to pay for or book. */
+export const nothingToPay = (label: string): string =>
+  `${label} is nothing anyone pays for or books: never say it can't be booked, and say nothing about booking or paying it.`;
+
+/**
  * Why Go cannot book an option for the group, in the words to say, or null when it can: Go books only an offer the travel
  * layer can hold for the whole group. A place found on the web has no offer; a flight, train or bus fare is per person
  * (booking those for a group is cut this week); an option with no option_ref is not one Go found at all. Those are
@@ -61,22 +79,39 @@ export function amountsSaid(messages: Message[], group: { heads: number; nights:
 export async function whyNotBookable(
   d: Pick<MoneyDeps, 'travel'>,
   option: Trip['decisions'][number]['options'][number],
-): Promise<{ refused: string; unbookable?: true } | null> {
+  /** The trip: where Go books each person's own flight (BOOKING), a group flight says how they book theirs. */
+  tripId?: string,
+): Promise<{ refused: string; unbookable?: true; notPaid?: true } | null> {
   const words = { payer: 'The payer', what: option.label };
   const travel = d.travel();
-  if (!option.option_ref || !travel) return { refused: `${option.label} isn't something I can book here, so there's nothing to set up for paying.`, unbookable: true };
+  // A vote of plain words: nothing to pay for.
+  if (!option.option_ref) return { refused: nothingToPay(option.label), unbookable: true, notPaid: true };
+  if (!travel) return { refused: `${option.label} isn't something I can book here, so there's nothing to set up for paying.`, unbookable: true };
   let offer: Awaited<ReturnType<Travel['offer']>>;
   try {
     offer = await travel.offer(option.option_ref);
   } catch {
-    return { refused: `I couldn't check ${option.label} just now. Try again in a moment.` };
+    // Once more at once: a hiccup is common, and nobody should have to ask again for it.
+    try {
+      offer = await travel.offer(option.option_ref);
+    } catch {
+      return { refused: checkFailed(option.label) };
+    }
   }
+  // A place, food, a thing to do: the group picked it, and nobody pays for it.
+  if (offer && !PAID_KINDS.has(offer.kind)) return { refused: nothingToPay(option.label), unbookable: true, notPaid: true };
   // The option's own page, said only when it is on ixigo.com.
   const link = ixigoPage(offer?.link);
   if (offer && GROUP_FARES.has(offer.kind)) {
-    return { refused: refusalWords('not_bookable_yet', { ...words, kind: offer.kind, ...(link ? { link } : {}) }).text, unbookable: true };
+    const own = offer.kind === 'flight' && tripId !== undefined && ((await travel.booksFlights?.(tripId).catch(() => false)) ?? false);
+    return { refused: refusalWords('not_bookable_yet', { ...words, kind: offer.kind, ...(link ? { link } : {}), ...(own ? { own } : {}) }).text, unbookable: true };
   }
   if (!offer?.offerId) return { refused: refusalWords('not_bookable', { ...words, ...(link ? { link } : {}) }).text, unbookable: true };
+  // A vote that outlived its stay's or journey's day: nothing to book, so no mandate.
+  if (offer.past) {
+    const was = offer.day ? `${option.label} was for ${shortDate(`${offer.day}T12:00:00Z`)}, which has passed` : `${option.label}'s date has passed`;
+    return { refused: `${was}, so I can't book it. Want me to search again for dates ahead?`, unbookable: true };
+  }
   return null;
 }
 
@@ -86,9 +121,12 @@ export async function whyNotBookable(
  */
 export async function setMandate(
   d: MoneyDeps,
-  ctx: Pick<TurnCtx, 'tripId' | 'stableId' | 'cards' | 'pack'>,
+  ctx: Pick<TurnCtx, 'tripId' | 'stableId' | 'cards' | 'pack'> & Partial<Pick<TurnCtx, 'turnId' | 'wake'>>,
   o: { decisionId: string; choiceIndex: number; capMinor?: number; refundableOnly: boolean; payerPersonId: string },
-): Promise<{ cardId: string; capMinor: number; byMargin: boolean; note: string | null } | { refused: string; unbookable?: true }> {
+): Promise<
+  | { cardId: string; capMinor: number; byMargin: boolean; note: string | null; booking: string }
+  | { refused: string; unbookable?: true; notPaid?: true; parked?: true; claim?: true; line?: string }
+> {
   const vague = { payer: 'The payer', what: 'it' };
   let trip: Trip;
   try {
@@ -106,30 +144,95 @@ export async function setMandate(
   const allowed = winner !== null ? o.choiceIndex === winner : top > 0 && decision.tally[o.choiceIndex] === top;
   const winnerLabel = winner !== null ? (decision.options[winner]?.label ?? 'the winner') : 'one of the options that tied';
   const chosen = decision.options[o.choiceIndex];
-  if (!allowed || !chosen) return { refused: `The group picked ${winnerLabel}. I can only set that.` };
+  // A trip of one: nobody else to agree with, so "you", never "the group".
+  const alone = trip.people.length === 1;
+  if (!allowed || !chosen) return { refused: `${alone ? 'You' : 'The group'} picked ${winnerLabel}. I can only set that.` };
 
   // Something Go cannot book needs no payer: say so before anyone is asked who pays. A failed check only says try again.
-  const cannot = await whyNotBookable(d, chosen);
+  const cannot = await whyNotBookable(d, chosen, ctx.tripId);
   if (cannot) return cannot;
 
   const payer = trip.people.find((p) => p.person_id === o.payerPersonId);
   if (!payer) return { refused: "That person isn't in this trip." };
 
+  // One person books a stay for all (claims.ts): the payer is whoever claimed it, by the card's I'll book it or by asking
+  // Go to book it in their own words (that ask is their claim). Go never picks the payer itself.
+  let claimedNow = false;
+  if (d.claims && chosen.option_ref && (await d.travel()?.offer(chosen.option_ref).catch(() => null))?.kind === 'stay') {
+    const held = await d.claims.get(ctx.tripId, o.decisionId);
+    const nameOf = (id: string): string => trip.people.find((p) => p.person_id === id)?.name ?? 'Someone';
+    // A mandate set before claims came holds as the claim.
+    const holder = held?.personId ?? decision.mandate?.payer_person_id ?? null;
+    if (holder) {
+      if (holder !== payer.person_id) return { refused: `${nameOf(holder)} is already booking this.` };
+    } else if (alone || (ctx.wake && askersOf(ctx.wake, ctx.pack).includes(payer.person_id))) {
+      // A trip of one has nobody to ask who books: the one person is the payer, with no card asking the group.
+      const first = await d.claims.take(ctx.tripId, o.decisionId, payer.person_id);
+      if (first !== payer.person_id) return { refused: `${nameOf(first)} is already booking this.` };
+      claimedNow = true;
+      // The card, when it is up, says who is booking now.
+      if (held?.offeredTurn) {
+        await d.link.request('replace_card', {
+          trip_id: ctx.tripId, card: claimCard({ decisionId: o.decisionId, what: chosen.label, people: trip.people.length, claimer: payer.name }),
+        });
+      }
+    } else {
+      // Nobody has claimed it: the card asks the group, on this turn's own post.
+      const id = claimCardId(o.decisionId);
+      if (ctx.turnId && (await d.claims.offer(ctx.tripId, o.decisionId, ctx.turnId)) && !ctx.cards.some((c) => c.card_id === id)) {
+        ctx.cards.push(claimCard({ decisionId: o.decisionId, what: chosen.label, people: trip.people.length, claimer: null }));
+      }
+      return {
+        refused: `One person books ${chosen.label} for all: whoever taps I'll book it on the card, or asks me to book it themselves, is the payer.`,
+        claim: true,
+      };
+    }
+  }
+
+  // What the option needs first: a stay from ixigo.com needs the trip's ixigo login (the person is asked on its card, and
+  // this call waits on it, made again when the login is in), and its price is ixigo's now, not the vote's.
+  let live: number | null = null;
+  const prepare = chosen.option_ref ? d.travel()?.prepare : undefined;
+  if (prepare && chosen.option_ref) {
+    const resume = {
+      decision_id: o.decisionId, choice_index: o.choiceIndex, payer_person_id: payer.person_id, refundable_only: o.refundableOnly,
+      ...(o.capMinor !== undefined ? { cap_minor: o.capMinor } : {}),
+    };
+    let ready: Awaited<ReturnType<typeof prepare>>;
+    try {
+      ready = await prepare(chosen.option_ref, { tripId: ctx.tripId, what: chosen.label, resume, for: payer.person_id });
+    } catch {
+      return { refused: checkFailed(chosen.label) };
+    }
+    if (!ready.ok) return { refused: ready.note, parked: true, ...(ready.line ? { line: ready.line } : {}) };
+    live = ready.priceMinor;
+  }
+
   // The cap is never invented: an amount someone wrote in the chat, read as they meant it, or the price plus up to 10%.
   const said = amountsSaid(ctx.pack.messages, { heads: trip.people.length, nights: nightsOf(trip) });
-  const price = chosen.price_minor ?? null;
+  const voted = chosen.price_minor ?? null;
+  const price = live ?? voted;
   const currency = chosen.currency ?? trip.money.currency;
+  // A price that moved since the vote is said on the mandate, before anyone taps Yes, book it. prepare reads the same
+  // number the vote showed, or none, so a move said here is a real one.
+  const moved = live !== null && voted !== null && live !== voted
+    ? `${chosen.label} is ${money(live, currency)} on ixigo now, ${live > voted ? 'up' : 'down'} from ${money(voted, currency)} on the vote.`
+    : null;
   // No cap from the model: nobody said a clear number, so the whole price plus up to 10%, and Go says so.
   const byMargin = o.capMinor === undefined;
   let capMinor: number;
   if (o.capMinor !== undefined) capMinor = o.capMinor;
   else if (price !== null) capMinor = marginCap(price);
-  else return { refused: `Tell me the most the group agreed to spend on ${chosen.label}. I can't see its price.` };
+  else return { refused: alone ? `Tell me the most you want to spend on ${chosen.label}. I can't see its price.` : `Tell me the most the group agreed to spend on ${chosen.label}. I can't see its price.` };
   if (price !== null && capMinor < price) return { refused: `That cap is below the price of ${chosen.label} (${money(price, currency)}).` };
   const withinMargin = price !== null && capMinor <= marginCap(price);
   if (!withinMargin && !said.includes(capMinor)) {
     const most = price !== null ? `, up to ${money(marginCap(price), currency)},` : '';
-    return { refused: `Tell me the cap the group agreed on. I can use the price plus a little margin${most} or a number someone said.` };
+    return {
+      refused: alone
+        ? `Tell me the most you want to spend. I can use the price plus a little margin${most} or a number you said.`
+        : `Tell me the cap the group agreed on. I can use the price plus a little margin${most} or a number someone said.`,
+    };
   }
 
   const m = decision.mandate;
@@ -149,8 +252,16 @@ export async function setMandate(
   });
   const cardId = ctx.stableId('c_mandate');
   ctx.cards.push(
-    mandateCard({ cardId, decisionId: o.decisionId, what: chosen.label, capMinor, currency, refundableOnly: o.refundableOnly, payerName: payer.name }),
+    mandateCard({ cardId, decisionId: o.decisionId, what: chosen.label, capMinor, currency, refundableOnly: o.refundableOnly, payerName: payer.name, moved }),
   );
-  const note = byMargin ? `Nobody said a clear number, so I set the cap at ${money(capMinor, currency)}: the price plus a little margin.` : null;
-  return { cardId, capMinor, byMargin, note };
+  // Never "nobody said a number": an I'll book it tap sets it with no model reading the chat, where someone may have.
+  const margin = byMargin ? `The card allows up to ${money(capMinor, currency)}, in case the price rises a little before it's booked.` : null;
+  // Who books, said once: a group hears who books for all of them; one traveller hears what they're booking, and for how much.
+  const nights = nightsOf(trip);
+  const booking = alone
+    ? `${payer.name}, you're booking ${chosen.label}${price !== null ? `, ${money(price, currency)}` : ''}${nights ? ` for ${nights} night${nights === 1 ? '' : 's'}` : ''}.`
+    : `${payer.name}, you're booking for all ${trip.people.length}.`;
+  const claimed = claimedNow ? booking : null;
+  const note = [claimed, moved, margin].filter((x) => x !== null).join(' ') || null;
+  return { cardId, capMinor, byMargin, note, booking };
 }

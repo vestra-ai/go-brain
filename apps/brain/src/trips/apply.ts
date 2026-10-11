@@ -1,6 +1,7 @@
 import type * as C from '@go/contract';
 import type { Message, TripEvent } from '../door/methods.js';
 import type { TripPack } from './pack.js';
+import { isPrivate } from './screen.js';
 
 type Reaction = Message['reactions'][number];
 const sameReaction = (a: Reaction, b: Reaction): boolean => a.emoji === b.emoji && (a.person_id ?? null) === (b.person_id ?? null);
@@ -11,10 +12,10 @@ function upsertBy<T>(list: T[], same: (x: T) => boolean, item: T): void {
   else list.push(item);
 }
 
-/** Puts a message in the pack in seq order; a deleted message leaves it. */
+/** Puts a message in the pack in seq order; a deleted message leaves it, and one only some people see is never in it. */
 export function upsertMessage(pack: TripPack, m: Message): void {
   const i = pack.messages.findIndex((x) => x.message_id === m.message_id);
-  if (m.deleted) {
+  if (m.deleted || isPrivate(m)) {
     if (i >= 0) pack.messages.splice(i, 1);
     return;
   }
@@ -91,13 +92,26 @@ export function applyEvent(pack: TripPack, ev: TripEvent): 'ok' | 'reread' {
       const idx = data.option_index;
       if (!d.anonymous && pid != null && idx != null) {
         d.votes = [...(d.votes ?? []).filter((v) => v.person_id !== pid), { person_id: pid, option_index: idx }];
+      } else if (!d.anonymous && pid != null && (data.flexible || data.retracted)) {
+        // 1.1: "I'm flexible" or a vote taken back: whatever they picked before is no longer their vote.
+        d.votes = (d.votes ?? []).filter((v) => v.person_id !== pid);
       }
+      // 1.1: the event carries no flexible_count, and a flexible vote names no pick: the Server's decision has both.
+      if (data.flexible || data.retracted) return 'reread';
       break;
     }
     case 'decision.cancelled': {
       const d = decision(ev.data.decision_id);
       if (!d) return 'reread';
       d.status = 'cancelled';
+      break;
+    }
+    case 'decision.options_added': {
+      // 1.3 ("see more"): the new options take the next indexes, with no votes yet; votes already cast stay.
+      const d = decision(ev.data.decision_id);
+      if (!d) return 'reread';
+      d.options = [...d.options, ...ev.data.options];
+      d.tally = [...d.tally, ...ev.data.options.map(() => 0)];
       break;
     }
     case 'mandate.set': {
@@ -127,6 +141,8 @@ export function applyEvent(pack: TripPack, ev: TripEvent): 'ok' | 'reread' {
     case 'trip.updated':
     case 'booking.changed':
     case 'expense.changed':
+    // 1.1: a payback moves the money, which the Server works out: read it.
+    case 'settlement.recorded':
       return 'reread';
   }
   pack.seq = Math.max(pack.seq, ev.seq);

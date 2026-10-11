@@ -1,7 +1,9 @@
 // Openings: moments Go might help without being asked, from the chat (the reflex's opening question)
 // and from trip changes. Also the two signals that make Go quieter: a hush, and nudges people ignored.
 import type { Message, Trip, TripEvent } from '../door/methods.js';
+import { leftToPeople } from '../reflex/read.js';
 import type { ReflexRead } from '../reflex/reflex.js';
+import { TripGoneError } from '../trips/gone.js';
 import { plainlyNamesGo } from '../trips/names-go.js';
 import type { Packs, TripPack } from '../trips/pack.js';
 import type { Action, Candidate } from './policy.js';
@@ -28,13 +30,30 @@ export function isHush(msg: Message, pack: TripPack): boolean {
 }
 
 /**
- * A message that names Go is the composer's to answer (P1 wakes it). An opening is only for a message the reflex is
- * sure is not for Go, so the same message never gets both an answer and an unprompted post.
+ * Whether a line not for Go carries something Go could help with unasked, by what the reflex is sure of. The reflex's own
+ * opening question (q9) is still in shadow (Jev too rarely sure to pass its gate), so on its own it never fired and Go
+ * never chimed in (the 9 Oct run sheet: Kabir's "guys dates final karo yaar, kal tak" on a trip set for 6 to 9 Nov got
+ * silence). The live questions carry the same moments: something to keep to (a fact: "I'm veg btw", "can't leave
+ * before 6"), something agreed, open or taken on (a record kind: dates to settle, "3 of us said yes to Saudades"), or a
+ * search the group wants run (a recipe: "koi trains dekh lo"). Banter carries none of them. The composer, which knows
+ * the trip, decides whether there is anything worth a line, and stays silent otherwise.
+ */
+export function isMoment(read: ReflexRead): boolean {
+  return (read.opening.sure && read.opening.value === true)
+    || (read.fact.sure && read.fact.value === true)
+    || (read.recordKind.sure && read.recordKind.value !== null)
+    || (read.recipe !== undefined && read.recipe.sure && read.recipe.value !== null);
+}
+
+/**
+ * A message the composer wakes for is its to answer or not (P1 wakes it for every line but pure banter: trips/intake.ts
+ * wakesComposer). An opening is only for a line it doesn't wake for, so the same message never gets both a turn and an
+ * unprompted post.
  */
 export function chatOpening(msg: Message, read: ReflexRead, pack: TripPack, now: Date): Candidate | null {
   if (msg.author.kind !== 'person' || msg.withheld || msg.deleted || msg.mentions_go) return null;
-  if (!(read.opening.sure && read.opening.value === true)) return null;
-  if (!(read.forGo.sure && read.forGo.value === false) || plainlyNamesGo(msg, pack)) return null;
+  if (!isMoment(read)) return null;
+  if (!leftToPeople(read) || plainlyNamesGo(msg, pack)) return null;
   const tripId = pack.trip.trip_id;
   return {
     tripId,
@@ -48,7 +67,8 @@ export function chatOpening(msg: Message, read: ReflexRead, pack: TripPack, now:
     urgency: 0.9,
     useful: ['react', 'record', 'message'],
     personIds: [],
-    facts: { message_id: msg.message_id, seq: msg.seq },
+    // When it was said: a chime-in on a line this fresh skips the night raise (policy.ts repliesToSomeoneAwake).
+    facts: { message_id: msg.message_id, seq: msg.seq, said_at: msg.sent_at },
     simulated: false,
     small: false,
   };
@@ -154,7 +174,16 @@ export function createOpenings(d: OpeningsDeps) {
       const now = d.now();
       let ignored = 0;
       for (const row of await d.store.toCheckForIgnored(new Date(now.getTime() - IGNORED_AFTER_MS))) {
-        const pack = await d.packs.get(row.tripId);
+        let pack: TripPack;
+        try {
+          pack = await d.packs.get(row.tripId);
+        } catch (e) {
+          if (!(e instanceof TripGoneError)) throw e;
+          // The Server no longer has the trip: nobody is there to ignore it. Checked, so the next sweep starts past it
+          // (it came first every time and threw, and no trip after it was ever checked).
+          await d.store.ignoreChecked(row.tripId, row.dedupeKey, now);
+          continue;
+        }
         if (!wasEngaged(pack, row.decidedAt, IGNORED_AFTER_MS)) {
           await d.store.ignored(row.tripId, now);
           ignored += 1;

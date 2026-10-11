@@ -1,18 +1,27 @@
 import { describe, expect, it, vi } from 'vitest';
 import { V1Error } from '../../../tasks/v1-client.js';
 import { TravelError } from '../../mcp-travel.js';
-import { buses, readBusesPage } from '../buses.js';
-import { flights } from '../flights.js';
-import { stays, WIDE_FETCH_MS } from '../stays.js';
-import { trains } from '../trains.js';
-import {
-  AGENT_POLL_MS, AGENT_WAIT_MS, createAgentJobRunner, createBrowserFetchRunner, FETCH_TIMEOUT_MS, IN_USE_WAIT_MS, OUT_OF_CREDIT, recipeMessage, runnerFor,
-  type RecipeRunner,
-} from '../runners.js';
 import type { RecipeProgress } from '../progress.js';
+import type { FetchPlan } from '../recipe.js';
+import {
+  BASH_MAX_BYTES, BUSY_TRIES, CHALLENGE_TRIES, CHALLENGE_WAIT_MS, CHALLENGED, ChallengedError, challenged, challengeTime, createBrowserFetchRunner, DEFAULT_SLOTS, FAST_TIMEOUT_MS, FAST_UNSUPPORTED_MS, FETCH_TIMEOUT_MS, FRAME_WIDTH, HANDOFF_IN_USE_TRIES, IN_USE_PATIENCE_MS, IN_USE_WAIT_MS, LOOK_AFTER_MS, LOOK_UNSUPPORTED_MS, NEAR_UNSUPPORTED_MS, NearUnsupportedError, STAGE_MS, STAGE_TAB,
+  LOOK_SETTLE_MS, LOOK_TIMEOUT_MS, NothingCaughtError, OUT_OF_CREDIT, PAYMENT_PAGE_BLOCKED, PRIME_TIMEOUT_MS, SSE_UNSUPPORTED_MS, WARM_TAB_MS, type FetchTrace,
+  bashCaptures, OPTIONAL_GRACE_MS,
+  COOKIES_SHARE_MS,
+} from '../runners.js';
 import { capture, fixture } from './fixtures.js';
 
 type Call = { method: string; path: string; opts: Record<string, unknown> };
+
+/**
+ * Bash's own rule for a browser fetch (packages/shared/src/platform/browser.ts, BrowserFetchBody): at least one capture
+ * required, or a page_fetch step. The fake refuses what Bash refuses: a login plan of optional captures alone passed every
+ * test here and was 400 invalid_request on every hand-off on staging (9 Oct, 13:24).
+ */
+function bashTakes(body: unknown): boolean {
+  const b = (body ?? {}) as { capture?: Array<{ required?: boolean }>; steps?: Array<{ op?: string }> };
+  return (b.capture ?? []).some((c) => c.required !== false) || (b.steps ?? []).some((x) => x.op === 'page_fetch');
+}
 
 function world(handler: (c: Call, n: number) => unknown) {
   let nowMs = Date.parse('2026-11-01T10:00:00Z');
@@ -21,18 +30,25 @@ function world(handler: (c: Call, n: number) => unknown) {
     async call<T>(method: string, path: string, opts: Record<string, unknown> = {}): Promise<T> {
       const c = { method, path, opts };
       calls.push(c);
+      if (path.endsWith('/browser/fetch') && !bashTakes(opts['body'])) {
+        throw new V1Error(400, 'invalid_request', 'Mark at least one capture required, or call the page with a page_fetch step', null, { code: 'invalid_request' });
+      }
       return (await handler(c, calls.length)) as T;
     },
   };
-  const computer = { userIdFor: (t: string) => `u-${t}`, ensureUser: vi.fn(async (t: string) => `u2-${t}`) };
+  // The trip's browser (tasks/browsers.ts): its /v1 user, and the same made again when /v1 does not know it.
+  const browser = { userFor: async (t: string) => `u-${t}`, again: vi.fn(async (t: string) => `u2-${t}`) };
   const log = { warn: vi.fn() };
-  const deps = { v1, computer, log, now: () => new Date(nowMs), sleep: async (ms: number) => { nowMs += ms; } };
-  return { calls, computer, log, deps };
+  const deps = { v1, browser, log, now: () => new Date(nowMs), sleep: async (ms: number) => { nowMs += ms; } };
+  return { calls, browser, log, deps, elapsed: () => nowMs - Date.parse('2026-11-01T10:00:00Z') };
 }
 
-const busSlots = buses.slotsFrom({ from: 'Mumbai', to: 'Goa', date: '2026-11-06' }, { people: 4 });
+const BUSES = 'https://www.ixigo.com/buses/bus_search/Mumbai/4/Goa/102/06-11-2026/O';
+const busPlan: FetchPlan = { capture: [{ match: '/buslist/v3/services$', required: true }] };
 const busCapture = capture('/buslist/v3/services$', 'https://www.ixigo.com/buslist/v3/services', fixture('buses-mumbai-goa.json'));
-const fetched = (captures: unknown[]) => ({ final_url: 'https://www.ixigo.com/x', elapsed_ms: 2300, woke: false, captures });
+const fetched = (captures: unknown[], finalUrl = BUSES) => ({ final_url: finalUrl, elapsed_ms: 2300, woke: false, captures });
+/** The page's own document as every fetch keeps it (CLOUDFLARE): one byte, its status, never waited for. */
+const docOf = (match: string) => ({ match, required: false, max_bytes: 1, max_count: 4 });
 const fails = async (p: Promise<unknown>, code: TravelError['code'], words: RegExp): Promise<void> => {
   const err = await p.then(() => null, (e: unknown) => e);
   expect(err).toBeInstanceOf(TravelError);
@@ -40,57 +56,838 @@ const fails = async (p: Promise<unknown>, code: TravelError['code'], words: RegE
   expect((err as TravelError).message).toMatch(words);
 };
 
-describe('the browser fetch runner', () => {
-  it("asks for the pages and steps the recipe gives these slots: two pages of all of Goa for North Goa", async () => {
-    const SEARCH = '/accommodation-search/api/v3/accommodations/search$';
-    const url = 'https://www.ixigo.com/accommodation-search/api/v3/accommodations/search';
-    const w = world(() => fetched([capture(SEARCH, url, fixture('stays-goa-page1.json')), capture(SEARCH, url, fixture('stays-goa-page2.json'))]));
-    const north = stays.slotsFrom({ area: 'North Goa', checkIn: '2026-11-06', checkOut: '2026-11-09' }, { people: 4 });
-    const r = await createBrowserFetchRunner(w.deps).run('t1', stays, north);
-    expect(w.calls[0]!.opts.body).toMatchObject({
-      capture: [{ match: SEARCH, min_count: 2, max_count: 2 }],
-      steps: [{ op: 'wait_for', match: SEARCH }, { op: 'scroll', times: 3 }],
-      timeout_ms: WIDE_FETCH_MS,
+describe("the browser fetch: how the recipe engine reads a page in the trip's browser", () => {
+  // Staging, 10 Oct 10:14Z: trains.running_status and trains.schedule read nothing (caps []) on every ask. They read
+  // their page's own document, by the very match Go's own document capture takes (pageDoc), and Bash answers every
+  // matching capture under its match: taking Go's own out took the recipe's too. Bash is played as it answers here.
+  it("reads a page whose plan captures the page's own document: never a second capture of it, and the document kept", async () => {
+    const PAGE = 'https://www.ixigo.com/trains/12051/running-status';
+    const DOC = '/trains/12051/running-status$';
+    const html = '<html><head><title>12051 Train Running Status</title></head><body><table><tr><td>MAO</td></tr></table></body></html>';
+    const w = world((c) => {
+      const specs = ((c.opts['body'] as { capture: Array<{ match: string; max_bytes?: number }> }).capture).filter((x) => x.match === DOC);
+      return fetched(specs.map((x) => ({ ...capture(DOC, PAGE, html.slice(0, x.max_bytes ?? html.length)) })), PAGE);
     });
-    expect(r.options).toHaveLength(6);
+    const plan: FetchPlan = { capture: [{ match: DOC, required: true, max_bytes: 1_000_000 }] };
+    const read = await createBrowserFetchRunner(w.deps).read('t1', PAGE, plan);
+    const sent = (w.calls[0]!.opts['body'] as { capture: Array<{ match: string }> }).capture;
+    expect(sent.filter((x) => x.match === DOC)).toHaveLength(1);
+    expect(read.captures).toHaveLength(1);
+    expect(read.captures[0]).toMatchObject({ match: DOC, status: 200, body: html });
+    // A plan of the page's calls still gets Go's own one-byte capture of the document, taken out of what it reads.
+    const calls = world(() => fetched([busCapture, { ...capture('/buses/bus_search/Mumbai/4/Goa/102/06-11-2026/O$', BUSES, '<'), max_bytes: 1 }]));
+    const bus = await createBrowserFetchRunner(calls.deps).read('t1', BUSES, busPlan);
+    expect((calls.calls[0]!.opts['body'] as { capture: unknown[] }).capture).toContainEqual(docOf('/buses/bus_search/Mumbai/4/Goa/102/06-11-2026/O$'));
+    expect(bus.captures.map((c) => c.match)).toEqual(['/buslist/v3/services$']);
   });
 
-  it('answers a two-page fetch whose page 2 never came with page 1, and shows the pictures it took (re-drill 6)', async () => {
+  it("opens the page with the plan's captures, steps and pictures, and answers its calls and where the page ended", async () => {
     const SEARCH = '/accommodation-search/api/v3/accommodations/search$';
     const url = 'https://www.ixigo.com/accommodation-search/api/v3/accommodations/search';
-    const frame = { label: 'results', at_ms: 6100, page_url: 'https://www.ixigo.com/hotels/search/result?locationId=32', jpeg_base64: '/9j/4AAQ' };
-    const w = world(() => {
-      throw new V1Error(504, 'timeout', 'The fetch timed out.', null, {
-        code: 'timeout',
-        partial: { final_url: 'x', elapsed_ms: 12_000, woke: true, captures: [capture(SEARCH, url, fixture('stays-goa-page1.json'))], frames: [frame, { label: 'broken' }] },
-      });
-    });
-    const north = stays.slotsFrom({ area: 'North Goa', checkIn: '2026-11-06', checkOut: '2026-11-09' }, { people: 4 });
-    const seen: RecipeProgress[] = [];
-    const r = await createBrowserFetchRunner(w.deps).run('t1', stays, north, { onProgress: (e) => seen.push(e) });
-    expect(r.options.map((o) => o.title)).toEqual(['Meritas Auberge Calangute Goa', 'De Mandarin Hotel']);
-    expect(seen.map((e) => e.type)).toEqual(['opening', 'frames', 'captured']);
-    expect(seen[1]).toEqual({ type: 'frames', frames: [frame] });
-  });
-
-  it("opens the page in the trip's browser with the recipe's captures, and reads the options from what came back", async () => {
-    const w = world(() => fetched([busCapture]));
-    const r = await createBrowserFetchRunner(w.deps).run('t1', buses, busSlots);
+    const page = 'https://www.ixigo.com/hotels/search/result?locationId=32';
+    const w = world(() => fetched([capture(SEARCH, url, fixture('stays-goa-page1.json'))], page));
+    const plan: FetchPlan = {
+      capture: [{ match: SEARCH, required: true, min_count: 2, max_count: 2, max_bytes: 2_000_000 }],
+      steps: [{ op: 'wait_for', match: SEARCH }, { op: 'click', name: 'Close modal', optional: true }, { op: 'scroll', times: 3 }],
+      timeoutMs: 12_000,
+      settleMs: 550,
+    };
+    const read = await createBrowserFetchRunner(w.deps).read('t1', page, plan);
     expect(w.calls).toEqual([{
       method: 'POST',
       path: '/v1/users/u-t1/browser/fetch',
-      opts: { body: { url: 'https://www.ixigo.com/buses/bus_search/Mumbai/4/Goa/102/06-11-2026/O', capture: [{ match: '/buslist/v3/services$' }], timeout_ms: FETCH_TIMEOUT_MS, frames: {} } },
+      opts: {
+        body: {
+          url: page,
+          // Go's own required flag is never sent: Go decides what a timed-out fetch can still answer.
+          capture: [{ match: SEARCH, max_bytes: 2_000_000, min_count: 2, max_count: 2 }, docOf('/hotels/search/result$')],
+          steps: plan.steps,
+          timeout_ms: 12_000,
+          // Bash's last picture once the hotels have drawn (#4585).
+          // Pictures as wide as the fetch's window, so the try room never stretches one.
+          frames: { width: FRAME_WIDTH, settle_ms: 550 },
+        },
+      },
     }]);
-    expect(r.options).toHaveLength(71);
-    expect(r).toMatchObject({ checkedAt: '2026-11-01T10:00:00.000Z', ms: 0 });
-    // Bash's most, for a sleeping box; it answers as soon as the captures are in.
+    expect(read.captures).toHaveLength(1);
+    expect(read.finalUrl).toBe(page);
+    // Bash's most, for a sleeping box; it answers as soon as the captures are in. No settle: no settle_ms.
     expect(FETCH_TIMEOUT_MS).toBe(20_000);
+    const plain = world(() => fetched([busCapture]));
+    await createBrowserFetchRunner(plain.deps).read('t1', BUSES, busPlan);
+    expect(plain.calls[0]!.opts['body']).toEqual({
+      url: BUSES, capture: [{ match: '/buslist/v3/services$' }, docOf('/buses/bus_search/Mumbai/4/Goa/102/06-11-2026/O$')], timeout_ms: FETCH_TIMEOUT_MS, frames: { width: FRAME_WIDTH },
+    });
   });
 
-  it("sends a capture's size limit, and never Go's own required flag", async () => {
-    const w = world(() => fetched([]));
-    await createBrowserFetchRunner(w.deps).run('t1', flights, flights.slotsFrom({ from: 'DEL', to: 'GOI', date: '2026-11-06' }, { people: 4 })).catch(() => undefined);
-    expect((w.calls[0]!.opts['body'] as { capture: unknown }).capture).toEqual([{ match: '/flights/v2/search/stream', max_bytes: 2_000_000 }]);
+  it("a plan with a grace tells Bash which captures it needs, on a page read and in a hand-off: the rest get the grace", async () => {
+    const WALLET = '/api/v3/ixigo-money/wallet';
+    const plan: FetchPlan = {
+      capture: [
+        { match: '/api/flights/locations/nearby', required: true, max_bytes: 1 },
+        { match: WALLET, required: false, max_bytes: 1 }, { match: '/api/v2/oauth/userinfo', required: false, max_bytes: 1 },
+      ],
+      steps: [],
+      timeoutMs: 12_000,
+      graceMs: 3_000,
+    };
+    const w = world(() => fetched([capture(WALLET, `https://www.ixigo.com${WALLET}`, '{', 200)], 'https://www.ixigo.com/'));
+    const runner = createBrowserFetchRunner(w.deps);
+    await runner.read('t1', 'https://www.ixigo.com/', plan);
+    await runner.handOff!('t1', 'https://www.ixigo.com/', plan, { keepOpenMs: 600_000, tab: 'ixigo_login' });
+    const sent = [
+      { match: '/api/flights/locations/nearby', required: true, max_bytes: 1 },
+      { match: WALLET, required: false, max_bytes: 1 }, { match: '/api/v2/oauth/userinfo', required: false, max_bytes: 1 }, docOf('/$'),
+    ];
+    expect(w.calls.map((c) => c.opts['body'])).toEqual([
+      { url: 'https://www.ixigo.com/', capture: sent, steps: plan.steps, timeout_ms: 12_000, grace_ms: 3_000, frames: { width: FRAME_WIDTH } },
+      { url: 'https://www.ixigo.com/', capture: sent, timeout_ms: 12_000, grace_ms: 3_000, front: true, keep_open_ms: 600_000, tab: 'ixigo_login' },
+    ]);
+  });
+
+  // The lead, 10 Oct: the trip account's own pages (My Trips, the help centre's bookings) list its person's other trips. Such
+  // a read is private: a tab Bash's browser watch never shows, stage or not, and no picture of it. A Bash that predates
+  // private refuses it, and the read fails rather than run where the room could see it.
+  it('reads an account page private, with no pictures; a Bash that predates private gets no read at all', async () => {
+    const BOOKINGS = '/support/helpcenter/api/v1/booking$';
+    const page = 'https://www.ixigo.com/support';
+    const w = world(() => fetched([capture(BOOKINGS, 'https://www.ixigo.com/support/helpcenter/api/v1/booking', '{"data":[]}')], page));
+    await createBrowserFetchRunner(w.deps).read('t1', page, { capture: [{ match: BOOKINGS, required: true }] }, { private: true, tag: 'run_1' });
+    const body = w.calls[0]!.opts['body'] as Record<string, unknown>;
+    expect(body).toMatchObject({ url: page, private: true, tag: 'run_1' });
+    expect(body).not.toHaveProperty('frames');
+    expect(body).not.toHaveProperty('stage');
+    expect(body).not.toHaveProperty('keep_open_ms');
+    // An older Bash: its 400 names no param (an unknown key at the body's top). Never asked again without private.
+    const older = world(() => {
+      throw new V1Error(400, 'invalid_request', 'Invalid input', null, { code: 'invalid_request' });
+    });
+    await fails(createBrowserFetchRunner(older.deps).read('t1', page, { capture: [{ match: BOOKINGS, required: true }] }, { private: true }), 'refused', /nobody else can see it/);
+    expect(older.calls).toHaveLength(1);
+  });
+
+  // Exam, 10 Oct: the top pick's click looked for its card on a stage whose last read had run out of time, for the
+  // fetch's whole 20 s (504), before its page opened by its address.
+  it('says the stage shows its results only after a stage read that answered, until steps move it on, a read fails, or STAGE_MS', async () => {
+    let broken = false;
+    const w = world(() => {
+      if (broken) throw new Error('the box went away');
+      return fetched([busCapture]);
+    });
+    const runner = createBrowserFetchRunner(w.deps);
+    expect(runner.stageReady!('t1')).toBe(false);
+    await runner.read('t1', BUSES, busPlan, { stage: true });
+    expect(runner.stageReady!('t1')).toBe(true);
+    // A read off the stage changes nothing; another trip's stage is its own.
+    await runner.read('t1', BUSES, busPlan);
+    expect(runner.stageReady!('t1')).toBe(true);
+    expect(runner.stageReady!('t2')).toBe(false);
+    // Steps on the stage move it on.
+    await runner.onStage!('t1', { ...busPlan, steps: [{ op: 'click', text: 'VRL Travels' }] });
+    expect(runner.stageReady!('t1')).toBe(false);
+    await runner.read('t1', BUSES, busPlan, { stage: true });
+    broken = true;
+    await runner.read('t1', BUSES, busPlan, { stage: true }).catch(() => undefined);
+    expect(runner.stageReady!('t1')).toBe(false);
+    broken = false;
+    await runner.read('t1', BUSES, busPlan, { stage: true });
+    await w.deps.sleep(STAGE_MS);
+    expect(runner.stageReady!('t1')).toBe(false);
+  });
+
+  // The App team's room, 11 Oct: three asks close together each opened its page in the one stage tab, so the next one's
+  // page replaced the running one's, and that card ended Stopped.
+  it("runs a trip's stage one page at a time: the next read or steps wait their turn, say so, and never cut the running one", async () => {
+    let release!: () => void;
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const w = world(async (_c, n) => {
+      if (n === 1) await held;
+      return fetched([busCapture]);
+    });
+    const runner = createBrowserFetchRunner(w.deps);
+    const said: Array<RecipeProgress['type']> = [];
+    const first = runner.read('t1', BUSES, busPlan, { stage: true });
+    const next = runner.read('t1', `${BUSES}?next`, busPlan, { stage: true, onProgress: (e) => said.push(e.type) });
+    const steps = runner.onStage!('t1', { ...busPlan, steps: [{ op: 'click', text: 'VRL Travels' }] });
+    // Another trip's stage, and a read off the stage, don't wait.
+    await runner.read('t2', BUSES, busPlan, { stage: true });
+    await runner.read('t1', BUSES, busPlan);
+    for (let i = 0; i < 5; i++) await new Promise((resolve) => setImmediate(resolve));
+    expect(w.calls).toHaveLength(3);
+    expect(said).toEqual(['queued']);
+    release();
+    await Promise.all([first, next, steps]);
+    // In the order they came, each after the one before it ended: the first's page was never replaced.
+    const sent = w.calls.map((c) => (c.opts['body'] as { url?: string; steps?: unknown[] }));
+    expect(sent.slice(3).map((b) => b.url ?? 'steps')).toEqual([`${BUSES}?next`, 'steps']);
+    expect(said).toEqual(['queued', 'turn']);
+  });
+
+  it('lets a read that waits for the stage go when its signal aborts, asking Bash nothing; the one after still waits its turn', async () => {
+    let release!: () => void;
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const w = world(async (_c, n) => {
+      if (n === 1) await held;
+      return fetched([busCapture]);
+    });
+    const runner = createBrowserFetchRunner(w.deps);
+    const first = runner.read('t1', BUSES, busPlan, { stage: true });
+    const ctl = new AbortController();
+    const gone = runner.read('t1', BUSES, busPlan, { stage: true, signal: ctl.signal });
+    const after = runner.read('t1', BUSES, busPlan, { stage: true });
+    ctl.abort(new Error('out of time'));
+    await expect(gone).rejects.toThrow('out of time');
+    for (let i = 0; i < 5; i++) await new Promise((resolve) => setImmediate(resolve));
+    expect(w.calls).toHaveLength(1);
+    release();
+    await Promise.all([first, after]);
+    expect(w.calls).toHaveLength(2);
+  });
+
+  // A bus card's own "Select Seats" (buses.stops) is clicked by its operator and time (near_text, bash #4637). A Bash
+  // before it refuses the fetch before opening anything; Go never sends it as a plain click (the first card's), says so
+  // (NearUnsupportedError), and sends none for a while, on a page or on the stage.
+  it("never sends a click that picks one card's button as a plain one: a Bash that refuses it is asked again only after a while", async () => {
+    const LAYOUT = '/wap/GetSeatLayout$';
+    const page = 'https://www.ixigo.com/buses/bus_search/Bengaluru/7/Goa/102/06-11-2026/O';
+    const plan: FetchPlan = {
+      capture: [{ match: LAYOUT, required: true }],
+      steps: [{ op: 'wait_for', match: '/buslist/v3/services$' }, { op: 'click', role: 'button', name: 'Select Seats', near_text: ['VRL Travels', '19:30'] }, { op: 'wait_for', match: LAYOUT }],
+    };
+    const older = world(() => {
+      throw new V1Error(400, 'invalid_request', 'Invalid input', null, { code: 'invalid_request', param: 'steps.1.near_text' });
+    });
+    const runner = createBrowserFetchRunner(older.deps);
+    expect(runner.canPickOne!()).toBe(true);
+    await expect(runner.read('t1', page, plan)).rejects.toBeInstanceOf(NearUnsupportedError);
+    expect(older.calls).toHaveLength(1);
+    expect(runner.canPickOne!()).toBe(false);
+    // For a while: refused before anything is sent, on a page or on the stage.
+    await expect(runner.read('t1', page, plan)).rejects.toBeInstanceOf(NearUnsupportedError);
+    await expect(runner.onStage!('t1', { ...plan, steps: plan.steps!.slice(1) })).rejects.toBeInstanceOf(NearUnsupportedError);
+    expect(older.calls).toHaveLength(1);
+    // A fetch with no such click still goes.
+    await runner.read('t1', page, { capture: plan.capture, steps: [] }).catch(() => undefined);
+    expect(older.calls).toHaveLength(2);
+    // Past NEAR_UNSUPPORTED_MS it is asked again, in case Bash has it now.
+    await older.deps.sleep(NEAR_UNSUPPORTED_MS);
+    expect(runner.canPickOne!()).toBe(true);
+    await runner.read('t1', page, plan).catch(() => undefined);
+    expect(older.calls).toHaveLength(3);
+    // On the stage, the same refusal says the same.
+    const stage = createBrowserFetchRunner(world(() => {
+      throw new V1Error(400, 'invalid_request', 'Invalid input', null, { code: 'invalid_request', param: 'steps.0' });
+    }).deps);
+    await expect(stage.onStage!('t1', { ...plan, steps: plan.steps!.slice(1) })).rejects.toBeInstanceOf(NearUnsupportedError);
+    expect(stage.canPickOne!()).toBe(false);
+  });
+
+  // ixigo's hotel popup shows 1 s after the page mounts, so the recipe's first click looks for it up to 3 s (Bash's
+  // within_ms). A Bash from before within_ms takes no unknown field in a step: its 400 names the step (param), and Go
+  // asks the same fetch again with that click looking once, as it did before, and sends none for a while.
+  it('sends an optional click its within_ms; a Bash that refuses it gets the same fetch with the click looking once, for a while', async () => {
+    const SEARCH = '/accommodation-search/api/v3/accommodations/search$';
+    const url = 'https://www.ixigo.com/accommodation-search/api/v3/accommodations/search';
+    const page = 'https://www.ixigo.com/hotels/search/result?locationId=1026';
+    const plan: FetchPlan = {
+      capture: [{ match: SEARCH, required: true }],
+      steps: [{ op: 'click', name: 'Close modal', optional: true, within_ms: 3_000 }, { op: 'wait_for', match: SEARCH }, { op: 'click', name: 'Close modal', optional: true }],
+    };
+    const once = [{ op: 'click', name: 'Close modal', optional: true }, { op: 'wait_for', match: SEARCH }, { op: 'click', name: 'Close modal', optional: true }];
+    const answer = fetched([capture(SEARCH, url, fixture('stays-goa-page1.json'))], page);
+    const stepsSent = (w: ReturnType<typeof world>) => w.calls.map((c) => (c.opts['body'] as { steps: unknown }).steps);
+    // A Bash that takes it.
+    const today = world(() => answer);
+    await createBrowserFetchRunner(today.deps).read('t1', page, plan);
+    expect(stepsSent(today)).toEqual([plan.steps]);
+    // One that predates it: refused before anything opens, then the same fetch with one look.
+    const older = world((c) => {
+      const steps = (c.opts['body'] as { steps: Array<Record<string, unknown>> }).steps;
+      if (steps.some((x) => 'within_ms' in x)) throw new V1Error(400, 'invalid_request', 'Invalid input', null, { code: 'invalid_request', param: 'steps.0' });
+      return answer;
+    });
+    const runner = createBrowserFetchRunner(older.deps);
+    expect((await runner.read('t1', page, plan)).captures).toHaveLength(1);
+    expect(stepsSent(older)).toEqual([plan.steps, once]);
+    expect(older.log.warn).toHaveBeenCalledOnce();
+    // For a while after, none is sent: one fetch each. Past LOOK_UNSUPPORTED_MS it is asked again, in case Bash has it now.
+    await runner.read('t1', page, plan);
+    expect(stepsSent(older)).toEqual([plan.steps, once, once]);
+    await older.deps.sleep(LOOK_UNSUPPORTED_MS);
+    await runner.read('t1', page, plan);
+    expect(stepsSent(older)).toEqual([plan.steps, once, once, plan.steps, once]);
+    // A 400 that names another step is not this one: never asked again.
+    const other = world(() => {
+      throw new V1Error(400, 'invalid_request', 'Invalid input', null, { code: 'invalid_request', param: 'steps.1' });
+    });
+    await createBrowserFetchRunner(other.deps).read('t1', page, plan).catch(() => undefined);
+    expect(other.calls).toHaveLength(1);
+  });
+
+  // ixigo's flights stream is growing snapshots, the whole list last, and on a long route that last event alone is past
+  // Bash's 1 MB (Delhi to Dubai, 10 Oct: 613 flights, 2.1 MB in three events). The capture asks Bash for it alone (sse
+  // "last", up to 4 MB). A Bash from before sse takes no unknown field in a capture: its 400 names the capture (param), and
+  // Go asks the same fetch again for the whole stream, cut at Bash's most, and sends none for a while.
+  it('sends a capture its sse "last" and its 4 MB; a Bash that refuses it gets the whole stream at 1 MB, for a while', async () => {
+    const STREAM = '/flights/v2/search/stream';
+    const page = 'https://www.ixigo.com/search/result/flight?from=DEL&to=DXB&date=13112026';
+    const plan: FetchPlan = { capture: [{ match: STREAM, required: true, max_bytes: 4_194_304, sse: 'last' }] };
+    const answer = fetched([capture(STREAM, `https://www.ixigo.com${STREAM}`, 'data:{"data":{}}\n\n')], page);
+    const asked = (w: ReturnType<typeof world>) => w.calls.map((c) => (c.opts['body'] as { capture: unknown[] }).capture[0]);
+    const last = { match: STREAM, max_bytes: 4_194_304, sse: 'last' };
+    const whole = { match: STREAM, max_bytes: BASH_MAX_BYTES };
+    // A Bash that takes it.
+    const today = world(() => answer);
+    await createBrowserFetchRunner(today.deps).read('t1', page, plan);
+    expect(asked(today)).toEqual([last]);
+    // One that predates it: refused before anything opens, then the same fetch for the whole stream.
+    const older = world((c) => {
+      const caps = (c.opts['body'] as { capture: Array<Record<string, unknown>> }).capture;
+      if (caps.some((x) => 'sse' in x)) throw new V1Error(400, 'invalid_request', 'Invalid input', null, { code: 'invalid_request', param: 'capture.0' });
+      return answer;
+    });
+    const runner = createBrowserFetchRunner(older.deps);
+    expect((await runner.read('t1', page, plan)).captures).toHaveLength(1);
+    expect(asked(older)).toEqual([last, whole]);
+    expect(older.log.warn).toHaveBeenCalledOnce();
+    // For a while after, none is sent: one fetch each. Past SSE_UNSUPPORTED_MS it is asked again, in case Bash has it now.
+    await runner.read('t1', page, plan);
+    expect(asked(older)).toEqual([last, whole, whole]);
+    await older.deps.sleep(SSE_UNSUPPORTED_MS);
+    await runner.read('t1', page, plan);
+    expect(asked(older)).toEqual([last, whole, whole, last, whole]);
+    // A 400 that names another capture (the page's own document, second) is not this one: never asked again.
+    const other = world(() => {
+      throw new V1Error(400, 'invalid_request', 'Invalid input', null, { code: 'invalid_request', param: 'capture.1' });
+    });
+    await createBrowserFetchRunner(other.deps).read('t1', page, plan).catch(() => undefined);
+    expect(other.calls).toHaveLength(1);
+  });
+
+  // CLOUDFLARE: ixigo's "Just a moment..." check (about 1 in 7 front loads on a staging box, 8 Oct) answers the page's
+  // own document 403 and the page makes none of its calls, so the fetch runs out of time with only that.
+  const BUS_DOC = '/buses/bus_search/Mumbai/4/Goa/102/06-11-2026/O$';
+  const docAt = (status: number, at_ms: number) => ({ ...capture(BUS_DOC, BUSES, '<', status), at_ms });
+  const onCheck = (captures: unknown[]) => new V1Error(504, 'timeout', 'The page did not send every capture within 20000 ms (it stopped at captures).', null, {
+    code: 'timeout', partial: { captures, frames: [{ label: 'navigated', at_ms: 900, page_url: BUSES, jpeg_base64: '/9j/CHECK' }] },
+  });
+
+  it("opens a page on Cloudflare's check again after a wait, and reads it once it is the page: the check is never read, nor pictured", async () => {
+    const w = world((_, n) => {
+      if (n === 1) throw onCheck([docAt(403, 300)]);
+      // The second load met the check too, and it passed in the page: the page loaded again, and answered.
+      return fetched([docAt(403, 300), docAt(200, 2_100), busCapture]);
+    });
+    const seen: RecipeProgress[] = [];
+    const read = await createBrowserFetchRunner(w.deps).read('t1', BUSES, busPlan, { onProgress: (e) => seen.push(e) });
+    expect(read.captures).toEqual([busCapture]);
+    expect(w.calls).toHaveLength(2);
+    expect(w.elapsed()).toBe(CHALLENGE_WAIT_MS);
+    expect(seen).toEqual([]);
+    expect(w.log.warn).toHaveBeenCalledWith(expect.objectContaining({ again: 1 }), "travel: ixigo's page was Cloudflare's check; opening it again");
+  });
+
+  it("waits out ixigo's own \"too many requests\" on the page the same way (staging, 9 Oct: 429 on the morning computer's hotels page, no call for 20 s)", async () => {
+    const w = world((_, n) => {
+      if (n === 1) throw onCheck([docAt(429, 370)]);
+      return fetched([docAt(200, 900), busCapture]);
+    });
+    const read = await createBrowserFetchRunner(w.deps).read('t1', BUSES, busPlan);
+    expect(read.captures).toEqual([busCapture]);
+    expect(w.calls).toHaveLength(2);
+    expect(w.elapsed()).toBe(CHALLENGE_WAIT_MS);
+    expect(challenged([docAt(429, 370)], BUSES)).toBe(true);
+  });
+
+  // Staging, 10 Oct: hotels.details p50 23.7 s, trains.between and the plain offers read about 20 s. A recipe's
+  // `required: false` went to Bash only with a grace, so Bash waited for the optional call to FETCH_TIMEOUT_MS.
+  describe('an optional capture', () => {
+    const AVAIL = '/api/v3/trains/availability';
+    const plan: FetchPlan = { capture: [{ match: '/trains/v1/search/between/', required: true }, { match: AVAIL, required: false, max_count: 6 }] };
+    const sent = [{ match: '/trains/v1/search/between/', required: true }, { match: AVAIL, required: false, max_count: 6 }];
+
+    it('is asked for as not required, with a short grace, on a page read, the stage and a hand-off alike', async () => {
+      const w = world(() => fetched([busCapture]));
+      const runner = createBrowserFetchRunner(w.deps);
+      await runner.read('t1', BUSES, plan);
+      await runner.onStage!('t1', plan);
+      await runner.handOff!('t1', BUSES, plan, { keepOpenMs: 600_000, tab: 'ixigo_login' });
+      const bodies = w.calls.map((c) => c.opts['body'] as { capture?: unknown[]; grace_ms?: number; timeout_ms: number }).filter((b) => b?.capture);
+      expect(bodies).toHaveLength(3);
+      for (const b of bodies) {
+        expect(b.grace_ms).toBe(OPTIONAL_GRACE_MS);
+        expect(b.capture!.slice(0, 2)).toEqual(sent);
+        expect(b.timeout_ms).toBe(FETCH_TIMEOUT_MS);
+      }
+      expect(OPTIONAL_GRACE_MS).toBeLessThanOrEqual(3_000);
+    });
+
+    it("keeps a plan's own grace, and leaves a plan with nothing optional as it was", () => {
+      expect(bashCaptures({ ...plan, graceMs: 3_000 }).grace_ms).toBe(3_000);
+      expect(bashCaptures(busPlan)).toEqual({ capture: [{ match: '/buslist/v3/services$' }] });
+    });
+
+    it('never makes every capture optional: Bash refuses a fetch with none required', () => {
+      const allOptional = bashCaptures({ capture: [{ match: AVAIL, required: false }] });
+      expect(allOptional).toEqual({ capture: [{ match: AVAIL }] });
+      // A capture never waited for (besides) is no reason for a grace.
+      expect(bashCaptures({ capture: [...busPlan.capture, { match: AVAIL, required: false, besides: true }] }).grace_ms).toBeUndefined();
+    });
+  });
+
+  it("asks for a capture it never waits for (besides: a site's list of what it offers) as not required, grace or none", async () => {
+    const w = world(() => fetched([busCapture]));
+    const META = '/accommodation-search/api/v2/accommodations/search/metadata$';
+    await createBrowserFetchRunner(w.deps).read('t1', BUSES, { capture: [...busPlan.capture, { match: META, required: false, besides: true, max_bytes: 300_000 }] });
+    const sent = (w.calls[0]!.opts['body'] as { capture: unknown[] }).capture;
+    expect(sent).toEqual([{ match: '/buslist/v3/services$' }, { match: META, required: false, max_bytes: 300_000 }, docOf(BUS_DOC)]);
+  });
+
+  it(`a page still on the check after ${CHALLENGE_TRIES} more loads fails saying so, and is never the cold computer's retry`, async () => {
+    const w = world(() => {
+      throw onCheck([docAt(403, 300)]);
+    });
+    const err = await createBrowserFetchRunner(w.deps).read('t1', BUSES, busPlan).then(() => null, (e: unknown) => e);
+    expect(err).toBeInstanceOf(ChallengedError);
+    expect(err).toMatchObject({ code: 'unreachable', message: CHALLENGED });
+    expect(w.calls).toHaveLength(1 + CHALLENGE_TRIES);
+    // An answer that ends on the check is one too, and a page whose time is up for its caller is not loaded again.
+    const ended = new AbortController();
+    const fast = world(() => {
+      ended.abort();
+      return fetched([docAt(503, 300)]);
+    });
+    await expect(createBrowserFetchRunner(fast.deps).read('t1', BUSES, busPlan, { signal: ended.signal })).rejects.toBeInstanceOf(ChallengedError);
+    expect(fast.calls).toHaveLength(1);
+    // A cold computer's page that caught only its document, 200, is the cold retry as before: no check, no wait.
+    const cold = world((_, n) => {
+      if (n === 1) throw onCheck([docAt(200, 300)]);
+      return fetched([busCapture]);
+    });
+    expect((await createBrowserFetchRunner(cold.deps).read('t1', BUSES, busPlan)).captures).toEqual([busCapture]);
+    expect(cold.elapsed()).toBe(0);
+  });
+
+  // Staging, 10 Oct 05:02Z: ixigo's flight status page answered 200 and showed Cloudflare's Turnstile; its calls never came.
+  it("reads a timed-out page that showed Cloudflare's Turnstile (its document 200) as the check: opened again, never read", async () => {
+    const turnstile = (captures: unknown[]) => new V1Error(504, 'timeout', 'The page did not send every capture.', null, { code: 'timeout', partial: { captures, challenge: 'turnstile' } });
+    const passes = world((_, n) => {
+      if (n === 1) throw turnstile([docAt(200, 300)]);
+      return fetched([busCapture]);
+    });
+    expect((await createBrowserFetchRunner(passes.deps).read('t1', BUSES, busPlan)).captures).toEqual([busCapture]);
+    expect(passes.calls).toHaveLength(2);
+    // Still on it when no load fits: the caller hears the check, as for a 403.
+    const stays = world(() => { throw turnstile([docAt(200, 300)]); });
+    await expect(createBrowserFetchRunner(stays.deps).read('t1', BUSES, busPlan)).rejects.toBeInstanceOf(ChallengedError);
+    // A hand-off's page on it: loaded again, never left in front for the person.
+    const HOME = 'https://www.ixigo.com/';
+    const plan: FetchPlan = { capture: [{ match: '/action/content', required: true, max_bytes: 1 }], timeoutMs: 12_000, graceMs: 3_000 };
+    const front = world(() => { throw turnstile([{ ...capture('/$', HOME, '<', 200), at_ms: 300 }]); });
+    expect(await createBrowserFetchRunner(front.deps).handOff!('t1', HOME, plan, { keepOpenMs: 600_000, tab: 'ixigo_login' })).toEqual({ captures: [], challenged: true });
+    // A plain timeout, with no check, is not one.
+    const plain = world(() => { throw new V1Error(504, 'timeout', 'The page did not send every capture.', null, { code: 'timeout', partial: { captures: [docAt(200, 300)] } }); });
+    await expect(createBrowserFetchRunner(plain.deps).read('t1', BUSES, busPlan)).rejects.not.toBeInstanceOf(ChallengedError);
+  });
+
+  // Staging, 10 Oct: a login made on ixigo's phone page (its client iximweb) was gone within the hour of the desktop
+  // pages Go reads (ixiweb). A desktop hand-off asks Bash for the site's desktop page (front_device).
+  it("asks for the site's desktop page on a desktop hand-off; a Bash that refuses front_device gets the phone page, and none asked a while", async () => {
+    const HOME = 'https://www.ixigo.com/';
+    const plan: FetchPlan = { capture: [{ match: '/action/content', required: true, max_bytes: 1 }], timeoutMs: 12_000, graceMs: 3_000 };
+    const bodies: Array<Record<string, unknown>> = [];
+    const older = world((c) => {
+      const body = c.opts['body'] as Record<string, unknown>;
+      bodies.push(body);
+      // As an older Bash refuses it: an unknown key at the body's top, so no param at all.
+      if ('front_device' in body) throw new V1Error(400, 'invalid_request', 'Unrecognized key: "front_device"', null, { code: 'invalid_request' });
+      return fetched([], HOME);
+    });
+    const runner = createBrowserFetchRunner(older.deps);
+    expect(await runner.handOff!('t1', HOME, plan, { keepOpenMs: 600_000, tab: 'ixigo_login', device: 'desktop' })).toMatchObject({ device: 'phone' });
+    expect(bodies.map((b) => b['front_device'] ?? 'phone')).toEqual(['desktop', 'phone']);
+    // Remembered: the next hand-off asks for the phone page at once.
+    await runner.handOff!('t1', HOME, plan, { keepOpenMs: 600_000, tab: 'ixigo_login', device: 'desktop' });
+    expect(bodies.slice(2).map((b) => b['front_device'] ?? 'phone')).toEqual(['phone']);
+    // A Bash that takes it: the desktop page, and the answer says so; a hand-off not asking for it never sends it.
+    const current = world(() => fetched([], HOME));
+    const now = createBrowserFetchRunner(current.deps);
+    expect(await now.handOff!('t1', HOME, plan, { keepOpenMs: 600_000, tab: 'ixigo_login', device: 'desktop' })).toMatchObject({ device: 'desktop' });
+    expect((current.calls[0]!.opts['body'] as Record<string, unknown>)['front_device']).toBe('desktop');
+    await now.handOff!('t1', HOME, plan, { keepOpenMs: 600_000, tab: 'other' });
+    expect(current.calls[1]!.opts['body']).not.toHaveProperty('front_device');
+  });
+
+  it("never hands a page on the check to the person: a hand-off loads it again, and says challenged when it stays", async () => {
+    const HOME = 'https://www.ixigo.com/';
+    const homeDoc = (status: number) => ({ ...capture('/$', HOME, '<', status), at_ms: 300 });
+    const WALLET = capture('/api/v3/ixigo-money/wallet', `${HOME}api/v3/ixigo-money/wallet`, '{', 200);
+    const plan: FetchPlan = {
+      capture: [{ match: '/api/flights/locations/nearby', required: true, max_bytes: 1 }, { match: '/api/v3/ixigo-money/wallet', required: false, max_bytes: 1 }], timeoutMs: 12_000, graceMs: 3_000,
+    };
+    const passes = world((_, n) => {
+      if (n < 3) throw new V1Error(504, 'timeout', 'The page did not send every capture.', null, { partial: { captures: [homeDoc(403)] } });
+      return fetched([homeDoc(200), WALLET], HOME);
+    });
+    expect(await createBrowserFetchRunner(passes.deps).handOff!('t1', HOME, plan, { keepOpenMs: 600_000, tab: 'ixigo_login' })).toEqual({ captures: [WALLET] });
+    expect(passes.calls).toHaveLength(3);
+    expect(passes.elapsed()).toBe(2 * CHALLENGE_WAIT_MS);
+    const stays = world(() => fetched([homeDoc(403)], HOME));
+    expect(await createBrowserFetchRunner(stays.deps).handOff!('t1', HOME, plan, { keepOpenMs: 600_000, tab: 'ixigo_login' })).toEqual({ captures: [], challenged: true });
+    expect(stays.calls).toHaveLength(1 + CHALLENGE_TRIES);
+  });
+
+  // Staging, 9 Oct 18:52:23: "I'm logged in", tapped right after the code was typed on Watch, met Bash's 4 s window for
+  // a person driving (409 browser_in_use), and the login read unknown.
+  it("a hand-off's page waits out a person still typing on Watch, a few times, and the check goes on", async () => {
+    const HOME = 'https://www.ixigo.com/';
+    const homeDoc = (status: number) => ({ ...capture('/$', HOME, '<', status), at_ms: 300 });
+    const WALLET = capture('/api/v3/ixigo-money/wallet', `${HOME}api/v3/ixigo-money/wallet`, '{', 200);
+    const plan: FetchPlan = { capture: [{ match: '/api/flights/locations/nearby', required: true, max_bytes: 1 }], timeoutMs: 12_000 };
+    const typing = world((_, n) => {
+      if (n <= 2) throw new V1Error(409, 'browser_in_use', 'A person is using the browser.');
+      return fetched([homeDoc(200), WALLET], HOME);
+    });
+    expect(await createBrowserFetchRunner(typing.deps).handOff!('t1', HOME, plan, { keepOpenMs: 600_000, tab: 'ixigo_login' })).toEqual({ captures: [WALLET] });
+    expect(typing.elapsed()).toBe(2 * IN_USE_WAIT_MS);
+    const still = world(() => {
+      throw new V1Error(409, 'browser_in_use', 'A person is using the browser.');
+    });
+    await expect(createBrowserFetchRunner(still.deps).handOff!('t1', HOME, plan, { keepOpenMs: 600_000, tab: 'ixigo_login' })).rejects.toMatchObject({ code: 'unreachable' });
+    expect(still.calls).toHaveLength(1 + HANDOFF_IN_USE_TRIES);
+  });
+
+  it("reads only the page's own address as its document: an API path ending in / that answers 403 on the home page is not the check", async () => {
+    const HOME = 'https://www.ixigo.com/';
+    const at = (url: string, status: number, at_ms: number) => ({ ...capture('/$', url, '<', status), at_ms });
+    // The home page's "/$" also takes a same-site API whose path ends in "/": a logged-out page's 403 there is not the check.
+    const stray = [at(HOME, 200, 300), at('https://www.ixigo.com/api/x/', 403, 2_400)];
+    expect(challenged(stray, HOME)).toBe(false);
+    // The page's own address, its query aside (the check's own load again adds one), is: on the check, and passed.
+    expect(challenged([at(HOME, 403, 300), at('https://www.ixigo.com/api/x/', 200, 900)], HOME)).toBe(true);
+    expect(challenged([at(HOME, 403, 300), at('https://www.ixigo.com/?__cf_chl_tk=t', 200, 5_400)], HOME)).toBe(false);
+    // Another site's "/" is never the page's.
+    expect(challenged([at(HOME, 200, 300), at('https://images.ixigo.com/', 403, 900)], HOME)).toBe(false);
+    // A hand-off on that page is handed over at once, never loaded again.
+    const w = world(() => fetched(stray, HOME));
+    const plan: FetchPlan = { capture: [{ match: '/api/flights/locations/nearby', required: true, max_bytes: 1 }], timeoutMs: 12_000 };
+    expect(await createBrowserFetchRunner(w.deps).handOff!('t1', HOME, plan, { keepOpenMs: 600_000, tab: 'ixigo_login' })).toEqual({ captures: [] });
+    expect(w.calls).toHaveLength(1);
+  });
+
+  it("gives the loads again their own time: a hand-off stuck on the check for its whole 12 s still loads once more, and is done within 25 s", async () => {
+    const HOME = 'https://www.ixigo.com/';
+    const homeDoc = (status: number, at_ms: number) => ({ ...capture('/$', HOME, '<', status), at_ms });
+    const WALLET = capture('/api/v3/ixigo-money/wallet', `${HOME}api/v3/ixigo-money/wallet`, '{', 200);
+    // The login's own plan: Bash waits for ixigo's nearby call, which a page on the check never makes.
+    const plan: FetchPlan = {
+      capture: [{ match: '/api/flights/locations/nearby', required: true, max_bytes: 1 }, { match: '/api/v3/ixigo-money/wallet', required: false, max_bytes: 1 }], steps: [], timeoutMs: 12_000, graceMs: 3_000,
+    };
+    const timeOf = (c: Call): number => (c.opts['body'] as { timeout_ms: number }).timeout_ms;
+    /** A load that stays on the check runs to its time on Bash's clock, then times out with only its document. */
+    const stuck = async (w: ReturnType<typeof world>, c: Call): Promise<never> => {
+      await w.deps.sleep(timeOf(c));
+      throw new V1Error(504, 'timeout', 'The page did not send every capture (it stopped at 1 wait_for).', null, { partial: { captures: [homeDoc(403, 300)] } });
+    };
+    const loads = (w: ReturnType<typeof world>) => w.calls.map((c) => timeOf(c));
+    const hand = (w: ReturnType<typeof world>) => createBrowserFetchRunner(w.deps).handOff!('t1', HOME, plan, { keepOpenMs: 600_000, tab: 'ixigo_login' });
+
+    // On the check for all of its 12 s; loaded again 1 s later with the 11 s left, where the check passes in the page
+    // (about 5 s) and the page answers.
+    const passes: ReturnType<typeof world> = world(async (c, n) => {
+      if (n === 1) return stuck(passes, c);
+      await passes.deps.sleep(9_500);
+      return fetched([homeDoc(403, 300), homeDoc(200, 5_500), WALLET], HOME);
+    });
+    expect(await hand(passes)).toEqual({ captures: [WALLET] });
+    expect(loads(passes)).toEqual([12_000, 11_000]);
+    expect(passes.elapsed()).toBe(12_000 + CHALLENGE_WAIT_MS + 9_500);
+    expect(challengeTime(12_000)).toBeLessThanOrEqual(25_000);
+
+    // On it both times: the card comes at 24 s, with no third load that would not fit (less than CHALLENGE_LOAD_MS left).
+    const stays: ReturnType<typeof world> = world(async (c) => stuck(stays, c));
+    expect(await hand(stays)).toEqual({ captures: [], challenged: true });
+    expect(loads(stays)).toEqual([12_000, 11_000]);
+    expect(stays.elapsed()).toBe(challengeTime(12_000));
+
+    // The common good case: a check that passes in the page, its nearby call late, the load running out its time with the
+    // page in: never loaded again.
+    const late: ReturnType<typeof world> = world(async (c) => {
+      await late.deps.sleep(timeOf(c));
+      throw new V1Error(504, 'timeout', 'The page did not send every capture.', null, { partial: { captures: [homeDoc(403, 300), homeDoc(200, 6_000), WALLET] } });
+    });
+    expect(await hand(late)).toEqual({ captures: [WALLET] });
+    expect(late.calls).toHaveLength(1);
+
+    // A read the same way: a recipe page's 20 s, then once more with the 19 s left, within the 40 s.
+    const read: ReturnType<typeof world> = world(async (c, n) => {
+      if (n === 1) {
+        await read.deps.sleep(timeOf(c));
+        throw onCheck([docAt(403, 300)]);
+      }
+      return fetched([busCapture]);
+    });
+    expect((await createBrowserFetchRunner(read.deps).read('t1', BUSES, busPlan)).captures).toEqual([busCapture]);
+    expect(loads(read)).toEqual([FETCH_TIMEOUT_MS, challengeTime(FETCH_TIMEOUT_MS) - FETCH_TIMEOUT_MS - CHALLENGE_WAIT_MS]);
+  });
+
+  it('answers a timed-out fetch with what it did get when every required call is in it, and shows the pictures it took', async () => {
+    const SEARCH = '/accommodation-search/api/v3/accommodations/search$';
+    const url = 'https://www.ixigo.com/accommodation-search/api/v3/accommodations/search';
+    const frame = { label: 'results', at_ms: 6100, page_url: 'https://www.ixigo.com/hotels/search/result?locationId=32', jpeg_base64: '/9j/4AAQ' };
+    const timedOut = (captures: unknown[]) => new V1Error(504, 'timeout', 'The fetch timed out.', null, {
+      code: 'timeout', partial: { final_url: 'x', elapsed_ms: 12_000, woke: true, captures, frames: [frame, { label: 'broken' }] },
+    });
+    const got = world(() => {
+      throw timedOut([capture(SEARCH, url, fixture('stays-goa-page1.json'))]);
+    });
+    const seen: RecipeProgress[] = [];
+    const plan: FetchPlan = { capture: [{ match: SEARCH, required: true, min_count: 2, max_count: 2 }] };
+    const read = await createBrowserFetchRunner(got.deps).read('t1', 'https://www.ixigo.com/hotels/search/result', plan, { onProgress: (e) => seen.push(e) });
+    expect(read.captures).toHaveLength(1);
+    expect(seen).toEqual([{ type: 'frames', frames: [frame] }]);
+    const missing = world(() => {
+      throw timedOut([]);
+    });
+    await fails(createBrowserFetchRunner(missing.deps).read('t1', 'https://www.ixigo.com/hotels/search/result', plan), 'unreachable', /took too long/);
+  });
+
+  it("makes a page's own call from the warm tab, keeping it open; with no tab kept, from a tab opened at ixigo's home", async () => {
+    const answer = (status = 200) => ({ ...fetched([{ ...capture('fast', 'https://www.ixigo.com/plan/goa', '0:{}'), status }]), final_url: 'https://www.ixigo.com/' });
+    const w = world((_, n) => {
+      if (n === 1) throw new V1Error(409, 'no_open_tab', 'No tab is kept.');
+      return answer();
+    });
+    const runner = createBrowserFetchRunner(w.deps);
+    const got = await runner.pageFetch!('t1', { url: '/plan/goa', method: 'GET', headers: { RSC: '1' } });
+    expect(got).toMatchObject({ match: 'fast', status: 200, body: '0:{}' });
+    const step = { op: 'page_fetch', url: '/plan/goa', method: 'GET', headers: { RSC: '1' }, capture_as: 'fast', max_bytes: 1_000_000 };
+    expect(w.calls.map((c) => c.opts['body'])).toEqual([
+      { steps: [step], keep_open_ms: WARM_TAB_MS, timeout_ms: FAST_TIMEOUT_MS },
+      { url: 'https://www.ixigo.com/', steps: [step], keep_open_ms: WARM_TAB_MS, timeout_ms: FAST_TIMEOUT_MS },
+    ]);
+    // ixigo answering the call with an error is a failed call: the run falls to the page.
+    const refused = world(() => answer(403));
+    await fails(createBrowserFetchRunner(refused.deps).pageFetch!('t1', { url: '/plan/goa', method: 'GET' }), 'unreachable', /answered 403/);
+    const blocked = world(() => {
+      throw new V1Error(403, 'page_blocked', 'ixigo.com/payments/ is blocked.');
+    });
+    await fails(createBrowserFetchRunner(blocked.deps).pageFetch!('t1', { url: '/payments/x', method: 'GET' }), 'unreachable', /blocked/);
+  });
+
+  it("hands a page to the person in front of their window (Bash's front), keeping its tab for them, and closes it after", async () => {
+    const USERINFO_URL = 'https://www.ixigo.com/api/v2/oauth/userinfo';
+    const w = world(() => fetched([capture('check', USERINFO_URL, '{', 403)], 'https://www.ixigo.com/'));
+    const runner = createBrowserFetchRunner(w.deps);
+    const plan: FetchPlan = { capture: [], steps: [{ op: 'click', role: 'button', name: 'Login' }, { op: 'click', role: 'textbox', text: 'mobile' }], timeoutMs: 12_000 };
+    const opened = await runner.handOff!('t1', 'https://www.ixigo.com/', plan, { keepOpenMs: 600_000, tab: 'ixigo_login', check: { url: '/api/v2/oauth/userinfo', method: 'POST' } });
+    expect(opened.captures).toMatchObject([{ match: 'check', status: 403 }]);
+    // No pictures: the person watches the page itself. The check goes first, from inside the page, one byte.
+    expect(w.calls).toEqual([{
+      method: 'POST', path: '/v1/users/u-t1/browser/fetch',
+      opts: { body: {
+        url: 'https://www.ixigo.com/', capture: [docOf('/$')],
+        steps: [
+          { op: 'page_fetch', url: '/api/v2/oauth/userinfo', method: 'POST', capture_as: 'check', max_bytes: 1 },
+          { op: 'click', role: 'button', name: 'Login' }, { op: 'click', role: 'textbox', text: 'mobile' },
+        ],
+        timeout_ms: 12_000, front: true, keep_open_ms: 600_000, tab: 'ixigo_login',
+      } },
+    }]);
+    // Taps on the kept hand-off tab, in front, after the page: a call closes the fetch; a tap not found (504) or a tab
+    // gone (no_open_tab) is nothing.
+    const taps = world(() => fetched([capture('steps_done', 'https://www.ixigo.com/', '<', 200)], 'https://www.ixigo.com/'));
+    await createBrowserFetchRunner(taps.deps).tabSteps!('t1', 'ixigo_login', [{ op: 'click', role: 'button', name: 'Login' }], { keepOpenMs: 600_000, timeoutMs: 12_000 });
+    expect(taps.calls[0]!.opts['body']).toEqual({
+      tab: 'ixigo_login', front: true, keep_open_ms: 600_000, timeout_ms: 12_000,
+      steps: [{ op: 'click', role: 'button', name: 'Login' }, { op: 'page_fetch', url: '/', method: 'GET', capture_as: 'steps_done', max_bytes: 1 }],
+    });
+    for (const err of [new V1Error(504, 'timeout', 'The page did not send every capture (it stopped at 1 click).'), new V1Error(409, 'no_open_tab', 'No tab is kept open.')]) {
+      const failing = world(() => {
+        throw err;
+      });
+      await expect(createBrowserFetchRunner(failing.deps).tabSteps!('t1', 'ixigo_login', [], { keepOpenMs: 600_000, timeoutMs: 12_000 })).resolves.toBeUndefined();
+    }
+    await runner.release!('t1', 'ixigo_login');
+    expect(w.calls[1]!.opts['body']).toEqual({ tab: 'ixigo_login', steps: [{ op: 'page_fetch', url: '/', method: 'GET', capture_as: 'close', max_bytes: 1 }], timeout_ms: FAST_TIMEOUT_MS });
+
+    // A call from inside the hand-off's page (I'm logged in), keeping it open: one byte of the answer, for its status.
+    const inPage = world(() => fetched([capture('tab_call', USERINFO_URL, '{', 200)], 'https://www.ixigo.com/?loginVisible=true'));
+    const said = await createBrowserFetchRunner(inPage.deps).tabCall!('t1', 'ixigo_login', { url: '/api/v2/oauth/userinfo', method: 'POST' }, 600_000);
+    expect(said).toMatchObject({ match: 'tab_call', status: 200 });
+    expect(inPage.calls[0]!.opts['body']).toEqual({
+      tab: 'ixigo_login', steps: [{ op: 'page_fetch', url: '/api/v2/oauth/userinfo', method: 'POST', capture_as: 'tab_call', max_bytes: 1 }], keep_open_ms: 600_000, timeout_ms: FAST_TIMEOUT_MS,
+    });
+    const none = world(() => {
+      throw new V1Error(409, 'no_open_tab', 'No tab is kept open.');
+    });
+    expect(await createBrowserFetchRunner(none.deps).tabCall!('t1', 'ixigo_login', { url: '/api/v2/oauth/userinfo', method: 'POST' }, 600_000)).toBeNull();
+
+    // A page that ran out of time stays in front for the person: what it caught, never a failure.
+    const slow = world(() => {
+      throw new V1Error(504, 'timeout', 'The page did not send every capture within 12000 ms (it stopped at 1 click).', null, { partial: { captures: [] } });
+    });
+    expect(await createBrowserFetchRunner(slow.deps).handOff!('t1', 'https://www.ixigo.com/', plan, { keepOpenMs: 600_000, tab: 'ixigo_login', check: { url: '/api/v2/oauth/userinfo', method: 'POST' } })).toEqual({ captures: [] });
+    // Its taps are a convenience: ixigo's Login not found (the page's time ran out at that step), the page is still the
+    // person's, in front, with the check it caught.
+    const missed = world(() => {
+      throw new V1Error(504, 'timeout', 'The page did not send every capture within 12000 ms (it stopped at 2 click).', null, {
+        partial: { step: '2 click', captures: [capture('check', USERINFO_URL, '{', 403)] },
+      });
+    });
+    expect(await createBrowserFetchRunner(missed.deps).handOff!('t1', 'https://www.ixigo.com/', plan, { keepOpenMs: 600_000, tab: 'ixigo_login', check: { url: '/api/v2/oauth/userinfo', method: 'POST' } }))
+      .toMatchObject({ captures: [{ match: 'check', status: 403 }] });
+    // A tab already gone (its time ran out) is nothing to close; anything else Bash refuses is said as a travel error.
+    const gone = world(() => {
+      throw new V1Error(409, 'no_open_tab', 'No tab is kept open.');
+    });
+    await expect(createBrowserFetchRunner(gone.deps).release!('t1', 'ixigo_login')).resolves.toBeUndefined();
+    const old = world(() => {
+      throw new V1Error(400, 'invalid_request', 'Unrecognized key: "front"');
+    });
+    await expect(createBrowserFetchRunner(old.deps).handOff!('t1', 'https://www.ixigo.com/', plan, { keepOpenMs: 600_000, tab: 'ixigo_login', check: { url: '/api/v2/oauth/userinfo', method: 'POST' } })).rejects.toBeInstanceOf(TravelError);
+  });
+
+  // One-tap login (10 Oct): Go sees a login land from ixigo's `at` cookie, by its name and expiry alone.
+  it("reads the browser's cookies by name and expiry alone, with no page and no slot; a Bash that can't say answers null", async () => {
+    const w = world(() => ({ object: 'browser_cookies', cookies: [{ name: 'at', domain: '.ixigo.com', expires_at: '2026-12-01T10:00:00.000Z' }, { name: 'lt', domain: '.ixigo.com', expires_at: null }], woke: false }));
+    expect(await createBrowserFetchRunner(w.deps).cookies!('t1', 'ixigo.com', ['at', 'lt'])).toEqual([
+      { name: 'at', expiresAt: Date.parse('2026-12-01T10:00:00.000Z') },
+      { name: 'lt', expiresAt: null },
+    ]);
+    expect(w.calls).toHaveLength(1);
+    expect(w.calls[0]).toMatchObject({ method: 'GET', path: '/v1/users/u-t1/browser/cookies', opts: { query: { domain: 'ixigo.com', names: 'at,lt' } } });
+    for (const err of [new V1Error(404, 'not_found', 'Route GET /v1/users/u-t1/browser/cookies not found'), new V1Error(503, 'browser_unavailable', 'The browser did not answer.')]) {
+      const old = world(() => {
+        throw err;
+      });
+      expect(await createBrowserFetchRunner(old.deps).cookies!('t1', 'ixigo.com', ['at'])).toBeNull();
+    }
+  });
+
+  // 11 Oct: two one-tap waits read their browser every 2 s each, about 50 reads a minute, and Bash rested every Go key.
+  it("shares one browser's cookie read between the waits of its trips: one out, or answered within COOKIES_SHARE_MS", async () => {
+    const w = world(() => ({ object: 'browser_cookies', cookies: [], woke: false }));
+    const runner = createBrowserFetchRunner({ ...w.deps, browser: { userFor: async () => 'u-rahul', again: async () => 'u-rahul' } });
+    await Promise.all([runner.cookies!('t1', 'ixigo.com', ['at']), runner.cookies!('t2', 'ixigo.com', ['at'])]);
+    expect(w.calls).toHaveLength(1);
+    await runner.cookies!('t2', 'ixigo.com', ['at']);
+    expect(w.calls).toHaveLength(1);
+    // Other names are another read; and the same once the shared answer is old.
+    await runner.cookies!('t1', 'ixigo.com', ['lt']);
+    expect(w.calls).toHaveLength(2);
+    await w.deps.sleep(COOKIES_SHARE_MS);
+    await runner.cookies!('t1', 'ixigo.com', ['at']);
+    expect(w.calls).toHaveLength(3);
+  });
+
+  // The App team, 10 Oct: "the login showed a laptop view of the browser instead of the mobile view". A desktop hand-off
+  // names the element its person's screen shows (Bash's front_crop, bash #4654); a Bash without it shows the page.
+  it("sends a desktop hand-off's front_crop, and its taps'; a Bash that refuses it gets the same fetch without, desktop kept", async () => {
+    const plan: FetchPlan = { capture: [{ match: '/action/content', required: true, max_bytes: 1 }], timeoutMs: 12_000 };
+    const crop = { role: 'dialog' };
+    const w = world(() => fetched([capture('/action/content', 'https://www.ixigo.com/action/content', '{', 200)], 'https://www.ixigo.com/'));
+    const runner = createBrowserFetchRunner(w.deps);
+    await runner.handOff!('t1', 'https://www.ixigo.com/', plan, { keepOpenMs: 600_000, tab: 'ixigo_login', device: 'desktop', crop });
+    await runner.tabSteps!('t1', 'ixigo_login', [{ op: 'click', role: 'button', name: 'Log in/Sign up' }], { keepOpenMs: 600_000, timeoutMs: 12_000, crop });
+    expect(w.calls.map((c) => (c.opts['body'] as Record<string, unknown>)['front_crop'])).toEqual([crop, crop]);
+    expect(w.calls[0]!.opts['body']).toMatchObject({ front: true, front_device: 'desktop' });
+    // A phone hand-off is a phone's page already: no crop asked.
+    const phone = world(() => fetched([capture('/action/content', 'https://www.ixigo.com/action/content', '{', 200)], 'https://www.ixigo.com/'));
+    await createBrowserFetchRunner(phone.deps).handOff!('t1', 'https://www.ixigo.com/', plan, { keepOpenMs: 600_000, tab: 'ixigo_login', crop });
+    expect(phone.calls[0]!.opts['body']).not.toHaveProperty('front_crop');
+    // A Bash before #4654: an unknown key at the body's top (no param). The same fetch without front_crop, still the
+    // desktop page; then none asked for a while, the taps' too.
+    const old = world((c) => {
+      if ('front_crop' in (c.opts['body'] as object)) throw new V1Error(400, 'invalid_request', 'The request body is not valid.', null, { param: '' });
+      return fetched([capture('/action/content', 'https://www.ixigo.com/action/content', '{', 200)], 'https://www.ixigo.com/');
+    });
+    const before = createBrowserFetchRunner(old.deps);
+    expect(await before.handOff!('t1', 'https://www.ixigo.com/', plan, { keepOpenMs: 600_000, tab: 'ixigo_login', device: 'desktop', crop })).toMatchObject({ device: 'desktop' });
+    expect(old.calls.map((c) => 'front_crop' in (c.opts['body'] as object))).toEqual([true, false]);
+    expect(old.calls[1]!.opts['body']).toMatchObject({ front_device: 'desktop' });
+    await before.tabSteps!('t1', 'ixigo_login', [{ op: 'click', role: 'button', name: 'Log in/Sign up' }], { keepOpenMs: 600_000, timeoutMs: 12_000, crop });
+    expect(old.calls).toHaveLength(3);
+    expect(old.calls[2]!.opts['body']).not.toHaveProperty('front_crop');
+    expect(old.log.warn.mock.calls.filter(([, msg]) => String(msg).includes('#4654'))).toHaveLength(1);
+  });
+
+  it("names each fetch's tab by its run, so Bash's browser watch labels it: on a page and on a page call", async () => {
+    const w = world((c) =>
+      (c.opts['body'] as { steps?: Array<{ op: string }> }).steps?.[0]?.op === 'page_fetch'
+        ? { ...fetched([capture('fast', 'https://www.ixigo.com/plan/goa', '0:{}')]), final_url: 'https://www.ixigo.com/' }
+        : fetched([busCapture]));
+    const runner = createBrowserFetchRunner(w.deps);
+    await runner.read('t1', BUSES, busPlan, { tag: '01JRUNPAGE' });
+    await runner.pageFetch!('t1', { url: '/plan/goa', method: 'GET' }, { tag: '01JRUNFAST' });
+    await runner.read('t1', BUSES, busPlan);
+    expect(w.calls.map((c) => (c.opts['body'] as { tag?: string }).tag)).toEqual(['01JRUNPAGE', '01JRUNFAST', undefined]);
+  });
+
+  it('keeps the tab of a page a person waits on open as the warm tab, so the live view sees ixigo draw it; never otherwise', async () => {
+    const w = world(() => fetched([busCapture]));
+    const runner = createBrowserFetchRunner(w.deps);
+    await runner.read('t1', BUSES, busPlan, { keepOpen: true });
+    await runner.read('t1', BUSES, busPlan);
+    const kept = w.calls.map((c) => (c.opts['body'] as { keep_open_ms?: number; tab?: string }));
+    // Under Bash's default name, the warm tab the page calls take: no tab of its own toward Bash's cap.
+    expect(kept.map((b) => [b.keep_open_ms, b.tab])).toEqual([[WARM_TAB_MS, undefined], [undefined, undefined]]);
+  });
+
+  // Staging, 10 Oct: the live view showed ixigo's home page for 2.6 s while a search ran as a call inside it.
+  it('opens a page a person watches on the stage: in front, in the one stage tab, left on screen after; its look stays there too', async () => {
+    const w = world((c) => ((c.opts['body'] as { url?: string }).url
+      ? { ...fetched([busCapture]), frames: [{ label: 'done', at_ms: 120, page_url: BUSES, jpeg_base64: '/9j/S' }] }
+      : { ...fetched([capture('look', 'https://www.ixigo.com/favicon.ico', '')]), frames: [{ label: 'done', at_ms: 120, page_url: BUSES, jpeg_base64: '/9j/D' }] }));
+    const runner = createBrowserFetchRunner(w.deps);
+    await runner.read('t1', BUSES, busPlan, { keepOpen: true, stage: true, look: true, onProgress: () => undefined });
+    for (let i = 0; i < 10; i++) await new Promise((resolve) => setImmediate(resolve));
+    const [page, look] = w.calls.map((c) => c.opts['body'] as Record<string, unknown>);
+    expect(page).toMatchObject({ url: BUSES, stage: true, tab: STAGE_TAB, keep_open_ms: STAGE_MS });
+    expect(look).toMatchObject({ stage: true, tab: STAGE_TAB, keep_open_ms: STAGE_MS });
+    expect(look!['url']).toBeUndefined();
+    expect(STAGE_MS).toBeGreaterThan(WARM_TAB_MS);
+  });
+
+  it("looks at a kept page once ixigo has drawn it, for a live card: one tiny call in the tab, its pictures of the same page", async () => {
+    const OTHER = 'https://www.ixigo.com/buses/bus_search/Delhi/1/Goa/102/06-11-2026/O';
+    const pic = (page_url: string, jpeg_base64: string) => ({ label: 'done', at_ms: 120, page_url, jpeg_base64 });
+    const w = world((c) => ((c.opts['body'] as { url?: string }).url
+      ? { ...fetched([busCapture]), frames: [pic(BUSES, '/9j/S')] }
+      : { ...fetched([capture('look', 'https://www.ixigo.com/favicon.ico', '')]), frames: [pic(BUSES, '/9j/D'), pic(OTHER, '/9j/X')] }));
+    const runner = createBrowserFetchRunner(w.deps);
+    const seen: RecipeProgress[] = [];
+    await runner.read('t1', BUSES, busPlan, { keepOpen: true, look: true, tag: '01JRUNPAGE', onProgress: (e) => seen.push(e) });
+    for (let i = 0; i < 10; i++) await new Promise((resolve) => setImmediate(resolve));
+    expect(w.calls.map((c) => c.opts['body'])[1]).toEqual({
+      steps: [{ op: 'page_fetch', url: '/favicon.ico', method: 'GET', capture_as: 'look', max_bytes: 1_000 }],
+      // Through Bash's settle window: without one, Bash answers before the tab's picture is back, with none.
+      keep_open_ms: WARM_TAB_MS, timeout_ms: LOOK_TIMEOUT_MS, frames: { width: FRAME_WIDTH, settle_ms: LOOK_SETTLE_MS }, tag: '01JRUNPAGE',
+    });
+    // Only the run's own page, timed from the page's fetch: the look went LOOK_AFTER_MS after the answer.
+    expect(seen.at(-1)).toEqual({ type: 'drawn', frames: [{ ...pic(BUSES, '/9j/D'), at_ms: LOOK_AFTER_MS + 120 }] });
+
+    // No look without a live card, nor for a page whose tab is not kept; a look that fails tells nothing and throws nothing.
+    const quiet = world(() => fetched([busCapture]));
+    const r2 = createBrowserFetchRunner(quiet.deps);
+    await r2.read('t1', BUSES, busPlan, { keepOpen: true, onProgress: () => undefined });
+    await r2.read('t1', BUSES, busPlan, { look: true, onProgress: () => undefined });
+    for (let i = 0; i < 10; i++) await new Promise((resolve) => setImmediate(resolve));
+    expect(quiet.calls).toHaveLength(2);
+    const taken = world((c) => {
+      if ((c.opts['body'] as { url?: string }).url) return fetched([busCapture]);
+      throw new V1Error(409, 'no_open_tab', 'No tab is kept open under the name default.');
+    });
+    const told: RecipeProgress[] = [];
+    await createBrowserFetchRunner(taken.deps).read('t1', BUSES, busPlan, { keepOpen: true, look: true, onProgress: (e) => told.push(e) });
+    for (let i = 0; i < 10; i++) await new Promise((resolve) => setImmediate(resolve));
+    expect(taken.calls).toHaveLength(2);
+    expect(told.some((e) => e.type === 'drawn')).toBe(false);
+    expect(taken.log.warn).toHaveBeenCalledWith(expect.objectContaining({ tripId: 't1' }), 'travel: a look at the drawn page found nothing');
   });
 
   it('makes the trip user when /v1 does not have it, then asks once more', async () => {
@@ -98,39 +895,42 @@ describe('the browser fetch runner', () => {
       if (n === 1) throw new V1Error(404, 'user_not_found', 'No such user.');
       return fetched([busCapture]);
     });
-    const r = await createBrowserFetchRunner(w.deps).run('t1', buses, busSlots);
-    expect(w.computer.ensureUser).toHaveBeenCalledWith('t1');
+    const read = await createBrowserFetchRunner(w.deps).read('t1', BUSES, busPlan);
+    expect(w.browser.again).toHaveBeenCalledWith('t1');
     expect(w.calls.map((c) => c.path)).toEqual(['/v1/users/u-t1/browser/fetch', '/v1/users/u2-t1/browser/fetch']);
-    expect(r.options).toHaveLength(71);
+    expect(read.captures).toHaveLength(1);
   });
 
-  it('waits once for a person who just used the browser, then gives up', async () => {
-    const once = world((_, n) => {
-      if (n === 1) throw new V1Error(409, 'browser_in_use', 'A person has the browser.');
+  // Staging, 9 Oct: ixigo's login left open on the person's browser refused every search on it for 10 minutes, each
+  // "didn't work" after one wait, and Go fell back to a slow job.
+  it('waits for a person who has the browser (a login open on Go\'s screen), saying so once, and runs once it is free', async () => {
+    const said: RecipeProgress[] = [];
+    // The login is done a minute and a half on: 18 refusals, each asked again past Bash's 4 s.
+    const login = world((_, n) => {
+      if (n <= 18) throw new V1Error(409, 'browser_in_use', 'A person is finishing a sign-in on this browser.');
       return fetched([busCapture]);
     });
-    expect((await createBrowserFetchRunner(once.deps).run('t1', buses, busSlots)).ms).toBe(IN_USE_WAIT_MS);
+    const read = await createBrowserFetchRunner(login.deps).read('t1', BUSES, busPlan, { onProgress: (e) => said.push(e) });
+    expect(read.captures).toHaveLength(1);
+    expect(login.elapsed()).toBe(18 * IN_USE_WAIT_MS);
+    expect(IN_USE_WAIT_MS).toBeGreaterThan(4_000);
+    expect(said.filter((e) => e.type === 'waiting')).toHaveLength(1);
+  });
+
+  it("stops waiting for the browser after a login's whole hold, or when its caller stops waiting", async () => {
     const always = world(() => {
       throw new V1Error(409, 'browser_in_use', 'A person has the browser.');
     });
-    await fails(createBrowserFetchRunner(always.deps).run('t1', buses, busSlots), 'unreachable', /Someone is using/);
-    expect(always.calls).toHaveLength(2);
-  });
-
-  it('uses what a timed-out fetch did get when every required call is in it', async () => {
-    const trainSlots = trains.slotsFrom({ from: 'Delhi', to: 'Goa', date: '2026-11-06' }, { people: 4 });
-    const between = capture('/trains/v1/search/between/', 'https://www.ixigo.com/trains/v1/search/between/NDLS/MAO?date=2026-11-06', fixture('trains-ndls-mao-between.json'));
-    const timedOut = (captures: unknown[]) => new V1Error(504, 'timeout', 'The fetch timed out.', null, { code: 'timeout', partial: { final_url: 'x', elapsed_ms: 8000, woke: true, captures } });
-    const got = world(() => {
-      throw timedOut([between]);
+    await fails(createBrowserFetchRunner(always.deps).read('t1', BUSES, busPlan), 'unreachable', /Someone is using/);
+    expect(always.elapsed()).toBeGreaterThanOrEqual(IN_USE_PATIENCE_MS);
+    expect(always.elapsed()).toBeLessThan(IN_USE_PATIENCE_MS + 2 * IN_USE_WAIT_MS);
+    const stop = new AbortController();
+    const caller = world(() => {
+      stop.abort();
+      throw new V1Error(409, 'browser_in_use', 'A person has the browser.');
     });
-    const r = await createBrowserFetchRunner(got.deps).run('t1', trains, trainSlots);
-    expect(r.options).toHaveLength(25);
-    expect(r.options[0]!.facts).not.toHaveProperty('availability');
-    const missing = world(() => {
-      throw timedOut([]);
-    });
-    await fails(createBrowserFetchRunner(missing.deps).run('t1', trains, trainSlots), 'unreachable', /took too long/);
+    await fails(createBrowserFetchRunner(caller.deps).read('t1', BUSES, busPlan, { signal: stop.signal }), 'unreachable', /Someone is using/);
+    expect(caller.calls).toHaveLength(1);
   });
 
   it("says plainly what went wrong, and puts Go's own setup faults in the admin log", async () => {
@@ -138,150 +938,373 @@ describe('the browser fetch runner', () => {
       const w = world(() => {
         throw err;
       });
-      const p = createBrowserFetchRunner(w.deps).run('t1', buses, busSlots);
+      const p = createBrowserFetchRunner(w.deps).read('t1', BUSES, busPlan);
       return { w, err: (await p.then(() => null, (e: unknown) => e)) as TravelError };
     };
     expect((await said(new V1Error(402, 'wallet_empty', 'Empty.'))).err).toMatchObject({ code: 'refused', message: OUT_OF_CREDIT });
     expect((await said(new V1Error(503, 'box_unavailable', 'Asleep.'))).err).toMatchObject({ code: 'unreachable' });
     const blocked = await said(new V1Error(403, 'domain_not_allowed', 'ixigo.com is not allowed.'));
     expect(blocked.err).toMatchObject({ code: 'refused', message: "The trip's computer is not allowed on ixigo.com yet." });
-    expect(blocked.w.log.warn).toHaveBeenCalledWith(expect.objectContaining({ tripId: 't1', recipe: 'ixigo.buses', code: 'domain_not_allowed' }), expect.any(String));
+    expect(blocked.w.log.warn).toHaveBeenCalledWith(
+      expect.objectContaining({ tripId: 't1', page: '/buses/bus_search/Mumbai/4/Goa/102/06-11-2026/O', code: 'domain_not_allowed' }),
+      expect.any(String),
+    );
+    // ixigo's payment page, blocked by Bash (#4591): said plainly, and not logged as a fault of Go's setup.
+    const payment = await said(new V1Error(403, 'page_blocked', 'ixigo.com/payments/ is blocked.'));
+    expect(payment.err).toMatchObject({ code: 'refused', message: PAYMENT_PAGE_BLOCKED });
+    expect(PAYMENT_PAGE_BLOCKED).toBe("That's the payment page, and Go never opens it; the payer finishes on ixigo.");
+    expect(payment.w.log.warn).not.toHaveBeenCalled();
   });
-});
 
-describe('the agent job runner (the fallback)', () => {
-  const rows = readBusesPage(fixture('buses-mumbai-goa.txt'));
-
-  it("runs one job on the go-recipe deployment: the page and the script, then the rows it returned, checked", async () => {
-    let polls = 0;
-    const w = world((c) => {
-      if (c.path === '/v1/conversations') return { id: 'conv_1' };
-      if (c.path === '/v1/conversations/conv_1/messages') return { id: 'turn_1', work: [{ task_id: 'task_1' }] };
-      if (c.path === '/v1/tasks/task_1') return ++polls < 3 ? { status: 'working' } : { status: 'done', result: { text: 'Done.', data: { rows } } };
-      throw new Error(`unexpected ${c.method} ${c.path}`);
+  it("falls to the page when Bash has no page_fetch, naming Bash's own status, never its schema's words (the 8 Oct drill)", async () => {
+    // Today's staging Bash refuses a fetch with no url: "Invalid input: expected string, received undefined".
+    const old = world(() => {
+      throw new V1Error(400, 'invalid_request', 'Invalid input: expected string, received undefined');
     });
-    const r = await createAgentJobRunner({ ...w.deps, deploymentId: 'dep_recipe' }).run('t1', buses, busSlots);
-    expect(w.computer.ensureUser).toHaveBeenCalledWith('t1');
-    expect(w.calls[0]!.opts['body']).toEqual({ user_id: 'u2-t1', deployment: 'dep_recipe', metadata: { go_trip_id: 't1', go_recipe: 'ixigo.buses' } });
-    const message = w.calls[1]!.opts['body'] as { message: string; output_schema: { properties: { rows: { maxItems: number } } }; hand_off: string };
-    expect(message.message).toBe(recipeMessage(buses.url(busSlots), 'Select Seats', buses.agentExtractor));
-    // Bash's computer_eval takes the script as `expression`: a model that sends `script` is refused, and retries for 7 s.
-    expect(message.message).toContain('computer_eval with this script as its `expression` argument');
-    expect(message.message).toContain('computer_wait with the text "Select Seats"');
-    expect(message.output_schema.properties.rows.maxItems).toBe(15);
-    expect(message.hand_off).toBe('always');
-    expect(w.calls[0]!.opts['idempotencyKey']).toMatch(/^go-recipe-conv-/);
-    expect(r.options).toHaveLength(16);
-    expect(r.ms).toBe(3 * AGENT_POLL_MS);
+    const err = await createBrowserFetchRunner(old.deps).pageFetch!('t1', { url: '/plan/goa', method: 'GET' }).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(TravelError);
+    expect(err).toMatchObject({ code: 'unreachable', message: 'fast unavailable: Bash answered 400 invalid_request' });
+    // An answer with no page call in it at all: fast is unavailable too, not a crash.
+    const odd = world(() => ({ final_url: 'https://www.ixigo.com/', elapsed_ms: 10, woke: false }));
+    await fails(createBrowserFetchRunner(odd.deps).pageFetch!('t1', { url: '/plan/goa', method: 'GET' }), 'unreachable', /fast unavailable: Bash's answer had no page call/);
   });
 
-  it("reads a snapshot's text with the recipe's own reader when the job could not run the script", async () => {
-    // As Bash's computer_snapshot shows the page: a link's name holds the whole card, its text nodes the lines.
-    const page = fixture('buses-mumbai-goa.txt').split('\n').filter((l) => l.trim().length > 0);
-    const snapshot = ['- link "Paulo Travels Express VE AC Sleeper (2 + 1) 18:20 Mumbai 16h.25m 10:45 Goa" [@e3]', ...page.map((l) => `  - StaticText "${l.trim()}"`)].join('\n');
-    const w = world((c) => {
-      if (c.path === '/v1/conversations') return { id: 'conv_1' };
-      if (c.path === '/v1/conversations/conv_1/messages') return { id: 'turn_1', work: [{ task_id: 'task_1' }] };
-      return { status: 'done', result: { data: { snapshot } } };
+  it('remembers for 10 minutes that a Bash takes no page calls, asking it nothing meanwhile, then tries again', async () => {
+    const w = world(() => {
+      throw new V1Error(400, 'invalid_request', 'Invalid input: expected string, received undefined');
     });
-    const r = await createAgentJobRunner({ ...w.deps, deploymentId: 'dep_recipe' }).run('t1', buses, busSlots);
-    expect(r.options).toHaveLength(15);
-    expect(r.options[0]).toMatchObject({ title: 'Paulo Travels Express', priceMinor: 270_000 });
-    const message = (w.calls[1]!.opts['body'] as { message: string }).message;
-    expect(message).toContain('call computer_snapshot with full set to true instead');
-  });
-
-  it('finds the job on the turn when the first answer did not name it', async () => {
-    const w = world((c) => {
-      if (c.path === '/v1/conversations') return { id: 'conv_1' };
-      if (c.method === 'POST' && c.path === '/v1/conversations/conv_1/messages') return { id: 'turn_1', work: [] };
-      // The list holds lines, not turns: the job is on Bash's line of the turn.
-      if (c.method === 'GET' && c.path === '/v1/conversations/conv_1/messages') {
-        return { data: [{ id: 'msg_1', turn_id: 'turn_1', role: 'user', work: [] }, { id: 'msg_2', turn_id: 'turn_1', role: 'assistant', work: [{ task_id: 'task_1' }] }], next_cursor: null };
-      }
-      if (c.path === '/v1/tasks/task_1') return { status: 'done', result: { data: { rows } } };
-      throw new Error(`unexpected ${c.method} ${c.path}`);
+    const runner = createBrowserFetchRunner(w.deps);
+    expect(runner.canPageFetch!()).toBe(true);
+    await runner.pageFetch!('t1', { url: '/plan/goa', method: 'GET' }).catch(() => undefined);
+    expect(runner.canPageFetch!()).toBe(false);
+    await fails(runner.pageFetch!('t1', { url: '/plan/goa', method: 'GET' }), 'unreachable', /takes no page calls/);
+    expect(w.calls).toHaveLength(1);
+    // Once Bash has page_fetch, page calls resume within 10 minutes, with no deploy of Go's.
+    await w.deps.sleep(FAST_UNSUPPORTED_MS);
+    expect(runner.canPageFetch!()).toBe(true);
+    // A refusal for one call (403, a blocked page) is not a Bash without page_fetch.
+    const blocked = world(() => {
+      throw new V1Error(403, 'page_blocked', 'Blocked.');
     });
-    expect((await createAgentJobRunner({ ...w.deps, deploymentId: 'dep_recipe' }).run('t1', buses, busSlots)).options).toHaveLength(16);
+    const other = createBrowserFetchRunner(blocked.deps);
+    await other.pageFetch!('t1', { url: '/payments/x', method: 'GET' }).catch(() => undefined);
+    expect(other.canPageFetch!()).toBe(true);
   });
 
-  it('stops a job that is not done in 90 s', async () => {
-    const w = world((c) => {
-      if (c.path === '/v1/conversations') return { id: 'conv_1' };
-      if (c.path === '/v1/conversations/conv_1/messages') return { id: 'turn_1', work: [{ task_id: 'task_1' }] };
-      if (c.path === '/v1/tasks/task_1') return { status: 'working' };
-      if (c.path === '/v1/conversations/conv_1/stop') return { id: 'conv_1', object: 'conversation.stop', stopped_work: ['task_1'] };
-      throw new Error(`unexpected ${c.method} ${c.path}`);
-    });
-    await fails(createAgentJobRunner({ ...w.deps, deploymentId: 'dep_recipe' }).run('t1', buses, busSlots), 'unreachable', /took too long/);
-    // Stopped by its own conversation, so the stop is sent even when the job's id never came.
-    expect(w.calls.at(-1)).toMatchObject({ method: 'POST', path: '/v1/conversations/conv_1/stop' });
-    expect(w.calls.filter((c) => c.path === '/v1/tasks/task_1')).toHaveLength(AGENT_WAIT_MS / AGENT_POLL_MS);
-    expect(w.log.warn).toHaveBeenCalledWith(expect.objectContaining({ conversationId: 'conv_1', stopped: ['task_1'] }), expect.stringContaining('too slow'));
-  });
-
-  it('fails closed: a failed job, a job that stops to ask, and rows that do not check out give no options', async () => {
-    const job = (task: unknown) =>
-      world((c) => {
-        if (c.path === '/v1/conversations') return { id: 'conv_1' };
-        if (c.path === '/v1/conversations/conv_1/messages') return { id: 'turn_1', work: [{ task_id: 'task_1' }] };
-        if (c.path === '/v1/tasks/task_1') return task;
-        return { stopped: true };
+  describe('a cold computer (COLD_COMPUTER)', () => {
+    const caughtNothing = () =>
+      new V1Error(504, 'timeout', 'The page did not send every capture within 12000 ms (it stopped at 1 wait_for).', null, {
+        code: 'timeout', partial: { elapsed_ms: 12_300, step: '1 wait_for', captures: [] },
       });
-    await fails(createAgentJobRunner({ ...job({ status: 'failed' }).deps, deploymentId: 'dep_recipe' }).run('t1', buses, busSlots), 'refused', /could not read/);
-    const asks = job({ status: 'waiting' });
-    await fails(createAgentJobRunner({ ...asks.deps, deploymentId: 'dep_recipe' }).run('t1', buses, busSlots), 'refused', /stopped to ask/);
-    expect(asks.calls.at(-1)).toMatchObject({ path: '/v1/conversations/conv_1/stop' });
-    const bad = job({ status: 'done', result: { data: { rows: [{ operator: 'A bus', price: 'cheap' }] } } });
-    await fails(createAgentJobRunner({ ...bad.deps, deploymentId: 'dep_recipe' }).run('t1', buses, busSlots), 'refused', /did not check out/);
-    const none = job({ status: 'done', result: { data: null } });
-    await fails(createAgentJobRunner({ ...none.deps, deploymentId: 'dep_recipe' }).run('t1', buses, busSlots), 'refused', /did not check out/);
+
+    it('asks a page that caught nothing once more on a computer Go has not read ixigo on, and tells the strip both', async () => {
+      const w = world((_, n) => {
+        if (n === 1) throw caughtNothing();
+        return fetched([busCapture]);
+      });
+      const traces: FetchTrace[] = [];
+      const read = await createBrowserFetchRunner(w.deps).read('t1', BUSES, busPlan, { onTrace: (t) => traces.push(t) });
+      expect(read.captures).toHaveLength(1);
+      expect(w.calls).toHaveLength(2);
+      expect(traces.map((t) => t.failed?.why ?? 'ok')).toEqual(['ran out of time at 1 wait_for', 'ok']);
+    });
+
+    it('asks only once more, and on a warm computer too (staging, 9 Oct: a logged-in computer caught nothing at 14:54, and read stays in 8 s at 14:55)', async () => {
+      const twice = world(() => {
+        throw caughtNothing();
+      });
+      await fails(createBrowserFetchRunner(twice.deps).read('t1', BUSES, busPlan), 'unreachable', /took too long/);
+      expect(twice.calls).toHaveLength(2);
+      const w = world((_, n) => {
+        if (n === 2) throw caughtNothing();
+        return fetched([busCapture]);
+      });
+      const runner = createBrowserFetchRunner(w.deps);
+      await runner.read('t1', BUSES, busPlan);
+      expect((await runner.read('t1', BUSES, busPlan)).captures).toEqual([busCapture]);
+      expect(w.calls).toHaveLength(3);
+      expect(w.log.warn).toHaveBeenCalledWith(expect.objectContaining({ tripId: 't1', cold: false }), 'travel: a page caught nothing; asking once more');
+    });
+
+    it('never asks again for a caller that falls back: a page that caught nothing but its document throws NothingCaughtError at once', async () => {
+      const w = world(() => {
+        throw onCheck([docAt(200, 300)]);
+      });
+      const err = await createBrowserFetchRunner(w.deps).read('t1', BUSES, busPlan, { fallsBack: true }).then(() => null, (e: unknown) => e);
+      expect(err).toBeInstanceOf(NothingCaughtError);
+      expect(err).toMatchObject({ code: 'unreachable', message: expect.stringMatching(/took too long/) });
+      expect(w.calls).toHaveLength(1);
+      // One that caught a call of the page's own (a 500), not just its document, is a timeout as ever.
+      const called = world(() => {
+        throw onCheck([docAt(200, 300), capture('/buslist/v3/services$', 'https://www.ixigo.com/buslist/v3/services', '{}', 500)]);
+      });
+      const plain = await createBrowserFetchRunner(called.deps).read('t1', BUSES, busPlan, { fallsBack: true }).then(() => null, (e: unknown) => e);
+      expect(plain).toBeInstanceOf(TravelError);
+      expect(plain).not.toBeInstanceOf(NothingCaughtError);
+      expect(called.calls).toHaveLength(1);
+      // Without fallsBack, the same page that caught nothing is asked once more, and fails as ever.
+      const asked = world(() => {
+        throw onCheck([docAt(200, 300)]);
+      });
+      const again = await createBrowserFetchRunner(asked.deps).read('t1', BUSES, busPlan).then(() => null, (e: unknown) => e);
+      expect(again).toBeInstanceOf(TravelError);
+      expect(again).not.toBeInstanceOf(NothingCaughtError);
+      expect(asked.calls).toHaveLength(2);
+    });
+
+    it("primes a new trip's computer with one visit to ixigo's home, its popup closed, and a primed computer's page is asked once more too", async () => {
+      const w = world((_, n) => {
+        if (n === 1) return { ...fetched([capture('prime', 'https://www.ixigo.com/', '<html>')]), final_url: 'https://www.ixigo.com/' };
+        throw caughtNothing();
+      });
+      const runner = createBrowserFetchRunner(w.deps);
+      await runner.prime!('t1');
+      expect(w.calls[0]).toEqual({
+        method: 'POST', path: '/v1/users/u-t1/browser/fetch',
+        opts: { body: {
+          url: 'https://www.ixigo.com/',
+          steps: [{ op: 'click', name: 'Close modal', optional: true }, { op: 'page_fetch', url: '/', method: 'GET', capture_as: 'prime', max_bytes: 1_000 }],
+          timeout_ms: PRIME_TIMEOUT_MS,
+        } },
+      });
+      await fails(runner.read('t1', BUSES, busPlan), 'unreachable', /took too long/);
+      expect(w.calls).toHaveLength(3);
+    });
+
+    it("primes the person's browser once: a new trip of the same person (one browser, tasks/browsers.ts) needs no first visit", async () => {
+      const w = world(() => ({ ...fetched([capture('prime', 'https://www.ixigo.com/', '<html>')]), final_url: 'https://www.ixigo.com/' }));
+      const runner = createBrowserFetchRunner({ ...w.deps, browser: { userFor: async () => 'u-rahul', again: async () => 'u-rahul' } });
+      await runner.prime!('t_first');
+      await runner.prime!('t_second');
+      expect(w.calls.map((c) => c.path)).toEqual(['/v1/users/u-rahul/browser/fetch']);
+    });
+
+    it('a prime ixigo did not answer throws, so setup tries again, and leaves the first search its one more ask', async () => {
+      const w = world((_, n) => {
+        if (n === 1) throw new V1Error(503, 'box_unavailable', 'The computer did not wake.');
+        if (n === 2) return fetched([]);
+        if (n === 3) throw caughtNothing();
+        return fetched([busCapture]);
+      });
+      const runner = createBrowserFetchRunner(w.deps);
+      await expect(runner.prime!('t1')).rejects.toMatchObject({ status: 503, code: 'box_unavailable' });
+      await fails(runner.prime!('t1'), 'unreachable', /did not answer/);
+      expect((await runner.read('t1', BUSES, busPlan)).captures).toHaveLength(1);
+      expect(w.calls).toHaveLength(4);
+    });
   });
 
-  it('refuses plainly when it is not set up, or the account is out of credit', async () => {
-    const unset = world(() => ({}));
-    await fails(createAgentJobRunner({ ...unset.deps, deploymentId: null }).run('t1', buses, busSlots), 'refused', /not set up/);
-    expect(unset.calls).toEqual([]);
-    const broke = world(() => {
-      throw new V1Error(402, 'wallet_empty', 'Empty.');
+  it('logs where a page was when its time ran out, as Bash says it, what it caught and what the read was, so the next drill shows the step', async () => {
+    const late = world(() => {
+      throw new V1Error(504, 'timeout', 'The page did not send every capture within 20000 ms, stopped at 2 wait_for. What it sent is in partial.', null, {
+        code: 'timeout', partial: { step: '2 wait_for', captures: [{ ...capture(BUS_DOC, BUSES, '<'), max_bytes: 1 }] },
+      });
     });
-    await fails(createAgentJobRunner({ ...broke.deps, deploymentId: 'dep_recipe' }).run('t1', buses, busSlots), 'refused', /out of credit/);
+    const about = { recipe: 'hotels.search', conditions: ['pool'], wide: true };
+    await fails(createBrowserFetchRunner(late.deps).read('t1', BUSES, busPlan, { about }), 'unreachable', /took too long/);
+    // Bash's words go under bash, never message: Railway's log takes a field named message for the line's own (9 Oct).
+    const logged = late.log.warn.mock.calls.find((c) => c[1] === 'travel: a page ran out of time')?.[0] as Record<string, unknown>;
+    expect(logged).toEqual({
+      tripId: 't1', page: '/buses/bus_search/Mumbai/4/Goa/102/06-11-2026/O', bash: expect.stringContaining('stopped at 2 wait_for'), step: '2 wait_for',
+      caught: ['document 200'], read: about,
+    });
+    expect(logged).not.toHaveProperty('message');
+  });
+
+  it("tells the run strip where each call's time went: the wake, the page, each kept call; and on a timeout, where it stopped", async () => {
+    const timings = { wake_ms: 4_000, nav_ms: 5_200, first_capture_ms: 7_000, done_ms: 7_400 };
+    const ok = world(() => ({ ...fetched([busCapture]), woke: true, timings }));
+    const traces: FetchTrace[] = [];
+    await createBrowserFetchRunner(ok.deps).read('t1', BUSES, busPlan, { onTrace: (t) => traces.push(t) });
+    expect(traces).toEqual([{
+      started_at: Date.parse('2026-11-01T10:00:00Z'), elapsed_ms: 2300, woke: true, timings,
+      calls: [{ url: busCapture.url, status: busCapture.status, at_ms: busCapture.at_ms }],
+    }]);
+    const partial = { final_url: BUSES, elapsed_ms: 12_000, woke: false, timings, step: '2 scroll', captures: [busCapture] };
+    const late = world(() => {
+      throw new V1Error(504, 'timeout', 'The fetch timed out.', null, { code: 'timeout', partial });
+    });
+    const lateTraces: FetchTrace[] = [];
+    await createBrowserFetchRunner(late.deps).read('t1', BUSES, busPlan, { onTrace: (t) => lateTraces.push(t) });
+    expect(lateTraces).toEqual([expect.objectContaining({ elapsed_ms: 12_000, timings, failed: { status: 504, why: 'ran out of time at 2 scroll' } })]);
+    expect(lateTraces[0]!.calls).toHaveLength(1);
+    const refused = world(() => {
+      throw new V1Error(403, 'domain_not_allowed', 'Not allowed.');
+    });
+    const refusedTraces: FetchTrace[] = [];
+    await createBrowserFetchRunner(refused.deps).read('t1', BUSES, busPlan, { onTrace: (t) => refusedTraces.push(t) }).catch(() => undefined);
+    // A failure by its status and code, never its message.
+    expect(refusedTraces).toEqual([expect.objectContaining({ calls: [], failed: { status: 403, why: 'domain_not_allowed' } })]);
+  });
+
+  it("tells the run strip a page call's own time, and a page call that failed", async () => {
+    const fast = { ...capture('fast', '/plan/goa', '{}'), at_ms: 380 };
+    const ok = world(() => ({ final_url: 'https://www.ixigo.com/', elapsed_ms: 420, woke: false, captures: [fast] }));
+    const traces: FetchTrace[] = [];
+    await createBrowserFetchRunner(ok.deps).pageFetch!('t1', { url: '/plan/goa', method: 'GET' }, { onTrace: (t) => traces.push(t) });
+    expect(traces).toEqual([expect.objectContaining({ elapsed_ms: 420, calls: [{ method: 'GET', url: fast.url, status: fast.status, at_ms: 380, ms: 380 }] })]);
+    const down = world(() => {
+      throw new V1Error(402, 'out_of_credit', 'No credit.');
+    });
+    const downTraces: FetchTrace[] = [];
+    await createBrowserFetchRunner(down.deps).pageFetch!('t1', { url: '/plan/goa', method: 'GET' }, { onTrace: (t) => downTraces.push(t) }).catch(() => undefined);
+    expect(downTraces).toEqual([expect.objectContaining({ calls: [], failed: { status: 402, why: 'out_of_credit' } })]);
   });
 });
 
-describe('the steps a run reports, for the live search card', () => {
-  it('the browser fetch: opening, the pictures when Bash sends them, then captured', async () => {
-    const frame = { label: 'results', at_ms: 2100, page_url: 'https://www.ixigo.com/buses/bus_search/Mumbai/4/Goa/102/06-11-2026/O', jpeg_base64: '/9j/4AAQ' };
-    const w = world(() => ({ ...fetched([busCapture]), frames: [frame] }));
-    const seen: RecipeProgress[] = [];
-    await createBrowserFetchRunner(w.deps).run('t1', buses, busSlots, { onProgress: (e) => seen.push(e) });
-    expect(seen.map((e) => e.type)).toEqual(['opening', 'frames', 'captured']);
-    expect(seen[0]).toEqual({ type: 'opening', recipeId: 'ixigo.buses', url: buses.url(busSlots) });
-    expect(seen[1]).toEqual({ type: 'frames', frames: [frame] });
-    const none = world(() => fetched([busCapture]));
-    const quiet: RecipeProgress[] = [];
-    await createBrowserFetchRunner(none.deps).run('t1', buses, busSlots, { onProgress: (e) => quiet.push(e) });
-    expect(quiet.map((e) => e.type)).toEqual(['opening', 'captured']);
-  });
+describe("fetches at once on one trip's computer: Bash runs only so many (409 browser_busy past them)", () => {
+  /** Lets every promise that can move, move: a fetch that got a slot has asked Bash by then. */
+  const settle = (): Promise<void> => new Promise((r) => setImmediate(r));
+  const busy = () => new V1Error(409, 'browser_busy', "This user's browser is already running 2 fetches.", 1_000, { code: 'browser_busy', retry_after_ms: 1_000 });
 
-  it('the agent job: opening, then captured when the job is done', async () => {
-    const rows = readBusesPage(fixture('buses-mumbai-goa.txt'));
-    const w = world((c) => {
-      if (c.path === '/v1/conversations') return { id: 'conv_1' };
-      if (c.path === '/v1/conversations/conv_1/messages') return { id: 'turn_1', work: [{ task_id: 'task_1' }] };
-      return { status: 'done', result: { data: { rows } } };
+  it("asks Bash for no more at once than the computer's slots: the rest wait their turn, in order, and the switch lets more in", async () => {
+    let slots = DEFAULT_SLOTS;
+    const ends: Array<() => void> = [];
+    let going = 0;
+    let most = 0;
+    const w = world(async () => {
+      going += 1;
+      most = Math.max(most, going);
+      await new Promise<void>((r) => ends.push(r));
+      going -= 1;
+      return fetched([busCapture]);
     });
-    const seen: RecipeProgress[] = [];
-    await createAgentJobRunner({ ...w.deps, deploymentId: 'dep_recipe' }).run('t1', buses, busSlots, { onProgress: (e) => seen.push(e) });
-    expect(seen).toEqual([{ type: 'opening', recipeId: 'ixigo.buses', url: buses.url(busSlots) }, { type: 'captured', ms: AGENT_POLL_MS }]);
+    const runner = createBrowserFetchRunner({ ...w.deps, slots: () => slots });
+    const asked = () => w.calls.map((c) => `${c.path.split('/')[3]} ${String((c.opts['body'] as { url?: string }).url).split('?n=')[1]}`);
+    const reads = [1, 2, 3, 4, 5].map((n) => runner.read('t1', `${BUSES}?n=${n}`, busPlan));
+    await settle();
+    expect(asked()).toEqual(['u-t1 1', 'u-t1 2']);
+    // Another trip's computer has slots of its own.
+    const other = runner.read('t2', `${BUSES}?n=9`, busPlan);
+    await settle();
+    expect(asked()).toEqual(['u-t1 1', 'u-t1 2', 'u-t2 9']);
+    ends.shift()!();
+    await settle();
+    // The first to wait goes first.
+    expect(asked().slice(3)).toEqual(['u-t1 3']);
+    // Bash runs four now: the next fetch to end lets two more in.
+    slots = 4;
+    ends.shift()!();
+    await settle();
+    expect(asked().slice(4)).toEqual(['u-t1 4', 'u-t1 5']);
+    while (ends.length > 0) {
+      ends.shift()!();
+      await settle();
+    }
+    await Promise.all([...reads, other]);
+    expect(w.calls).toHaveLength(6);
+    expect(most).toBe(4);
   });
-});
 
-describe('runnerFor', () => {
-  it('follows the TRAVEL_RUNNER switch, the agent job unless it says browser_fetch', () => {
-    const browserFetch = { name: 'browser_fetch' } as RecipeRunner;
-    const agentJob = { name: 'agent_job' } as RecipeRunner;
-    expect(runnerFor({ get: () => 'browser_fetch' }, { browserFetch, agentJob })).toBe(browserFetch);
-    expect(runnerFor({ get: () => 'agent_job' }, { browserFetch, agentJob })).toBe(agentJob);
+  it("lets a waiting fetch of a lower priority go first: a composite's trains before its buses, first come first served within one", async () => {
+    const ends: Array<() => void> = [];
+    const w = world(async () => {
+      await new Promise<void>((r) => ends.push(r));
+      return fetched([busCapture]);
+    });
+    const runner = createBrowserFetchRunner({ ...w.deps, slots: () => 1 });
+    const asked = () => w.calls.map((c) => String((c.opts['body'] as { url?: string }).url).split('?n=')[1]);
+    const reads = [
+      runner.read('t1', `${BUSES}?n=1`, busPlan),
+      runner.read('t1', `${BUSES}?n=2`, busPlan, { priority: 1 }),
+      runner.read('t1', `${BUSES}?n=3`, busPlan, { priority: 0 }),
+      runner.read('t1', `${BUSES}?n=4`, busPlan, { priority: 1 }),
+    ];
+    for (let i = 0; i < 4; i++) {
+      await settle();
+      ends.shift()?.();
+    }
+    await Promise.all(reads);
+    expect(asked()).toEqual(['1', '3', '2', '4']);
+  });
+
+  it('lets a waiting fetch go as soon as the slots are raised, without waiting for one to end', async () => {
+    let slots = 1;
+    const ends: Array<() => void> = [];
+    const w = world(async () => {
+      await new Promise<void>((r) => ends.push(r));
+      return fetched([busCapture]);
+    });
+    const runner = createBrowserFetchRunner({ ...w.deps, slots: () => slots });
+    const reads = [runner.read('t1', `${BUSES}?n=1`, busPlan), runner.read('t1', `${BUSES}?n=2`, busPlan)];
+    await settle();
+    expect(w.calls).toHaveLength(1);
+    // Bash runs more now: the next fetch to come lets the one waiting go at once, and waits itself.
+    slots = 2;
+    reads.push(runner.read('t1', `${BUSES}?n=3`, busPlan));
+    await settle();
+    expect(w.calls.map((c) => String((c.opts['body'] as { url?: string }).url).split('?n=')[1])).toEqual(['1', '2']);
+    while (ends.length > 0) {
+      ends.shift()!();
+      await settle();
+    }
+    await Promise.all(reads);
+    expect(w.calls).toHaveLength(3);
+  });
+
+  it("counts by the computer, not the trip: two trips on one /v1 user share its slots", async () => {
+    const ends: Array<() => void> = [];
+    const w = world(async () => {
+      await new Promise<void>((r) => ends.push(r));
+      return fetched([busCapture]);
+    });
+    const runner = createBrowserFetchRunner({ ...w.deps, browser: { userFor: async () => 'u-box', again: async () => 'u-box' }, slots: () => 1 });
+    const both = [runner.read('t1', BUSES, busPlan), runner.read('t2', BUSES, busPlan)];
+    await settle();
+    expect(w.calls).toHaveLength(1);
+    ends.shift()!();
+    await settle();
+    expect(w.calls).toHaveLength(2);
+    ends.shift()!();
+    await Promise.all(both);
+  });
+
+  it('frees the slot of a fetch that failed, and lets a waiting fetch whose turn is over leave without asking Bash', async () => {
+    const ends: Array<() => void> = [];
+    const w = world(async (_, n) => {
+      await new Promise<void>((r) => ends.push(r));
+      if (n === 1) throw new V1Error(503, 'not_ready', 'The computer did not wake.');
+      return fetched([busCapture]);
+    });
+    const runner = createBrowserFetchRunner({ ...w.deps, slots: () => 1 });
+    const first = runner.read('t1', BUSES, busPlan).then(() => 'ok', (e: unknown) => (e as TravelError).code);
+    const stop = new AbortController();
+    const gaveUp = runner.read('t1', BUSES, busPlan, { signal: stop.signal }).then(() => 'ok', () => 'left');
+    const next = runner.read('t1', BUSES, busPlan);
+    await settle();
+    stop.abort();
+    expect(await gaveUp).toBe('left');
+    ends.shift()!();
+    expect(await first).toBe('unreachable');
+    await settle();
+    ends.shift()!();
+    await next;
+    // The one that left never reached Bash: the failed fetch's slot went to the next.
+    expect(w.calls).toHaveLength(2);
+  });
+
+  it("waits as long as Bash says when its fetches are all taken, and asks again, then says the computer is busy; a page call doesn't wait", async () => {
+    const twice = world((_, n) => {
+      if (n <= 2) throw busy();
+      return fetched([busCapture]);
+    });
+    const read = await createBrowserFetchRunner(twice.deps).read('t1', BUSES, busPlan);
+    expect(read.captures).toHaveLength(1);
+    expect(twice.calls).toHaveLength(3);
+    expect(twice.elapsed()).toBe(2_000);
+    const always = world(() => {
+      throw busy();
+    });
+    // Not "someone is using the browser": nobody is, the computer is reading other pages.
+    await fails(createBrowserFetchRunner(always.deps).read('t1', BUSES, busPlan), 'unreachable', /busy with other searches/);
+    expect(always.calls).toHaveLength(BUSY_TRIES + 1);
+    // A page call is for speed: a busy one fails at once, and the run falls to the page, which waits its turn.
+    const call = world((_, n) => {
+      if (n === 1) throw busy();
+      return { ...fetched([capture('fast', 'https://www.ixigo.com/plan/goa', '0:{}')]), final_url: 'https://www.ixigo.com/' };
+    });
+    await fails(createBrowserFetchRunner(call.deps).pageFetch!('t1', { url: '/plan/goa', method: 'GET' }), 'unreachable', /409 browser_busy/);
+    expect(call.calls).toHaveLength(1);
+    expect(call.elapsed()).toBe(0);
   });
 });

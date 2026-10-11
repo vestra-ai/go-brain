@@ -1,0 +1,101 @@
+id: hotels.details
+title: One stay's page on ixigo, with its rating, check-in and check-out times, house rules, amenities, what is nearby and its photos
+asks:
+  - tell me about this villa
+  - does it have a pool
+  - what time is check-in there
+  - are kids allowed at that hotel
+  - how far is it from the beach
+  - is villa mein pool hai kya
+inputs:
+  hotel: { kind: option, about: "the stay, one of Go's search results" }
+auth: none
+changes_state: false
+# The stay's own page, which the ixigo tool gives for the option ("r_ab12#2"), as hotels.search links it: /hotels/{id}/details
+# with the place, the dates and the guests in its query, which is kept as it is. The page's details call holds everything here; its map call adds the map,
+# and its rooms call, when it has come by then, the free cancellation date (the list's cards have none, 10 Oct atlas).
+let:
+  hotel_id: '$groups(hotel, "^(?:https://www\\.ixigo\\.com)?/hotels/(\\d+)/details\\?")[0]'
+  hotel_query: '$groups(hotel, "^(?:https://www\\.ixigo\\.com)?/hotels/\\d+/details\\?([^#\\s]*)$")[0]'
+  hotel_name: '$decodeUrlComponent($groups(hotel, "[?&]hName=([^&#]*)")[0])'
+page: /hotels/{$hotel_id}/details?{$hotel_query|raw}
+capture:
+  - /accommodation-search/api/v1/accommodations/details$
+  - { match: /accommodation-search/api/v1/maps/location$, required: false }
+  - { match: "/accommodations/details/{$hotel_id}/rooms$", required: false }
+read:
+  # A call that came twice (the page asks again after its popup) reads as its first answer.
+  rows: { from: /accommodation-search/api/v1/accommodations/details$, list: '($type($) = "array" ? $[0] : $).data.hotelDetailResponse' }
+  also:
+    map: { from: /accommodation-search/api/v1/maps/location$, value: '($type($) = "array" ? $[0] : $).data.mapUrl' }
+    # The rate ixigo recommends (the first when none is): its cancellation as the page says it, and the last moment it
+    # is fully refundable, in the stay's own time.
+    cancel:
+      from: "/accommodations/details/{$hotel_id}/rooms$"
+      value: |
+        (
+          $rates := ($type($) = "array" ? $[0] : $).data.rooms.roomOptions;
+          $rate := $rates[isRecommended = true][0] ? $rates[isRecommended = true][0] : $rates[0];
+          $rate ? {
+            "line": $rate.cancellationBenefits.data,
+            "rate": $rate.name,
+            "until": $rate.cancellationBenefits.policy[code = "FULLY_REFUNDABLE"][0].cancellationDate
+          }
+        )
+    # Each kind of room (REV4 B4): its name before ixigo's offer text, how many it sleeps as ixigo says it (a room with
+    # no number is left out, never guessed), and its cheapest rate a night with taxes, in paise. The whole stay is that
+    # times the nights (travel/rooms.ts).
+    rooms:
+      from: "/accommodations/details/{$hotel_id}/rooms$"
+      value: |
+        [($type($) = "array" ? $[0] : $).data.rooms.(
+          $occupancy := properties[code = "OCCUPANCY"][0].data;
+          $sleeps := $type($occupancy) = "string" ? $number($match($occupancy, /\d+/)[0].match);
+          $rate := $sort(roomOptions[$type(fareDetail.displayedBaseFare) = "number"], function($a, $b) { $a.fareDetail.displayedBaseFare > $b.fareDetail.displayedBaseFare })[0];
+          ($sleeps >= 1 and $rate and $type(name) = "string") ? {
+            "room_type_id": "rt_" & $string(id),
+            "label": $substring($trim($substringBefore(name, " - ")), 0, 60),
+            "sleeps": $sleeps,
+            "night_minor": $round(($rate.fareDetail.displayedBaseFare + ($type($rate.fareDetail.taxesAndFees) = "number" ? $rate.fareDetail.taxesAndFees : 0)) * 100)
+          }
+        )]
+answer:
+  as: facts
+  title: "{$hotel_name ? $hotel_name : 'The stay'}"
+  max: 1
+  # The stay's own address is left out: its area and town say where it is.
+  each: |
+    (
+      $rating := $num(userRating);
+      $clean := function($t) { $trim($replace($t, /<[^>]+>/, " ")) };
+      {
+        "name": $trim(name),
+        "area": locality,
+        "town": city,
+        "stars": starRating,
+        "rating_out_of_10": $rating > 0 ? $rating,
+        "rating_word": userRatingCategory,
+        "reviews": userRatingCount > 0 ? userRatingCount,
+        "check_in_from": houseRulesAndPolicies.checkinTime,
+        "check_out_by": houseRulesAndPolicies.checkoutTime,
+        "house_rules": [houseRulesAndPolicies.rules[$count(subRules.details) > 0].($trim(heading) & ": " & $join(subRules.details.$clean($), " "))],
+        "amenities": $distinct(amenityDetails.amenities.name),
+        "nearby": $distinct(landmarks.(name & ", " & $string(distance) & " " & unit))[[0..9]],
+        "nearby_list": [landmarks[$type(name) = "string" and $trim(name) != ""].{ "name": $trim(name), "distance": $num(distance), "unit": unit }][[0..19]],
+        "about": aboutSection.data ? $clean(aboutSection.data),
+        "lat": locationDetail.lat,
+        "lng": locationDetail.lon,
+        "map": $map,
+        "cancellation": $cancel.line ? $cancel.line & ($cancel.rate ? " (" & $trim($cancel.rate) & ")" : ""),
+        "free_cancellation_until": $cancel.until,
+        "photos": [imageInfo.propertyImages.imageList[[0..5]].((caption ? caption & ": " : "") & url)],
+        "photo_list": [imageInfo.propertyImages.imageList[$type(url) = "string"][[0..11]].{ "url": url, "label": ($type(caption) = "string" and $trim(caption) != "") ? $substring($trim(caption), 0, 40) }],
+        "room_types": $rooms
+      }
+    )
+ttl_minutes: 60
+samples: { details: hotels.details.json, map: hotels.details.map.json }
+measured: { fast_ms: 287, page_ms: 2240, flow_ms: null }
+notes: >-
+  The same page calls the rooms (hotels.rooms), the reviews (hotels.reviews) and the stays like it (hotels.similar).
+  Seen on 7 Oct 2026 for stays in Assagao; the details call came back in about 0.3 s from the page.

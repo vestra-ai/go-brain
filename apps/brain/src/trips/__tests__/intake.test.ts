@@ -4,11 +4,11 @@ import { ev, goaSnapshot, msg, vote } from '../../__tests__/fixtures/goa.js';
 import type { Speak } from '../../composer/speak.js';
 import { withSchema } from '../../db/test-db.js';
 import { createDesk, type Desk } from '../../desk/desk.js';
-import type { TripEvent } from '../../door/methods.js';
+import type { Trip, TripEvent } from '../../door/methods.js';
 import { silentLog } from '../../log.js';
 import { UNSURE_READ, type Reflex, type ReflexRead } from '../../reflex/reflex.js';
 import { createMessageHooks } from '../hooks.js';
-import { createIntake } from '../intake.js';
+import { createIntake, stayBookedBefore } from '../intake.js';
 import { createTripLog } from '../log.js';
 import { createPacks } from '../pack.js';
 import { createSetup } from '../setup.js';
@@ -22,7 +22,7 @@ afterAll(() => db.drop());
 const sure = <T>(value: T) => ({ value, sure: true as const });
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
-function harness(o: { reflex?: (order: string[]) => Reflex; answers?: FakeAnswers; failFirstPut?: boolean; dueNow?: (text: string | null | undefined) => boolean } = {}) {
+function harness(o: { reflex?: (order: string[]) => Reflex; answers?: FakeAnswers; failFirstPut?: boolean; dueNow?: (text: string | null | undefined) => boolean; away?: (tripId: string) => Promise<boolean>; rehome?: (tripId: string, home: { instance: string; server: string | null }) => void } = {}) {
   const now = () => new Date();
   const order: string[] = [];
   const f = fakeLink({
@@ -72,10 +72,10 @@ function harness(o: { reflex?: (order: string[]) => Reflex; answers?: FakeAnswer
   const reflex: Reflex = o.reflex?.(order) ?? { read: async () => { order.push('reflex'); return UNSURE_READ; } };
   const intake = createIntake({
     pool: db.pool, log: silentLog, now, tripLog, packs, setup, desk: flakyDesk, speak, hooks,
-    reflex: () => reflex, runningTasks: async () => [], waitMs: 2_000,
+    reflex: () => reflex, runningTasks: async () => [], waitMs: 2_000, ...(o.away ? { away: o.away } : {}), ...(o.rehome ? { rehome: o.rehome } : {}),
   });
   const send = (e: TripEvent) => intake.sendEvent(e, { instance: 'test', frameId: `gs_${e.event_id}` });
-  return { intake, send, f, order, emitted, packs };
+  return { intake, send, f, order, emitted, packs, tripLog };
 }
 
 const open = async (tripId: string) =>
@@ -90,6 +90,44 @@ describe('intake', () => {
     expect(await h.send(e)).toEqual({ accepted: true, duplicate: true });
     await h.intake.idle();
     expect(h.emitted).toEqual([e.event_id]);
+  });
+
+  it('answers send_event once the event is kept, never after its work: work that never finishes holds no answer, mandate.set too', async () => {
+    // GO-TEAM-FINAL §6, 10 Oct: mandate.set took 2,142 ms to answer, and the promise is 2 s.
+    const T = 't_in_answer_first';
+    const h = harness();
+    h.tripLog.onEvent((e) => (e.trip_id === T ? new Promise<void>(() => {}) : undefined));
+    expect(await h.send(created(T))).toEqual({ accepted: true, duplicate: false });
+    const mandate = ev(2, 'mandate.set', {
+      decision_id: 'd_villa',
+      mandate: { choice_index: 0, cap_minor: 6_000_000, currency: 'INR', refundable_only: false, payer_person_id: 'p_rahul', set_at: '2026-10-10T10:00:00Z' },
+    }, T);
+    expect(await h.send(mandate)).toEqual({ accepted: true, duplicate: false });
+    expect(await h.send(mandate)).toEqual({ accepted: true, duplicate: true });
+    // Kept, though the first event's work still hangs and the second's has not started.
+    await vi.waitFor(() => expect(h.emitted).toContain(created(T).event_id));
+    expect(h.emitted).not.toContain(mandate.event_id);
+    const { rows } = await db.pool.query<{ seq: number }>('select seq from trip_events where trip_id = $1 order by seq', [T]);
+    expect(rows.map((r) => r.seq)).toEqual([1, 2]);
+  });
+
+  // Prod, 11 Oct 07:24Z: the Server redeployed, its socket's instance changed, and every older trip waited for the old one.
+  it("moves the trip's home to the socket its newest event came on, and tells the link at once", async () => {
+    const moved: Array<[string, { instance: string; server: string | null }]> = [];
+    const h = harness({ rehome: (tripId, home) => { moved.push([tripId, home]); } });
+    await h.send(created('t_in_inst'));
+    await h.intake.sendEvent(ev(2, 'message.created', { message: msg(2, 'p_arjun', 'see you all there') }, 't_in_inst'), { instance: 'another', frameId: 'gs_other' });
+    await h.intake.idle();
+    const { rows } = await db.pool.query<{ server_instance: string; server_name: string | null }>('select server_instance, server_name from trips where trip_id = $1', ['t_in_inst']);
+    expect(rows[0]).toEqual({ server_instance: 'another', server_name: null });
+    expect(moved).toEqual([['t_in_inst', { instance: 'test', server: null }], ['t_in_inst', { instance: 'another', server: null }]]);
+    // A Server that gives its own name (?server=) has it kept with the instance, both from the newest event.
+    await h.intake.sendEvent(created('t_in_named'), { instance: 'server-1', server: 'vestra-staging', frameId: 'gs_named' });
+    await h.intake.sendEvent(ev(2, 'message.created', { message: msg(2, 'p_arjun', 'hi') }, 't_in_named'), { instance: 'server-2', server: 'vestra-staging', frameId: 'gs_named_2' });
+    await h.intake.idle();
+    const named = await db.pool.query('select server_instance, server_name from trips where trip_id = $1', ['t_in_named']);
+    expect(named.rows[0]).toEqual({ server_instance: 'server-2', server_name: 'vestra-staging' });
+    expect(moved.at(-1)).toEqual(['t_in_named', { instance: 'server-2', server: 'vestra-staging' }]);
   });
 
   it('trip.created: the pack comes from the event, setup runs, and Go is due to say hello', async () => {
@@ -179,10 +217,12 @@ describe('intake', () => {
     expect(items[1]!.due_at.getTime() - sentAt).toBeGreaterThan(1_500);
   });
 
-  it('a sure-complete read is due at once; sure chatter gets no item unless it names Go', async () => {
+  it('a sure-complete read is due at once; pure banter gets no item unless it names Go, and a line no one spoke to Go in does', async () => {
     const read = (m: { text?: string | null }): ReflexRead => {
-      if (m.text === 'lol') return { ...UNSURE_READ, forGo: sure(false) };
-      if (m.text?.startsWith('@Go')) return { ...UNSURE_READ, forGo: sure(false), complete: sure(true) };
+      if (m.text === 'lol') return { ...UNSURE_READ, forGo: sure(false), banter: sure(true) };
+      if (m.text?.startsWith('@Go')) return { ...UNSURE_READ, forGo: sure(false), banter: sure(true), complete: sure(true) };
+      // Not spoken to Go, but not banter: Go jumps in wherever it can add anything (Keshav, 10 Oct).
+      if (m.text === "I'm veg btw") return { ...UNSURE_READ, forGo: sure(false), complete: sure(true) };
       return { ...UNSURE_READ, complete: sure(true) };
     };
     const h = harness({ reflex: () => ({ read: async (m) => read(m) }) });
@@ -191,11 +231,51 @@ describe('intake', () => {
     await h.send(ev(2, 'message.created', { message: msg(2, 'p_meher', 'lol') }, T));
     await h.send(ev(3, 'message.created', { message: msg(3, 'p_kabir', '@Go is it hot in November?') }, T));
     await h.send(ev(4, 'message.created', { message: msg(4, 'p_priya', 'what time is check-in?') }, T));
+    await h.send(ev(5, 'message.created', { message: msg(5, 'p_meher', "I'm veg btw") }, T));
     const sentAt = Date.now();
     await h.intake.idle();
     const items = (await open(T)).filter((r) => r.kind === 'message');
-    expect(items.map((r) => r.ref)).toEqual(['m_3', 'm_4']);
+    expect(items.map((r) => r.ref)).toEqual(['m_3', 'm_4', 'm_5']);
     for (const r of items) expect(r.due_at.getTime()).toBeLessThanOrEqual(sentAt + 200);
+  });
+
+  // Keshav, 10 Oct: "go only responds to @go? this is not right". A line the quick read is sure asks Go is an ask, its name
+  // or not: typing shows, it is due at once when it ends, and the turn takes it as an ask (asksGo).
+  it('a line the quick read is sure asks Go is an ask without its name; one it is unsure of stays the group\'s', async () => {
+    const read = (m: { text?: string | null }): ReflexRead => (m.text?.startsWith('I want') ? { ...UNSURE_READ, forGo: sure(true) } : UNSURE_READ);
+    const h = harness({ reflex: () => ({ read: async (m) => read(m) }) });
+    const T = 't_in_asks';
+    await h.send(created(T));
+    const sentAt = Date.now();
+    await h.send(ev(2, 'message.created', { message: msg(2, 'p_meher', 'I want to login again to Ixigo.') }, T));
+    await h.send(ev(3, 'message.created', { message: msg(3, 'p_kabir', 'login phir se karna hai shayad') }, T));
+    await h.intake.idle();
+    expect(h.order).toContain(`typing:${T}`);
+    const items = (await open(T)).filter((r) => r.kind === 'message');
+    expect(items.map((r) => [r.ref, r.payload])).toEqual([
+      ['m_2', { messageId: 'm_2', seq: 2, namesGo: false, asksGo: true }],
+      ['m_3', { messageId: 'm_3', seq: 3, namesGo: false }],
+    ]);
+    // It plainly ends, so it is due at once, as a line naming Go would be.
+    expect(items[0]!.due_at.getTime()).toBeLessThanOrEqual(sentAt + 500);
+    expect(items[1]!.due_at.getTime() - sentAt).toBeGreaterThan(1_500);
+  });
+
+  // Keshav, 10 Oct: "jev decision model should know that many messages even without @go or go can be responded by go".
+  it('question 11 sure of something for Go wakes the turn with the jump-in framing; sure of nothing leaves the line, banter or not', async () => {
+    const read = (m: { text?: string | null }): ReflexRead => {
+      if (m.text === "Arjun can't leave before 6 on Friday") return { ...UNSURE_READ, forGo: sure(false), banter: sure(true), actionable: sure(true) };
+      if (m.text === 'arre yaar office mein aaj bahut kaam hai') return { ...UNSURE_READ, forGo: sure(false), actionable: sure(false) };
+      return UNSURE_READ;
+    };
+    const h = harness({ reflex: () => ({ read: async (m) => read(m) }) });
+    const T = 't_in_actionable';
+    await h.send(created(T));
+    await h.send(ev(2, 'message.created', { message: msg(2, 'p_meher', "Arjun can't leave before 6 on Friday") }, T));
+    await h.send(ev(3, 'message.created', { message: msg(3, 'p_kabir', 'arre yaar office mein aaj bahut kaam hai') }, T));
+    await h.intake.idle();
+    const items = (await open(T)).filter((r) => r.kind === 'message');
+    expect(items.map((r) => [r.ref, r.payload])).toEqual([['m_2', { messageId: 'm_2', seq: 2, namesGo: false, actionable: true }]]);
   });
 
   it('Go\'s own messages and withheld ones never wake Go', async () => {
@@ -207,6 +287,150 @@ describe('intake', () => {
     await h.intake.idle();
     expect((await open(T)).filter((r) => r.kind === 'message')).toEqual([]);
     expect(h.order.filter((x) => x.startsWith('hook:'))).toEqual([]);
+  });
+
+  // Contract 1.1 tolerance (1): a message from the Server itself (author system: "Priya added a photo", a check-in
+  // reminder) is kept, as an event or read back after a gap, and Go never answers it as if a person spoke, even "@Go".
+  it('a message from the Server itself is kept and never wakes Go, as an event or read back after a gap', async () => {
+    const T = 't_in_system';
+    const system = (seq: number, text: string) => msg(seq, null, text, { author: { kind: 'system' }, mentions_go: true });
+    const h = harness({
+      answers: {
+        read_trip: (p) => goaSnapshot({ trip_id: p.trip_id, seq: 5 }),
+        read_messages: () => ({ messages: [system(3, '@Go Kabir shared a location'), msg(4, 'p_kabir', 'there it is')], has_more: false }),
+      },
+    });
+    await h.send(created(T));
+    await h.send(ev(2, 'message.created', { message: system(2, '@Go Priya added 3 photos') }, T));
+    await h.send(ev(5, 'message.created', { message: msg(5, 'p_arjun', 'nice') }, T));
+    await h.intake.idle();
+    const items = (await open(T)).filter((r) => r.kind === 'message');
+    expect(items.map((r) => r.ref).sort()).toEqual(['m_4', 'm_5']);
+    expect(h.order.filter((x) => x.startsWith('typing:') || x === 'hook:m_2' || x === 'hook:m_3')).toEqual([]);
+    const pack = await h.packs.get(T);
+    expect(pack.messages.filter((m) => m.author.kind === 'system').map((m) => m.message_id)).toEqual(['m_2', 'm_3']);
+  });
+
+  // The Server team, 10 Oct (GO-TEAM-ASKS-REV4 A4): a line for every money movement, the expenses Go adds too, with no
+  // event of its own, so Go reads them back at the next gap. They are the trip's record: no turn, no chime-in (the reflex
+  // and the lanes' hooks, where chime-ins start, never see them), no typing. On 8 Oct Go commented on one.
+  it("the App's money lines, read back with no event of their own, wake no turn and no chime-in", async () => {
+    const T = 't_in_money_lines';
+    const lines = [
+      'Priya added Airport cab · ₹1,700 · split 4 ways',
+      'Go added Villa Sol · ₹54,200 · paid by Rahul · split 4 ways',
+      'Priya changed the split of Airport cab · ₹1,700 · 3 ways',
+      'Priya removed Airport cab · ₹1,700',
+      'Aarav paid Rahul ₹5,800',
+    ];
+    const system = (seq: number, text: string) => msg(seq, null, text, { author: { kind: 'system' } });
+    const h = harness({
+      reflex: (order) => ({ read: async (m) => { order.push(`reflex:${m.message_id}`); return UNSURE_READ; } }),
+      answers: {
+        read_trip: (p) => goaSnapshot({ trip_id: p.trip_id, seq: 6 }),
+        read_messages: () => ({ messages: lines.map((t, i) => system(i + 2, t)), has_more: false }),
+      },
+    });
+    await h.send(created(T));
+    await h.send(ev(7, 'message.created', { message: msg(7, 'p_arjun', 'ok') }, T));
+    await h.intake.idle();
+    expect((await open(T)).filter((r) => r.kind === 'message').map((r) => r.ref)).toEqual(['m_7']);
+    expect(h.order).toEqual(['reflex:m_7', 'hook:m_7']);
+    const pack = await h.packs.get(T);
+    expect(pack.messages.filter((m) => m.author.kind === 'system').map((m) => m.text)).toEqual(lines);
+  });
+
+  // Contract 1.1 tolerance (2): replace_card changes no change number by the contract, but a Server that bumps a
+  // message's updated_seq when Go replaces its card hands it back from read_messages. It wakes nobody, and a person's
+  // message read back again (a reaction moved its updated_seq) is not handled twice.
+  it('a message read back after a gap with only its card replaced, or a reaction, wakes nobody and is not handled twice', async () => {
+    const T = 't_in_replaced';
+    const card = (state: 'running' | 'done') => ({
+      kind: 'working' as const, card_id: 'c_live_1', fallback_text: 'Go is searching hotels on ixigo.', task_id: 'search_1',
+      title: 'Searching hotels on ixigo', state, steps: [{ text: 'Opening ixigo hotels', state: state === 'done' ? 'done' as const : 'doing' as const }],
+      updated_at: '2026-10-08T10:00:00Z',
+    });
+    const h = harness({
+      answers: {
+        read_trip: (p) => goaSnapshot({ trip_id: p.trip_id, seq: 6 }),
+        read_messages: () => ({
+          messages: [
+            msg(2, null, 'On it.', { card: card('done'), updated_seq: 4 }),
+            msg(3, 'p_priya', '@Go stays in Palolem?', { updated_seq: 5, reactions: [{ emoji: '👍', person_id: 'p_rahul' }] }),
+          ],
+          has_more: false,
+        }),
+      },
+    });
+    await h.send(created(T));
+    await h.send(ev(2, 'message.created', { message: msg(2, null, 'On it.', { card: card('running') }) }, T));
+    await h.send(ev(3, 'message.created', { message: msg(3, 'p_priya', '@Go stays in Palolem?') }, T));
+    await h.intake.idle();
+    const before = (await open(T)).filter((r) => r.kind === 'message');
+    expect(before.map((r) => r.ref)).toEqual(['m_3']);
+    const hooksBefore = h.order.filter((x) => x.startsWith('hook:')).length;
+    await h.send(ev(6, 'message.created', { message: msg(6, 'p_meher', 'ok') }, T));
+    await h.intake.idle();
+    const after = (await open(T)).filter((r) => r.kind === 'message');
+    expect(after.map((r) => r.ref)).toEqual(['m_3', 'm_6']);
+    expect(h.order.filter((x) => x.startsWith('hook:')).slice(hooksBefore)).toEqual(['hook:m_6']);
+    const pack = await h.packs.get(T);
+    expect(pack.messages.find((m) => m.message_id === 'm_2')?.card).toMatchObject({ state: 'done' });
+  });
+
+  // Contract 1.1 tolerance (3): expense.changed's new answers (approved, disputed) and a payback (settlement.recorded)
+  // are taken: the trip is read again for the Server's money, and nothing breaks.
+  it("takes 1.1's expense answers and paybacks: each reads the trip again, and Go carries on", async () => {
+    const T = 't_in_money11';
+    const h = harness({ answers: { read_trip: (p) => goaSnapshot({ trip_id: p.trip_id, seq: 4 }) } });
+    await h.send(created(T));
+    const expense = {
+      expense_id: 'x_1', paid_by_person_id: 'p_rahul', amount_minor: 240000, currency: 'INR', note: 'Cab to Anjuna', category: 'getting_around' as const,
+      split_person_ids: ['p_rahul', 'p_priya'], created_at: '2026-10-08T10:00:00Z', status: 'approved' as const,
+      confirmations: [{ person_id: 'p_priya', state: 'approved' as const, at: '2026-10-08T10:05:00Z' }],
+    };
+    const reads = () => h.f.calls.filter((c) => c.method === 'read_trip').length;
+    const first = reads();
+    await h.send(ev(2, 'expense.changed', { expense, change: 'approved', by: { kind: 'person', person_id: 'p_priya' }, by_person_id: 'p_priya' }, T));
+    await h.send(ev(3, 'expense.changed', { expense: { ...expense, status: 'disputed' }, change: 'disputed', by: { kind: 'person', person_id: 'p_priya' }, by_person_id: 'p_priya' }, T));
+    await h.send(ev(4, 'settlement.recorded', {
+      settlement: {
+        settlement_id: 'st_1', from_person_id: 'p_priya', to_person_id: 'p_rahul', amount_minor: 120000, currency: 'INR', method: 'upi',
+        status: 'confirmed', recorded_at: '2026-10-08T10:58:00Z', confirmed_at: '2026-10-08T11:00:00Z',
+      },
+      by: { kind: 'person', person_id: 'p_rahul' },
+    }, T));
+    await h.intake.idle();
+    expect(reads()).toBeGreaterThan(first);
+    await h.send(ev(5, 'message.created', { message: msg(5, 'p_arjun', '@Go who owes what now?') }, T));
+    await h.intake.idle();
+    expect((await open(T)).filter((r) => r.kind === 'message').map((r) => r.ref)).toEqual(['m_5']);
+  });
+
+  // GO-TEAM-ASKS-REV4 B2 and A1 (the Server team, 10 Oct): a fixed split comes as change "updated" with the whole expense
+  // (no answers on it any more), and a payback counts once recorded. Each reads the trip again, like any money change.
+  it('takes a fixed split (updated) and a payback that counts once recorded: each reads the trip again', async () => {
+    const T = 't_in_money_rev4';
+    const h = harness({ answers: { read_trip: (p) => goaSnapshot({ trip_id: p.trip_id, seq: 3 }) } });
+    await h.send(created(T));
+    await h.intake.idle();
+    const expense = {
+      expense_id: 'x_2', paid_by_person_id: 'p_priya', amount_minor: 170000, currency: 'INR', note: 'Airport cab', category: 'getting_around' as const,
+      split_person_ids: ['p_priya', 'p_rahul', 'p_arjun'], created_at: '2026-10-10T08:00:00Z',
+    };
+    const reads = () => h.f.calls.filter((c) => c.method === 'read_trip').length;
+    const first = reads();
+    expect(await h.send(ev(2, 'expense.changed', { expense, change: 'updated', by: { kind: 'person', person_id: 'p_priya' } }, T))).toEqual({ accepted: true, duplicate: false });
+    await h.intake.idle();
+    const afterSplit = reads();
+    expect(afterSplit).toBeGreaterThan(first);
+    const at = '2026-10-10T09:02:00Z';
+    await h.send(ev(3, 'settlement.recorded', {
+      settlement: { settlement_id: 'st_2', from_person_id: 'p_arjun', to_person_id: 'p_priya', amount_minor: 56700, currency: 'INR', method: 'cash', status: 'confirmed', recorded_at: at, confirmed_at: at },
+      by: { kind: 'person', person_id: 'p_arjun' },
+    }, T));
+    await h.intake.idle();
+    expect(reads()).toBeGreaterThan(afterSplit);
   });
 
   it('handles a trip\'s events one at a time in seq order, even when the reflex is slow', async () => {
@@ -310,6 +534,50 @@ describe('intake', () => {
     expect(changes[0]?.payload).toEqual({ type: 'decision.closed', decisionId: 'd_stay', reason: 'everyone_voted' });
   });
 
+  // Keshav, 12 Oct ("people joining later issues"): someone who joins after the group's stay was booked wakes Go once, to
+  // split the stay with them and find their flights (composer/wakes.ts, person.joined).
+  it('a person who joins after the group\'s stay was booked wakes Go, once; a join with nothing booked does not', async () => {
+    const h = harness();
+    const base = goaSnapshot();
+    const dev = { ...base.people[1]!, person_id: 'p_dev', name: 'Dev', from_city: 'Pune' };
+    const villa: Trip['bookings'][number] = {
+      booking_id: 'b_villa', kind: 'stay', status: 'confirmed', title: 'Villa Sol', vendor: 'ixigo', ref: 'IX123', amount_minor: 4_000_000,
+      currency: 'INR', payer_person_id: 'p_rahul', for_person_ids: base.people.map((x) => x.person_id), created_at: '2026-10-11T10:00:00Z',
+    };
+    const T = 't_in_join';
+    await h.send(ev(1, 'trip.created', { trip: goaSnapshot({ trip_id: T, bookings: [villa] }) }, T));
+    await h.send(ev(2, 'person.joined', { person: dev }, T));
+    await h.send(ev(3, 'person.left', { person_id: 'p_dev' }, T));
+    await h.send(ev(4, 'person.joined', { person: dev }, T));
+    // Nothing booked: a join is only a join.
+    const N = 't_in_join_none';
+    await h.send(created(N));
+    await h.send(ev(2, 'person.joined', { person: dev }, N));
+    await h.intake.idle();
+    const changes = (await open(T)).filter((r) => r.kind === 'trip_change');
+    expect(changes.map((r) => [r.id, r.ref])).toEqual([[`joined:${T}:p_dev`, 'person:p_dev']]);
+    expect(changes[0]?.payload).toEqual({ type: 'person.joined', personId: 'p_dev', bookingId: 'b_villa' });
+    expect((await open(N)).filter((r) => r.kind === 'trip_change')).toEqual([]);
+  });
+
+  it('the stay booked before someone joined is theirs to be offered, never for a trip of one or a stay already theirs', () => {
+    const base = goaSnapshot();
+    const five = base.people.map((x) => x.person_id);
+    const villa: Trip['bookings'][number] = {
+      booking_id: 'b_villa', kind: 'stay', status: 'confirmed', title: 'Villa Sol', vendor: 'ixigo', ref: 'IX123', amount_minor: 4_000_000,
+      currency: 'INR', payer_person_id: 'p_rahul', for_person_ids: five, created_at: '2026-10-11T10:00:00Z',
+    };
+    const withDev = [...base.people, { ...base.people[1]!, person_id: 'p_dev', name: 'Dev' }];
+    expect(stayBookedBefore(goaSnapshot({ people: withDev, bookings: [villa] }), 'p_dev')?.booking_id).toBe('b_villa');
+    expect(stayBookedBefore(goaSnapshot({ people: withDev, bookings: [] }), 'p_dev')).toBeNull();
+    expect(stayBookedBefore(goaSnapshot({ people: withDev, bookings: [{ ...villa, for_person_ids: [...five, 'p_dev'] }] }), 'p_dev')).toBeNull();
+    expect(stayBookedBefore(goaSnapshot({ people: withDev, bookings: [{ ...villa, status: 'cancelled' }] }), 'p_dev')).toBeNull();
+    expect(stayBookedBefore(goaSnapshot({ people: withDev, bookings: [{ ...villa, kind: 'flight' }] }), 'p_dev')).toBeNull();
+    // A stay booked for one person, and a trip of one.
+    expect(stayBookedBefore(goaSnapshot({ people: withDev, bookings: [{ ...villa, for_person_ids: ['p_rahul'] }] }), 'p_dev')).toBeNull();
+    expect(stayBookedBefore(goaSnapshot({ people: base.people.slice(0, 1), bookings: [villa] }), 'p_dev')).toBeNull();
+  });
+
   it('recover handles events that were written but never processed before a crash', async () => {
     const T = 't_in_11';
     const before = harness();
@@ -333,6 +601,20 @@ describe('intake', () => {
     await h.intake.refreshActive();
     await h.intake.idle();
     expect((await open(T)).some((r) => r.ref === 'm_9' && r.payload.namesGo === true)).toBe(true);
+  });
+
+  it("the minute refresh reads nothing for a trip whose Server has been away for minutes (a closed drill), and reads the rest", async () => {
+    const [away, here] = ['t_in_away', 't_in_here'];
+    const h = harness({ away: async (tripId) => tripId === away });
+    await h.send(created(away));
+    await h.send(created(here));
+    await h.intake.idle();
+    const reads = (tripId: string) => h.f.calls.filter((c) => c.params.trip_id === tripId && (c.method === 'read_trip' || c.method === 'read_messages')).length;
+    const before = [reads(away), reads(here)];
+    await h.intake.refreshActive();
+    await h.intake.idle();
+    expect(reads(away)).toBe(before[0]);
+    expect(reads(here)).toBeGreaterThan(before[1]!);
   });
 
   it('one refresh waits per trip, and a refresh that waited reads nothing for a trip marked gone meanwhile', async () => {

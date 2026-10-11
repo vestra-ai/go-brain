@@ -1,0 +1,41 @@
+id: hotels.offers
+title: The hotel offers ixigo shows over a place's stays (bank and card offers, coupon codes), each with its terms page
+asks:
+  - any hotel offers for our goa stay
+  - hdfc card discount on hotels?
+  - hotel coupon code on ixigo
+  - goa hotel booking pe koi offer hai kya
+inputs:
+  place: { kind: place, lookup: hotels.place_lookup, about: "the city, area or region to stay in" }
+  check_in: { kind: date }
+  check_out: { kind: date }
+  adults: { kind: count, value: "$trip.people", min: 1, max: 30, about: how many people stay }
+  rooms: { kind: count, value: "$ceil(adults / 2)", min: 1, max: 8 }
+auth: none
+changes_state: false
+# hotels.search's results page: the strip of offers over the list. Its call needs the page's own headers, so only the
+# page makes it.
+page: >-
+  /hotels/search/result?locationId={place.location.locationId}&locationName={place.location.locationName}&locationType={place.location.locationType}&masterLocationId={place.location.masterLocationId}&countryId={place.location.countryId}&checkinDate={check_in|DDMMYYYY}&checkoutDate={check_out|DDMMYYYY}&adultCount={adults}&roomCount={rooms}&childCount=0
+fast: { url: /upahaar-inventory/api/deals?productType=HOTELS&source=SRP&isProductOnly=true&journeyType=DOMESTIC, headers: { ixisrc: ixiweb, clientid: ixiweb } }
+capture:
+  - /upahaar-inventory/api/deals?productType=HOTELS
+read:
+  rows: { from: /upahaar-inventory/api/deals?productType=HOTELS, list: '($type($) = "array" ? $[0] : $).data.srp.headerDeals.deals' }
+answer:
+  as: facts
+  title: Hotel offers on ixigo
+  max: 15
+  each: |
+    $type(offerTitle) = "string" ? {
+      "offer": offerTitle,
+      "code": offerCode,
+      "terms": $type(pathName) = "string" ? "https://www.ixigo.com" & pathName
+    }
+ttl_minutes: 60
+samples: { page: hotels.offers.json }
+measured: { fast_ms: 33, page_ms: 1930, flow_ms: null }
+notes: >-
+  Seen on 7 Oct 2026: 14 offers, such as AUSFD (AU Bank credit cards, 15% up to ₹1,500). The best coupon is already
+  applied to each stay's price (a row's fareDetail says "Coupon code IXIFIRST applied!"); a card offer is the payer's
+  choice at payment, never Go's.

@@ -7,11 +7,12 @@ import type { z } from 'zod';
 import { makeTurnCtx, type QuickTool, type TurnCtx } from '../../composer/tools.js';
 import { withSchema } from '../../db/test-db.js';
 import { TO_SERVER_SCHEMAS, type Message, type ToServerMethod, type ToServerParams, type ToServerResult, type Trip } from '../../door/methods.js';
+import { SocketCallError } from '../../door/rpc.js';
 import type { ServerLink } from '../../door/server-link.js';
 import type { Confirmed, Hold, Travel } from '../../travel/travel.js';
 import { askToPay, idsFrom, postCard, type AskResult } from '../ask.js';
 import type { MoneyDeps } from '../deps.js';
-import type { PayLinkInput, PayLinkRefusal, VaultClient } from '../vault-client.js';
+import type { PayLinkInput, PayLinkRefusal, TravelDetails, VaultClient } from '../vault-client.js';
 
 /** The contract's spend approval test key (TEST KEY ONLY), so the fake Server signs real approvals. */
 export const SPEND_VECTOR = JSON.parse(
@@ -118,7 +119,10 @@ export class FakeCallError extends Error {
 interface ApprovalRow {
   approval_id: string;
   trip_id: string;
-  decision_id: string;
+  /** Null for a person's own pick (contract 1.3), which names it instead. */
+  decision_id: string | null;
+  /** The person whose own pick it is (personal.person_id); null for a vote's. */
+  for_person_id: string | null;
   payer_person_id: string;
   amount_minor: number;
   currency: string;
@@ -237,7 +241,8 @@ export class FakeServerLink implements ServerLink {
         if (typeof p.approval_id === 'string') {
           const row = this.approvals.get(p.approval_id);
           if (!row || row.trip_id !== trip.trip_id) throw new FakeCallError(409, "the approval is not one of this trip's");
-          if (p.decision_id !== row.decision_id) throw new FakeCallError(409, 'the approval is for another vote');
+          if ((p.decision_id ?? null) !== row.decision_id) throw new FakeCallError(409, 'the approval is for another vote');
+          if (row.for_person_id !== null && p.payer_person_id !== row.for_person_id) throw new FakeCallError(409, "the approval is another person's own pick");
           if (row.used) throw new FakeCallError(409, 'the approval is already used');
           if (row.cancelled) throw new FakeCallError(409, 'the approval was cancelled');
           if (p.currency !== row.currency || Number(p.amount_minor) > row.amount_minor) throw new FakeCallError(409, 'the booking costs more than the approval allows');
@@ -248,19 +253,31 @@ export class FakeServerLink implements ServerLink {
         return { booking_id, seq: this.seq(trip) };
       }
       case 'add_reaction':
+      case 'update_trip':
         return { seq: this.seq(trip) };
       case 'add_expense': {
         const expense_id = `e_${++this.n}`;
         trip.expenses.push(C.Expense.parse({ ...p, expense_id, created_at: this.now().toISOString() }));
         return { expense_id, seq: this.seq(trip) };
       }
+      // The Server's update_expense (go-backend 368254a): the split and the note of an expense that stands, by Go; a WriteResult.
+      case 'update_expense': {
+        const e = trip.expenses.find((x) => x.expense_id === p.expense_id);
+        if (!e) throw new SocketCallError(404, `expense ${String(p.expense_id)} does not exist`, 'not_found');
+        const ids = p.split_person_ids as string[];
+        if (ids.some((id) => !trip.people.some((x) => x.person_id === id))) throw new SocketCallError(422, 'split_person_ids: someone is not in the trip', 'invalid');
+        e.split_person_ids = [...new Set(ids)];
+        if (typeof p.note === 'string') e.note = p.note;
+        return { seq: this.seq(trip) };
+      }
       default:
         throw new FakeCallError(-32601, `${method} is not played by the money kit`);
     }
   }
 
-  /** The guide's spend check, in its order, then a signed one-use approval. */
+  /** The guide's spend check, in its order, then a signed one-use approval. A personal pick (1.3): its person in the trip. */
   private spend(trip: Trip, p: Record<string, unknown>): unknown {
+    if (p.personal != null) return this.personal(trip, p);
     const now = this.now();
     const decision = trip.decisions.find((x) => x.decision_id === p.decision_id);
     const m = decision?.mandate;
@@ -276,6 +293,7 @@ export class FakeServerLink implements ServerLink {
     if (p.currency !== m.currency) return deny('currency_mismatch');
     if (Number(p.amount_minor) > m.cap_minor) return deny('over_cap');
     if (m.refundable_only && !(typeof p.refundable_until === 'string' && Date.parse(p.refundable_until) > now.getTime())) return deny('not_refundable');
+    if (trip.bookings.some((b) => b.decision_id === decision.decision_id && b.status === 'confirmed')) return deny('already_booked');
     if (outstanding) return deny('approval_outstanding');
     const iat = Math.floor(now.getTime() / 1000);
     const exp = iat + C.MAX_APPROVAL_TTL_SECONDS;
@@ -302,6 +320,7 @@ export class FakeServerLink implements ServerLink {
       approval_id,
       trip_id: trip.trip_id,
       decision_id: decision.decision_id,
+      for_person_id: null,
       payer_person_id: m.payer_person_id,
       amount_minor: Number(p.amount_minor),
       currency: String(p.currency),
@@ -309,6 +328,41 @@ export class FakeServerLink implements ServerLink {
       used: false,
       cancelled: false,
       cancel_reason: null,
+    });
+    return { status: 'approved', approval_id, approval: token, expires_at: new Date(exp * 1000).toISOString() };
+  }
+
+  /**
+   * The guide's personal rule (1.3), as far as the kit plays it: the person is in the trip; they are the payer, for the
+   * amount Go asked. The Server's own tap and price checks are the sim's (packages/sim state/money.ts).
+   */
+  private personal(trip: Trip, p: Record<string, unknown>): unknown {
+    const pick = p.personal as { person_id: string; card_id: string; option_id: string };
+    const person = pick.person_id;
+    if (!trip.people.some((x) => x.person_id === person)) return { status: 'denied', reason: 'not_in_trip' };
+    const iat = Math.floor(this.now().getTime() / 1000);
+    const exp = iat + C.MAX_APPROVAL_TTL_SECONDS;
+    const approval_id = `ap_${randomBytes(6).toString('hex')}`;
+    const token = C.signSpendApproval(
+      {
+        iss: 'server',
+        aud: 'go-vault',
+        jti: approval_id,
+        trip_id: trip.trip_id,
+        personal: { person_id: pick.person_id, card_id: pick.card_id, option_id: pick.option_id },
+        payer_person_id: person,
+        amount_minor: Number(p.amount_minor),
+        currency: String(p.currency),
+        merchant: String(p.merchant),
+        purpose: String(p.purpose),
+        iat,
+        exp,
+      },
+      this.spendKeyPem,
+    );
+    this.approvals.set(approval_id, {
+      approval_id, trip_id: trip.trip_id, decision_id: null, for_person_id: person, payer_person_id: person,
+      amount_minor: Number(p.amount_minor), currency: String(p.currency), exp, used: false, cancelled: false, cancel_reason: null,
     });
     return { status: 'approved', approval_id, approval: token, expires_at: new Date(exp * 1000).toISOString() };
   }
@@ -433,7 +487,7 @@ export class FakeTravel implements Travel {
 /** The vault for unit tests: records pay links and answers what the test says. */
 export class FakeVaultClient implements VaultClient {
   readonly payLinks: PayLinkInput[] = [];
-  readonly homeLinks: Array<{ personId: string; start: string }> = [];
+  readonly homeLinks: Array<{ personId: string; start: string; display?: string }> = [];
   refuse: PayLinkRefusal | null = null;
   /** Why the vault refused, as its 409 says in `detail`. */
   refuseDetail: string | null = null;
@@ -445,7 +499,17 @@ export class FakeVaultClient implements VaultClient {
 
   constructor(private readonly now: () => Date) {}
 
-  async homeLink(i: { personId: string; start: 'home' | 'add_card' | 'add_login' }): Promise<{ url: string; expiresAt: string }> {
+  /** Each person's travel details, as their vault keeps them; and who was read for which booking (never the values). */
+  readonly travel = new Map<string, TravelDetails>();
+  readonly travelReads: Array<{ personId: string; ref: string }> = [];
+
+  async travelDetails(i: { tripId: string; personId: string; booking: { ref: string; travellerPersonId: string; purpose: string } }): Promise<TravelDetails | null> {
+    if (i.personId !== i.booking.travellerPersonId) throw new Error("the vault reads a person's travel details only for a ticket of their own");
+    this.travelReads.push({ personId: i.personId, ref: i.booking.ref });
+    return this.travel.get(i.personId) ?? null;
+  }
+
+  async homeLink(i: { personId: string; start: 'home' | 'add_card' | 'add_login' | 'add_travel'; display?: 'sheet' | 'embedded' }): Promise<{ url: string; expiresAt: string }> {
     this.homeLinks.push(i);
     return { url: `https://vault.test/l/home_${this.homeLinks.length}`, expiresAt: new Date(this.now().getTime() + 300_000).toISOString() };
   }

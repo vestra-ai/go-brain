@@ -6,8 +6,9 @@ import type { FastifyInstance } from 'fastify';
 import { WebSocketServer, type RawData, type WebSocket } from 'ws';
 import type { z } from 'zod';
 import type { Log } from '../log.js';
-import type { Door, ToGoHandler, UpgradeHandler } from './handlers.js';
+import type { Door, SocketFrom, ToGoHandler, UpgradeHandler } from './handlers.js';
 import { KNOWN_EVENT_TYPES, TO_GO_SCHEMAS, type ToGoMethod } from './methods.js';
+import { NOT_YET, notYet } from './not-yet.js';
 import type { ReplayGuard } from './replay-guard.js';
 import { errorFrame, readFrame, resultFrame, SocketCallError, type RequestFrame } from './rpc.js';
 import type { ServerLinkImpl, SocketHandle } from './server-link.js';
@@ -21,6 +22,12 @@ export interface DoorOptions {
   now: () => Date;
   pingMs?: number;
   idleMs?: number;
+  /**
+   * A person acting in a trip, as a Server request names it (opening its room after a while: catch_up; a tap: card_tap):
+   * often before any line they type, and on the socket of the Server that has the trip now (`from`). Never in a request's
+   * way: called once its params are read, and never throws.
+   */
+  onTripActive?: (tripId: string, from: SocketFrom) => void;
 }
 
 export type DoorImpl = Door & { close(): void; openSockets(): number };
@@ -30,7 +37,7 @@ class TooSlow extends Error {}
 const STATUS_TEXT: Record<number, string> = { 401: 'Unauthorized', 404: 'Not Found', 503: 'Service Unavailable' };
 
 /** Refuses an upgrade with the contract's ErrorBody; the socket never opens. */
-function refuse(socket: Duplex, status: number, code: z.infer<typeof C.ErrorCode>, message: string): void {
+export function refuse(socket: Duplex, status: number, code: z.infer<typeof C.ErrorCode>, message: string): void {
   const body = JSON.stringify({ error: { code, message } } satisfies C.ErrorBody);
   socket.end(
     `HTTP/1.1 ${status} ${STATUS_TEXT[status] ?? 'Error'}\r\nContent-Type: application/json\r\n` +
@@ -38,7 +45,7 @@ function refuse(socket: Duplex, status: number, code: z.infer<typeof C.ErrorCode
   );
 }
 
-function signatureParts(header: string): { t: number; v1: string } | null {
+export function signatureParts(header: string): { t: number; v1: string } | null {
   const fields = new Map<string, string>();
   for (const part of header.split(',')) {
     const i = part.indexOf('=');
@@ -110,24 +117,30 @@ export function createDoor(o: DoorOptions): DoorImpl {
         refuse(socket, 401, 'bad_signature', 'signature already used');
         return;
       }
-      const instance = new URL(target, 'http://go.local').searchParams.get('instance') ?? 'default';
-      wss.handleUpgrade(req, socket, head, (ws) => onSocket(ws, instance));
+      const query = new URL(target, 'http://go.local').searchParams;
+      // instance names this replica; server, the same on every replica of one Server, keys a person's browser
+      // (tasks/browsers.ts) and lets another replica take a trip's requests (server-link.ts).
+      const instance = query.get('instance') ?? 'default';
+      const server = query.get('server');
+      const from: SocketFrom = server ? { instance, server } : { instance };
+      wss.handleUpgrade(req, socket, head, (ws) => onSocket(ws, from));
     } catch (e) {
       o.log.error({ err: e }, 'the socket upgrade failed');
       refuse(socket, 503, 'unavailable', 'try again in a moment');
     }
   }
 
-  function onSocket(ws: WebSocket, instance: string): void {
+  function onSocket(ws: WebSocket, from: SocketFrom): void {
+    const { instance, server } = from;
     const id = `sock_${randomUUID()}`;
     let heardAt = Date.now();
     const heard = (): void => {
       heardAt = Date.now();
     };
-    const handle: SocketHandle = { id, instance, send: (frame) => send(ws, frame) };
+    const handle: SocketHandle = { id, instance, ...(server ? { server } : {}), send: (frame) => send(ws, frame) };
     open.set(id, ws);
     o.link.attach(handle);
-    o.log.info({ instance, socket: id }, 'the Server connected');
+    o.log.info({ instance, server, socket: id }, 'the Server connected');
     // Go pings every 20 s and closes a socket that has been silent for 40 s.
     const ping = setInterval(() => {
       if (ws.readyState === ws.OPEN) ws.ping();
@@ -143,7 +156,7 @@ export function createDoor(o: DoorOptions): DoorImpl {
         send(ws, errorFrame(null, C.SOCKET_ERROR_CODES.parse_error, 'frames are JSON text'));
         return;
       }
-      void onText(ws, handle, textOf(data)).catch((e: unknown) => o.log.error({ err: e }, 'a frame failed'));
+      void onText(ws, from, textOf(data)).catch((e: unknown) => o.log.error({ err: e }, 'a frame failed'));
     });
     ws.on('close', () => {
       clearInterval(ping);
@@ -155,7 +168,7 @@ export function createDoor(o: DoorOptions): DoorImpl {
     ws.on('error', (e) => o.log.warn({ err: e, socket: id }, 'socket error'));
   }
 
-  async function onText(ws: WebSocket, h: SocketHandle, text: string): Promise<void> {
+  async function onText(ws: WebSocket, from: SocketFrom, text: string): Promise<void> {
     const f = readFrame(text);
     if (f.kind === 'unreadable') {
       send(ws, errorFrame(null, C.SOCKET_ERROR_CODES.parse_error, `unreadable frame: ${f.reason}`));
@@ -166,30 +179,25 @@ export function createDoor(o: DoorOptions): DoorImpl {
       o.link.onAnswer(f);
       return;
     }
-    // Trip affinity: Go's requests for this trip go back on the socket that brings its events. Noted before the
-    // answer, so a gap refill the event starts already goes to the right socket.
-    if (f.method === 'send_event') {
-      const tripId = typeof f.params === 'object' && f.params !== null ? (f.params as { trip_id?: unknown }).trip_id : undefined;
-      if (typeof tripId === 'string' && tripId !== '') o.link.noteTrip(tripId, h.id);
-    }
-    send(ws, await answerOnce(f, h.instance));
+    send(ws, await answerOnce(f, from));
   }
 
   /** One answer per request. The same id with the same content again gets the same answer; the handler runs once. */
-  function answerOnce(f: RequestFrame, instance: string): Promise<string> {
+  function answerOnce(f: RequestFrame, from: SocketFrom): Promise<string> {
     const key = createHash('sha1').update(`${f.id}\n${f.method}\n${JSON.stringify(f.params ?? null)}`).digest('hex');
     const hit = recent.get(key);
     if (hit) return hit;
-    const answer = compute(f, instance);
+    const answer = compute(f, from);
     recent.set(key, answer);
     setTimeout(() => recent.delete(key), 5 * 60_000).unref();
     return answer;
   }
 
-  async function compute(f: RequestFrame, instance: string): Promise<string> {
+  async function compute(f: RequestFrame, from: SocketFrom): Promise<string> {
     const def = C.methodByName(f.method);
     if (!def || def.direction !== 'to_go') return errorFrame(f.id, C.SOCKET_ERROR_CODES.unknown_method, `unknown method ${f.method}`);
-    const handler = handlers.get(f.method);
+    // A 1.3 method no lane answers yet is "not available yet" (not-yet.ts), never "unknown".
+    const handler = handlers.get(f.method) ?? (NOT_YET.has(f.method) ? (notYet(f.method as ToGoMethod) as unknown as ToGoHandler<ToGoMethod>) : undefined);
     if (!handler) return errorFrame(f.id, C.SOCKET_ERROR_CODES.unknown_method, `Go does not handle ${f.method} yet`);
     // An event type Go does not know yet is accepted before any check, so the Server can add types within version 1.
     if (f.method === 'send_event') {
@@ -198,8 +206,17 @@ export function createDoor(o: DoorOptions): DoorImpl {
     }
     const parsed = C.parseParams(f.method, f.params);
     if (!parsed.ok) return errorFrame(f.id, parsed.code, parsed.message);
+    // A trip's events reach their own listeners (the trip log); any other request that names a trip is a person there.
+    const tripId = f.method === 'send_event' ? undefined : (parsed.params as { trip_id?: unknown }).trip_id;
+    if (typeof tripId === 'string') {
+      try {
+        o.onTripActive?.(tripId, from);
+      } catch (e) {
+        o.log.warn({ err: e instanceof Error ? e.message : 'unknown', method: f.method }, 'a trip-active hook failed');
+      }
+    }
     try {
-      const result = await withLimit(handler(parsed.params as never, { instance, frameId: f.id }), (def.answer_within ?? 2) * 1_000 - 200);
+      const result = await withLimit(handler(parsed.params as never, { ...from, frameId: f.id }), (def.answer_within ?? 2) * 1_000 - 200);
       const checked = (TO_GO_SCHEMAS[f.method as ToGoMethod][1] as z.ZodType).safeParse(result);
       if (!checked.success) {
         o.log.error({ method: f.method }, 'Go built an answer outside the contract');

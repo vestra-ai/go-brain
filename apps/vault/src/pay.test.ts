@@ -2,6 +2,8 @@ import { verifyRequest } from '@go/contract';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type pg from 'pg';
 import { approvePayment, payInfo, payOptions } from './pay.js';
+import { VAULT_JS } from './pages/assets.js';
+import { payPage } from './pages/html.js';
 import { payFixture, type PayFixture } from './testing/pay-fixtures.js';
 import { TEST_SHARED_SECRET } from './testing/vault-test-env.js';
 import type { TestAuthenticator } from './testing/test-authenticator.js';
@@ -55,6 +57,18 @@ describe('a payment with both keys', () => {
     await f.approve(token, rahul);
     expect(f.lines.length).toBeGreaterThan(0);
     expect(f.lines.join('\n')).not.toContain('pm_card_visa');
+  });
+
+  // The fine print says "The group agreed to this first" only when it did: never on a person's own ticket or a trip of one.
+  it('says the group agreed first only when Go says so, or, on an older link, when the approval names a vote', async () => {
+    const info = async (o: Parameters<PayFixture['payLinkFor']>[0]) => payInfo(f.d, (await f.payLinkFor(o)).token);
+    expect(await info({ groupAgreed: true })).toMatchObject({ state: 'ready', group_agreed: true });
+    expect(await info({ groupAgreed: false })).toMatchObject({ state: 'ready', group_agreed: false });
+    expect(await info({ ticketFor: 'p_rahul' })).toMatchObject({ state: 'ready', group_agreed: false });
+    expect(await info({})).toMatchObject({ state: 'ready', group_agreed: true });
+    const page = payPage();
+    expect(page).toContain('<span id="pay-agreed" hidden>The group agreed to this first. </span>It works once, for this amount only.');
+    expect(VAULT_JS).toContain("show('pay-agreed', d.group_agreed === true)");
   });
 
   it('shows the payer what the Server approved', async () => {
@@ -172,6 +186,27 @@ describe('step 6: the payer is the person who unlocked', () => {
     const { token, jti } = await f.payLinkFor();
     await f.pool.query("update links set person_id = 'p_priya' where approval_id = $1", [jti]);
     expect(await f.approve(token, priya)).toEqual({ state: 'refused', reason: 'not_the_payer' });
+    expect(charges(jti)).toBe(0);
+  });
+});
+
+// Contract 1.3: a person's own pick is never voted on. The Server's approval names their pick (personal), and they are
+// its payer; the vault still takes both keys, and only that person's Face ID pays it.
+describe("step 6 for a personal approval: only its person pays it", () => {
+  it("pays a person's own pick with their own passkey, with both keys in the log", async () => {
+    const { token, jti } = await f.payLinkFor({ ticketFor: 'p_priya' });
+    expect(await f.approve(token, priya)).toEqual({ state: 'paid', railRef: `fake_${jti}` });
+    expect(f.rail.charges.at(-1)).toMatchObject({ personId: 'p_priya', idempotencyKey: jti });
+    expect(await logFor(jti)).toEqual([
+      { kind: 'pay_attempt', passkey_ok: true, approval_ok: true, reason: null },
+      { kind: 'pay_ok', passkey_ok: true, approval_ok: true, reason: null },
+    ]);
+  });
+
+  it("refuses anyone else's passkey, even on a link moved to them", async () => {
+    const { token, jti } = await f.payLinkFor({ ticketFor: 'p_priya' });
+    await f.pool.query("update links set person_id = 'p_rahul' where approval_id = $1", [jti]);
+    expect(await f.approve(token, rahul)).toEqual({ state: 'refused', reason: 'not_the_payer' });
     expect(charges(jti)).toBe(0);
   });
 });

@@ -1,0 +1,39 @@
+id: trains.platform_locator
+title: Which platform a train usually comes in on, station by station
+asks:
+  - which platform does 12992 come on at jaipur
+  - mandovi express platform number at thivim
+  - 12992 kis platform pe aayegi
+inputs:
+  train: { kind: text, about: "the train's 5-digit number (trains.by_name finds it from a name)" }
+  station: { kind: text, optional: true, about: "a station's code, such as JP, when people asked about one station" }
+auth: none
+changes_state: false
+# ixigo's platform locator, plain server-rendered HTML: one row a station ("JP - Jaipur"), its platform, arrival, halt,
+# departure and day. The page also asks for the schedule (getTrainSchedule), which answered "Train not found!" for 12992
+# while the table still drew: the table is read.
+page: /trains/platform-locator?train={train}
+capture:
+  - { match: /trains/platform-locator$, max_bytes: 1000000 }
+read:
+  rows: { from: /trains/platform-locator$, format: html_tables, list: "[ $ ]" }
+answer:
+  as: facts
+  title: "Train {train} platforms"
+  max: 1
+  each: |
+    (
+      $rows := $reduce(tables, function($found, $t) { $t[0][1] = "Platform" ? $t : $found }, []);
+      $code := $inputs.station ? $uppercase($trim($inputs.station));
+      {
+        "train": $substringBefore(title, " Train Platform"),
+        "platforms": [$map($rows, function($r, $i) {
+          ($i > 0 and ($code ? $substringBefore($r[0], " - ") = $code : true))
+            ? $r[0] & ": platform " & $r[1] & ", arrives " & $r[2] & ", departs " & $r[4] & ", day " & $r[5]
+        })]
+      }
+    )
+ttl_minutes: 60
+samples: { page: trains.platform_locator.html }
+measured: { fast_ms: null, page_ms: 8235, flow_ms: null }
+notes: The platforms are ixigo's usual ones; the station's own board has the day's.

@@ -2,6 +2,7 @@ import type Anthropic from '@anthropic-ai/sdk';
 import type pg from 'pg';
 import { limitRequestId, utcDay, type Budget } from '../budget.js';
 import type { DeskItem, TurnInput, TurnRunner } from '../desk/desk.js';
+import type { Message } from '../door/methods.js';
 import type { ServerLink } from '../door/server-link.js';
 import type { Log } from '../log.js';
 import { withholdCheck } from '../memory/reactions.js';
@@ -9,11 +10,11 @@ import type { Packs, TripPack } from '../trips/pack.js';
 import type { AnthropicLike } from './anthropic.js';
 import { classifyAnthropicError } from './anthropic-helpers.js';
 import type { ContextImpl } from './context.js';
-import { chatLine, dataBlock, personName } from './fence.js';
-import { addUsage, MAX_ROUNDS, noUsage, runLoop } from './loop.js';
+import { chatLine, dataBlock, roomView, type Forgotten } from './fence.js';
+import { addUsage, MAX_ROUNDS, noUsage, runLoop, type LoopResult, type RoundTiming } from './loop.js';
 import { stripMessageRefs } from './sanitize.js';
 import type { Speak } from './speak.js';
-import { makeTurnCtx, scopedLink, type Tools } from './tools.js';
+import { makeTurnCtx, scopedLink, STAY_SILENT, type Tools } from './tools.js';
 
 export interface ComposerDeps {
   pool: pg.Pool;
@@ -33,7 +34,19 @@ export interface ComposerDeps {
   /** The daily model budget; without it, no cap. */
   budget?: Budget;
   turnTimeoutMs?: number;
+  /** The least a turn nobody named Go in shows typing before its post lands (TYPING_MIN_MS). */
+  typingMinMs?: number;
+  sleep?: (ms: number) => Promise<void>;
 }
+
+/** Typing on for less than this before a post never shows in the App (Keshav, 11 Oct): the post waits out the rest. */
+export const TYPING_MIN_MS = 1_200;
+
+/**
+ * Tools that post nothing themselves, or only read: a turn going to one is not Go replying yet, so it shows no typing
+ * (a ✅, a note, a look at memory, then silence). Any other tool (a search, a card, a vote) is Go acting.
+ */
+const QUIET_TOOLS: ReadonlySet<string> = new Set([STAY_SILENT, 'react', 'record', 'record_expense', 'recall', 'person', 'who_owes_what']);
 
 export interface Composer {
   runTurn: TurnRunner;
@@ -43,9 +56,37 @@ export interface Composer {
 export const TROUBLE = "Sorry, I'm having trouble right now. Give me a minute and ask me again?";
 /** Said once per trip per day, to someone who asks Go once today's model budget is spent. */
 export const OVER_BUDGET = "I've reached today's limit for this demo. I'll be back tomorrow.";
+/**
+ * Go's plain hello, for a hello turn that said none (stay_silent, a tool that failed, an error to its last attempt): every
+ * trip hears Go once (prod drill, 11 Oct: a hello whose place card failed went silent, and the trip never heard Go).
+ */
+export const HELLO =
+  "Hi all, I'm Go, your travel agent for this trip. I can find stays and flights from everyone's home cities, run votes when you're choosing, keep the plan, and book once you've agreed.";
+/**
+ * The turn is the trip's first hello: the one hello wake setup puts (room.ts, keyed setup:<trip>:greet), in a trip Go
+ * has never spoken in. Only it may fall back to the plain hello; every other turn that says nothing stays silent.
+ */
+const firstHello = (items: DeskItem[], messages: Array<{ author: { kind: string } }>): boolean =>
+  items.some((i) => i.kind === 'setup' && i.ref === 'greet') && !messages.some((m) => m.author.kind === 'go');
 
-const isForGo = (i: DeskItem): boolean => i.kind === 'message' && (i.payload as { namesGo?: boolean } | null)?.namesGo === true;
+/** A message that names Go, or that the quick read is sure asks Go without its name (trips/intake.ts asksGo). */
+const isForGo = (i: DeskItem): boolean => {
+  const p = i.payload as { namesGo?: boolean; asksGo?: boolean } | null;
+  return i.kind === 'message' && (p?.namesGo === true || p?.asksGo === true);
+};
 const messageIdOf = (i: DeskItem): string => (i.payload as { messageId?: string } | null)?.messageId ?? i.ref;
+
+/**
+ * A line that landed while the turn wrote reaches the desk only once intake has read it (the reflex takes a moment), so
+ * the pre-post check waits for it a little, this long at a time, at most this often (prod, 11 Oct 08:26: "december I
+ * meant" landed 1 s before Go posted "Did you mean the first week of November?").
+ */
+const LATE_WAIT_MS = 300;
+const LATE_TRIES = 4;
+
+/** People's lines in the pack after the prompt's newest: what landed while the turn wrote (the pack takes each event). */
+const landedSince = (pack: TripPack, shownUpTo: number): Message[] =>
+  pack.messages.filter((m) => m.seq > shownUpTo && m.author.kind === 'person' && !m.deleted && !m.withheld);
 
 /** Reply to the one message that named Go when others spoke after it, so the thread stays clear. */
 function replyToFor(items: DeskItem[], pack: TripPack): string | null {
@@ -81,11 +122,12 @@ function askedBack(text: string, items: DeskItem[], pack: TripPack, readUpTo: nu
 
 /**
  * The first message Go's words cited ("Meher said so in #6"), when it is a real message in this trip. The number leaves
- * the words, and the post replies to that message instead, so people see the proof itself.
+ * the words, and the post replies to that message instead, so people see the proof itself. Never one of the App's own
+ * lines: those are a record, and Go never replies to one (the Server team, 10 Oct).
  */
 function citedMessageId(text: string, pack: TripPack): string | null {
   for (const seq of stripMessageRefs(text).refs) {
-    const m = pack.messages.find((x) => x.seq === seq && !x.deleted && !x.withheld);
+    const m = pack.messages.find((x) => x.seq === seq && !x.deleted && !x.withheld && x.author.kind !== 'system');
     if (m) return m.message_id;
   }
   return null;
@@ -95,14 +137,13 @@ function citedMessageId(text: string, pack: TripPack): string | null {
 const seqOf = (i: DeskItem, pack: TripPack): number | null => pack.messages.find((m) => m.message_id === messageIdOf(i))?.seq ?? null;
 
 /** The chat lines of desk items' messages, as the context draws them, past `shownUpTo`: the prompt already holds the rest. */
-function linesFor(items: DeskItem[], pack: TripPack, shownUpTo: number): { lines: string[]; seqs: number[] } {
-  const names = new Map(pack.trip.people.map((p) => [p.person_id, personName(p.name)]));
-  const seqs = new Map(pack.messages.map((m) => [m.message_id, m.seq]));
+function linesFor(items: DeskItem[], pack: TripPack, forgotten: Forgotten, shownUpTo: number): { lines: string[]; seqs: number[] } {
+  const view = roomView(pack, forgotten);
   const out = { lines: [] as string[], seqs: [] as number[] };
   for (const i of items) {
     const m = pack.messages.find((x) => x.message_id === messageIdOf(i));
     if (m && m.seq <= shownUpTo) continue;
-    const line = m ? chatLine(m, (id) => names.get(id) ?? 'Someone who left', (id) => seqs.get(id)) : null;
+    const line = m ? chatLine(m, view) : null;
     if (m && line) {
       out.lines.push(line);
       out.seqs.push(m.seq);
@@ -128,8 +169,40 @@ const foldText = (lines: string[]): string =>
   'Your reply above has not been posted yet. Write the one message to post now, covering these too if they need it. ' +
   'If they change nothing, send the same reply again.';
 
+const secs = (ms: number | null): string => (ms === null ? '-' : `${(ms / 1000).toFixed(1)}s`);
+
+/**
+ * One info line per turn: where its time went, round by round (the tools each asked for, its first token and whole
+ * reply, its output tokens, its tools' time), with no words from anyone. "turn: 2 rounds, 15.2s: r1 search_stays first
+ * 1.3s model 2.9s out 180 tools 8.4s | r2 show_options first 3.1s model 3.6s out 210".
+ */
+export function logTurn(
+  log: Pick<Log, 'info'>,
+  t: { tripId: string; turnId: string; wokeFor: string[]; builtMs: number; firstToken: Date | null; started: number; timings: RoundTiming[]; totalMs: number; outcome: string },
+): void {
+  const rounds = t.timings.map((r, n) =>
+    `r${n + 1} ${r.tools.join(',') || r.stop || 'text'} first ${secs(r.firstTokenMs)} model ${secs(r.modelMs)} out ${r.output}${r.tools.length ? ` tools ${secs(r.toolMs)}` : ''}`);
+  log.info(
+    {
+      trip: t.tripId,
+      turn: t.turnId,
+      woke_for: t.wokeFor,
+      outcome: t.outcome,
+      build_ms: t.builtMs,
+      first_token_ms: t.firstToken ? t.firstToken.getTime() - t.started : null,
+      total_ms: t.totalMs,
+      rounds: t.timings.map((r) => ({ tools: r.tools, first_token_ms: r.firstTokenMs, model_ms: r.modelMs, tool_ms: r.toolMs, output_tokens: r.output, stop: r.stop })),
+    },
+    `turn: ${t.timings.length} round${t.timings.length === 1 ? '' : 's'}, ${secs(t.totalMs)}: ${rounds.join(' | ') || 'no model call'}`,
+  );
+}
+
 export function createComposer(d: ComposerDeps): Composer {
   const turnTimeoutMs = d.turnTimeoutMs ?? 20_000;
+  const typingMinMs = d.typingMinMs ?? TYPING_MIN_MS;
+  const sleep = d.sleep ?? ((ms: number) => new Promise<void>((r) => setTimeout(r, ms)));
+  /** The messages a running turn pulled in after it started: they are the turn's too when it ends. */
+  const pulledBy = new Map<string, DeskItem[]>();
 
   async function alreadyPosted(turnId: string): Promise<boolean> {
     const r = await d.pool.query(
@@ -139,20 +212,34 @@ export function createComposer(d: ComposerDeps): Composer {
     return (r.rowCount ?? 0) > 0;
   }
 
-  async function runTurn(t: TurnInput): Promise<void> {
+  /** Runs the turn; true when it answered: its words went out, now or on an earlier attempt. */
+  async function runTurn(t: TurnInput): Promise<boolean> {
     // A rerun of a turn whose message already went out: the room has its answer.
-    if (await alreadyPosted(t.turnId)) return;
+    if (await alreadyPosted(t.turnId)) return true;
     const pack = await d.packs.get(t.tripId);
     const forGo = t.items.some(isForGo);
-    if (d.budget && !d.budget.allows()) return overBudget(t, forGo);
+    if (d.budget && !d.budget.allows()) {
+      await overBudget(t, forGo);
+      return false;
+    }
     // Typing stays honest while the turn works: on now (if it was not), off when the turn ends.
     const typingAt = forGo ? d.speak.working(t.tripId) : null;
     const times: { firstToken: Date | null } = { firstToken: null };
     const usage = noUsage();
     let rounds = 0;
+    // Where a turn's time goes, for its log line: building the prompt, each model round and its tools, the post.
+    const started = d.now().getTime();
+    let builtMs = 0;
+    const timings: RoundTiming[] = [];
     // Typing may also be on for a message the turn pulled in, or one intake turned it on for: a turn that posted answered it.
     const pulled: DeskItem[] = [];
     let posted = false;
+    // On a turn nobody named Go in, typing goes on at the first sign Go will act: its first words, a tool that does
+    // something (a search before its card), or a lane's answer with no model call; it goes off when the turn ends, as
+    // for one that named Go. Only at its last words, it showed under a second before the post, which the App never drew
+    // (G4, then Keshav, 11 Oct: untagged replies never showed "Go is typing…").
+    const typing: { since: Date | null } = { since: null };
+    let spoke = false;
     try {
       const trip = await d.pool.query<{ composer_seen_seq: number; tz: string }>('select composer_seen_seq, tz from trips where trip_id = $1', [t.tripId]);
       const seenSeq = trip.rows[0]?.composer_seen_seq ?? 0;
@@ -164,10 +251,15 @@ export function createComposer(d: ComposerDeps): Composer {
         [t.turnId, t.tripId, t.items.map((i) => i.kind), t.attempt, d.now(), typingAt, d.model],
       );
       const prompt = await d.context.build({ tripId: t.tripId, pack, wake: t.items, seenSeq, now: d.now(), tz });
+      builtMs = d.now().getTime() - started;
       const signal = AbortSignal.timeout(turnTimeoutMs);
       // P6's proactive bar may limit a turn Go woke for on its own: which tools, and whether its text may be posted.
       const limits = d.context.turnRules(t.items);
       const ctx = makeTurnCtx({ tripId: t.tripId, turnId: t.turnId, link: d.link, pack, wake: t.items, signal, limits });
+      const acting = (): void => {
+        if (forGo || typing.since || ctx.mayPostText === false) return;
+        typing.since = d.speak.working(t.tripId);
+      };
       const base = {
         client: d.client,
         model: d.model,
@@ -178,9 +270,20 @@ export function createComposer(d: ComposerDeps): Composer {
         onFirstToken: () => {
           times.firstToken ??= d.now();
         },
+        onWriting: acting,
+        onToolUse: (name: string) => {
+          if (!QUIET_TOOLS.has(name)) acting();
+        },
         ...(d.budget ? { budget: d.budget } : {}),
       };
-      let r = await runLoop({ ...base, messages: [{ role: 'user', content: prompt.user }] });
+      // A lane may answer with no model call (P4: a plain search ask whose early search found options): its cards and
+      // their lines are the turn's answer. A turn under limits always goes to the model.
+      const direct = ctx.allowedTools === undefined && ctx.mayPostText !== false && (await d.context.direct({ tripId: t.tripId, wake: t.items, pack, ctx }));
+      if (direct && (ctx.lines.length > 0 || ctx.cards.length > 0)) acting();
+      let r: LoopResult = direct
+        ? { text: [...new Set(ctx.lines.map((l) => l.trim()).filter((l) => l !== ''))].join('\n'), silent: false, rounds: 0, usage: noUsage(), messages: [], stopReason: 'answered', timings: [] }
+        : await runLoop({ ...base, messages: [{ role: 'user', content: prompt.user }] });
+      timings.push(...r.timings);
       addUsage(usage, r.usage);
       rounds += r.rounds;
       // The first round's hold did not fit today's budget (calls running at the same moment took the rest): no model
@@ -193,20 +296,40 @@ export function createComposer(d: ComposerDeps): Composer {
       // A turn under limits (Go woke for itself) skips it: people's messages wait on the desk for their own turn,
       // which runs under the normal rules, never this turn's. A message the prompt already held (it landed before the
       // prompt was built, its desk item after) needs no extra round. But one that names Go was never a reason this turn
-      // woke, so the model may have passed over it (a hello that only says hello): it goes back on the desk for a turn
-      // of its own, which sees what Go just said.
-      if (!r.silent && r.text && ctx.mayPostText !== false && ctx.allowedTools === undefined && rounds < MAX_ROUNDS) {
+      // woke, so the model may have passed over it (a hello that only says hello): it is read again in the extra round, so
+      // the one reply covers it, and it stays this turn's. Released for a turn of its own, it was answered twice (p2's
+      // re-audit, 11 Oct 09:28: two asks landed together, the first turn answered both, and a second turn said it again).
+      // A direct answer has no exchange to go on: new lines wait for a turn of their own.
+      if (!direct && !r.silent && r.text && ctx.mayPostText !== false && ctx.allowedTools === undefined && rounds < MAX_ROUNDS) {
+        // The desk's items for the lines that landed, waited for a little when a line is in the pack but not on the desk yet.
         const claimed = await d.claimNew(t.tripId, t.turnId);
-        const passedOver = claimed.filter((i) => isForGo(i) && (seqOf(i, pack) ?? Number.POSITIVE_INFINITY) <= prompt.newestSeq);
-        await d.release(t.turnId, passedOver.map((i) => i.id));
-        pulled.push(...claimed.filter((i) => !passedOver.includes(i)));
-        const fresh = linesFor(pulled, pack, prompt.newestSeq);
+        for (let n = 0; n < LATE_TRIES; n++) {
+          const have = new Set(claimed.map(messageIdOf));
+          if (landedSince(pack, prompt.newestSeq).every((m) => have.has(m.message_id))) break;
+          await sleep(LATE_WAIT_MS);
+          claimed.push(...(await d.claimNew(t.tripId, t.turnId)));
+        }
+        const held = claimed.filter((i) => isForGo(i) && (seqOf(i, pack) ?? Number.POSITIVE_INFINITY) <= prompt.newestSeq);
+        pulled.push(...claimed);
+        pulledBy.set(t.turnId, pulled);
+        // A pulled message is this turn's to answer, so the next round's tools see it as part of what woke the turn: "I'll
+        // pay for it" said as the vote closed is Rahul's claim (set_mandate), as it would be on a turn of its own.
+        ctx.wake = [...t.items, ...pulled];
+        // A line that landed and never reached the desk (intake left it to the people) is still read before the post.
+        const queued = new Set(pulled.map(messageIdOf));
+        const unqueued = landedSince(pack, prompt.newestSeq)
+          .filter((m) => !queued.has(m.message_id))
+          .map((m): DeskItem => ({ id: `landed:${m.message_id}`, tripId: t.tripId, kind: 'message', ref: m.message_id, dueAt: d.now(), payload: { messageId: m.message_id } }));
+        const landed = linesFor([...pulled.filter((i) => !held.includes(i)), ...unqueued], pack, prompt.forgotten, prompt.newestSeq);
+        const asked = linesFor(held, pack, prompt.forgotten, 0);
+        const fresh = { lines: [...asked.lines, ...landed.lines], seqs: [...asked.seqs, ...landed.seqs] };
         if (fresh.lines.length) {
           const more = await runLoop({
             ...base,
             maxRounds: MAX_ROUNDS - rounds,
             messages: withNewLines(r.messages, foldText(fresh.lines)),
           });
+          timings.push(...more.timings);
           addUsage(usage, more.usage);
           rounds += more.rounds;
           if (more.stopReason === 'over_budget' && more.rounds === 0) {
@@ -220,9 +343,24 @@ export function createComposer(d: ComposerDeps): Composer {
         }
       }
 
-      // With mayPostText false the words are dropped; the cards in ctx.cards still go.
-      const text = r.silent || ctx.mayPostText === false ? null : r.text.trim() || null;
+      // With mayPostText false the words are dropped; the cards in ctx.cards still go. A hello turn that said nothing
+      // says the plain hello, so the trip always hears Go once.
+      const said = r.silent || ctx.mayPostText === false ? null : r.text.trim() || null;
+      const words = said ?? (firstHello(t.items, pack.messages) && ctx.mayPostText !== false ? HELLO : null);
+      // A lane's card for this turn rides on its post, first, with its line after Go's words: one message, never two in a
+      // row (the ixigo login on Go's hello).
+      // A card a tool already put in this turn (set_mandate's claim card) goes once.
+      // A rider may be a line alone, after Go's words in the same message.
+      const riders = (await d.context.turnCards({ tripId: t.tripId, turnId: t.turnId, wake: t.items, pack })).filter((x) => !x.card || !ctx.cards.some((c) => c.card_id === x.card!.card_id));
+      ctx.cards.unshift(...riders.flatMap((x) => (x.card ? [x.card] : [])));
+      const lines = ctx.mayPostText === false ? [] : riders.map((x) => x.line);
+      const text = [words, ...lines].filter((x): x is string => !!x).join('\n') || null;
       const replyTo = text ? (replyToFor(t.items, pack) ?? citedMessageId(text, pack)) : null;
+      // Typing that went on for this turn shows at least typingMinMs before the post lands.
+      if (typing.since && (text || ctx.cards.length)) {
+        const left = typingMinMs - (d.now().getTime() - typing.since.getTime());
+        if (left > 0) await sleep(left);
+      }
       const ids =
         text || ctx.cards.length
           ? await d.speak.post({
@@ -233,6 +371,7 @@ export function createComposer(d: ComposerDeps): Composer {
               text,
               cards: ctx.cards,
               ...(replyTo ? { replyTo } : {}),
+              ...(ctx.quickReplies?.length ? { quickReplies: ctx.quickReplies } : {}),
               // People Go's words name get a push.
               people: pack.trip.people,
             })
@@ -240,6 +379,7 @@ export function createComposer(d: ComposerDeps): Composer {
       posted = ids.length > 0;
       ctx.outcome.posts.push(...ids);
       ctx.outcome.spoke = text !== null && ids.length > 0;
+      spoke = ctx.outcome.spoke;
       // Someone named Go in a line the budget left unread: they hear the day's limit, once per trip.
       if (unanswered) await limitLine(t);
       // Go asked instead of noting (a question back to the person, or a tool that chose to ask): no ✅ on those messages,
@@ -259,6 +399,7 @@ export function createComposer(d: ComposerDeps): Composer {
         [t.turnId, d.now(), times.firstToken, rounds, usage.input, usage.cacheRead, usage.cacheWrite, usage.output, usage.costUsd, outcome],
       );
       await d.pool.query('update trips set composer_seen_seq = greatest(composer_seen_seq, $2) where trip_id = $1', [t.tripId, newest]);
+      logTurn(d.log, { tripId: t.tripId, turnId: t.turnId, wokeFor: t.items.map((i) => i.kind), builtMs, firstToken: times.firstToken, started, timings, totalMs: d.now().getTime() - started, outcome });
     } catch (e) {
       const kind = classifyAnthropicError(e).kind;
       const message = e instanceof Error ? e.message : String(e);
@@ -267,8 +408,9 @@ export function createComposer(d: ComposerDeps): Composer {
         .catch(() => undefined);
       throw e;
     } finally {
-      if (forGo || posted || pulled.some(isForGo)) d.speak.typingOff(t.tripId);
+      if (forGo || typing.since || posted || pulled.some(isForGo)) d.speak.typingOff(t.tripId);
     }
+    return spoke;
   }
 
   /**
@@ -297,19 +439,44 @@ export function createComposer(d: ComposerDeps): Composer {
     });
   }
 
-  /** After the last failed attempt: one calm line, only if someone asked Go something and nothing went out yet. */
+  /**
+   * After the last failed attempt: one calm line, only if someone asked Go something and nothing went out yet. A hello
+   * turn's is the plain hello: the trip hears Go once, whatever failed.
+   */
   async function giveUp(t: TurnInput): Promise<void> {
-    if (!t.items.some(isForGo)) return;
+    const hello = firstHello(t.items, (await d.packs.get(t.tripId).catch(() => null))?.messages ?? [{ author: { kind: 'go' } }]);
+    if (!hello && !t.items.some(isForGo)) return;
     if (await alreadyPosted(t.turnId)) return;
     await d.speak.post({
       link: scopedLink(d.link, t.turnId),
       tripId: t.tripId,
       turnId: t.turnId,
-      requestId: () => `go_trouble_${t.turnId}`,
-      text: TROUBLE,
+      requestId: () => (hello ? `go_hello_${t.turnId}` : `go_trouble_${t.turnId}`),
+      text: hello ? HELLO : TROUBLE,
       cards: [],
     });
   }
 
-  return { runTurn, giveUp };
+  /**
+   * A turn is over when it ran, or gave up after its last attempt (a failed attempt runs again under the same turn id):
+   * the lanes end what it left open, such as a live search card (context.turnEnded).
+   */
+  function ended(t: TurnInput, answered: boolean): void {
+    const items = [...t.items, ...(pulledBy.get(t.turnId) ?? [])];
+    pulledBy.delete(t.turnId);
+    d.context.turnEnded({ tripId: t.tripId, turnId: t.turnId, messageIds: items.filter((i) => i.kind === 'message').map(messageIdOf), answered });
+  }
+
+  return {
+    async runTurn(t) {
+      ended(t, await runTurn(t));
+    },
+    async giveUp(t) {
+      try {
+        await giveUp(t);
+      } finally {
+        ended(t, false);
+      }
+    },
+  };
 }

@@ -1,0 +1,44 @@
+id: trains.by_name
+title: A train found by its name or number in ixigo's train box, with its route and classes
+asks:
+  - mandovi express number
+  - which train is 12780
+  - goa express kaha se kaha jaati hai
+inputs:
+  train: { kind: text, about: "the train's name or number as people said it, such as Mandovi Express or 10103" }
+auth: none
+changes_state: false
+# ixigo's "Train Name / Number" box answers from one call on www.ixigo.com, and that call is the page here: opened with
+# the words in its address, nothing typed, as the lookups open theirs. A name can answer both directions (10103 to
+# Madgaon, 10104 back) and near names: each is a row, and the model asks which one when it isn't clear.
+page: /action/content/trainstation?searchFor=getTrainByNameOrCode&nameOrCode={train}
+fast:
+  url: /action/content/trainstation?searchFor=getTrainByNameOrCode&nameOrCode={train}
+capture:
+  - { match: searchFor=getTrainByNameOrCode, max_bytes: 200000 }
+# The answer lists trains whose name or number starts like the words: the rows are the ones the words name, each once.
+read:
+  rows:
+    from: searchFor=getTrainByNameOrCode
+    list: |
+      (
+        $w := $lowercase($trim($inputs.train));
+        $[$type($) = "object" and (c = $w or $contains($lowercase(n), $w))]
+      )
+    unique: c
+answer:
+  as: facts
+  title: "{train}"
+  max: 8
+  each: |
+    $type(c) = "string" ? {
+      "number": c,
+      "name": $titleWords(n),
+      "from": originName & " (" & origin & ")",
+      "to": destinationName & " (" & destination & ")",
+      "classes": [$split(ct, ":")[$ != ""]],
+      "runs_daily": d = "127"
+    }
+samples: { page: trains.by_name.json }
+measured: { fast_ms: 120, page_ms: null, flow_ms: 2200 }
+notes: The row's d is the days it runs as seven bits; 127 is every day.

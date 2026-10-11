@@ -1,15 +1,16 @@
 import { z } from 'zod';
+import { OptionFullDetails } from './cards.js';
 import { ErrorCode } from './errors.js';
 import { Event } from './events.js';
 import { MessagesPage, GoTyping, PostMessage, PostMessageResult, ReplaceCard, ReplaceCardResult } from './room.js';
 import {
-  CardActionResult, CardTap, CatchUp, CatchUpRequest, CreateLink, DeleteFact, EventAccepted, ForgetPerson, ForgetResult, GetPerson,
-  Link, Ok, PersonPage, UpdatePerson,
+  CardActionResult, CardTap, CatchUp, CatchUpRequest, CreateLink, DeleteFact, EventAccepted, ForgetPerson, ForgetResult, GetOptionDetails,
+  GetPerson, Link, Ok, PersonPage, PlaceInfo, PlaceInfoRequest, UpdatePerson,
 } from './to-go.js';
 import {
-  AddBooking, AddBookingResult, AddExpense, AddExpenseResult, AddReaction, AddRecordLine, AddRecordLineResult, CancelSpendApproval,
+  AddBooking, AddBookingResult, AddExpense, AddExpenseResult, AddReaction, AddRecordLine, AddRecordLineResult, AddVoteOptions, CancelSpendApproval,
   CloseDecision, CloseDecisionResult, OpenDecision, OpenDecisionResult, ReadMessages, ReadTrip, RemoveReaction, RequestSpendApproval,
-  SetMandate, SpendApprovalResult, UpdateBooking, UpdateRecordLine, UpdateTrip, WriteResult,
+  SetMandate, SpendApprovalResult, UpdateBooking, UpdateExpense, UpdateRecordLine, UpdateTrip, WriteResult,
 } from './to-server.js';
 import { TripSnapshot } from './trip.js';
 
@@ -111,6 +112,9 @@ export const TO_GO: readonly SocketMethod[] = [
   m('delete_fact', 'to_go', 'Remove one thing Go knows about a person.', DeleteFact, Ok, 2),
   m('forget_person', 'to_go', 'Forget me: in one trip, or everywhere.', ForgetPerson, ForgetResult, 2),
   m('vault_link', 'to_go', 'A short-lived link to the person\'s vault page, to open in the browser sheet.', CreateLink, Link, 2),
+  // 1.3 (rev 5)
+  m('place_info', 'to_go', 'What a place is like, for the ideas on the home screen: its photos, a tag, the way there from a city and the best months.', PlaceInfoRequest, PlaceInfo, 3),
+  m('get_option_details', 'to_go', 'Everything about one option on a card, for its Details page: more than the card carries.', GetOptionDetails, OptionFullDetails, 3),
 ];
 
 /** What Go sends the Server. */
@@ -125,12 +129,14 @@ export const TO_SERVER: readonly SocketMethod[] = [
   m('update_trip', 'to_server', 'Change the title, destination, dates, vibe, stay or the itinerary.', UpdateTrip, WriteResult, 2, 'trip.updated'),
   m('open_vote', 'to_server', 'Open a vote.', OpenDecision, OpenDecisionResult, 2, 'decision.opened'),
   m('close_vote', 'to_server', 'Close a vote now and get the result.', CloseDecision, CloseDecisionResult, 2, 'decision.closed'),
+  m('add_vote_options', 'to_server', '1.3: add options to an open vote, for the options "See more" brought. At most 20 in all; votes cast stay.', AddVoteOptions, WriteResult, 2, 'decision.options_added'),
   m('set_mandate', 'to_server', 'Set what the group allowed for a closed choice vote: the choice, the cap, refundable only, and who pays.', SetMandate, WriteResult, 2, 'mandate.set'),
   m('add_record_line', 'to_server', 'Add an agreed, open or doing line to the trip record.', AddRecordLine, AddRecordLineResult, 2, 'record.changed'),
   m('update_record_line', 'to_server', 'Change a line Go wrote, or mark it done.', UpdateRecordLine, WriteResult, 2, 'record.changed'),
   m('add_booking', 'to_server', 'Record a confirmed booking.', AddBooking, AddBookingResult, 2, 'booking.changed'),
   m('update_booking', 'to_server', 'Change or cancel a booking.', UpdateBooking, WriteResult, 2, 'booking.changed'),
   m('add_expense', 'to_server', 'Record something someone paid for, split between people.', AddExpense, AddExpenseResult, 2, 'expense.changed'),
+  m('update_expense', 'to_server', 'Change who an expense is split between (and its note): the App\'s Fix the split, done by Go. The amount and the payer never change.', UpdateExpense, WriteResult, 2, 'expense.changed'),
   m('request_spend_approval', 'to_server', 'Run the spend check. Answers with a signed, one-use spend approval for the vault, or the reason why not.', RequestSpendApproval, SpendApprovalResult, 2),
   m('cancel_spend_approval', 'to_server', 'Release an approval Go will not use. Not a change to the trip: no event.', CancelSpendApproval, Ok, 2),
 ];

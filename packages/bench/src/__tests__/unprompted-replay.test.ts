@@ -68,7 +68,7 @@ describe('the 15 posts nobody asked for, replayed through the wake as it is now'
     for (const l of missed) expect(wakesNow(l), l.text).toBe(false);
   });
 
-  it('the other ten still wake Go, each with the note: the group talking, answer only facts, else stay quiet', () => {
+  it('the other ten still wake Go, each with the note: the group talking, when to speak and when to stay silent', () => {
     const rest = triggers.filter((l) => !asksWhatTheyMissed(l.text));
     expect(rest).toHaveLength(10);
     for (const l of rest) {
@@ -88,7 +88,9 @@ describe('the 15 posts nobody asked for, replayed through the wake as it is now'
     }
   });
 
-  it('wakes over the whole chat: five fewer, all of them "what did I miss"', () => {
+  // Keshav, 10 Oct: "go can interfere in most of the messages". With the reads of that run (before questions 1's banter
+  // and 11), every line but "what did I miss" wakes Go now, the lines Jev was sure were not for it too.
+  it('wakes over the whole chat: none that woke Go stops but "what did I miss", and the lines not for Go wake it too', () => {
     const lines = chat.lines.flatMap((x) => {
       const l = say(x.i);
       return l && reads.has(l.i) ? [l] : [];
@@ -97,7 +99,8 @@ describe('the 15 posts nobody asked for, replayed through the wake as it is now'
     const now = lines.filter(wakesNow);
     const dropped = before.filter((l) => !wakesNow(l));
     expect(dropped.every((l) => asksWhatTheyMissed(l.text))).toBe(true);
-    expect(now.length).toBe(before.length - dropped.length);
+    expect(now.length).toBeGreaterThanOrEqual(before.length - dropped.length);
+    expect(now.filter((l) => !before.includes(l)).every((l) => readOf(l).forGo.sure && readOf(l).forGo.value === false)).toBe(true);
     const noted = now.filter((l) => !namesGoInText(l.text) && noteFor([l]) !== null).length;
     console.log(`UNPROMPTED-REPLAY goa-300: lines that woke Go ${before.length} -> ${now.length} (dropped ${dropped.length}: ${dropped.map((l) => l.i).join(', ')}); turns with the note ${noted}`);
   });

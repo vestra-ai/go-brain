@@ -29,6 +29,11 @@ export interface Candidate {
   small: boolean;
   /** The stage's fire with force: true (Task 8). Skips the bar, night, the budget, "two in a row", hush and ignored raises. */
   forced?: boolean;
+  /**
+   * The group asked for it (a watch on ixigo: "tell us when it confirms"): Go is answering, not volunteering, so it
+   * skips the daily budget and "two in a row". The bar, night and the dedupe still hold.
+   */
+  asked?: boolean;
 }
 
 /** What the bar knows about the trip right now. */
@@ -45,14 +50,24 @@ export interface TripMood {
   pausedPersonIds: string[];
 }
 
-export const BARS: Readonly<Record<Action, number>> = { react: 0.1, record: 0.15, update_card: 0.2, pin: 0.3, message: 0.45 };
+/**
+ * A message's bar is 0.3 (Keshav, 2026-10-08: "go should be proactive bro, whenever it can intervene it should"): a chat
+ * opening (0.49) or a day timer (0.48) clears it by day and after one hush, and still waits out the night (0.55). A pin
+ * sits just below it, so the bars keep rising with loudness.
+ */
+export const BARS: Readonly<Record<Action, number>> = { react: 0.1, record: 0.15, update_card: 0.2, pin: 0.25, message: 0.3 };
 export const NIGHT_RAISE = 0.25;
+/**
+ * A chime-in in reply to a line written this recently is no night ping: the person is awake and talking (Keshav's 10-08
+ * ruling kept the night raise for everything Go starts on its own; the lead narrowed it on 10 Oct for this case only).
+ */
+export const AWAKE_REPLY_MS = 2 * 60_000;
 export const HUSH_RAISE = 0.15;
 export const HUSH_CAP = 0.45;
 export const HUSH_LASTS_MS = 72 * 3600_000;
 export const IGNORED_RAISE = 0.05;
 export const IGNORED_CAP = 0.2;
-export const DAILY_POSTS = 3;
+export const DAILY_POSTS = 8;
 export const SMALL_HOLD_MS = 6 * 3600_000;
 export const RECHECK_MS = 5 * 60_000;
 
@@ -69,6 +84,12 @@ export function barRaise(m: TripMood, now: Date): { night: number; mood: number 
   const hush = hushFresh ? Math.min(HUSH_CAP, HUSH_RAISE * m.hushCount) : 0;
   const ignored = Math.min(IGNORED_CAP, IGNORED_RAISE * m.ignoredCount);
   return { night, mood: hush + ignored };
+}
+
+/** A chat opening on a line someone wrote within AWAKE_REPLY_MS: they are awake, so the night raise does not apply. */
+export function repliesToSomeoneAwake(c: Pick<Candidate, 'source' | 'topic' | 'facts'>, now: Date): boolean {
+  const said = typeof c.facts['said_at'] === 'string' ? Date.parse(c.facts['said_at']) : Number.NaN;
+  return c.source === 'opening' && c.topic === 'chat' && Number.isFinite(said) && now.getTime() - said <= AWAKE_REPLY_MS;
 }
 
 /** True when nobody has spoken since Go last did: its last unprompted post, or any message of Go's in the chat. */
@@ -106,6 +127,7 @@ export function decide(c: Candidate, m: TripMood, now: Date): Decision {
   const s = score(c);
   if (c.forced === true) return decideForced(c, targets, s);
   const raise = barRaise(m, now);
+  if (repliesToSomeoneAwake(c, now)) raise.night = 0;
   const quiet: Action[] = [];
   let post: Action | null = null;
   let blocked: 'night' | 'below_bar' | 'budget' | 'two_in_a_row' | null = null;
@@ -124,11 +146,11 @@ export function decide(c: Candidate, m: TripMood, now: Date): Decision {
       bar = need;
       continue;
     }
-    if (m.postsToday >= DAILY_POSTS) {
+    if (m.postsToday >= DAILY_POSTS && c.asked !== true) {
       blocked = 'budget';
       break;
     }
-    if (lastWordIsGos(m)) {
+    if (lastWordIsGos(m) && c.asked !== true) {
       blocked = 'two_in_a_row';
       break;
     }

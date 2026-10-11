@@ -1,9 +1,14 @@
 import { Event } from '@go/contract';
+import Fastify from 'fastify';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { withSchema } from '../../db/test-db.js';
+import { TripGoneError } from '../../trips/gone.js';
+import { registerFireRoute } from '../../watches/admin.js';
 import { candidate, fakeBrain, goaPack, goaTrip, manualTime, seedTrip, turnCtx } from '../fakes.js';
 import { proactiveOf } from '../payload.js';
+import { DAILY_POSTS } from '../policy.js';
 import { startProactive } from '../register.js';
+import { ProactiveStore } from '../store.js';
 
 const TOKEN = 'admin-test-token';
 const fire = {
@@ -74,7 +79,7 @@ describe('startProactive', () => {
     expect(reg.turnRules[0]!([item])?.tools).not.toContain('call_business');
     const wakeText = reg.wakes.get('watch')!(item, goaPack());
     expect(wakeText).toContain('Simulated for the demo');
-    expect(wakeText).toContain('running 120 minutes late');
+    expect(wakeText).toContain('running 2 hours late');
 
     const post = reg.tools.find((t) => t.name === 'post_notice')!;
     const ctx = turnCtx({ link, pack: goaPack(), wake: [item] });
@@ -97,8 +102,8 @@ describe('startProactive', () => {
     const pack = goaPack({ trip: goaTrip({ trip_id: 't_stage' }) });
     const { brain, app, reg, desk, link } = fakeBrain({ pool: db.pool, now: time.now, env: { ADMIN_TOKEN: TOKEN }, pack });
     const h = await startProactive(brain, { intervals: false, travel: null });
-    // The real trip's day so far: three unprompted posts (nobody has spoken since), a hush and an ignored nudge.
-    for (let i = 0; i < 3; i += 1) {
+    // The real trip's day so far: the whole day's unprompted posts (nobody has spoken since), a hush and an ignored nudge.
+    for (let i = 0; i < DAILY_POSTS; i += 1) {
       const c = candidate({ tripId: 't_stage', dedupeKey: `spent:${i}` });
       await h.store.add(c);
       await h.store.promote(c, { allowed: ['pin'], forPersonIds: ['p_arjun'], counted: true, localDay: '2026-10-06' }, new Date(time.now().getTime() - (i + 1) * 600_000));
@@ -131,6 +136,33 @@ describe('startProactive', () => {
     expect(await h.store.status('t_stage', forced.dedupe_key)).toMatchObject({ status: 'promoted', counted: true });
   });
 
+  // p5's robustness drill, 8 Oct: a forced fire at a trip the Server forgot answered 500 "The Server no longer has trip …".
+  it('a fire at a trip the Server no longer has is a typed 404, before anything is added, and when the trip goes mid-pass', async () => {
+    await seedTrip(db.pool, 't_fire_gone');
+    await db.pool.query(`update trips set gone_at = now() where trip_id = 't_fire_gone'`);
+    const time = manualTime('2026-10-06T06:30:00Z');
+    const { brain, app, desk } = fakeBrain({ pool: db.pool, now: time.now, env: { ADMIN_TOKEN: TOKEN } });
+    await startProactive(brain, { intervals: false, travel: null });
+    const auth = { authorization: `Bearer ${TOKEN}` };
+    const gone = await app.inject({ method: 'POST', url: '/admin/watch/fire', headers: auth, payload: { ...fire, trip_id: 't_fire_gone', force: true } });
+    expect(gone.statusCode).toBe(404);
+    expect(gone.json()).toEqual({ error: { code: 'not_found', message: 'that trip is gone' } });
+    expect((await db.pool.query(`select 1 from proactive_candidates where trip_id = 't_fire_gone'`)).rowCount).toBe(0);
+    expect(desk.items).toHaveLength(0);
+    // A trip Go never had is still "no such trip".
+    expect((await app.inject({ method: 'POST', url: '/admin/watch/fire', headers: auth, payload: { ...fire, trip_id: 't_nowhere' } })).json())
+      .toEqual({ error: { code: 'not_found', message: 'no such trip' } });
+
+    // The Server forgets the trip while the pass runs: the pass's TripGoneError is the same 404, never a 500.
+    await seedTrip(db.pool, 't_fire_race');
+    const race = Fastify();
+    registerFireRoute(race, { adminToken: TOKEN, store: new ProactiveStore(db.pool), now: time.now, promote: async (tripId) => { throw new TripGoneError(tripId); } });
+    const mid = await race.inject({ method: 'POST', url: '/admin/watch/fire', headers: auth, payload: { ...fire, trip_id: 't_fire_race', force: true } });
+    expect(mid.statusCode).toBe(404);
+    expect(mid.json()).toEqual({ error: { code: 'not_found', message: 'that trip is gone' } });
+    await race.close();
+  });
+
   it('plans timers and watches when a trip is created, and the sweep re-plans them', async () => {
     const time = manualTime('2026-10-06T06:30:00Z');
     const { brain, reg } = fakeBrain({ pool: db.pool, now: time.now });
@@ -155,5 +187,21 @@ describe('startProactive', () => {
     expect(link.of('read_trip').map((p) => p.trip_id)).not.toContain('t_swept_gone');
     const timers = await db.pool.query(`select 1 from proactive_candidates where trip_id = 't_swept_gone'`);
     expect(timers.rowCount).toBe(0);
+  });
+
+  it('the sweep reads nothing for a trip whose Server has been away for minutes (a closed drill), and reads the rest', async () => {
+    const time = manualTime('2026-10-06T06:30:00Z');
+    const { brain } = fakeBrain({ pool: db.pool, now: time.now });
+    Object.assign(brain.door.link, { away: async (tripId: string) => tripId === 't_swept_away' });
+    const h = await startProactive(brain, { intervals: false, travel: null });
+    for (const id of ['t_swept_away', 't_swept_here']) {
+      await seedTrip(db.pool, id);
+      await db.pool.query(`update trips set created_at = $2 where trip_id = $1`, [id, time.now()]);
+    }
+    await h.sweep();
+    const link = brain.door.link as unknown as { of(method: string): Array<Record<string, unknown>> };
+    const read = link.of('read_trip').map((p) => p.trip_id);
+    expect(read).not.toContain('t_swept_away');
+    expect(read).toContain('t_swept_here');
   });
 });

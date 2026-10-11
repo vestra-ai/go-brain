@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { DEMO_LISTINGS, GO_DENY_TOOLS, GO_RECIPE_INSTRUCTIONS, GO_TASK_INSTRUCTIONS, GO_WEBHOOK_EVENTS, goTaskManifest } from '../instructions.js';
+import {
+  DEMO_LISTINGS, GO_BLOCKED_PATHS, GO_BROWSER_DOMAINS, GO_DENY_TOOLS, GO_RECIPE_INSTRUCTIONS, GO_TASK_INSTRUCTIONS, GO_WEBHOOK_EVENTS,
+  goRecipeManifest, goTaskManifest,
+} from '../instructions.js';
 
 describe('the travel search job (go-recipe)', () => {
   it('passes the script to computer_eval as its expression, waits for the results first, and returns rows unchanged', () => {
@@ -14,6 +17,14 @@ describe('the travel search job (go-recipe)', () => {
 });
 
 describe("Go's job instructions", () => {
+  // Keshav's ruling: Go stays on ixigo, never other travel sites.
+  it('keep the job on ixigo.com only: no open web, no other site, and picks copy the offer_id as given, null included', () => {
+    expect(GO_TASK_INSTRUCTIONS).toContain('Work on ixigo.com only. Never open another travel or booking site');
+    expect(GO_TASK_INSTRUCTIONS).toContain('never one from another site');
+    expect(GO_TASK_INSTRUCTIONS).toContain('one read off ixigo.com comes back with offer_id null and its ixigo page as source_url');
+    expect(GO_TASK_INSTRUCTIONS).not.toMatch(/open web|Browse the web|Every result has an offer_id/);
+  });
+
   it('fit in the 8,000 characters a deployment allows, in plain words with no dashes', () => {
     expect(GO_TASK_INSTRUCTIONS.length).toBeLessThan(8000);
     expect(GO_TASK_INSTRUCTIONS).not.toMatch(/[—–]/);
@@ -31,8 +42,8 @@ describe("Go's job instructions", () => {
     }
   });
 
-  it("say that stays and journeys come from Go's search, each pick with its offer_id and whole price, and what a web-only pick is", () => {
-    for (const words of ['take your choices from them first', 'total_paise', 'the whole stay', 'every traveller', 'offer_id to null', 'found on the web', 'source_url', 'call the place']) {
+  it("say that stays and journeys come from Go's search, each pick with its offer_id and whole price, and what a pick read on ixigo.com is", () => {
+    for (const words of ['take your choices from them first', 'total_paise', 'the whole stay', 'every traveller', 'offer_id null', 'its ixigo.com page as source_url', 'never one from another site']) {
       expect(GO_TASK_INSTRUCTIONS, words).toContain(words);
     }
   });
@@ -48,6 +59,16 @@ describe('the go-trip-task manifest', () => {
     });
     expect(m).not.toHaveProperty('deny_tools');
     expect(goTaskManifest({ mcpServerId: 'mcp_go', model: 'default', denyTools: true }).deny_tools).toEqual([...GO_DENY_TOOLS]);
+  });
+
+  it("with the browser fetch, closes ixigo's payment page beside the sites it allows, on both deployments (Bash #4591)", () => {
+    expect(GO_BLOCKED_PATHS).toEqual(['ixigo.com/payments/']);
+    expect(goTaskManifest({ mcpServerId: 'mcp_go', model: 'default', denyTools: false }).browser).toBeUndefined();
+    expect(goTaskManifest({ mcpServerId: 'mcp_go', model: 'default', denyTools: false, browserFetch: true }).browser).toEqual({
+      allowed_domains: [...GO_BROWSER_DOMAINS], blocked_paths: ['ixigo.com/payments/'],
+    });
+    expect(goRecipeManifest({ model: 'fast', denyTools: false }).browser).toBeUndefined();
+    expect(goRecipeManifest({ model: 'fast', denyTools: false, browserFetch: true }).browser).toEqual({ blocked_paths: ['ixigo.com/payments/'] });
   });
 
   it("denies Bash's house tools and Composio, but never the tools that reach Go", () => {

@@ -145,28 +145,28 @@ describe('askToPay refuses, in plain words, and posts nothing', () => {
 
   it('when the winner came from browsing, or the travel layer has no offer for it, and holds nothing', async () => {
     k.travel.options.set('opt_villa_sol', null);
-    expect(await k.ask()).toMatchObject({ code: 'not_bookable', refused: "I found this one on the web, so I can't book it here. Want me to call them instead?" });
+    expect(await k.ask()).toMatchObject({ code: 'not_bookable', refused: "I found this one on the web, so it can't be booked through me. Want the closest ones on ixigo, which I can book?" });
     k.travel.options.delete('opt_villa_sol');
     expect(await k.ask()).toMatchObject({ code: 'not_bookable' });
     expectNothingPosted();
     expect(k.travel.holds).toEqual([]);
   });
 
-  it('for a stay from ixigo.com: no offer to hold, so Go hands over its ixigo page to book it there, and holds nothing', async () => {
+  it('for a stay from ixigo.com: no offer to hold, so Go points to View on ixigo in its details (never the link), and holds nothing', async () => {
     k.travel.options.set('opt_villa_sol', null);
     k.travel.pages.set('opt_villa_sol', 'https://www.ixigo.com/hotels/1384544/details?locationId=1366415&checkinDate=06112026&checkoutDate=09112026&adultCount=5&roomCount=3&hotelInfoToken=true%7C3001%7C1');
     expect(await k.ask()).toMatchObject({
       code: 'not_bookable',
-      refused: "Villa Sol is booked on ixigo, not here. Here's the link to book it yourselves: https://www.ixigo.com/hotels/1384544/details?locationId=1366415&checkinDate=06112026&checkoutDate=09112026&adultCount=5&roomCount=3&hotelInfoToken=true%7C3001%7C1",
+      refused: "Villa Sol is booked on ixigo, not here: View on ixigo, in its details on its card, opens it there.",
     });
     // A page anywhere but ixigo.com is never handed out.
     k.travel.pages.set('opt_villa_sol', 'https://villa-sol.example.com/book');
-    expect(await k.ask()).toMatchObject({ code: 'not_bookable', refused: "I found this one on the web, so I can't book it here. Want me to call them instead?" });
+    expect(await k.ask()).toMatchObject({ code: 'not_bookable', refused: "I found this one on the web, so it can't be booked through me. Want the closest ones on ixigo, which I can book?" });
     expectNothingPosted();
     expect(k.travel.holds).toEqual([]);
   });
 
-  it('for a flight, train or bus: group travel is cut this week, so Go hands over the link and holds nothing', async () => {
+  it('for a flight, train or bus: group travel is cut this week, so Go points to its card and holds nothing', async () => {
     // The group's winner resolves to a per-person flight fare.
     k.travel.options.set('opt_villa_sol', 'ixigo:flight:6e-2134');
     k.travel.offers.set('ixigo:flight:6e-2134', {
@@ -176,7 +176,7 @@ describe('askToPay refuses, in plain words, and posts nothing', () => {
     expect(await k.ask()).toMatchObject({
       code: 'not_bookable_yet',
       say: true,
-      refused: "I can't book flights for the whole group yet. Here's the link to book them yourselves: https://www.ixigo.com/flights/6e-2134",
+      refused: "I can't book flights for the whole group yet. View on ixigo, in its details on its card, opens each one set up for you.",
     });
     // A train with no booking page from the travel layer: the first sentence alone.
     k.travel.options.set('opt_villa_sol', 'ixigo:train:12432');
@@ -264,6 +264,18 @@ describe('askToPay refuses, in plain words, and posts nothing', () => {
     expect((await k.pool.query('select state, refused_reason, release_reason from payments')).rows).toEqual([
       { state: 'refused', refused_reason: 'server_down', release_reason: 'other' },
     ]);
+  });
+
+  // The Server's already_booked (1.2): a booking someone added for the vote stands, so a second payment would charge twice.
+  it('when the Server says the vote is booked already: says so and to cancel first, never to wait', async () => {
+    await k.server.request('add_booking', {
+      request_id: 'rq_by_hand', trip_id: 't_goa', kind: 'stay', title: 'Villa Sol', vendor: 'ixigo', ref: 'IXG-HAND', amount_minor: 5420000,
+      currency: 'INR', payer_person_id: 'p_rahul', for_person_ids: ['p_rahul'], decision_id: 'd_villa',
+    });
+    const r = await k.ask();
+    expect(r).toMatchObject({ code: 'already_booked', refused: 'Villa Sol is booked already. To book it again, cancel that booking first.' });
+    expect('refused' in r && r.refused).not.toMatch(/wait/i);
+    expect(payCards()).toEqual([]);
   });
 
   it('once the vote is already paid for', async () => {

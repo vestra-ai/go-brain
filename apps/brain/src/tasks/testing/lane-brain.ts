@@ -96,6 +96,9 @@ export class FakeLink implements ServerLink {
       }
       case 'open_vote':
         return { decision_id: `d_${this.n}`, seq: 100 + this.n };
+      // As the Server answers it: the booking's id, which a ticket card names.
+      case 'add_booking':
+        return { booking_id: `bk_${this.n}`, seq: 100 + this.n };
       case 'read_trip':
         return GOA_TRIP;
       default:
@@ -180,6 +183,9 @@ export class FakeContext implements Context {
   setStory(): void {
     // Lane C never folds the chat.
   }
+  setForgotten(): void {
+    // Nor forgets anyone.
+  }
   addTurnRules(fn: Parameters<Context['addTurnRules']>[0]): void {
     this.turnRules.push(fn);
   }
@@ -188,6 +194,21 @@ export class FakeContext implements Context {
   }
   addEndNote(): void {
     // Nor an order at the end of the prompt.
+  }
+  /** The lanes' turn-end hooks: a test ends a turn as P1's composer does, by calling each one. */
+  readonly turnEnds: Array<Parameters<Context['addTurnEnd']>[0]> = [];
+  addTurnEnd(fn: Parameters<Context['addTurnEnd']>[0]): void {
+    this.turnEnds.push(fn);
+  }
+  /** The lanes' answers with no model call: a test runs one as P1's composer does, before the model. */
+  readonly directs: Array<Parameters<Context['addDirect']>[0]> = [];
+  addDirect(fn: Parameters<Context['addDirect']>[0]): void {
+    this.directs.push(fn);
+  }
+  /** The lanes' cards on a turn's own post: a test asks them as P1's composer does, just before the post. */
+  readonly turnCards: Array<Parameters<Context['addTurnCard']>[0]> = [];
+  addTurnCard(fn: Parameters<Context['addTurnCard']>[0]): void {
+    this.turnCards.push(fn);
   }
 }
 

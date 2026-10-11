@@ -1,0 +1,41 @@
+id: hotels.place_lookup
+title: A city, region or area to stay in, as ixigo's hotel box knows it
+asks:
+  - manali
+  - old manali
+inputs:
+  words: { kind: text, about: the place as the person said it }
+keeps: stays
+box:
+  # The suggestion call itself, opened as the page: no box to find, type into or wait on (the 8 Oct drill: typing
+  # into the box timed out on the box's browser). The box below is how a person does it, for the flow speed.
+  open: "/hotels-autocompleter/api/v2/results?query={words}&size=10&v=3"
+  page: /hotels
+  type:
+    place:
+      # A "Best Price Guarantee" modal opens on the first visit of the day.
+      - { op: click, name: Close modal, optional: true }
+      - { op: type, role: textbox, name: "Enter city, area or property name", text: "{words}" }
+      - { op: wait_for, match: /hotels-autocompleter/api/v2/results }
+capture:
+  - { match: /hotels-autocompleter/api/v2/results, min_count: 1, max_count: 6, max_bytes: 200000 }
+answer:
+  as: places
+  suggestions:
+    words_param: query
+    list: data.suggestions
+    name: name
+    line: "region ? region : ''"
+    all: "false"
+    country: country
+    # A property or a landmark is not a place to search around.
+    skip: "locationType in ['H', 'POI']"
+    # Where it is too (ixigo's own coordinates): a destination Go sets carries them (travel/place-for.ts).
+    place: |
+      { "locationId": $number(locationId), "locationName": name, "locationType": locationType,
+        "masterLocationId": $number(masterLocationId), "countryId": $number(countryId),
+        "lat": $type(latitude) = "number" ? latitude, "lng": $type(longitude) = "number" ? longitude }
+    # A city or a state is the place by its name; an area ("Old Manali") is chosen by the words that fit.
+    place_name: "locationType in ['C', 'S'] ? locationName : ''"
+samples: { manali: hotels.place_lookup.manali.json, old_manali: hotels.place_lookup.old-manali.json }
+notes: The types are City (C), State (S), Region, Area (L, SL), Property (H) and landmark (POI); ids come as strings.

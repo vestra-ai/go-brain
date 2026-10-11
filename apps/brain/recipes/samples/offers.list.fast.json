@@ -1,0 +1,184 @@
+{
+ "data": {
+  "offers": [
+   {
+    "offerType": "CAMPAIGN",
+    "campaignName": "Grand Travel Fest: Flat 15% on Hotels with RBL and AU Bank Credit Cards",
+    "campaignSlug": "grandtravelfest",
+    "groupedProducts": [
+     "HOTELS"
+    ],
+    "paymentTypeGroups": [
+     {
+      "paymentType": "AU Bank",
+      "id": 7
+     },
+     {
+      "paymentType": "RBL Bank",
+      "id": 12
+     }
+    ],
+    "journeyType": "DOMESTIC",
+    "startDate": "2026-10-05T18:30:00.000Z",
+    "endDate": "2026-10-10T18:29:59.000Z"
+   },
+   {
+    "offerType": "CAMPAIGN",
+    "campaignName": "Grand Travel Fest: Flat 15% on Flights with RBL and AU Bank Credit Cards",
+    "campaignSlug": "grandtravelfest_",
+    "groupedProducts": [
+     "FLIGHTS"
+    ],
+    "paymentTypeGroups": [
+     {
+      "paymentType": "AU Bank",
+      "id": 7
+     },
+     {
+      "paymentType": "RBL Bank",
+      "id": 12
+     }
+    ],
+    "journeyType": "DOMESTIC",
+    "startDate": "2026-10-05T18:30:00.000Z",
+    "endDate": "2026-10-10T18:29:59.000Z"
+   },
+   {
+    "offerType": "OFFER",
+    "offerTitle": "Get Flat 80% Off on your Hotel Booking",
+    "product": "HOTELS",
+    "slug": "flat80_hotels",
+    "journeyType": "BOTH",
+    "startDate": "2026-08-31T18:30:00.000Z",
+    "endDate": null,
+    "offerCode": "FLAT80",
+    "offerId": 550,
+    "paymentType": null
+   },
+   {
+    "offerType": "CAMPAIGN",
+    "campaignName": "Up to 12% Off on Flight with HSBC Credit Card+ 3 Month Interest Free EMI",
+    "campaignSlug": "hsbc_flight",
+    "groupedProducts": [
+     "FLIGHTS"
+    ],
+    "paymentTypeGroups": [
+     {
+      "paymentType": "HSBC Credit Card",
+      "id": 25
+     }
+    ],
+    "journeyType": "DOMESTIC",
+    "startDate": "2026-09-30T18:30:00.000Z",
+    "endDate": "2026-12-31T18:29:59.000Z"
+   },
+   {
+    "offerType": "OFFER",
+    "offerTitle": "Get up to ₹5,000 Off on Domestic Flights with IDFC FIRST Bank Credit Card+Interest Free EMI",
+    "product": "FLIGHTS",
+    "slug": "idfc-flights-dom-emi",
+    "journeyType": "DOMESTIC",
+    "startDate": "2026-09-30T18:30:00.000Z",
+    "endDate": "2026-12-31T18:29:59.000Z",
+    "offerCode": "IDFCEMI3",
+    "offerId": 362,
+    "paymentType": "IDFC FIRST Bank "
+   },
+   {
+    "offerType": "OFFER",
+    "offerTitle": "Flat 12% Off with Axis Bank Credit Cards + Interest Free EMI",
+    "product": "FLIGHTS",
+    "slug": "axis-sale-dom-flights",
+    "journeyType": "BOTH",
+    "startDate": "2026-09-30T18:30:00.000Z",
+    "endDate": "2026-11-30T18:29:59.000Z",
+    "offerCode": "IXAXIS",
+    "offerId": 287,
+    "paymentType": "Axis Bank"
+   }
+  ],
+  "count": 49,
+  "paymentTypesOfferGroup": [
+   {
+    "paymentType": "AU Bank",
+    "id": 7,
+    "associatedOffers": 6
+   },
+   {
+    "paymentType": "RBL Bank",
+    "id": 12,
+    "associatedOffers": 5
+   },
+   {
+    "paymentType": "HDFC Bank",
+    "id": 4,
+    "associatedOffers": 3
+   },
+   {
+    "paymentType": "Kotak Bank",
+    "id": 16,
+    "associatedOffers": 2
+   },
+   {
+    "paymentType": "ICICI Bank",
+    "id": 3,
+    "associatedOffers": 2
+   },
+   {
+    "paymentType": "Axis Bank",
+    "id": 20,
+    "associatedOffers": 2
+   },
+   {
+    "paymentType": "J&K Bank",
+    "id": 22,
+    "associatedOffers": 2
+   },
+   {
+    "paymentType": "IDFC FIRST Bank ",
+    "id": 6,
+    "associatedOffers": 2
+   },
+   {
+    "paymentType": "Punjab National Bank",
+    "id": 24,
+    "associatedOffers": 2
+   },
+   {
+    "paymentType": "HSBC Credit Card",
+    "id": 25,
+    "associatedOffers": 2
+   },
+   {
+    "paymentType": "SalarySe",
+    "id": 30,
+    "associatedOffers": 2
+   },
+   {
+    "paymentType": "City Union Bank",
+    "id": 32,
+    "associatedOffers": 2
+   },
+   {
+    "paymentType": "UPI",
+    "id": 10,
+    "associatedOffers": 1
+   },
+   {
+    "paymentType": "CRED",
+    "id": 17,
+    "associatedOffers": 1
+   },
+   {
+    "paymentType": "UPI",
+    "id": 18,
+    "associatedOffers": 1
+   },
+   {
+    "paymentType": "Indian Overseas Bank",
+    "id": 27,
+    "associatedOffers": 1
+   }
+  ]
+ }
+}

@@ -1,15 +1,21 @@
 import type pg from 'pg';
 import type { Confirmed } from '../travel/travel.js';
+import type { Room } from './rooms.js';
 
 /** 'confirming': the vault took the payer's yes but the bank has not said whether the charge went through. It never expires. */
 export type PaymentState = 'asking' | 'waiting' | 'confirming' | 'paid' | 'declined' | 'expired' | 'failed' | 'refused';
 export type ReleaseReason = 'payment_failed' | 'payer_declined' | 'price_changed' | 'expired' | 'other';
 type Db = pg.Pool | pg.PoolClient;
 
+/** 'ticket': a traveller's own ticket (contract 1.2), paid with no vote; its traveller is the payer. */
+export type AskKind = 'group' | 'ticket';
+
 export interface PaymentRow {
   payment_id: string;
   trip_id: string;
-  decision_id: string;
+  kind: AskKind;
+  /** The vote; null for a ticket. */
+  decision_id: string | null;
   option_ref: string;
   purpose: string;
   label: string;
@@ -36,6 +42,8 @@ export interface PaymentRow {
   rail_ref: string | null;
   fail_reason: string | null;
   confirmed: Confirmed | null;
+  /** The rooms the stay's expenses split by, kept when the payment was asked (REV4 B6); [] for none picked. */
+  rooms: Room[] | null;
   booking_id: string | null;
   expense_id: string | null;
   released_at: Date | null;
@@ -43,6 +51,14 @@ export interface PaymentRow {
   said_at: Date | null;
   /** The vault will not ask the bank again and a person is checking the charge; the payment stays confirming. */
   checking_at: Date | null;
+  /** A traveller's own payment (contract 1.3, G3): the card of Go's they tapped and the option on it. Null for a vote's. */
+  pick_card_id: string | null;
+  pick_option_id: string | null;
+  /**
+   * 'server': the Server paid it itself on the payer's tap (payment.completed, method demo) and wrote its booking and
+   * expense; no vault and no money. Null: the vault paid it, and Go books it.
+   */
+  paid_by: 'server' | null;
   attempts: number;
   last_error: string | null;
   created_at: Date;
@@ -52,7 +68,9 @@ export interface PaymentRow {
 export interface NewPayment {
   payment_id: string;
   trip_id: string;
-  decision_id: string;
+  /** Absent: 'group'. */
+  kind?: AskKind;
+  decision_id: string | null;
   option_ref: string;
   purpose: string;
   label: string;
@@ -66,12 +84,17 @@ export interface NewPayment {
   payment_kind: string;
   hold_expires_at: Date;
   refundable_until: string | null;
+  /** The rooms picked for the stay when the payment is asked; [] for none, null when nothing reads them. */
+  rooms?: Room[] | null;
+  /** A traveller's own payment (contract 1.3): their pick, the card and its option. */
+  pick_card_id?: string | null;
+  pick_option_id?: string | null;
 }
 
 const PATCHABLE = [
   'refused_reason', 'release_reason', 'approval_id', 'approval_token', 'approval_expires_at', 'card_id', 'card_state',
-  'pay_link_url', 'pay_link_expires_at', 'rail_ref', 'fail_reason', 'confirmed', 'booking_id', 'expense_id',
-  'released_at', 'ticket_posted_at', 'said_at', 'last_error', 'checking_at',
+  'pay_link_url', 'pay_link_expires_at', 'rail_ref', 'fail_reason', 'confirmed', 'rooms', 'booking_id', 'expense_id',
+  'released_at', 'ticket_posted_at', 'said_at', 'last_error', 'checking_at', 'paid_by',
 ] as const;
 export type PaymentPatch = Partial<Pick<PaymentRow, (typeof PATCHABLE)[number]>>;
 
@@ -83,7 +106,7 @@ function setClause(patch: PaymentPatch, first: number): { sql: string[]; values:
     if (!(key in patch)) continue;
     const value = patch[key];
     sql.push(`${key} = $${first + values.length}`);
-    values.push(key === 'confirmed' && value !== null && value !== undefined ? JSON.stringify(value) : value);
+    values.push((key === 'confirmed' || key === 'rooms') && value !== null && value !== undefined ? JSON.stringify(value) : value);
   }
   return { sql, values };
 }
@@ -92,11 +115,13 @@ export async function insertAsking(db: Db, p: NewPayment, now: Date): Promise<'o
   try {
     await db.query(
       `insert into payments (payment_id, trip_id, decision_id, option_ref, purpose, label, payer_person_id, payer_name, for_person_ids, state,
-         hold_id, amount_minor, currency, merchant, payment_kind, hold_expires_at, refundable_until, created_at, updated_at)
-       values ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'asking', $10, $11, $12, $13, $14, $15, $16, $17, $17)`,
+         hold_id, amount_minor, currency, merchant, payment_kind, hold_expires_at, refundable_until, rooms, kind, pick_card_id, pick_option_id,
+         created_at, updated_at)
+       values ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'asking', $10, $11, $12, $13, $14, $15, $16, $18, $19, $20, $21, $17, $17)`,
       [
         p.payment_id, p.trip_id, p.decision_id, p.option_ref, p.purpose, p.label, p.payer_person_id, p.payer_name, p.for_person_ids,
         p.hold_id, p.amount_minor, p.currency, p.merchant, p.payment_kind, p.hold_expires_at, p.refundable_until, now,
+        p.rooms ? JSON.stringify(p.rooms) : null, p.kind ?? 'group', p.pick_card_id ?? null, p.pick_option_id ?? null,
       ],
     );
     return 'ok';
@@ -129,6 +154,9 @@ async function one(db: Db, where: string, values: unknown[]): Promise<PaymentRow
 export const getPayment = (db: Db, id: string) => one(db, 'payment_id = $1', [id]);
 export const byApproval = (db: Db, tripId: string, approvalId: string) => one(db, 'trip_id = $1 and approval_id = $2', [tripId, approvalId]);
 export const byCard = (db: Db, tripId: string, cardId: string) => one(db, 'trip_id = $1 and card_id = $2', [tripId, cardId]);
+/** The open ask for a traveller's ticket, by what it pays for (its key, kept as option_ref). */
+export const openTicket = (db: Db, tripId: string, key: string) =>
+  one(db, "trip_id = $1 and kind = 'ticket' and option_ref = $2 and state in ('asking', 'waiting', 'confirming')", [tripId, key]);
 export const openForDecision = (db: Db, tripId: string, decisionId: string) =>
   one(db, "trip_id = $1 and decision_id = $2 and state in ('asking', 'waiting', 'confirming')", [tripId, decisionId]);
 export const paidForDecision = (db: Db, tripId: string, decisionId: string) =>
@@ -174,11 +202,14 @@ export async function unsettled(db: Db, now: Date, limit = 50): Promise<string[]
   return r.rows.map((x) => x.payment_id);
 }
 
-/** Paid payments, and those of them not booked yet: money moved, the room does not show it. Rows paid in the last 2 minutes are still being finished. */
+/**
+ * Paid payments, and those of them not booked yet: money moved, the room does not show it. Rows paid in the last 2 minutes
+ * are still being finished. A ticket is booked by its own flow (the flight booking that asked for it), not here.
+ */
 export async function paidButNotBooked(db: Db, before: Date): Promise<{ missing: number; paid: number }> {
   const r = await db.query<{ missing: number; paid: number }>(
     `select count(*) filter (where booking_id is null and updated_at < $1)::int as missing, count(*)::int as paid
-     from payments where state = 'paid'`,
+     from payments where state = 'paid' and kind = 'group'`,
     [new Date(before.getTime() - 120_000)],
   );
   return r.rows[0] ?? { missing: 0, paid: 0 };
@@ -207,7 +238,10 @@ export async function interruptStale(db: Db, now: Date, ageMs = 60_000): Promise
   return r.rows.map((x) => x.payment_id);
 }
 
+/** Payments the vault paid. One the Server paid itself (payment.completed) moved no money and never opened the vault. */
 export async function paidApprovalIds(db: Db): Promise<string[]> {
-  const r = await db.query<{ approval_id: string }>("select approval_id from payments where state = 'paid' and approval_id is not null");
+  const r = await db.query<{ approval_id: string }>(
+    "select approval_id from payments where state = 'paid' and approval_id is not null and paid_by is null",
+  );
   return r.rows.map((x) => x.approval_id);
 }

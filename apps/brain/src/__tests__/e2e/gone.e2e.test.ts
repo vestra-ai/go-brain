@@ -33,6 +33,8 @@ beforeAll(async () => {
   await server.start();
   await server.createTrip(trip);
   await server.createTrip(alive);
+  await helloIn(trip.trip_id);
+  await helloIn(alive.trip_id);
 }, 30_000);
 
 afterAll(async () => {
@@ -40,6 +42,15 @@ afterAll(async () => {
   await built.stop();
   await db.drop();
 });
+
+/**
+ * Go's hello is in the trip and Go has taken its event: the plain hello (this model never writes one, #496). A trip
+ * forgotten while its hello was still on its way would get the hello's message.created after the forget, and an event
+ * for a trip says the Server has it (intake clears gone), so each test forgets a trip only once its hello is in.
+ */
+const helloIn = (tripId: string) =>
+  server.waitFor(() => server.events.find((e) => e.event.trip_id === tripId && e.event.type === 'message.created' && e.answer
+    && (e.event.data as { message?: { author?: { kind?: string } } }).message?.author?.kind === 'go'), 10_000);
 
 const goneAt = async (tripId = trip.trip_id): Promise<Date | null | undefined> =>
   (await db.pool.query<{ gone_at: Date | null }>('select gone_at from trips where trip_id = $1', [tripId])).rows[0]?.gone_at;
@@ -69,6 +80,7 @@ describe('a trip the Server forgot', () => {
     const packs = built.brain.packs as PacksImpl;
     await server.createTrip(midway);
     await vi.waitFor(() => expect(packs.active()).toContain(midway.trip_id), { timeout: 5_000 });
+    await helloIn(midway.trip_id);
     // The Server forgets the trip the moment it answers the refresh's read_trip, before Go reads the messages.
     const from = server.requests.length;
     const off = server.onChange(() => {

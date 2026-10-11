@@ -46,7 +46,8 @@ export function payCard(i: PayCardInput, look: PayCardLook): PayCard {
   const actions =
     look === 'waiting'
       ? [
-          { action_id: 'approve', label: 'Approve', style: 'primary' as const, only_for_person_ids: only },
+          // The Server pays a waiting card's approve itself for the demo (payment.completed), so the button says what happens.
+          { action_id: 'approve', label: 'Pay with ixigo money', style: 'primary' as const, only_for_person_ids: only },
           { action_id: 'decline', label: 'Decline', style: 'secondary' as const, only_for_person_ids: only },
         ]
       : look === 'expired'
@@ -79,18 +80,32 @@ export function mandateCard(o: {
   currency: string;
   refundableOnly: boolean;
   payerName: string;
+  /** The price moved since the vote: said first, before anyone says yes. */
+  moved?: string | null;
 }): MandateCard {
   const refundable = o.refundableOnly ? ', refundable only' : '';
-  const text = `Ready to book ${o.what}: up to ${money(o.capMinor, o.currency)}${refundable}, ${o.payerName} pays. ${o.payerName}, open Go to say yes.`;
+  const moved = o.moved ? `${o.moved} ` : '';
+  const text = `${moved}Ready to book ${o.what}: up to ${money(o.capMinor, o.currency)}${refundable}, ${o.payerName} pays. ${o.payerName}, open Go to say yes.`;
   return C.MandateCard.parse({ card_id: o.cardId, kind: 'mandate', decision_id: o.decisionId, fallback_text: clip(plain(text), 300) });
 }
 
-export function ticketCard(o: { cardId: string; bookingId: string; title: string; ref: string; refundableUntil: string | null }): TicketCard {
+/** The ticket: the Server draws it from the booking; the words are for where it can't. detail: a flight's times, a bus's seats. */
+export function ticketCard(o: {
+  cardId: string;
+  bookingId: string;
+  title: string;
+  ref: string | null;
+  refundableUntil: string | null;
+  simulated?: boolean;
+  detail?: string | null;
+}): TicketCard {
+  const detail = o.detail ? `, ${o.detail}` : '';
+  const ref = o.ref ? ` Ref ${o.ref}.` : '';
   const refund = o.refundableUntil ? ` Free cancellation until ${shortDate(o.refundableUntil)}.` : '';
   return C.TicketCard.parse({
     card_id: o.cardId,
     kind: 'ticket',
     booking_id: o.bookingId,
-    fallback_text: clip(plain(`Booked: ${o.title}. Ref ${o.ref}.${refund}`), 300),
+    fallback_text: clip(plain(`${o.simulated ? 'Booked (simulated)' : 'Booked'}: ${o.title}${detail}.${ref}${refund}`), 300),
   });
 }

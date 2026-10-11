@@ -1,0 +1,37 @@
+id: trains.running_status
+title: Where a train is today, station by station, with its arrival, departure, delay and platform
+asks:
+  - where is 12992 right now
+  - is mandovi express running late
+  - 12992 kitna late hai
+inputs:
+  train: { kind: text, about: "the train's 5-digit number (trains.by_name finds it from a name)" }
+auth: none
+changes_state: false
+# ixigo's running status page, plain server-rendered HTML for today's run: one row a station, its arrival and departure
+# (actual, else scheduled), the delay or the run's state ("Cancelled"), and its platform. The first cell is the train's
+# marker, always empty in text.
+page: /trains/{train}/running-status
+capture:
+  - { match: "/trains/{train}/running-status$", max_bytes: 1000000 }
+read:
+  rows: { from: "/trains/{train}/running-status$", format: html_tables, list: "[ $ ]" }
+answer:
+  as: facts
+  title: "Train {train} today"
+  max: 1
+  each: |
+    (
+      $rows := $reduce(tables, function($found, $t) { $t[0][1] = "Station" ? $t : $found }, []);
+      {
+        "train": $substringBefore($substringAfter(title, ", "), " Running Status"),
+        "state": $join($distinct($map($rows, function($r, $i) { $i > 0 ? $r[4] })), ", "),
+        "stations": [$map($rows, function($r, $i) { $i > 0 ? (
+          $r[1] & ": arrives " & $r[2] & ", departs " & $r[3] & ", " & $r[4] & ($r[5] ? ", platform " & $substringBefore($r[5] & " ", " ") : "")
+        ) })]
+      }
+    )
+ttl_minutes: 5
+samples: { page: trains.running_status.html }
+measured: { fast_ms: null, page_ms: 9385, flow_ms: null }
+notes: Today's run only. 12992 on 7 Oct read "Cancelled" at every station. It is ixigo's report, minutes behind the train.

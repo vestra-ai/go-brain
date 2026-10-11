@@ -10,6 +10,7 @@ import { createTokenStore, hashToken } from '../../mcp/tokens.js';
 import { FakeSwitches } from '../testing/lane-brain.js';
 import { makeTaskHarness, VILLA_BRIEF, type TaskHarness } from '../testing/harness.js';
 import { armedToken } from '../testing/job-search.js';
+import { returnsSchema } from '../returns.js';
 
 let h: TaskHarness;
 let travel: ReturnType<typeof createTravelLayer>;
@@ -85,6 +86,15 @@ describe('applying /v1 events', () => {
     expect(h.lb.link.card(row.cardId)?.for_person_ids).toBeUndefined();
   });
 
+  it("pins a quiet job's hand-off (the ixigo login) to the person who asked, with no line from the composer: its cards say it", async () => {
+    const { row, v1TaskId } = await h.runningJob('ev4q', 't_ev4q', { title: 'Logging in to ixigo', returns: returnsSchema('answer'), returnsKind: 'answer', quiet: true });
+    const ask = h.fake.ask(v1TaskId, { type: 'handoff', kind: 'ask_question', summary: 'Log in to ixigo', browser: { suggested_mode: 'control', url: null } });
+    await h.events.apply({ type: 'interaction.created', data: { interaction_id: ask.id, type: 'handoff', task_id: v1TaskId }, source: 'webhook' });
+    await h.cards.flush();
+    expect(h.lb.link.card(row.cardId)).toMatchObject({ state: 'needs_you', for_person_ids: ['p_meher'] });
+    expect(h.lb.desk.items.some((i) => i.id.startsWith(`task:${row.id}:`))).toBe(false);
+  });
+
   it("answers an approval from Go's policy: yes for Go's read-only tools, no for anything else", async () => {
     const { v1TaskId } = await h.runningJob('ev5', 't_ev5');
     const read = h.fake.ask(v1TaskId, { type: 'approval', kind: 'tool_permission', summary: 'Use trip', details: { server: 'go-trip', tool: 'trip' } });
@@ -104,7 +114,7 @@ describe('applying /v1 events', () => {
     await h.events.apply({ ...ev, source: 'stream' });
     await h.cards.flush();
     const done = (await h.store.get(row.id))!;
-    expect(done).toMatchObject({ state: 'done', endReason: 'completed', costUsd: 0.42 });
+    expect(done).toMatchObject({ state: 'done', endReason: 'completed', costUsd: 0.42, quiet: false });
     expect(h.lb.link.card(row.cardId)).toMatchObject({ state: 'done', actions: [] });
     const items = h.lb.desk.items.filter((i) => i.id === `task:${row.id}:done`);
     expect(items).toHaveLength(1);
@@ -139,7 +149,9 @@ describe('applying /v1 events', () => {
       { offerId: BREEZE.offerId, title: 'Ocean Breeze Villa', priceMinor: 3930000, currency: 'INR', kind: 'stay', link: null },
       { offerId: null, title: 'Casa Lua', priceMinor: 4500000, currency: 'INR', kind: 'stay', link: null },
     ]);
-    expect(card.options[0]).toMatchObject({ price_minor: 1280000, price_note: 'per night', subtitle: 'Anjuna, ₹38,400 for 3 nights' });
+    expect(card.options[0]).toMatchObject({ price_minor: 3840000, price_note: 'for 3 nights', subtitle: 'Anjuna, ₹12,800 per night' });
+    // The web's pick, its total with no nights known: the whole stay all the same.
+    expect(card.options[3]).toMatchObject({ price_minor: 4500000, price_note: 'for the whole stay' });
     expect(card.options[3]?.highlights[0]).toBe('Found on the web');
   });
 
@@ -154,6 +166,17 @@ describe('applying /v1 events', () => {
     expect((await h.store.get(row.id))?.state).toBe('stopped');
     expect(h.lb.desk.items.some((i) => i.id === `task:${row.id}:done`)).toBe(false);
     expect(h.lb.link.card(row.cardId)?.fallback_text).toBe('Stopped: Finding villas with a pool in North Goa');
+  });
+
+  it('ends a quiet job (the ixigo login) done on its card and wakes no one: the lane that started it speaks for it', async () => {
+    const { row, v1TaskId } = await h.runningJob('ev7q', 't_ev7q', { title: 'Logging in to ixigo', returns: returnsSchema('answer'), returnsKind: 'answer', quiet: true });
+    expect(row.quiet).toBe(true);
+    h.fake.complete(v1TaskId, { summary: 'Done' }, 'Done');
+    await h.events.apply({ type: 'task.completed', data: { task_id: v1TaskId }, source: 'webhook' });
+    await h.cards.flush();
+    expect(await h.store.get(row.id)).toMatchObject({ state: 'done', endReason: 'completed' });
+    expect(h.lb.link.card(row.cardId)).toMatchObject({ state: 'done' });
+    expect(h.lb.desk.items.some((i) => i.id.startsWith(`task:${row.id}:`))).toBe(false);
   });
 
   it('ends a failed job as "Didn\'t work", and a job that hit its spend cap with that reason', async () => {

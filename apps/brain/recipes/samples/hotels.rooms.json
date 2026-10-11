@@ -1,0 +1,192 @@
+{
+ "data": {
+  "persona": "COUPLE",
+  "hotelLevelDetails": {
+   "city": "Assagao",
+   "accommodationType": "Bed and Breakfast"
+  },
+  "rooms": [
+   {
+    "id": "174167203",
+    "name": "Queen Cottage with Balcony - Happy Hours 1+1 (5 pm to 7 pm, from Monday to Thursday), 50% Yoga Session, 15 minutes of Head or Foot Massage (per stay), 1 Round of Complimentary Cocktail (per stay)",
+    "properties": [
+     {
+      "code": "SIZE",
+      "data": "50 sq. mt."
+     },
+     {
+      "code": "BED_TYPE",
+      "data": "1 double bed"
+     },
+     {
+      "code": "VIEW",
+      "data": "Garden view"
+     },
+     {
+      "code": "OCCUPANCY",
+      "data": "Sleeps 2"
+     }
+    ],
+    "roomLevelAmenities": [
+     "Hair dryer",
+     "Toiletries",
+     "Towels",
+     "Walk-in shower",
+     "Telephone",
+     "Adapter"
+    ],
+    "roomOptions": [
+     {
+      "roomId": "174167203",
+      "name": "Room With Free Cancellation, Breakfast",
+      "mealBenefits": [
+       "Breakfast"
+      ],
+      "cancellationBenefits": {
+       "code": "FULLY_REFUNDABLE",
+       "data": "Free Cancellation till 02 Nov 11:59 PM",
+       "policy": [
+        {
+         "code": "FULLY_REFUNDABLE",
+         "title": "Fully refundable before 02 Nov 2026 11:59 PM",
+         "subTitle": "Cancel your reservation before 02 Nov 2026 11:59 PM, to get a full refund",
+         "cancellationDate": "2026-11-02T23:59:00",
+         "checkInDate": "2026-11-06T00:00:00",
+         "endDate": "2026-11-02T23:59:00",
+         "cancellationAmount": 0.0
+        },
+        {
+         "code": "NON_REFUNDABLE",
+         "title": "Non-refundable after 02 Nov 2026 11:59 PM",
+         "subTitle": "100% amount will be deducted on cancellation after 02 Nov 2026 11:59 PM",
+         "cancellationDate": "2026-11-05T23:59:00",
+         "checkInDate": "2026-11-06T00:00:00",
+         "endDate": "2026-11-06T23:59:00",
+         "cancellationAmount": 17030.94
+        }
+       ],
+       "remarks": {
+        "title": "Note",
+        "text": null,
+        "subText": "Date and time is displayed as per the local time zone of your hotel’s location."
+       }
+      },
+      "otherBenefits": [
+       "Parking",
+       "Coffee & tea",
+       "Free WiFi",
+       "Drinking water"
+      ],
+      "fomoTag": "Only 1 room left",
+      "isRecommended": true,
+      "paymentType": "BOOK_WITH_ZERO_PAYMENT",
+      "roomIndex": 1,
+      "fareDetail": {
+       "displayedBaseFare": 13440,
+       "markUpFare": 14794,
+       "markupDiscountPercent": "9% off",
+       "taxesAndFees": 3591,
+       "totalPrice": 18384.28,
+       "couponCode": "IXIFIRST",
+       "offerMessage": "Discount of ₹686 included. Coupon code IXIFIRST applied!",
+       "paymentType": "BOOK_WITH_ZERO_PAYMENT",
+       "payAtHotelAmount": null
+      }
+     }
+    ]
+   },
+   {
+    "id": "179796077",
+    "name": "King Cottage with Balcony - Happy Hours 1+1 (5 pm to 7 pm, from Monday to Thursday), 50% Yoga Session, 15 minutes of Head or Foot Massage (per stay), 1 Round of Complimentary Cocktail (per stay) ",
+    "properties": [
+     {
+      "code": "SIZE",
+      "data": "55 sq. mt."
+     },
+     {
+      "code": "BED_TYPE",
+      "data": "1 double bed and 1 futon"
+     },
+     {
+      "code": "VIEW",
+      "data": "Garden view"
+     },
+     {
+      "code": "OCCUPANCY",
+      "data": "Sleeps 2"
+     }
+    ],
+    "roomLevelAmenities": [
+     "Hair dryer",
+     "Toiletries",
+     "Towels",
+     "Walk-in shower",
+     "Telephone",
+     "Adapter"
+    ],
+    "roomOptions": [
+     {
+      "roomId": "179796077",
+      "name": "Room With Free Cancellation, Breakfast",
+      "mealBenefits": [
+       "Breakfast"
+      ],
+      "cancellationBenefits": {
+       "code": "FULLY_REFUNDABLE",
+       "data": "Free Cancellation till 02 Nov 11:59 PM",
+       "policy": [
+        {
+         "code": "FULLY_REFUNDABLE",
+         "title": "Fully refundable before 02 Nov 2026 11:59 PM",
+         "subTitle": "Cancel your reservation before 02 Nov 2026 11:59 PM, to get a full refund",
+         "cancellationDate": "2026-11-02T23:59:00",
+         "checkInDate": "2026-11-06T00:00:00",
+         "endDate": "2026-11-02T23:59:00",
+         "cancellationAmount": 0.0
+        },
+        {
+         "code": "NON_REFUNDABLE",
+         "title": "Non-refundable after 02 Nov 2026 11:59 PM",
+         "subTitle": "100% amount will be deducted on cancellation after 02 Nov 2026 11:59 PM",
+         "cancellationDate": "2026-11-05T23:59:00",
+         "checkInDate": "2026-11-06T00:00:00",
+         "endDate": "2026-11-06T23:59:00",
+         "cancellationAmount": 21897.64
+        }
+       ],
+       "remarks": {
+        "title": "Note",
+        "text": null,
+        "subText": "Date and time is displayed as per the local time zone of your hotel’s location."
+       }
+      },
+      "otherBenefits": [
+       "Parking",
+       "Coffee & tea",
+       "Free WiFi",
+       "Drinking water"
+      ],
+      "fomoTag": "5 rooms left",
+      "isRecommended": false,
+      "paymentType": "BOOK_WITH_ZERO_PAYMENT",
+      "roomIndex": 1,
+      "fareDetail": {
+       "displayedBaseFare": 17576,
+       "markUpFare": 19131,
+       "markupDiscountPercent": "8% off",
+       "taxesAndFees": 4322,
+       "totalPrice": 23452.98,
+       "couponCode": "IXIFIRST",
+       "offerMessage": "Discount of ₹888 included. Coupon code IXIFIRST applied!",
+       "paymentType": "BOOK_WITH_ZERO_PAYMENT",
+       "payAtHotelAmount": null
+      }
+     }
+    ]
+   }
+  ],
+  "metadata": {
+   "rateMethod": "per night for 1 room"
+  }
+ }
+}

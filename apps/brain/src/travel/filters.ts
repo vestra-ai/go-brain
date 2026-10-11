@@ -28,6 +28,15 @@ function has(o: TravelOption, need: MustHave): boolean {
 
 const per = (kind: TravelKind): string => (kind === 'stays' ? ' a night' : ' a person');
 
+/**
+ * Each person's share of a stay, to the rupee: its whole stay over the head count it was priced for (the search's own),
+ * or null. Said in words ("₹14,366 each"), never in paise (staging, 10 Oct: "₹14,366.40 each for the stay").
+ */
+export function shareOf(o: { totalMinor?: number; facts: Record<string, string | number | boolean> }, q: Pick<TravelQuery, 'guests'>): number | null {
+  const guests = typeof o.facts['guests'] === 'number' ? o.facts['guests'] : q.guests;
+  return o.totalMinor !== undefined && guests !== undefined && guests > 0 ? Math.round(o.totalMinor / guests / 100) * 100 : null;
+}
+
 const MISSING: Record<MustHave, string> = {
   pool: 'no pool',
   beach: `not within ${BEACH_NEAR_MINUTES} minutes of the beach`,
@@ -36,6 +45,29 @@ const MISSING: Record<MustHave, string> = {
   non_stop: 'not non-stop',
 };
 
+/**
+ * A bus's point the group named, from its points as the recipe reads them ("Majestic; Silk Board; …", the busiest
+ * first): the first whose name holds their words or is held in them ("Majestic" and "Majestic- Amar Hotel"), or null.
+ */
+export function pointAt(points: string, words: string): string | null {
+  const w = words.trim().toLowerCase();
+  return points.split('; ').find((p) => {
+    const name = p.trim().toLowerCase();
+    return name !== '' && (name.includes(w) || w.includes(name));
+  }) ?? null;
+}
+
+/**
+ * Whether a journey arrives by a clock time: the first one after it leaves, as people mean "reaches by morning" of a
+ * night bus. A bus at 8 pm must arrive by 10 am the next day, one at 6 am by 10 am that day; a 27-hour train misses both
+ * (the exam, 10 Oct: "reaches by 10 am" held against the next day dropped every overnight bus, Bengaluru to Goa).
+ */
+function arrivesBy(j: NonNullable<TravelOption['journey']>, hhmm: string): boolean {
+  const day = localClock(j.depart_at) < hhmm ? 0 : 1;
+  const later = daysLater(j.depart_at, j.arrive_at);
+  return later < day || (later === day && localClock(j.arrive_at) <= hhmm);
+}
+
 /** Each constraint this option does not meet, in plain words ("no pool", "₹12,200 a night, over ₹10,000"); none means it fits. */
 export function misses(kind: TravelKind, q: TravelQuery, o: TravelOption): string[] {
   const out: string[] = [];
@@ -43,13 +75,20 @@ export function misses(kind: TravelKind, q: TravelQuery, o: TravelOption): strin
   const leaves = j ? formatClock(localClock(j.depart_at)) : null;
   if (q.departAfter && (!j || localClock(j.depart_at) < q.departAfter)) out.push(leaves ? `leaves at ${leaves}, before ${formatClock(q.departAfter)}` : 'no departure time');
   if (q.departBefore && (!j || localClock(j.depart_at) > q.departBefore)) out.push(leaves ? `leaves at ${leaves}, after ${formatClock(q.departBefore)}` : 'no departure time');
-  if (q.arriveBefore && (!j || daysLater(j.depart_at, j.arrive_at) > 0 || localClock(j.arrive_at) > q.arriveBefore)) {
+  if (q.arriveBefore && (!j || !arrivesBy(j, q.arriveBefore))) {
     out.push(j ? `arrives at ${formatClock(localClock(j.arrive_at))}${arrivalWords(j.depart_at, j.arrive_at, 'the next day')}, after ${formatClock(q.arriveBefore)}` : 'no arrival time');
   }
   if (q.maxPriceMinor !== undefined && o.priceMinor > q.maxPriceMinor) out.push(`${formatInr(o.priceMinor)}${per(kind)}, over ${formatInr(q.maxPriceMinor)}`);
+  // A share Go cannot work out (no whole stay, no head count) is not held against the stay.
+  const cap = kind === 'stays' ? q.maxShareMinor : undefined;
+  const share = cap !== undefined ? shareOf(o, q) : null;
+  if (cap !== undefined && share !== null && share > cap) out.push(`${formatInr(share)} each for the whole stay, over ${formatInr(cap)} a head`);
   if (q.minRating !== undefined && (o.rating ?? 0) < q.minRating) out.push(o.rating === undefined ? 'no rating' : `rated ${o.rating}, under ${q.minRating}`);
   if (kind === 'stays' && q.guests !== undefined && typeof o.facts.sleeps === 'number' && o.facts.sleeps < q.guests) out.push(`sleeps ${o.facts.sleeps}, fewer than ${q.guests}`);
   for (const need of q.mustHave ?? []) if (!has(o, need)) out.push(MISSING[need]);
+  // A bus whose points the site didn't list is not held against it; one that lists them and not this one doesn't fit.
+  if (kind === 'buses' && q.boardAt && typeof o.facts.boarding_points === 'string' && !pointAt(o.facts.boarding_points, q.boardAt)) out.push(`no pickup at ${q.boardAt}`);
+  if (kind === 'buses' && q.dropAt && typeof o.facts.dropping_points === 'string' && !pointAt(o.facts.dropping_points, q.dropAt)) out.push(`no drop at ${q.dropAt}`);
   return out;
 }
 
@@ -59,7 +98,11 @@ export function asked(kind: TravelKind, q: TravelQuery): string[] {
   if (q.departAfter) out.push(`leaving after ${formatClock(q.departAfter)}`);
   if (q.departBefore) out.push(`leaving before ${formatClock(q.departBefore)}`);
   if (q.arriveBefore) out.push(`arriving by ${formatClock(q.arriveBefore)}`);
+  // A time the trip gave, not this ask (a member's own answer), says why with it: "leaving after 6:00 pm, because Rahul
+  // can leave Friday after 6 pm" (staging, 9 Oct: a time nobody in the chat had said read as made up).
+  if (q.because && out.length > 0) out[out.length - 1] = `${out[out.length - 1]}, because ${q.because.replace(/^(because|as)\s+/i, '').replace(/[.\s]+$/, '')}`;
   if (q.maxPriceMinor !== undefined) out.push(`at most ${formatInr(q.maxPriceMinor)}${per(kind)}`);
+  if (kind === 'stays' && q.maxShareMinor !== undefined) out.push(`at most ${formatInr(q.maxShareMinor)} a head for the whole stay`);
   if (q.minRating !== undefined) out.push(`rated ${q.minRating} or more`);
   if (kind === 'stays' && q.guests !== undefined) out.push(`sleeping ${q.guests}`);
   const words: Record<MustHave, string> = {
@@ -70,10 +113,36 @@ export function asked(kind: TravelKind, q: TravelQuery): string[] {
     non_stop: 'non-stop',
   };
   for (const need of q.mustHave ?? []) out.push(words[need]);
+  if (kind === 'buses' && q.boardAt) out.push(`picking up at ${q.boardAt}`);
+  if (kind === 'buses' && q.dropAt) out.push(`dropping at ${q.dropAt}`);
+  // The site's own filters and sort, by their names on its list: ixigo applied them, not Go.
+  for (const f of q.siteFilters ?? []) out.push(`${f} (ixigo's filter)`);
+  if (q.siteSort) out.push(`sorted by ${q.siteSort} on ixigo`);
   return out;
 }
 
 const keeps = (kind: TravelKind, q: TravelQuery, o: TravelOption): boolean => misses(kind, q, o).length === 0;
+
+/** The limits Go checks itself (misses), each one alone for missedByAll. */
+const LIMITS = ['departAfter', 'departBefore', 'arriveBefore', 'maxPriceMinor', 'maxShareMinor', 'minRating', 'guests', 'boardAt', 'dropAt'] as const;
+
+/**
+ * The limits that, each on its own, leave out every option, in asked()'s words ("arriving by 10:00 am"): when nothing
+ * fits, the room hears which limit cut them all, never a guess (the exam, 10 Oct: "no AC sleeper" on Bengaluru to Goa,
+ * where 46 of 54 buses were AC sleepers and the arrival time had cut every one).
+ */
+export function missedByAll(kind: TravelKind, q: TravelQuery, options: TravelOption[]): string[] {
+  if (options.length === 0) return [];
+  const bare: TravelQuery = { ...q };
+  for (const k of LIMITS) delete bare[k];
+  delete bare.mustHave;
+  const alone: TravelQuery[] = [
+    ...LIMITS.filter((k) => q[k] !== undefined).map((k) => ({ ...bare, [k]: q[k] }) as TravelQuery),
+    ...(q.mustHave ?? []).map((need) => ({ ...bare, mustHave: [need] })),
+  ];
+  const said = new Set(asked(kind, bare));
+  return alone.filter((p) => options.every((o) => !keeps(kind, p, o))).flatMap((p) => asked(kind, p).filter((t) => !said.has(t)));
+}
 
 /** A region, not one area: the best stays should come from across it. */
 const REGION = /^(north |south )?goa$/;
@@ -104,18 +173,22 @@ function spreadAcrossAreas(sorted: TravelOption[]): TravelOption[] {
   return [...up, ...sorted.filter((o) => !taken.has(o))];
 }
 
-/** When nothing fits: the option that misses the fewest constraints (then the cheapest), and what it misses. */
-export function closest(kind: TravelKind, q: TravelQuery, options: TravelOption[]): { option: TravelOption; misses: string[] } | null {
-  let best: { option: TravelOption; misses: string[] } | null = null;
-  for (const option of options) {
-    const m = misses(kind, q, option);
-    if (!best || m.length < best.misses.length || (m.length === best.misses.length && option.priceMinor < best.option.priceMinor)) best = { option, misses: m };
-  }
-  return best;
+/**
+ * When nothing fits: the options that miss the fewest constraints (then the cheapest, a stay by its whole stay), at
+ * most n, each with what it misses, so the group sees how near it gets.
+ */
+export function nearest(kind: TravelKind, q: TravelQuery, options: TravelOption[], n = 3): Array<{ option: TravelOption; misses: string[] }> {
+  const cost = (o: TravelOption): number => o.totalMinor ?? o.priceMinor;
+  return options
+    .map((option) => ({ option, misses: misses(kind, q, option) }))
+    .sort((a, b) => a.misses.length - b.misses.length || cost(a.option) - cost(b.option))
+    .slice(0, n);
 }
 
-export function applyConstraints(kind: TravelKind, q: TravelQuery, options: TravelOption[]): TravelOption[] {
-  const kept = options.filter((o) => keeps(kind, q, o));
+/** keepOrder: the site sorted them as the ask asked (its own sort): Go keeps that order. */
+export function applyConstraints(kind: TravelKind, q: TravelQuery, options: TravelOption[], o: { keepOrder?: boolean } = {}): TravelOption[] {
+  const kept = options.filter((option) => keeps(kind, q, option));
+  if (o.keepOrder) return kept;
   if (kind === 'stays') {
     const best = kept.sort((a, b) => (b.rating ?? 0) - (a.rating ?? 0) || a.priceMinor - b.priceMinor);
     return REGION.test((q.area ?? '').trim().toLowerCase()) ? spreadAcrossAreas(best) : best;

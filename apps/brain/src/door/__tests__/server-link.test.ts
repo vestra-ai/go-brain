@@ -1,6 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { withSchema } from '../../db/test-db.js';
 import { silentLog } from '../../log.js';
+import { createGoneTrips } from '../../trips/gone.js';
 import { createCardStore } from '../cards.js';
 import { SocketCallError } from '../rpc.js';
 import { createServerLink, newRequestId, type ServerLinkImpl, type SocketHandle } from '../server-link.js';
@@ -18,6 +19,17 @@ function socket(id: string): SocketHandle & { sent: Sent[] } {
   const sent: Sent[] = [];
   return { id, instance: id, sent, send: (f: string) => { sent.push(JSON.parse(f) as Sent); } };
 }
+
+/** A socket of one Server instance; `server` is the Server's own name (?server=), the same on every replica of it. */
+function socketOf(id: string, instance: string, server?: string): SocketHandle & { sent: Sent[] } {
+  return { ...socket(id), instance, ...(server ? { server } : {}) };
+}
+
+/** The trip's Server instance (and the Server's name, when it gives one), as intake records them from its first event. */
+const own = (tripId: string, instance: string, server: string | null = null) =>
+  db.pool.query('insert into trips (trip_id, server_instance, server_name) values ($1, $2, $3)', [tripId, instance, server]);
+
+const page = { messages: [], has_more: false };
 
 function link(extra: Partial<Parameters<typeof createServerLink>[0]> = {}) {
   const slept: number[] = [];
@@ -104,15 +116,15 @@ describe('ServerLink', () => {
   });
 
   it("hands the Server's refusal to onFail, so a 404 on a read can mark the trip gone", async () => {
-    const failed: Array<{ method: string; err: unknown }> = [];
-    const { l } = link({ onFail: (method, _params, err) => { failed.push({ method, err }); } });
+    const failed: Array<{ method: string; err: unknown; instance: string | null }> = [];
+    const { l } = link({ onFail: (method, _params, err, instance) => { failed.push({ method, err, instance }); } });
     const a = socket('a');
     l.attach(a);
     const p = l.request('read_trip', { trip_id: 't_forgotten' });
     await vi.waitFor(() => expect(a.sent).toHaveLength(1));
     fail(l, a.sent[0]!.id!, 404, 'trip t_forgotten does not exist', { dataCode: 'not_found' });
     await expect(p).rejects.toMatchObject({ code: 404 });
-    expect(failed).toEqual([{ method: 'read_trip', err: expect.objectContaining({ code: 404, dataCode: 'not_found' }) }]);
+    expect(failed).toEqual([{ method: 'read_trip', err: expect.objectContaining({ code: 404, dataCode: 'not_found' }), instance: 'a' }]);
   });
 
   it('waits for a socket, and gives up with 503 when none opens', async () => {
@@ -168,6 +180,19 @@ describe('ServerLink', () => {
     await vi.waitFor(() => expect(a.sent).toHaveLength(1));
     fail(l, a.sent[0]!.id!, -32601, 'unknown method read_trip');
     await expect(p).rejects.toMatchObject({ code: -32601 });
+  });
+
+  it("takes the links out of a post's text before it goes, and a post that was only a link and no card is never sent", async () => {
+    const { l } = link();
+    const a = socket('a');
+    l.attach(a);
+    const p = l.request('post_message', { request_id: newRequestId(), trip_id: 't_goa', text: 'Book it yourselves on ixigo: https://www.ixigo.com/hotels/54381/details?locationId=1. The vote closed.' });
+    await vi.waitFor(() => expect(a.sent).toHaveLength(1));
+    expect(a.sent[0]!.params.text).toBe('Book it yourselves on ixigo. The vote closed.');
+    answer(l, a.sent[0]!.id!, { message_id: 'm_1', seq: 1 });
+    await p;
+    await expect(l.request('post_message', { request_id: newRequestId(), trip_id: 't_goa', text: 'https://www.ixigo.com/hotels/1' })).rejects.toMatchObject({ code: 422 });
+    expect(a.sent).toHaveLength(1);
   });
 
   it('never sends params that break the contract', async () => {
@@ -229,69 +254,237 @@ describe('ServerLink', () => {
     });
   });
 
-  it("sends a trip's requests and typing on the socket that last brought that trip's events", async () => {
+  it("sends a trip's requests and typing on its own Server instance, never on another Server's socket", async () => {
+    await own('t_a', 'room');
+    await own('t_b', 'drill');
     const { l } = link();
-    const one = socket('one');
-    const two = socket('two');
-    l.attach(one);
-    l.attach(two);
-    l.noteTrip('t_a', 'one');
-    l.noteTrip('t_b', 'two');
-    const page = { messages: [], has_more: false };
+    const room = socketOf('room-1', 'room');
+    const drill = socketOf('drill-1', 'drill');
+    l.attach(room);
+    l.attach(drill);
     const asks = [
       l.request('read_messages', { trip_id: 't_a', after_seq: 0 }),
       l.request('read_messages', { trip_id: 't_b', after_seq: 0 }),
       l.request('read_messages', { trip_id: 't_a', after_seq: 5 }),
       l.request('read_messages', { trip_id: 't_b', after_seq: 5 }),
     ];
-    await vi.waitFor(() => expect(one.sent.length + two.sent.length).toBe(4));
-    expect(one.sent.map((f) => f.params.trip_id)).toEqual(['t_a', 't_a']);
-    expect(two.sent.map((f) => f.params.trip_id)).toEqual(['t_b', 't_b']);
+    await vi.waitFor(() => expect(room.sent.length + drill.sent.length).toBe(4));
+    expect(room.sent.map((f) => f.params.trip_id)).toEqual(['t_a', 't_a']);
+    expect(drill.sent.map((f) => f.params.trip_id)).toEqual(['t_b', 't_b']);
+    // Typing goes out at once, in the order Go says it, so on never lands after off.
     l.notify('typing', { trip_id: 't_b', on: true });
-    expect(two.sent.at(-1)).toEqual({ jsonrpc: '2.0', method: 'typing', params: { trip_id: 't_b', on: true } });
-    expect(one.sent).toHaveLength(2);
-    for (const f of [...one.sent, ...two.sent]) if (f.id) answer(l, f.id, page);
+    l.notify('typing', { trip_id: 't_b', on: false });
+    expect(drill.sent.slice(-2)).toEqual([
+      { jsonrpc: '2.0', method: 'typing', params: { trip_id: 't_b', on: true } },
+      { jsonrpc: '2.0', method: 'typing', params: { trip_id: 't_b', on: false } },
+    ]);
+    expect(room.sent).toHaveLength(2);
+    for (const f of [...room.sent, ...drill.sent]) if (f.id) answer(l, f.id, page);
     await expect(Promise.all(asks)).resolves.toEqual([page, page, page, page]);
   });
 
-  it("a trip's socket closes: its waiting write goes again on the other socket, and later requests follow the trip's next socket", async () => {
+  it("every socket drops with a read in flight: it waits for the trip's own instance to dial back, never another Server", async () => {
+    await own('t_blip', 'room');
     const { l } = link({ timeoutMs: 5_000 });
-    const one = socket('one');
-    const two = socket('two');
-    l.attach(one);
-    l.attach(two);
-    l.noteTrip('t_a', 'one');
-    l.noteTrip('t_b', 'two');
-    const rid = newRequestId();
-    const p = l.request('post_message', { request_id: rid, trip_id: 't_a', text: 'The villas are in' });
-    await vi.waitFor(() => expect(one.sent).toHaveLength(1));
-    expect(two.sent).toHaveLength(0);
-    l.detach('one');
-    await vi.waitFor(() => expect(two.sent).toHaveLength(1));
-    expect(two.sent[0]!.id).toBe(one.sent[0]!.id);
-    expect(two.sent[0]!.params.request_id).toBe(rid);
-    answer(l, two.sent[0]!.id!, { message_id: 'm_go_5', seq: 12 });
-    await expect(p).resolves.toEqual({ message_id: 'm_go_5', seq: 12 });
-    // The Server dials again and t_a's events come on the new socket: t_a's requests follow them there.
-    const three = socket('three');
-    l.attach(three);
-    l.noteTrip('t_a', 'three');
-    const q = l.request('read_trip', { trip_id: 't_a' });
-    await vi.waitFor(() => expect(three.sent).toHaveLength(1));
-    expect(two.sent).toHaveLength(1);
-    fail(l, three.sent[0]!.id!, 404, 'no such trip', { dataCode: 'not_found' });
-    await expect(q).rejects.toMatchObject({ code: 404 });
+    const room = socketOf('room-2', 'room');
+    const drill = socketOf('drill-2', 'drill');
+    l.attach(room);
+    l.attach(drill);
+    const p = l.request('read_messages', { trip_id: 't_blip', after_seq: 0 });
+    await vi.waitFor(() => expect(room.sent).toHaveLength(1));
+    // Both drop at once, and the drill dials back first.
+    l.detach('room-2');
+    l.detach('drill-2');
+    const drillBack = socketOf('drill-3', 'drill');
+    l.attach(drillBack);
+    await new Promise((r) => setTimeout(r, 100));
+    expect(drillBack.sent).toHaveLength(0);
+    const roomBack = socketOf('room-3', 'room');
+    l.attach(roomBack);
+    await vi.waitFor(() => expect(roomBack.sent).toHaveLength(1));
+    expect(roomBack.sent[0]!.id).toBe(room.sent[0]!.id);
+    answer(l, roomBack.sent[0]!.id!, page);
+    await expect(p).resolves.toEqual(page);
+    expect([...drill.sent, ...drillBack.sent]).toEqual([]);
   });
 
-  it('a trip no socket has brought yet uses any open socket, and a note naming a closed socket is ignored', async () => {
+  // Prod, 11 Oct 07:24Z: the Server redeployed, and its socket's instance (its container) went from ca6989a06930-80 to
+  // fb0da31b49f7-80. A person's message came on the new socket, and Go's reply waited for the old one until "no socket
+  // from the Server is open". The trip's home follows the socket its events come on (trips/log.ts, intake), and the
+  // link with it.
+  it("an older trip re-homes on its next event: the reply waiting for the old instance goes on the new socket, and so does the next", async () => {
+    await own('t_rehome', 'ca6989a06930-80');
+    await own('t_other_server', 'rahul-mac-rev4', 'rahul-mac');
+    const { l } = link({ timeoutMs: 5_000, waitForSocketMs: 5_000 });
+    const fresh = socketOf('prod-new', 'fb0da31b49f7-80');
+    const other = socketOf('mac-1', 'rahul-mac-rev4', 'rahul-mac');
+    l.attach(other);
+    l.attach(fresh);
+    const reply = l.request('post_message', { request_id: newRequestId(), trip_id: 't_rehome', text: 'On it.' });
+    const otherRead = l.request('read_messages', { trip_id: 't_other_server', after_seq: 0 });
+    await vi.waitFor(() => expect(other.sent).toHaveLength(1));
+    await new Promise((r) => setTimeout(r, 50));
+    // Still waiting for the old instance: never the other Server, never the new socket on a guess.
+    expect(fresh.sent).toHaveLength(0);
+    // The person's message came on the new socket: intake moved the trip's home there.
+    await db.pool.query('update trips set server_instance = $2 where trip_id = $1', ['t_rehome', 'fb0da31b49f7-80']);
+    l.rehome('t_rehome', { instance: 'fb0da31b49f7-80', server: null });
+    await vi.waitFor(() => expect(fresh.sent).toHaveLength(1));
+    expect(fresh.sent[0]!.params).toMatchObject({ trip_id: 't_rehome', text: 'On it.' });
+    answer(l, fresh.sent[0]!.id!, { message_id: 'm_9', seq: 9 });
+    await expect(reply).resolves.toEqual({ message_id: 'm_9', seq: 9 });
+    // The next request, and typing, go there at once.
+    const read = l.request('read_messages', { trip_id: 't_rehome', after_seq: 0 });
+    await vi.waitFor(() => expect(fresh.sent).toHaveLength(2));
+    answer(l, fresh.sent[1]!.id!, page);
+    await expect(read).resolves.toEqual(page);
+    l.notify('typing', { trip_id: 't_rehome', on: true });
+    expect(fresh.sent.at(-1)).toMatchObject({ method: 'typing', params: { trip_id: 't_rehome', on: true } });
+    // Another Server's trip never moves with it, and never goes on the new socket.
+    expect(other.sent.every((x) => x.params.trip_id === 't_other_server')).toBe(true);
+    expect(fresh.sent.every((x) => x.params.trip_id === 't_rehome')).toBe(true);
+    answer(l, other.sent[0]!.id!, page);
+    await expect(otherRead).resolves.toEqual(page);
+    expect(await l.away('t_rehome')).toBe(false);
+  });
+
+  it('a rehome to where the trip already is changes nothing, and a new trip\'s home is known before any read', async () => {
+    const { l } = link();
+    const a = socketOf('room-9', 'room-9');
+    l.attach(a);
+    l.rehome('t_new_home', { instance: 'room-9', server: null });
+    l.rehome('t_new_home', { instance: 'room-9', server: null });
+    const p = l.request('read_messages', { trip_id: 't_new_home', after_seq: 0 });
+    await vi.waitFor(() => expect(a.sent).toHaveLength(1));
+    answer(l, a.sent[0]!.id!, page);
+    await expect(p).resolves.toEqual(page);
+  });
+
+  it("right after Go starts, a trip's request waits for its own instance rather than take the first Server to dial in", async () => {
+    await own('t_boot', 'room');
+    const { l } = link();
+    const drill = socketOf('drill-4', 'drill');
+    l.attach(drill);
+    const p = l.request('read_messages', { trip_id: 't_boot', after_seq: 0 });
+    await new Promise((r) => setTimeout(r, 100));
+    expect(drill.sent).toHaveLength(0);
+    const room = socketOf('room-4', 'room');
+    l.attach(room);
+    await vi.waitFor(() => expect(room.sent).toHaveLength(1));
+    answer(l, room.sent[0]!.id!, page);
+    await expect(p).resolves.toEqual(page);
+  });
+
+  // 10 Oct: while a drill's Server was frozen, Go sent Keshav's trip to the drill's socket and the drill's trips to his
+  // room (404s both ways). A trip's requests never go to another Server's socket.
+  it("the trip's instance does not dial back: no other Server ever gets the read, and it gives up with 503", async () => {
+    await own('t_away', 'room');
+    const { l } = link({ timeoutMs: 5_000, waitForSocketMs: 200, retryDelaysMs: [] });
+    const room = socketOf('room-5', 'room');
+    const drill = socketOf('drill-5', 'drill');
+    l.attach(room);
+    l.attach(drill);
+    l.detach('room-5');
+    await expect(l.request('read_trip', { trip_id: 't_away' })).rejects.toMatchObject({ code: 503, dataCode: 'unavailable' });
+    expect(drill.sent).toEqual([]);
+  });
+
+  it("another replica of the trip's own Server takes its read at once, never another Server, and its 404 never marks the trip gone", async () => {
+    await own('t_replica', 'vestra-1', 'vestra');
+    const instances: Array<string | null> = [];
+    const gone = createGoneTrips({ pool: db.pool, log: silentLog, now: () => new Date(), dropped: () => {} });
+    const { l } = link({
+      timeoutMs: 5_000,
+      onFail: async (method, params, err, instance) => {
+        instances.push(instance);
+        await gone.failed(method, params, err, instance);
+      },
+    });
+    const one = socketOf('vestra-1a', 'vestra-1', 'vestra');
+    const two = socketOf('vestra-2a', 'vestra-2', 'vestra');
+    const drill = socketOf('drill-7', 'drill');
+    // Another Server whose replica happens to have the same instance name: it never gets the trip either.
+    const named = socketOf('other-1a', 'vestra-1', 'other');
+    l.attach(drill);
+    l.attach(named);
+    l.attach(two);
+    l.attach(one);
+    l.detach('vestra-1a');
+    const p = l.request('read_trip', { trip_id: 't_replica' });
+    await vi.waitFor(() => expect(two.sent).toHaveLength(1), { timeout: 1_000 });
+    fail(l, two.sent[0]!.id!, 404, 'trip t_replica does not exist', { dataCode: 'not_found' });
+    await expect(p).rejects.toMatchObject({ code: 404, dataCode: 'not_found' });
+    expect(instances).toEqual(['vestra-2']);
+    expect([...drill.sent, ...named.sent]).toEqual([]);
+    const { rows } = await db.pool.query('select gone_at from trips where trip_id = $1', ['t_replica']);
+    expect(rows[0].gone_at).toBeNull();
+  });
+
+  it("a trip's Server is away once its instance has had no socket for the away time, and back the moment it dials in again", async () => {
+    await own('t_drill_9', 'drill-9');
+    await db.pool.query('insert into trips (trip_id) values ($1)', ['t_no_instance_9']);
+    vi.useFakeTimers({ toFake: ['Date'] });
+    try {
+      const { l } = link({ awayAfterMs: 600_000 });
+      l.attach(socketOf('drill-9a', 'drill-9'));
+      l.attach(socketOf('room-9', 'room-9'));
+      expect(await l.away('t_drill_9')).toBe(false);
+      l.detach('drill-9a');
+      // Another Server's socket is open all along: the trip's own instance is what counts.
+      vi.setSystemTime(Date.now() + 600_000);
+      expect(await l.away('t_drill_9')).toBe(false);
+      vi.setSystemTime(Date.now() + 1);
+      expect(await l.away('t_drill_9')).toBe(true);
+      l.attach(socketOf('drill-9b', 'drill-9'));
+      expect(await l.away('t_drill_9')).toBe(false);
+      // A trip with no instance is never away: its requests take any socket, as before.
+      expect(await l.away('t_no_instance_9')).toBe(false);
+      // A named Server's trip is not away while another replica of it has a socket open.
+      await own('t_named_9', 'named-1', 'named');
+      l.attach(socketOf('named-2a', 'named-2', 'named'));
+      vi.setSystemTime(Date.now() + 700_000);
+      expect(await l.away('t_named_9')).toBe(false);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('replicas of one Server share its instance: its trips use any of them, and a closing one hands its request to another at once', async () => {
+    await own('t_rep', 'server');
+    const { l } = link({ timeoutMs: 5_000 });
+    const one = socketOf('server-a', 'server');
+    const two = socketOf('server-b', 'server');
+    const drill = socketOf('drill-6', 'drill');
+    l.attach(one);
+    l.attach(two);
+    l.attach(drill);
+    const asks = [0, 1, 2, 3].map((n) => l.request('read_messages', { trip_id: 't_rep', after_seq: n }));
+    await vi.waitFor(() => expect(one.sent.length + two.sent.length).toBe(4));
+    expect(one.sent.length).toBeGreaterThan(0);
+    expect(two.sent.length).toBeGreaterThan(0);
+    for (const f of [...one.sent, ...two.sent]) answer(l, f.id!, page);
+    await expect(Promise.all(asks)).resolves.toEqual([page, page, page, page]);
+    const q = l.request('read_messages', { trip_id: 't_rep', after_seq: 9 });
+    await vi.waitFor(() => expect(one.sent.length + two.sent.length).toBe(5));
+    const [took, other] = one.sent.some((f) => f.params.after_seq === 9) ? [one, two] : [two, one];
+    const before = other.sent.length;
+    // No few seconds' wait: the other replica is open, so the request moves to it at once.
+    l.detach(took.id);
+    await vi.waitFor(() => expect(other.sent).toHaveLength(before + 1), { timeout: 1_000 });
+    expect(other.sent.at(-1)!.params.after_seq).toBe(9);
+    answer(l, other.sent.at(-1)!.id!, page);
+    await expect(q).resolves.toEqual(page);
+    expect(drill.sent).toHaveLength(0);
+  });
+
+  it('a trip with no instance recorded yet uses any open socket', async () => {
     const { l } = link();
     const one = socket('one');
     l.attach(one);
-    l.noteTrip('t_new', 'gone');
     const p = l.request('read_messages', { trip_id: 't_new', after_seq: 0 });
     await vi.waitFor(() => expect(one.sent).toHaveLength(1));
-    answer(l, one.sent[0]!.id!, { messages: [], has_more: false });
-    await expect(p).resolves.toEqual({ messages: [], has_more: false });
+    answer(l, one.sent[0]!.id!, page);
+    await expect(p).resolves.toEqual(page);
   });
 
   it('typing is a notification: dropped with no socket, sent with no id otherwise', () => {

@@ -17,7 +17,8 @@
     "test": "vitest run",
     "room": "tsx src/cli.ts",
     "try": "node dist/try-room/main.js",
-    "live-smoke": "tsx scripts/live-smoke.ts"
+    "live-smoke": "tsx scripts/live-smoke.ts",
+    "learn-places": "tsx scripts/learn-places.ts"
   },
   "dependencies": {
     "@go/contract": "workspace:*",

@@ -1,0 +1,219 @@
+id: hotels.search
+title: Stays in a place for check-in and check-out dates
+asks:
+  - villas in north goa from 6 to 9 nov
+  - manali mein 2 raat ke liye hotel dikhao
+  - stays with a pool near anjuna under 8k a night
+inputs:
+  place: { kind: place, lookup: hotels.place_lookup, about: "the city, area or region to stay in" }
+  check_in: { kind: date }
+  check_out: { kind: date }
+  adults: { kind: count, value: "$trip.people", min: 1, max: 30, about: how many people stay }
+  # Two to a room, as ixigo's own search starts ("1 Room, 2 Guests").
+  rooms: { kind: count, value: "$ceil(adults / 2)", min: 1, max: 8 }
+  # How ixigo orders the list, by the page's own codes; ixigo's default is SC_P.
+  sort: { kind: choice, optional: true, about: "the order: SC_P popular first, SC_P_LH cheapest first, SC_P_HL dearest first, SC_UR best rated first" }
+  # How many of ixigo's pages of the list to read: 2 when a card's "See more" has shown all page 1 held (Keshav, 11 Oct:
+  # "show 10 then see more button, and on click 10 more"). A whole state reads two anyway.
+  pages: { kind: count, min: 1, max: 2, value: "1", about: "how many pages of ixigo's list to read, 10 stays a page" }
+auth: none
+changes_state: false
+# ixigo filters the search itself on the codes it has: an area of a city, a pool, breakfast, free cancellation, paying at
+# the hotel, booking with nothing paid now. Beach has none: it is a distance, read from each stay.
+conditions:
+  pool: "'FL_HF_29'"
+  breakfast: "'MP_FB'"
+  free_cancellation: "'MP_FC'"
+  pay_at_hotel: "'PT_PAY_AT_HOTEL'"
+  book_with_zero: "'PT_BOOK_WITH_ZERO_PAYMENT'"
+let:
+  # The place's areas, the conditions above, and the ixigo filters the model picked from ixigo's own list ($site).
+  filters: "$sort($distinct($append($append(place.areas, $conditions), $site)))"
+  # A whole state (all of Goa) with no area and nothing filtered: hundreds of stays, so the fetch takes two pages, not the
+  # top strip of one. Filtered (an area, a pool, a price band, a villa), page 1 holds ixigo's best matches, and a filter
+  # that leaves nothing answers at once: its six scrolls waited for room on an empty page to Bash's 20 s (the exam, 10 Oct:
+  # Entire house with 25 price bands, page 1 answered 424 and the read said "unreachable").
+  wide: "place.location.locationType = 'S' and $count($filters) = 0"
+  # An entire house (ixigo's stay type "Entire house") is booked whole: one room for the group, as a person books a villa
+  # on ixigo. Two to a room asked for three rooms for five, and ixigo answered 424 with no villa at all, where one room
+  # gave five pool villas (staging, 10 Oct, all of Goa, 6 to 9 Nov).
+  booked_rooms: "'AT_EH' in $site ? 1 : rooms"
+page: >-
+  /hotels/search/result?locationId={place.location.locationId}&locationName={place.location.locationName}&locationType={place.location.locationType}&masterLocationId={place.location.masterLocationId}&countryId={place.location.countryId}&checkinDate={check_in|DDMMYYYY}&checkoutDate={check_out|DDMMYYYY}&adultCount={adults}&roomCount={$booked_rooms}&childCount=0{$count($filters) > 0 ? '&filters=' & $encodeUrlComponent($join($filters, ','))|raw}{$site_sort ? '&sort=' & $site_sort : (sort in ['SC_P', 'SC_P_LH', 'SC_P_HL', 'SC_UR'] ? '&sort=' & sort)|raw}
+# What ixigo offers to narrow and order a place's stays, as its results page loads it for itself (its metadata call):
+# every filter group with its options and codes, and the sorts. Read on every search, kept per place, and shown to the
+# model, which maps the group's ask onto it ($site, $site_sort). Price bands have no names (DP_2000_2500: ₹2,000 to
+# ₹2,500 a night, a room): bands reads them apart, kept with their prices for Go alone, and a budget the group decided
+# picks them; the model's list never holds them.
+offers:
+  from: /accommodation-search/api/v2/accommodations/search/metadata$
+  list: |
+    (
+      $m := ($type($) = "array" ? $[0] : $).data.metaData;
+      $append(
+        [$m.filterCriteriaMap.*.(
+          $g := title;
+          data[$type(name) = "string" and $type(code) = "string"].{ "kind": "filter", "group": $g, "name": name, "code": code, "count": $num(count) }
+        )],
+        [$m.sortCriteriaMap.*.data[$type(name) = "string" and $type(code) = "string"].{
+          "kind": "sort", "group": "Sort", "name": subTitle ? name & " (" & subTitle & ")" : name, "code": code
+        }]
+      )
+    )
+  bands: |
+    [($type($) = "array" ? $[0] : $).data.metaData.filterCriteriaMap.dynamicPrice.data[$type(code) = "string" and $exists($num(minPrice)) and $exists($num(maxPrice))].{
+      "kind": "price", "group": "Price", "name": "₹" & minPrice & " to ₹" & maxPrice, "code": code, "min": $num(minPrice), "max": $num(maxPrice)
+    }]
+  for: "{place.location.locationId}"
+  about: "stays in {place.location.locationName}"
+capture:
+  - /accommodation-search/api/v3/accommodations/search$
+# Page 1 for an area. A whole state takes pages 1 and 2: six scrolls bring page 2 about 2.6 s after page 1 (three scrolls
+# often never brought it, p5's loads of 8 Oct). ixigo's own search for a whole state is slow on its side: all of Goa with a
+# pool sent page 1 at 10.2 s on a warm computer (staging, 8 Oct), and a 12 s limit failed the room's "North Goa with a
+# pool" with nothing caught. So it has Bash's whole 20 s; page 2 sometimes never comes, and then the fetch answers with
+# page 1 at 20 s, which reads as it is. ixigo's "Best Price Guarantee" popup (once a day per browser, at most three
+# times) shows 1 s after the page mounts, over everything, so it is closed first: the click looks for it up to 3 s
+# after the page opens (Bash's within_ms), in the live view's first seconds, never after a slow search (staging, 8 Oct:
+# a 21.5 s Goa search kept it over the page to the end). It is looked for again once the results are in, and after the
+# scrolls, which it can block. Bash's last picture waits 550 ms after the hotels are in, when the cards are drawn. Two
+# pages asked (See more) read the same way: page 1 was full, so the scrolls have room.
+fetch:
+  - when: $wide or pages = 2
+    capture: [{ match: /accommodation-search/api/v3/accommodations/search$, min_count: 2, max_count: 2 }]
+    steps:
+      - { op: click, name: Close modal, optional: true, within_ms: 3000 }
+      - { op: wait_for, match: /accommodation-search/api/v3/accommodations/search$ }
+      - { op: click, name: Close modal, optional: true }
+      - { op: scroll, times: 6 }
+      - { op: click, name: Close modal, optional: true }
+    timeout_ms: 20000
+    settle_ms: 550
+  - when: "true"
+    steps:
+      - { op: click, name: Close modal, optional: true, within_ms: 3000 }
+      - { op: wait_for, match: /accommodation-search/api/v3/accommodations/search$ }
+      - { op: click, name: Close modal, optional: true }
+    settle_ms: 550
+read:
+  # ixigo answers 424 past the end of its list, page 1 too: filters that leave no stay are an empty list, never a failure.
+  rows: { from: /accommodation-search/api/v3/accommodations/search$, list: data.result.inventoryInfoList, unique: hotelId, empty: [424] }
+answer:
+  as: options
+  kind: stay
+  # A price is the room's nightly fare plus taxes and fees, per night and per room, as ixigo shows it; a stay booked as
+  # one room (an entire house: its room is the whole place) is just per night. The whole stay is that times the nights
+  # and the rooms booked, and guests is the head count ixigo priced it for (a share per head divides the whole stay by
+  # it). The coupon ixigo applies on its own is already in the price ("Discount of ₹844 included. Coupon code IXIFIRST
+  # applied", 10 Oct), and the price says so. Logged in, ixigo writes it with its hotel cash as a picture ("₹383
+  # discount + <img …hotel-cash…>", 10 Oct): the words before it are the offer. Its hotel cash (fareDetail.burnInfo) is
+  # the logged-in person's own wallet, and a room's card is never private: it is never read. What ixigo filtered on, every
+  # stay it gave has; the rest is what it lists.
+  # Every detail but the id, the name and the fare may be missing or null (O Hotel Goa came with a null image). The list
+  # gives up to seven photos a stay (Agoda's and Booking.com's, 1024x768) and a few amenities in ixigo's words; a
+  # cancellation date, the rest of the photos and the landmarks are only on the hotel's own page (8 Oct).
+  each: |
+    (
+      $nights := $nights($inputs.check_in, $inputs.check_out);
+      $rooms := $booked_rooms;
+      $name := $trim(name);
+      $taxes := $num(fareDetail.taxesAndFees);
+      $nightly := $paise($num(fareDetail.displayedBaseFare) + ($taxes ? $taxes : 0));
+      $offerings := $append(topOfferings[$type($) = "string"], amenities.name[$type($) = "string"]);
+      $said := function($re, $code) { $code in $filters or $count($offerings[$contains($, $re)]) > 0 };
+      $pool := $said(/pool/i, "FL_HF_29");
+      $breakfast := $said(/breakfast/i, "MP_FB");
+      $freeCancellation := $said(/free cancellation/i, "MP_FC");
+      $distance := distanceFromSearchedEntity ? distanceFromSearchedEntity;
+      $area := locality ? locality;
+      $town := city ? city;
+      $walk := $groups($distance, "^([\\d.]+)\\s*(km|m)\\b.*\\bbeach\\b", "i");
+      $beach := $walk ? $max([1, $ceil($number($walk[0]) * ($lowercase($walk[1]) = "km" ? 1000 : 1) / 80)]);
+      $rating10 := $type(userRating) = "number" ? (userRating > 0 ? userRating) : ($type(userRating) = "string" and $contains(userRating, /^\d+(\.\d+)?$/) and $number(userRating) > 0) ? $number(userRating);
+      $address := $join($distinct([$area, $town]), ", ");
+      $medium := imageInfoList[0].urlMedium;
+      $image := ($medium != null) ? $medium : imageInfoList[0].url;
+      $photos := $texts(7, imageInfoList.(urlHigh ? urlHigh : (url ? url : urlMedium)));
+      $amenities := $texts(10, topOfferings[$type($) = "string" and $not($contains($, /cancel|breakfast|pay at|book with|zero payment/i))], amenities.name);
+      $coupon := ($type(fareDetail.couponCode) = "string" and $trim(fareDetail.couponCode) != "") ? $trim(fareDetail.couponCode);
+      $plainOffer := function($m) { ($type($m) = "string" and $trim($substringBefore($m, "<")) != "") ? $substring($trim($replace($substringBefore($m, "<"), /[\s+]+$/, "")), 0, 80) };
+      $offer := $plainOffer(fareDetail.offerMessage);
+      $payAtHotel := $said(/pay at hotel/i, "PT_PAY_AT_HOTEL") or fareDetail.paymentType = "PAY_AT_HOTEL";
+      $zeroNow := $said(/book with (₹|rs\.?\s*)?0|zero payment/i, "PT_BOOK_WITH_ZERO_PAYMENT") or fareDetail.paymentType = "BOOK_WITH_ZERO_PAYMENT";
+      $left := $num(roomsCountLeft);
+      $scarce := ($left > 0 and $left <= 3) ? "Only " & $string($left) & " room" & ($left = 1 ? "" : "s") & " left";
+      ($num(hotelId) and $type($name) = "string") ? {
+        "title": $name,
+        "priceMinor": $nightly,
+        "totalMinor": $nightly * $nights * $rooms,
+        "currency": "INR",
+        "priceNote": ($rooms = 1 ? "per night" : "per night, per room") & ($coupon ? ", " & $coupon & " applied" : ""),
+        "place": {
+          "name": $substring($name, 0, 120),
+          "address": $address ? $substring($address, 0, 200),
+          "lat": geoLocationInfo.lat,
+          "lng": geoLocationInfo.lon,
+          "timezone": $inputs.place.location.countryId = 1 ? "Asia/Kolkata"
+        },
+        "imageUrl": $image ? $image,
+        "imageUrls": $photos,
+        "amenities": $amenities,
+        "rating": $rating10 ? $floor($rating10 * 5 + 0.5) / 10,
+        "highlights": $highlights($distance, $freeCancellation ? "Free cancellation", $breakfast ? "Breakfast included", $pool ? "Pool", $scarce),
+        "facts": {
+          "nights": $nights,
+          "rooms": $rooms,
+          "guests": $inputs.adults,
+          "area": $area,
+          "distance": $distance,
+          "stars": $num(starRating) ? $num(starRating),
+          "type": $type(accommodationType) = "string" ? accommodationType,
+          "rating_out_of_10": $rating10,
+          "rating_word": userRatingCategory ? userRatingCategory,
+          "reviews": $num(userRatingCount),
+          "pool": $pool,
+          "breakfast": $breakfast,
+          "free_cancellation": $freeCancellation,
+          "beach_minutes": $beach,
+          "coupon": $coupon,
+          "offer": $offer,
+          "pay_at_hotel": $payAtHotel,
+          "book_with_zero": $zeroNow,
+          "rooms_left": $left > 0 ? $left,
+          "couple_friendly": coupleFriendly = true ? true,
+          "travellers_choice": travellerChoice = true ? true,
+          "trending": $join($texts(2, fomoTags.data), "; ") ? $substring($join($texts(2, fomoTags.data), "; "), 0, 80)
+        },
+        "sourceUrl": "https://www.ixigo.com/hotels/" & $string(hotelId) & "/details?" & $query({
+          "locationId": $num(locationId) ? $num(locationId) : $inputs.place.location.locationId,
+          "locationName": $inputs.place.location.locationName,
+          "locationType": $inputs.place.location.locationType,
+          "masterLocationId": $inputs.place.location.masterLocationId,
+          "countryId": $inputs.place.location.countryId,
+          "checkinDate": $dateAs($inputs.check_in, "DDMMYYYY"),
+          "checkoutDate": $dateAs($inputs.check_out, "DDMMYYYY"),
+          "adultCount": $inputs.adults,
+          "roomCount": $rooms,
+          "childCount": "0",
+          "searchLocationId": $inputs.place.location.locationId,
+          "hotelInfoToken": hotelInfoToken ? hotelInfoToken,
+          "hName": $name
+        })
+      }
+    )
+  # A place inside one half of Goa keeps only the stays not known to be in the other half: its area, then its town,
+  # then what it is near ("310 m from Colva Beach"). This goes when areas come from ixigo's own area filter.
+  keep: |
+    (
+      $half := $inputs.place.half;
+      $side := function($t) { $mentions($t, $inputs.place.halves.north) ? "north" : ($mentions($t, $inputs.place.halves.south) ? "south") };
+      $a := $side(facts.area);
+      $b := $side(place.address);
+      $seen := $a ? $a : ($b ? $b : $side(facts.distance));
+      $not($exists($half)) or $not($exists($seen)) or $seen = $half
+    )
+# A search is kept for 30 minutes, so the trip's stays head start (warm.ts) still answers the first ask a while after
+# setup; the options card says when ixigo was checked.
+ttl_minutes: 30
+measured: { fast_ms: null, page_ms: 5000, flow_ms: null }
+notes: 10 hotels a page. Each card links to the hotel's own page, where a room's select starts the booking.

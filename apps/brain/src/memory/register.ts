@@ -6,9 +6,10 @@
  *  - 2 s after Go posts (the after-turn pass);
  *  - after a quiet spell (20 s, at most 60 s in a busy chat) for everything else;
  *  - the fold right after Go posts, and after 60 s of quiet (at most 10 minutes in a busy chat);
- *  - a sweep every 5 minutes that finishes anything a restart dropped.
- * A sure 👍 or 🙌 from the reflex is sent with add_reaction without any model. A sure ✅ on a message Jev is also
- * sure holds a fact (Q7 and Q5) is sent inside the hook, before the notes pass, which stays the fallback.
+ *  - a sweep every 5 minutes that finishes anything a restart dropped, for every trip whose Server is not away.
+ * A sure 👍 or 🙌 from the reflex is sent with add_reaction without any model, 3 s later unless the line is part of a burst to
+ * Go. A sure ✅ on a message Jev is also sure holds a fact (Q7 and Q5) is sent inside the hook, before the notes pass, which
+ * stays the fallback.
  * The side passes run on brain.anthropic (the client buildBrain was given) with SIDE_MODEL. That client
  * does not retry; a failed pass keeps its cursor and the next quiet spell or sweep runs it again.
  */
@@ -16,15 +17,17 @@ import type { Brain, RegisterLane } from '../app.js';
 import type { Message, TripEvent } from '../door/methods.js';
 import { createJev, type JevClient } from '../reflex/jev.js';
 import type { ReflexRead } from '../reflex/reflex.js';
+import { inBurstToGo } from '../trips/names-go.js';
 import type { TripPack } from '../trips/pack.js';
 import { catchUpHandler } from './catch-up.js';
 import { createMemory } from './create-memory.js';
-import { dropFactsFromMessage } from './facts.js';
+import { dropFactsFromMessage, forgottenUpTo } from './facts.js';
 import { settleDecisionLines } from './decision-lines.js';
 import { createFold } from './fold.js';
 import { syncJoinFacts } from './join-facts.js';
 import { createNotes } from './notes.js';
 import { peopleNow, recordNow } from './now.js';
+import { forgotElsewhereNow, forgotElsewhereUpTo } from './forget-elsewhere.js';
 import { peopleHandlers } from './people.js';
 import { reactOnce } from './reactions.js';
 import { mirrorLine, mirrorSnapshot } from './record.js';
@@ -42,6 +45,10 @@ export interface WireDeps {
 
 const JOIN_FIELDS = new Set(['from_city', 'earliest_leave', 'know']);
 const AFTER_POST_MS = 2_000;
+/** Reactions on one line come in a flurry: its notes pass waits this long after the last one. */
+const REACTIONS_QUIET_MS = 15_000;
+/** A quiet 👍 or 🙌 waits this long: a burst's next line comes within a second or two (the intake waits 2 s for it). */
+const QUIET_HOLD_MS = 3_000;
 const NOTES_LONGEST_WAIT_MS = 60_000;
 const FOLD_LONGEST_WAIT_MS = 10 * 60_000;
 const ACTIVE_FOR_MS = 6 * 60 * 60_000;
@@ -58,7 +65,9 @@ export function wireMemory(brain: Brain, d: WireDeps): {
   const memory = createMemory({ pool: brain.pool, packs: brain.packs });
   brain.memory = memory;
   const side = anthropicSideModel(brain.anthropic, env.SIDE_MODEL, brain.log, brain.budget);
-  const notes = createNotes({ pool: brain.pool, packs: brain.packs, link: brain.door.link, side, log: brain.log, now: brain.now });
+  const notes = createNotes({
+    pool: brain.pool, packs: brain.packs, link: brain.door.link, side, log: brain.log, now: brain.now, travel: () => brain.travel,
+  });
   const fold = createFold({
     pool: brain.pool, packs: brain.packs, side, log: brain.log, now: brain.now,
     foldAtTokens: env.FOLD_AT_TOKENS, storyTokens: env.STORY_TOKENS, hardCapTokens: env.CHAT_HARD_CAP_TOKENS,
@@ -69,12 +78,27 @@ export function wireMemory(brain: Brain, d: WireDeps): {
   for (const t of memoryTools({ pool: brain.pool, memory })) brain.tools.register(t);
   brain.context.addNow(recordNow({ pool: brain.pool, packs: brain.packs }));
   brain.context.addNow(peopleNow({ memory, packs: brain.packs }));
+  brain.context.addNow(forgotElsewhereNow({ pool: brain.pool, packs: brain.packs }));
   // P1's Context.setStory (master §6.3) puts the story before the chat chunks and starts the chat at
   // chatFromSeq. The check only guards a context built without it (a lane-only test double).
   if (typeof brain.context.setStory === 'function') brain.context.setStory(fold);
   else brain.log.warn({}, 'context has no setStory: long trips are not folded in the prompt');
+  // Forget me reaches the composer's chat: a forgotten person's earlier lines are hidden and "right now" names them.
+  brain.context.setForgotten({
+    get: (tripId) => forgottenUpTo(brain.pool, tripId),
+    elsewhere: (tripId) => forgotElsewhereUpTo(brain.pool, tripId),
+  });
 
-  const people = peopleHandlers({ pool: brain.pool, packs: brain.packs, fold, now: brain.now, log: brain.log });
+  const people = peopleHandlers({
+    pool: brain.pool, packs: brain.packs, fold, now: brain.now, log: brain.log,
+    // Travel registers after memory, so the login is read when a forget runs.
+    loginGone: async (tripId, personId) => brain.ixigoLogin?.personGone(tripId, personId, 'forgot'),
+    // The person is told on a card only they see (1.2 visible_to_person_ids); the room hears nothing. Prod, 11 Oct: the
+    // card went to the whole room, "Go forgot you in this trip", twice in one trip.
+    tellPerson: async (tripId, personId, card) => {
+      await brain.door.link.request('post_message', { request_id: `go_${card.card_id}`, trip_id: tripId, card, visible_to_person_ids: [personId] });
+    },
+  });
   brain.door.handle('get_person', people.get_person);
   brain.door.handle('update_person', people.update_person);
   brain.door.handle('delete_fact', people.delete_fact);
@@ -128,6 +152,14 @@ export function wireMemory(brain: Brain, d: WireDeps): {
           // A vote that ended, or a mandate set, settles Go's open lines about it.
           await settleDecisionLines(brain.pool, brain.door.link, ev.trip_id, await brain.packs.get(ev.trip_id));
           break;
+        case 'reaction.added':
+          // A person's reaction can show their lean (😍 on a beach photo, 👍 on a pool villa): the line is read again once
+          // its reactions have landed (staging, 10 Oct: none of them was ever read).
+          if (ev.data.reaction.person_id) {
+            const id = ev.data.message_id;
+            debounce.after(`notes-react:${ev.trip_id}:${id}`, REACTIONS_QUIET_MS, () => runNotes(ev.trip_id, [id]));
+          }
+          break;
         case 'message.created':
           // Go just spoke: read the turn's new lines once the burst has landed, and fold now if the chat is past its
           // budget, so the next turn starts from the story (a busy chat may never give the quiet fold its minute).
@@ -156,9 +188,15 @@ export function wireMemory(brain: Brain, d: WireDeps): {
         brain.log.warn({ tripId, err: String(err) }, 'instant ✅ failed; the notes pass will react'),
       );
     } else if (read.reaction.sure && (read.reaction.value === '👍' || read.reaction.value === '🙌')) {
-      reactOnce(brain.pool, brain.door.link, tripId, msg, read.reaction.value).catch((err: unknown) =>
-        brain.log.warn({ tripId, err: String(err) }, 'quiet reaction failed'),
-      );
+      // It waits for the burst to land: an "ok" that opens an ask to Go ("ok", "@Go one thing", ...) is part of the ask,
+      // and gets Go's answer, not a reaction.
+      const emoji = read.reaction.value;
+      d.timers.set(() => {
+        void brain.packs
+          .get(tripId)
+          .then((now) => (inBurstToGo(msg, now) ? 'skipped' : reactOnce(brain.pool, brain.door.link, tripId, msg, emoji)))
+          .catch((err: unknown) => brain.log.warn({ tripId, err: String(err) }, 'quiet reaction failed'));
+      }, QUIET_HOLD_MS);
     }
     const noteNow =
       sureFact ||
@@ -186,6 +224,8 @@ export function wireMemory(brain: Brain, d: WireDeps): {
          JOIN trips t ON t.trip_id = ld.trip_id AND t.gone_at IS NULL`,
     );
     for (const { trip_id } of due.rows) {
+      // Its Server away (below): nothing to call; the next sweep after it is back settles them.
+      if (await brain.door.link.away?.(trip_id)) continue;
       try {
         await settleDecisionLines(brain.pool, brain.door.link, trip_id, await brain.packs.get(trip_id));
       } catch (err) {
@@ -217,6 +257,10 @@ export function wireMemory(brain: Brain, d: WireDeps): {
         continue;
       }
       if (now - at < env.FOLD_QUIET_MS) continue;
+      // Its Server has been away for minutes (a closed drill; #390's away, as the minute refresh and the proactive sweep):
+      // both passes would only meet "no socket from the Server is open" (prod, 11 Oct: 9 of each in 48 min). It keeps its
+      // place, so they run once the Server is back.
+      if (await brain.door.link.away?.(tripId)) continue;
       runNotes(tripId);
       runFold(tripId);
       ran.push(tripId);

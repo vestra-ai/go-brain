@@ -24,9 +24,9 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { DEMO_CAP_MINOR, DEMO_FORGET, DEMO_FRIEND, DEMO_LINES, DEMO_PAYER, DEMO_PEOPLE, DEMO_STAY_SEARCH, DEMO_VILLAS, DEMO_WATCH, type DemoLine } from '../demo.js';
+import { DEMO_CAP_MINOR, DEMO_FORGET, DEMO_FRIEND, DEMO_LINES, DEMO_NOW, DEMO_PAYER, DEMO_PEOPLE, DEMO_STAY_SEARCH, DEMO_VILLAS, DEMO_WATCH, type DemoLine } from '../demo.js';
 import { createDirector, DIRECTOR_WORDS as W } from '../director.js';
-import { CALL_OUTCOME, CALL_RECORD, DEMO_ADMIN_TOKEN, DEMO_CALLEE, DEMO_PHOTO_URL, startDemoRoom, type DemoRoom } from '../kit.js';
+import { CALL_OUTCOME, CALL_RECORD, DEMO_ADMIN_TOKEN, DEMO_CALLEE, DEMO_PHOTO_URL, runClockFrom, startDemoRoom, type DemoRoom } from '../kit.js';
 import { renderTranscript, rowsOfFile, type TranscriptAct } from '../transcript.js';
 
 const DATABASE_URL = process.env['DATABASE_URL'];
@@ -116,11 +116,14 @@ let decisionId = '';
 let payCard: Card<'pay'> | undefined;
 
 describe.skipIf(DATABASE_URL === undefined)('the demo, end to end, with every lane and every outside thing faked', () => {
+  let realClock: (() => void) | undefined;
   beforeAll(async () => {
+    realClock = runClockFrom(DEMO_NOW);
     demo = await startDemoRoom({ anthropic: director.client });
   }, 60_000);
   afterAll(async () => {
     await demo?.stop();
+    realClock?.();
   });
 
   it('every lane is registered, in master order', () => {
@@ -266,7 +269,7 @@ describe.skipIf(DATABASE_URL === undefined)('the demo, end to end, with every la
     expect(jobState()).toBe('running');
   }, 120_000);
 
-  it('2:20 the job comes back: three villas as an options card, bookable at their whole-stay prices, and Priya taps "Put it to a vote"', async () => {
+  it("2:20 the job comes back: three villas as an options card that is the group's vote, bookable at their whole-stay prices", async () => {
     chapter('2:20 The villas, and the vote');
     const from = lastSeq();
     // The job searches Go's stays first, as the real one does: Go keeps what it showed for the trip.
@@ -283,13 +286,11 @@ describe.skipIf(DATABASE_URL === undefined)('the demo, end to end, with every la
     // The same path as the real flow: each option is the fake ixigo offer the job picked, at the whole stay.
     const offers = await Promise.all(card.options.map((o) => d().room.built.brain.travel!.offer(o.option_id)));
     expect(offers.map((o) => [o?.offerId, o?.priceMinor])).toEqual(DEMO_VILLAS.options.map((v) => [v.offer_id, v.total_paise]));
+    // The card is the vote (rev 5 R5), opened with it: Vote on each option, no button of its own, and no vote card beside it.
+    expect(card.actions ?? []).toEqual([]);
+    expect(card.decision_id).toEqual(expect.any(String));
     expect(go().filter((m) => m.seq > from && m.card?.kind === 'vote')).toEqual([]);
-    // The stage's way: the card's own button opens the vote in code, with no model turn.
-    expect(await tap(card.card_id, 'vote', DEMO_FRIEND)).toMatchObject({ result: 'done', toast: 'Putting it to a vote' });
-    const vote = await goAfter(shown.seq, kindIs('vote'));
-    mark('vote', vote);
-    expect(await tap(card.card_id, 'vote', DEMO_FRIEND)).toMatchObject({ result: 'done', toast: 'Already up for a vote' });
-    decisionId = (vote.card as Card<'vote'>).decision_id;
+    decisionId = card.decision_id!;
     const decision = fake().trip().decisions.find((x) => x.decision_id === decisionId);
     expect(decision?.options.map((o) => o.label)).toEqual(['Villa Sol', 'The Palms Villa', 'Ocean Breeze Villa']);
     expect(decision?.options.map((o) => o.price_minor)).toEqual(DEMO_VILLAS.options.map((v) => v.total_paise));
@@ -298,17 +299,31 @@ describe.skipIf(DATABASE_URL === undefined)('the demo, end to end, with every la
     expect(cardNow(workingId)).toMatchObject({ state: 'done' });
   }, 30_000);
 
-  it('2:30 all five vote, the vote closes, and Go sets the mandate: Rahul pays, up to the "8k a head" said in the chat (₹40,000)', async () => {
-    chapter('2:30 Everyone votes, and the mandate');
+  it('2:30 all five vote and the vote closes: Go says the stay and its booking, never who pays, and the card asks who books it for everyone', async () => {
+    chapter('2:30 Everyone votes');
     const from = lastSeq();
     for (const person of DEMO_PEOPLE) {
       act(Date.now(), nameOf(person), 'votes for Villa Sol');
       await fake().vote(decisionId, person, 0);
     }
     await fake().waitFor(() => (fake().trip().decisions.find((x) => x.decision_id === decisionId)?.status === 'closed' ? true : null), 5_000);
+    const won = await goAfter(from, (m) => m.card?.card_id === `c_claim_${decisionId}`);
+    mark('claim', won);
+    expect(won.text).toBe(W.villaWon);
+    expect(won.card).toMatchObject({ kind: 'notice', title: 'One person books for all', actions: [{ action_id: 'claim', label: "I'll book it" }] });
+    expect(fake().trip().decisions.find((x) => x.decision_id === decisionId)?.mandate ?? null).toBeNull();
+  }, 30_000);
+
+  it('2:40 Rahul says he will book it: his ask is his claim, so Go says he books for all five and sets the mandate up to the "8k a head" said in the chat (₹40,000)', async () => {
+    chapter('2:40 Rahul books for everyone, and the mandate');
+    const from = lastSeq();
+    const { sentAt } = await say(DEMO_LINES.claim);
     const mandate = await goAfter(from, kindIs('mandate'));
-    mark('mandate', mandate);
+    mark('mandate', mandate, sentAt);
     expect(mandate.text).toBe(W.mandate);
+    // The words are Go's own: set_mandate told the model who is booking, and the claim card now says so too.
+    expect(director.results.find((r) => r.name === 'set_mandate')?.content).toContain("Rahul, you're booking for all 5.");
+    expect(cardNow(`c_claim_${decisionId}`)).toMatchObject({ title: 'Rahul is booking for all 5', actions: [] });
     expect(DEMO_CAP_MINOR).toBe(4_000_000);
     expect(fake().trip().decisions.find((x) => x.decision_id === decisionId)?.mandate).toMatchObject({
       choice_index: 0, cap_minor: DEMO_CAP_MINOR, payer_person_id: DEMO_PAYER, refundable_only: false,
@@ -398,7 +413,7 @@ describe.skipIf(DATABASE_URL === undefined)('the demo, end to end, with every la
     expect(reply.reply_to).toBe(vegMessageId);
   }, 20_000);
 
-  it('4:20 Meher taps "Forget me in this trip" in the App: Go forgets her inside 2 s, says nothing in the chat, and queries find nothing left', async () => {
+  it('4:20 Meher taps "Forget me in this trip" in the App: Go forgets her inside 2 s, the group sees nothing, Meher gets one notice pinned to her, and queries find nothing left', async () => {
     chapter('4:20 Forget me, from the App');
     const tripId = fake().trip().trip_id;
     const meher = DEMO_FORGET.person;
@@ -421,14 +436,19 @@ describe.skipIf(DATABASE_URL === undefined)('the demo, end to end, with every la
     expect(page.facts.filter((f) => f.trip_id === tripId)).toEqual([]);
     const hits = await memory.recall(tripId, "What can't Meher eat? veg", 'group');
     expect(hits.map((h) => h.seq)).not.toContain(vegSeq);
-    // Forgetting is the App's job: Go says nothing about it in the room.
+    // Forgetting is the App's job: the group sees nothing about it, and Meher alone gets one notice pinned to her that
+    // names nobody (people.ts forgetNotice).
     await new Promise((resolve) => setTimeout(resolve, 1_500));
-    expect(go().filter((m) => m.seq > before)).toEqual([]);
+    const after = go().filter((m) => m.seq > before);
+    const onlyMeher = (m: (typeof after)[number]): boolean =>
+      !m.text && m.card?.kind === 'notice' && m.card.for_person_ids?.length === 1 && m.card.for_person_ids[0] === meher;
+    expect(after.filter((m) => !onlyMeher(m))).toEqual([]);
+    expect(after.filter(onlyMeher)).toHaveLength(1);
   }, 20_000);
 
   it("the beats landed in the run sheet's order, each of Go's writes was done once, and nothing Go sent has a dash", () => {
     expect(seqs.map(([beat]) => beat)).toEqual([
-      'greeting', 'flights', 'villa_start', 'call_line', 'weather', 'call_card', 'call_outcome', 'villa_done', 'vote', 'mandate', 'pay_card', 'ticket',
+      'greeting', 'flights', 'villa_start', 'call_line', 'weather', 'call_card', 'call_outcome', 'villa_done', 'claim', 'mandate', 'pay_card', 'ticket',
       'notice', 'refusal_en', 'refusal_hi', 'memory',
     ]);
     for (let k = 1; k < seqs.length; k++) expect(seqs[k]?.[1] ?? 0, seqs[k]?.[0]).toBeGreaterThan(seqs[k - 1]?.[1] ?? 0);

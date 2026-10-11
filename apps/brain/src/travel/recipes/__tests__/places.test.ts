@@ -1,8 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import { TravelError } from '../../mcp-travel.js';
 import { airportOf, busCityOf, goaHalfOf, stationOf, stayPlaceOf } from '../places.js';
-import { RECIPES } from '../index.js';
-import { bodiesFor, ddmmyyyy, istAt, istOf, matches, snapshotText } from '../recipe.js';
+import { loadBook } from '../../book/book.js';
+import { dateAs, istAt, istOf } from '../../book/expr.js';
+import { LINK_FALLBACK, SEARCH_RECIPES } from '../backend.js';
+import { bodiesFor, matches } from '../recipe.js';
 import { capture } from './fixtures.js';
 
 describe('the places tables', () => {
@@ -16,6 +18,9 @@ describe('the places tables', () => {
     expect(stationOf('Margao')).toEqual({ code: 'MAO', name: 'Madgaon' });
     expect(stationOf('NZM').code).toBe('NZM');
     expect(stationOf('Pune').code).toBe('PUNE');
+    // A station with its own Indian Railways code, as the model writes it from ixigo's list: no lookup, like an airport's.
+    expect(stationOf('Udaipur City (UDZ)')).toEqual({ code: 'UDZ', name: 'Udaipur City' });
+    expect(stationOf('Jaipur (JP)').code).toBe('JP');
     expect(busCityOf('Bombay')).toEqual({ name: 'Mumbai', id: 4 });
     const goa = { locationId: 32, locationName: 'Goa', locationType: 'S', masterLocationId: 48569, countryId: 1 };
     // An area with ixigo's own filter keeps the Goa search to it; one without searches all of Goa.
@@ -38,7 +43,7 @@ describe('the places tables', () => {
     expect(stayPlaceOf('Anjuna')).toEqual({ location: { locationId: 1026, locationName: 'Anjuna', locationType: 'C', masterLocationId: 50347, countryId: 1 }, areas: [], half: 'north' });
   });
 
-  it('refuse a place they do not have, with the places that work, and never guess', () => {
+  it('refuse a place nobody resolved on ixigo yet, and never guess', () => {
     for (const ask of [() => airportOf('Genoa'), () => stationOf('Shimla'), () => busCityOf('Pune'), () => stayPlaceOf('Manali')]) {
       try {
         ask();
@@ -63,27 +68,38 @@ describe('the recipe helpers', () => {
     const url = 'https://www.ixigo.com/a';
     const cut = { ...capture('/a', url, '{"half":'), truncated: true };
     expect(bodiesFor([capture('/a', url, 'one'), capture('/a', url, 'two', 500), cut, capture('/a', url, 'three')], '/a')).toEqual(['one', 'three']);
-  });
-
-  it("read a snapshot's text nodes in order, as the page's own text reads", () => {
-    const snap = ['- main', '  - link "IndiGo 6E5341 05:00 DEL" [@e4]', '    - StaticText "IndiGo"', '    - StaticText "6E5341"', '    - StaticText "say \\"hi\\""'].join('\n');
-    expect(snapshotText(snap)).toBe('IndiGo\n6E5341\nsay "hi"');
-    // With no text nodes, every name, in order.
-    expect(snapshotText('- heading "05:00" [level=6]\n- paragraph "DEL"')).toBe('05:00\nDEL');
+    // An event stream's cut body still holds whole events: it is read, and the reader drops the one cut partway.
+    const stream = { ...capture('/a', url, 'data:{"n":1}\n\ndata:{"n":'), truncated: true };
+    expect(bodiesFor([stream, capture('/a', url, 'two', 500)], '/a', true)).toEqual(['data:{"n":1}\n\ndata:{"n":']);
+    expect(bodiesFor([stream], '/a')).toEqual([]);
   });
 
   it('write dates and times as ixigo and India read them', () => {
-    expect(ddmmyyyy('2026-11-06')).toBe('06112026');
+    expect(dateAs('2026-11-06', 'DDMMYYYY')).toBe('06112026');
+    expect(dateAs('2026-11-06', 'DD-MM-YYYY')).toBe('06-11-2026');
+    expect(dateAs('2026-11-06', 'D Month YYYY')).toBe('6 November 2026');
     expect(istAt('2026-11-06', '05:00:00')).toBe('2026-11-06T05:00:00+05:30');
     expect(istOf(Date.parse('2026-11-06T13:00:00Z'))).toBe('2026-11-06T18:30:00+05:30');
   });
 
-  it('cover every kind of search, each reusing a result for 10 minutes', () => {
-    expect(Object.keys(RECIPES).sort()).toEqual(['buses', 'flights', 'stays', 'trains']);
-    for (const [kind, r] of Object.entries(RECIPES)) {
-      expect(r.kind).toBe(kind);
-      expect(r.ttlMs).toBe(600_000);
-      expect(r.capture.some((c) => c.required)).toBe(true);
+  it("cover every kind of search with a recipe in the book, each reusing a result for 10 minutes, a stays one for 30", () => {
+    const { book } = loadBook();
+    expect(Object.keys(SEARCH_RECIPES).sort()).toEqual(['buses', 'flights', 'stays', 'trains']);
+    for (const id of Object.values(SEARCH_RECIPES)) {
+      const r = book.get(id)!;
+      // Stays: the trip's stays head start (warm.ts) runs before anyone asks, so its search is kept long enough for the
+      // first ask to come; the options card says when ixigo was checked.
+      expect(r.ttl_minutes, id).toBe(id === 'hotels.search' ? 30 : 10);
+      // Every search reads its page; flights' is paced (ixigo refuses our shared address under a burst).
+      expect(r.answer.as, id).toBe('options');
+      expect(r.pace, id).toEqual(id === 'flights.results' ? { gap_seconds: 20, quiet_minutes: 10 } : undefined);
+    }
+    // The link that answers in flights' place opens the same page, its inputs, conditions and words the page's.
+    for (const [kind, linkId] of Object.entries(LINK_FALLBACK)) {
+      const page = book.get(SEARCH_RECIPES[kind as keyof typeof SEARCH_RECIPES])!;
+      const link = book.get(linkId)!;
+      expect(link.answer.as, linkId).toBe('link');
+      expect({ inputs: link.inputs, conditions: link.conditions, let: link.let, page: link.page }).toEqual({ inputs: page.inputs, conditions: page.conditions, let: page.let, page: page.page });
     }
   });
 });

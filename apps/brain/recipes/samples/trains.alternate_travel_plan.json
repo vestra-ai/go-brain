@@ -1,0 +1,427 @@
+{
+ "data": [
+  {
+   "insuranceType": "TRAVEL_GUARANTEE",
+   "insurancePlanName": "ITG-A5",
+   "content": {
+    "tgHomePageContent": {
+     "bottomSheetContent": {
+      "logoUrl": "https://images.ixigo.com/image/upload/trains/75f5ac309c813ba7cee065097d972861-fsxzw.webp",
+      "headingText": "Get Up to 3X Refund",
+      "descriptionText": "If your ticket remains fully waitlisted",
+      "tncText": "Know More",
+      "inlineAlertText": "Default selected for eligible waitlisted tickets"
+     }
+    },
+    "tgOnPageCardContentV2": {
+     "approxRefundTextWithAmount": "<html>Max. Refund: <font color =\"#238C46\"><b>₹%s</b></font></html>",
+     "headerLabel": "Confirmed Ticket or 3X Refund*",
+     "approxRefundSubText": "*(3X for flight / 3X for bus / 2X for train)",
+     "subHeaderLabel": "if your ticket remains fully waitlisted",
+     "logoImage": "https://images.ixigo.com/image/upload/trains/33c2d54991836b3dfb1f439b80369a7c-dmtzt.webp",
+     "refundToSourceCaption": "To Source Account",
+     "refundToCouponCaption": "As A Coupon",
+     "refundToSourceLabel": "₹%s",
+     "refundToCouponLabel": "Up to ₹%s",
+     "refundToSourceIcon": "https://images.ixigo.com/image/upload/trains/trains/bb17c533be52caff9658e716cdd8ab76-kwovc.png",
+     "refundToCouponIcon": "https://images.ixigo.com/image/upload/trains/trains/1b5ed363ff4a1f3ed583dd6332566570-iqikp.png",
+     "tgPlusIcon": "https://images.ixigo.com/image/upload/trains/trains/24520c6e363f335d8673fb55e86bc6d9-vsegm.png",
+     "socialProofText": "Trusted by most Indian travellers 🇮🇳",
+     "congratulatoryMessage": "🎉 Yay! You have opted for Alternate Travel Plan",
+     "changeOptionBtnText": "Change",
+     "infoText": "<html>Note: The coupon must be claimed & redeemed within <font color=\"#D48002\"><b>7 days</b></font> from the date of chart preparation of the train. <font color…",
+     "infoTextIconUrl": "https://images.ixigo.com/image/upload/trains/trains/70214d3baa3a8377031a7bcf5db37d7e-bhveh.png",
+     "optInText": {
+      "title": "Yes, I want Alternate Travel Plan",
+      "perPersonInsuranceChargeText": "Only @₹%s/person"
+     },
+     "optOutText": {
+      "title": "No, I don't want this"
+     },
+     "tgTermsAndConditions": {
+      "title": "Alternate Travel Plan Terms & Conditions",
+      "infoText": "<html>Read detailed <font color =\"#0770E4\"><u>Terms & Conditions.</font></html>",
+      "terms": [
+       {
+        "type": "TEXT",
+        "content": "After chart preparation, only fully waitlisted tickets will be eligible for a refund of up to three times the ticket fare."
+       },
+       {
+        "type": "TEXT",
+        "content": "The total refund amount will depend on the selected travel mode at the time of claiming the coupon: 3X for flight, 3X for bus, or 2X for train."
+       },
+       {
+        "type": "TEXT",
+        "content": "For a 3X refund - 1X goes to the source account & 2X refunded as a Alternate Travel Plan Coupon.\nFor a 2X refund - 1X goes to the source account & 1X refunded a…"
+       },
+       "… 3 more"
+      ],
+      "tncUrl": "/pwa/initialpage?page=TRAIN_TRAVEL_GUARANTEE",
+      "tncWebUrl": "https://www.ixigo.com/trains/alternate-travel"
+     },
+     "moneyBackIconUrl": "https://cdn.confirmtkt.com/img/icons/78452dc10e0161365a0b66172d06179f.png",
+     "moneyBackText": "If you're not satisfied, Get your Alternate Travel Plan charges back!",
+     "tgTermsGlance": {
+      "tncText": "<u>Read More</u>",
+      "termsList": [
+       {
+        "id": "low_confirmation_chance",
+        "infoText": "Alternate Travel Plan doesn't ensure confirmed train ticket due to <font color=\"#17181C\"><b><u>low confirmation chance.</u></b></font>",
+        "tooltip": {
+         "title": "Low confirmation chance?",
+         "items": [
+          "Get up to 3X refund if your ticket stays waitlisted. Use the coupon to book flights, buses or trains. Ticket Confirmation is not guaranteed"
+         ]
+        }
+       },
+       {
+        "id": "coupon_claim_period",
+        "infoText": "<font color=\"#17181C\"><b><u>Claim & redeem the coupon within 7</u></b></font> days from the date of chart preparation.",
+        "tooltip": {
+         "title": null,
+         "items": [
+          "<b>Coupon Validity:</b> Claim & use your coupon within 7 days of chart preparation",
+          "<b>Travel Period:</b> Your travel date must also be within the same 7 day window"
+         ]
+        }
+       },
+       {
+        "id": "rac_partial_waitlist_refund",
+        "infoText": "Only premium will be refunded in case of <font color=\"#17181C\"><b><u>RAC & partially confirmed ticket</u></b></font>",
+        "tooltip": {
+         "title": null,
+         "items": [
+          "<b>RAC:</b> 50% of the premium will be refunded for RAC passengers",
+          "<b>Partially Waitlist:</b> 100% of the premium will be refunded for waitlisted passengers"
+         ]
+        }
+       }
+      ]
+     }
+    },
+    "tgOnPageCardContentV3": {
+     "approxRefundTextWithAmount": "<html>Max. Refund: <font color =\"#238C46\"><b>₹%s</b></font></html>",
+     "headerLabel": "<html><font color =\"#238C46\">3X Refund*</font> if not confirmed</html>",
+     "approxRefundSubText": "*(3X for flight / 3X for bus / 2X for train)",
+     "logoImage": "https://images.ixigo.com/image/upload/trains/33c2d54991836b3dfb1f439b80369a7c-dmtzt.webp",
+     "refundToSourceCaption": "To Source Account",
+     "refundToCouponCaption": "As A Coupon",
+     "refundToSourceLabel": "₹%s",
+     "refundToCouponLabel": "Up to ₹%s",
+     "refundToSourceIcon": "https://images.ixigo.com/image/upload/trains/trains/bb17c533be52caff9658e716cdd8ab76-kwovc.png",
+     "refundToCouponIcon": "https://images.ixigo.com/image/upload/trains/trains/1b5ed363ff4a1f3ed583dd6332566570-iqikp.png",
+     "tgPlusIcon": "https://images.ixigo.com/image/upload/trains/trains/24520c6e363f335d8673fb55e86bc6d9-vsegm.png",
+     "socialProofText": "Trusted by most Indian travellers 🇮🇳",
+     "congratulatoryMessage": "🎉 Yay! You have opted for Alternate Travel Plan",
+     "changeOptionBtnText": "Change",
+     "infoText": "<html>Note: The coupon must be claimed & redeemed within <font color=\"#D48002\"><b>7 days</b></font> from the date of chart preparation of the train. <font color…",
+     "infoTextIconUrl": "https://images.ixigo.com/image/upload/trains/trains/70214d3baa3a8377031a7bcf5db37d7e-bhveh.png",
+     "optInText": {
+      "title": "Yes, I want 3X Refund*",
+      "perPersonInsuranceChargeText": "Only @₹%s/person"
+     },
+     "optOutText": {
+      "title": "No, I don't want this"
+     },
+     "tgTermsAndConditions": {
+      "title": "Alternate Travel Plan Terms & Conditions",
+      "infoText": "<html>Read detailed <font color =\"#0770E4\"><u>Terms & Conditions.</font></html>",
+      "terms": [
+       {
+        "type": "TEXT",
+        "content": "After chart preparation, only fully waitlisted tickets will be eligible for a refund of up to three times the ticket fare."
+       },
+       {
+        "type": "TEXT",
+        "content": "The total refund amount will depend on the selected travel mode at the time of claiming the coupon: 3X for flight, 3X for bus, or 2X for train."
+       },
+       {
+        "type": "TEXT",
+        "content": "For a 3X refund - 1X goes to the source account & 2X refunded as a Alternate Travel Plan Coupon.\nFor a 2X refund - 1X goes to the source account & 1X refunded a…"
+       },
+       "… 3 more"
+      ],
+      "tncUrl": "/pwa/initialpage?page=TRAIN_TRAVEL_GUARANTEE",
+      "tncWebUrl": "https://www.ixigo.com/trains/alternate-travel"
+     },
+     "moneyBackIconUrl": "https://cdn.confirmtkt.com/img/icons/78452dc10e0161365a0b66172d06179f.png",
+     "moneyBackText": "If you're not satisfied, Get your Alternate Travel Plan charges back!",
+     "tgTermsGlance": {
+      "tncText": "<u>Read More</u>",
+      "termsList": [
+       {
+        "id": "low_confirmation_chance",
+        "infoText": "Alternate Travel Plan doesn't ensure confirmed train ticket due to <font color=\"#17181C\"><b><u>low confirmation chance.</u></b></font>",
+        "tooltip": {
+         "title": "Low confirmation chance?",
+         "items": [
+          "Get up to 3X refund if your ticket stays waitlisted. Use the coupon to book flights, buses or trains. Ticket Confirmation is not guaranteed"
+         ]
+        }
+       },
+       {
+        "id": "coupon_claim_period",
+        "infoText": "<font color=\"#17181C\"><b><u>Claim & redeem the coupon within 7</u></b></font> days from the date of chart preparation.",
+        "tooltip": {
+         "title": null,
+         "items": [
+          "<b>Coupon Validity:</b> Claim & use your coupon within 7 days of chart preparation",
+          "<b>Travel Period:</b> Your travel date must also be within the same 7 day window"
+         ]
+        }
+       },
+       {
+        "id": "rac_partial_waitlist_refund",
+        "infoText": "Only premium will be refunded in case of <font color=\"#17181C\"><b><u>RAC & partially confirmed ticket</u></b></font>",
+        "tooltip": {
+         "title": null,
+         "items": [
+          "<b>RAC:</b> 50% of the premium will be refunded for RAC passengers",
+          "<b>Partially Waitlist:</b> 100% of the premium will be refunded for waitlisted passengers"
+         ]
+        }
+       }
+      ]
+     }
+    },
+    "tgOnPageCardContentV4": {
+     "approxRefundTextWithAmount": "<html>Max. Refund: <font color =\"#238C46\"><b>₹%s</b></font></html>",
+     "headerLabel": "Confirmed Ticket or 3X Refund*",
+     "approxRefundSubText": "*(3X for flight / 3X for bus / 2X for train)",
+     "subHeaderLabel": "if your ticket is not confirmed",
+     "logoImage": "https://images.ixigo.com/image/upload/trains/33c2d54991836b3dfb1f439b80369a7c-dmtzt.webp",
+     "refundToSourceCaption": "To Source Account",
+     "refundToCouponCaption": "As A Coupon",
+     "refundToSourceLabel": "₹%s",
+     "refundToCouponLabel": "Up to ₹%s",
+     "refundToSourceIcon": "https://images.ixigo.com/image/upload/trains/trains/bb17c533be52caff9658e716cdd8ab76-kwovc.png",
+     "refundToCouponIcon": "https://images.ixigo.com/image/upload/trains/trains/1b5ed363ff4a1f3ed583dd6332566570-iqikp.png",
+     "tgPlusIcon": "https://images.ixigo.com/image/upload/trains/trains/24520c6e363f335d8673fb55e86bc6d9-vsegm.png",
+     "socialProofText": "Trusted by most Indian travellers 🇮🇳",
+     "congratulatoryMessage": "🎉 Yay! You have opted for Alternate Travel Plan",
+     "changeOptionBtnText": "Change",
+     "infoText": "<html>Note: The coupon must be claimed & redeemed within <font color=\"#D48002\"><b>7 days</b></font> from the date of chart preparation of the train. <font color…",
+     "infoTextIconUrl": "https://images.ixigo.com/image/upload/trains/trains/70214d3baa3a8377031a7bcf5db37d7e-bhveh.png",
+     "optInText": {
+      "title": "Yes, I want Confirmed Ticket or 3X Refund*",
+      "perPersonInsuranceChargeText": "Only @₹%s/person"
+     },
+     "optOutText": {
+      "title": "No, I don't want this"
+     },
+     "tgTermsAndConditions": {
+      "title": "Alternate Travel Plan Terms & Conditions",
+      "infoText": "<html>Read detailed <font color =\"#0770E4\"><u>Terms & Conditions.</font></html>",
+      "terms": [
+       {
+        "type": "TEXT",
+        "content": "After chart preparation, only fully waitlisted tickets will be eligible for a refund of up to three times the ticket fare."
+       },
+       {
+        "type": "TEXT",
+        "content": "The total refund amount will depend on the selected travel mode at the time of claiming the coupon: 3X for flight, 3X for bus, or 2X for train."
+       },
+       {
+        "type": "TEXT",
+        "content": "For a 3X refund - 1X goes to the source account & 2X refunded as a Alternate Travel Plan Coupon.\nFor a 2X refund - 1X goes to the source account & 1X refunded a…"
+       },
+       "… 3 more"
+      ],
+      "tncUrl": "/pwa/initialpage?page=TRAIN_TRAVEL_GUARANTEE",
+      "tncWebUrl": "https://www.ixigo.com/trains/alternate-travel"
+     },
+     "moneyBackIconUrl": "https://cdn.confirmtkt.com/img/icons/78452dc10e0161365a0b66172d06179f.png",
+     "moneyBackText": "If you're not satisfied, Get your Alternate Travel Plan charges back!",
+     "tgTermsGlance": {
+      "tncText": "<u>Read More</u>",
+      "termsList": [
+       {
+        "id": "low_confirmation_chance",
+        "infoText": "Alternate Travel Plan doesn't ensure confirmed train ticket due to <font color=\"#17181C\"><b><u>low confirmation chance.</u></b></font>",
+        "tooltip": {
+         "title": "Low confirmation chance?",
+         "items": [
+          "Get up to 3X refund if your ticket stays waitlisted. Use the coupon to book flights, buses or trains. Ticket Confirmation is not guaranteed"
+         ]
+        }
+       },
+       {
+        "id": "coupon_claim_period",
+        "infoText": "<font color=\"#17181C\"><b><u>Claim & redeem the coupon within 7</u></b></font> days from the date of chart preparation.",
+        "tooltip": {
+         "title": null,
+         "items": [
+          "<b>Coupon Validity:</b> Claim & use your coupon within 7 days of chart preparation",
+          "<b>Travel Period:</b> Your travel date must also be within the same 7 day window"
+         ]
+        }
+       },
+       {
+        "id": "rac_partial_waitlist_refund",
+        "infoText": "Only premium will be refunded in case of <font color=\"#17181C\"><b><u>RAC & partially confirmed ticket</u></b></font>",
+        "tooltip": {
+         "title": null,
+         "items": [
+          "<b>RAC:</b> 50% of the premium will be refunded for RAC passengers",
+          "<b>Partially Waitlist:</b> 100% of the premium will be refunded for waitlisted passengers"
+         ]
+        }
+       }
+      ]
+     }
+    },
+    "tgOnPageCardContent": {
+     "topBannerUrl": "https://images.ixigo.com/image/upload/trains/a31030771ba6524fe42d4cc45c047459-prqhf.webp",
+     "ticketFareText": "Ticket Fare",
+     "approxRefundText": "*Refund (3X for flight/3X for bus/2X for train)",
+     "refundDetailsText": "₹%s will be refunded to the original payment mode + up to ₹%s as a Alternate Travel Plan Coupon, valid for 7 days",
+     "changeOptionBtnText": "Change",
+     "infoText": "<html>Note: The coupon must be claimed & redeemed within <font color=\"#D48002\"><b>7 days</b></font> from the date of chart preparation of the train. <font color…",
+     "infoTextIconUrl": "https://images.ixigo.com/image/upload/trains/trains/70214d3baa3a8377031a7bcf5db37d7e-bhveh.png",
+     "congratulatoryMessage": "🎉 Yay! You have opted for Alternate Travel Plan",
+     "optInText": {
+      "title": "Yes, I want Alternate Travel Plan",
+      "perPersonInsuranceChargeText": "Only @₹%s/person"
+     },
+     "optOutText": {
+      "title": "No, I don't want Alternate Travel Plan"
+     },
+     "tgTermsAndConditions": {
+      "title": "Alternate Travel Plan Terms & Conditions",
+      "infoText": "<html>Read detailed <font color =\"#0770E4\"><u>Terms & Conditions.</font></html>",
+      "terms": [
+       "After chart preparation, only fully waitlisted tickets will be eligible for a refund of up to three times the ticket fare.",
+       "The total refund amount will depend on the selected travel mode at the time of claiming the coupon: 3X for flight, 3X for bus, or 2X for train.",
+       "Coupon Validity: The coupon must be claimed & redeemed within 7 days from the date of chart preparation of the train.",
+       "… 2 more"
+      ],
+      "tncUrl": "/pwa/initialpage?page=TRAIN_TRAVEL_GUARANTEE",
+      "tncWebUrl": "https://www.ixigo.com/trains/alternate-travel"
+     }
+    },
+    "tgPopUpContent": {
+     "topBannerUrl": "https://images.ixigo.com/image/upload/trains/818a7c077fcb7bbdf976b4f0e9576d8e-ixpic.webp",
+     "ticketFareText": "Ticket Fare",
+     "approxRefundText": "*Refund (3X for flight/3X for bus/2X for train)",
+     "refundDetailsText": "₹%s will be refunded to the original payment mode + up to ₹%s as a Alternate Travel Plan Coupon, valid for 7 days",
+     "perPersonInsuranceChargeText": "Only @₹%s/person",
+     "positiveBtnText": "Yes",
+     "negativeBtnText": "No",
+     "secondaryInsuranceSelectionText": "If you don’t select Alternate Travel Plan, %s will be automatically applied"
+    },
+    "tgPopUpContentV2": {
+     "refundToSourceCaption": "To Source Account",
+     "refundToCouponCaption": "As A Coupon",
+     "tgPlusIcon": "https://images.ixigo.com/image/upload/trains/trains/24520c6e363f335d8673fb55e86bc6d9-vsegm.png",
+     "approxRefundTextWithAmount": "<html>Max. Refund: <font color =\"#238C46\"><b>₹%s</b></font></html>",
+     "approxRefundSubText": "*(3X for flight / 3X for bus / 2X for train)",
+     "refundToSourceIcon": "https://images.ixigo.com/image/upload/trains/trains/bb17c533be52caff9658e716cdd8ab76-kwovc.png",
+     "refundToCouponIcon": "https://images.ixigo.com/image/upload/trains/trains/1b5ed363ff4a1f3ed583dd6332566570-iqikp.png",
+     "logoImage": "https://images.ixigo.com/image/upload/trains/14485b74bba4e31ca8bd8d8a9a1df10e-hapmm.webp",
+     "refundToSourceLabel": "₹%s",
+     "refundToCouponLabel": "Up to ₹%s",
+     "headerLabel": "Confirmed Ticket or 3X Refund*",
+     "subHeaderLabel": "if your ticket remains fully waitlisted,",
+     "perPersonInsuranceChargeText": "only @₹%s/person",
+     "positiveBtnText": "Yes",
+     "negativeBtnText": "No",
+     "socialProofText": "Trusted by most Indian travellers 🇮🇳",
+     "secondaryInsuranceSelectionText": "If you don’t select Alternate Travel Plan, %s will be automatically applied",
+     "moneyBackIconUrl": "https://cdn.confirmtkt.com/img/icons/78452dc10e0161365a0b66172d06179f.png",
+     "moneyBackText": "If you're not satisfied, get your Alternate Travel Plan charges back!"
+    },
+    "tgPopUpContentV3": {
+     "refundToSourceCaption": "To Source Account",
+     "refundToCouponCaption": "As A Coupon",
+     "tgPlusIcon": "https://images.ixigo.com/image/upload/trains/trains/24520c6e363f335d8673fb55e86bc6d9-vsegm.png",
+     "approxRefundTextWithAmount": "<html>Max. Refund: <font color =\"#238C46\"><b>₹%s</b></font></html>",
+     "approxRefundSubText": "*(3X for flight / 3X for bus / 2X for train)",
+     "refundToSourceIcon": "https://images.ixigo.com/image/upload/trains/trains/bb17c533be52caff9658e716cdd8ab76-kwovc.png",
+     "refundToCouponIcon": "https://images.ixigo.com/image/upload/trains/trains/1b5ed363ff4a1f3ed583dd6332566570-iqikp.png",
+     "logoImage": "https://images.ixigo.com/image/upload/trains/14485b74bba4e31ca8bd8d8a9a1df10e-hapmm.webp",
+     "refundToSourceLabel": "₹%s",
+     "refundToCouponLabel": "Up to ₹%s",
+     "headerLabel": "<html><font color =\"#238C46\">3X Refund*</font> if not confirmed</html>",
+     "perPersonInsuranceChargeText": "only @₹%s/person",
+     "positiveBtnText": "Yes",
+     "negativeBtnText": "No",
+     "socialProofText": "Trusted by most Indian travellers 🇮🇳",
+     "secondaryInsuranceSelectionText": "If you don’t select Alternate Travel Plan, %s will be automatically applied",
+     "moneyBackIconUrl": "https://cdn.confirmtkt.com/img/icons/78452dc10e0161365a0b66172d06179f.png",
+     "moneyBackText": "If you're not satisfied, get your Alternate Travel Plan charges back!"
+    },
+    "tgPopUpContentV4": {
+     "refundToSourceCaption": "To Source Account",
+     "refundToCouponCaption": "As A Coupon",
+     "tgPlusIcon": "https://images.ixigo.com/image/upload/trains/trains/24520c6e363f335d8673fb55e86bc6d9-vsegm.png",
+     "approxRefundTextWithAmount": "<html>Max. Refund: <font color =\"#238C46\"><b>₹%s</b></font></html>",
+     "approxRefundSubText": "*(3X for flight / 3X for bus / 2X for train)",
+     "refundToSourceIcon": "https://images.ixigo.com/image/upload/trains/trains/bb17c533be52caff9658e716cdd8ab76-kwovc.png",
+     "refundToCouponIcon": "https://images.ixigo.com/image/upload/trains/trains/1b5ed363ff4a1f3ed583dd6332566570-iqikp.png",
+     "logoImage": "https://images.ixigo.com/image/upload/trains/14485b74bba4e31ca8bd8d8a9a1df10e-hapmm.webp",
+     "refundToSourceLabel": "₹%s",
+     "refundToCouponLabel": "Up to ₹%s",
+     "headerLabel": "Confirmed Ticket or 3X Refund*",
+     "subHeaderLabel": "if your ticket remains fully waitlisted,",
+     "perPersonInsuranceChargeText": "only @₹%s/person",
+     "positiveBtnText": "Yes",
+     "negativeBtnText": "No",
+     "socialProofText": "Trusted by most Indian travellers 🇮🇳",
+     "secondaryInsuranceSelectionText": "If you don’t select Alternate Travel Plan, %s will be automatically applied",
+     "moneyBackIconUrl": "https://cdn.confirmtkt.com/img/icons/78452dc10e0161365a0b66172d06179f.png",
+     "moneyBackText": "If you're not satisfied, get your Alternate Travel Plan charges back!"
+    },
+    "tgStickyNudgeContent": {
+     "iconUrl": "https://cdn.confirmtkt.com/img/tg_brand_icon.webp",
+     "description": "<html>Get <b>3X Refund*</b> if ticket remains fully waitlisted @₹%s/person</html>",
+     "positiveBtnText": "Add Now"
+    },
+    "tgSrpContent": {
+     "bannerUrl": "https://images.ixigo.com/image/upload/trains/91cf5c7d197017bb7c80e3d3be486097-hwops.webp",
+     "tgTooltipIcon": "https://cdn.confirmtkt.com/img/tg_srp_tooltip.webp",
+     "introText": "Introducing Alternate Travel Plan",
+     "refundText": "Get <b>3X Refund*</b><br>if your ticket remains waitlisted",
+     "buttonText": "Okay",
+     "tgLogo": "https://images.ixigo.com/image/upload/travelguarantee/a71f38fa65f3c8236f372958e08f353f-htahd.png",
+     "bannerLottieUrl": "https://cdn.confirmtkt.com/lottie/srp_Lottie.lottie"
+    },
+    "tgUnavailableContent": {
+     "genericUnavailableText": "Alternate Travel Plan is unavailable due to change in the seat availability status",
+     "unavailableWithAmountText": "Alternate Travel Plan is unavailable. ₹%s will be refunded",
+     "tgRefundText": "Don't worry! Alternate Travel Plan charges will be refunded"
+    },
+    "tgLabelContent": {
+     "srpAvailabilityCellText": "Alternate Travel Plan",
+     "srpSixDayExpandedCellText": "Alternate Travel Plan",
+     "alternateText": "Alternate Travel Plan"
+    },
+    "tgTripListingContent": {
+     "protectedWithInsuranceString": "Protected with Alternate Travel Plan",
+     "protectedWithInsuranceIconUrl": "https://images.ixigo.com/image/upload/trains/trains/6901b39f16d0483018eb8a9e5eff9444-nbgsx.png"
+    },
+    "tgTripDetailPageContent": {
+     "couponClaimAfterTrainDepartureText": "You can claim the Alternate Travel Plan Coupon only after the train's departure.",
+     "claimCouponButtonText": "Claim Coupon",
+     "claimBottomSheetCouponText": "Claim %s Coupon",
+     "busIcon": "https://images.ixigo.com/image/upload/trains/trains/a7f60c76f1542c49062cd604ccb07a8b-lzzrt.png",
+     "trainIcon": "https://images.ixigo.com/image/upload/trains/trains/74fcf7e66c24eef35303ca2804b54730-sgapg.png",
+     "flightIcon": "https://images.ixigo.com/image/upload/trains/trains/ad8d61fac081731ec8202584a9960e2a-hhlqn.png",
+     "tgCancellationDialogContent": {
+      "title": "Stay Protected with Alternate Travel Plan",
+      "subTitle": "Upon cancelling the booking, you'll lose the benefit of 3X Refund* if your ticket remains waitlisted.",
+      "positiveButtonCTA": "Stay Protected",
+      "negativeButtonCTA": "Cancel Anyway",
+      "headerImage": "https://images.ixigo.com/image/upload/TG/0454899b47327269a6d8ae22a35d0ca1-pkvqj.png"
+     },
+     "tgCancellationCouponDialogContent": {
+      "title": "Are you sure you want to cancel?",
+      "subTitle": "As you used your Alternate Travel Plan Coupon for this booking, it won't be refunded if you cancel. Please proceed accordingly.",
+      "positiveButtonCTA": "No",
+      "negativeButtonCTA": "Yes",
+      "headerImage": ""
+     }
+    }
+   }
+  }
+ ]
+}

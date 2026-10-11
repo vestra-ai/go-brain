@@ -2,7 +2,7 @@
   "asyncapi": "3.0.0",
   "info": {
     "title": "The Go brain socket",
-    "version": "1.0.0",
+    "version": "1.3.0",
     "description": "Described from Go's side: \"receive\" methods are sent by the Server, \"send\" methods are sent by Go. Frames are JSON-RPC 2.0."
   },
   "servers": {
@@ -471,6 +471,122 @@
                   },
                   "result": {
                     "$ref": "#/components/schemas/Link"
+                  }
+                }
+              },
+              {
+                "$ref": "#/components/schemas/SocketError"
+              }
+            ]
+          }
+        },
+        "place_info": {
+          "name": "place_info",
+          "title": "place_info",
+          "summary": "What a place is like, for the ideas on the home screen: its photos, a tag, the way there from a city and the best months.",
+          "payload": {
+            "type": "object",
+            "required": [
+              "jsonrpc",
+              "id",
+              "method",
+              "params"
+            ],
+            "properties": {
+              "jsonrpc": {
+                "const": "2.0"
+              },
+              "id": {
+                "type": "string"
+              },
+              "method": {
+                "const": "place_info"
+              },
+              "params": {
+                "$ref": "#/components/schemas/PlaceInfoRequest"
+              }
+            }
+          }
+        },
+        "place_info_result": {
+          "name": "place_info_result",
+          "title": "place_info answer",
+          "payload": {
+            "oneOf": [
+              {
+                "type": "object",
+                "required": [
+                  "jsonrpc",
+                  "id",
+                  "result"
+                ],
+                "properties": {
+                  "jsonrpc": {
+                    "const": "2.0"
+                  },
+                  "id": {
+                    "type": "string"
+                  },
+                  "result": {
+                    "$ref": "#/components/schemas/PlaceInfo"
+                  }
+                }
+              },
+              {
+                "$ref": "#/components/schemas/SocketError"
+              }
+            ]
+          }
+        },
+        "get_option_details": {
+          "name": "get_option_details",
+          "title": "get_option_details",
+          "summary": "Everything about one option on a card, for its Details page: more than the card carries.",
+          "payload": {
+            "type": "object",
+            "required": [
+              "jsonrpc",
+              "id",
+              "method",
+              "params"
+            ],
+            "properties": {
+              "jsonrpc": {
+                "const": "2.0"
+              },
+              "id": {
+                "type": "string"
+              },
+              "method": {
+                "const": "get_option_details"
+              },
+              "params": {
+                "$ref": "#/components/schemas/GetOptionDetails"
+              }
+            }
+          }
+        },
+        "get_option_details_result": {
+          "name": "get_option_details_result",
+          "title": "get_option_details answer",
+          "payload": {
+            "oneOf": [
+              {
+                "type": "object",
+                "required": [
+                  "jsonrpc",
+                  "id",
+                  "result"
+                ],
+                "properties": {
+                  "jsonrpc": {
+                    "const": "2.0"
+                  },
+                  "id": {
+                    "type": "string"
+                  },
+                  "result": {
+                    "$ref": "#/components/schemas/OptionFullDetails"
                   }
                 }
               },
@@ -1026,6 +1142,64 @@
             ]
           }
         },
+        "add_vote_options": {
+          "name": "add_vote_options",
+          "title": "add_vote_options",
+          "summary": "1.3: add options to an open vote, for the options \"See more\" brought. At most 20 in all; votes cast stay.",
+          "payload": {
+            "type": "object",
+            "required": [
+              "jsonrpc",
+              "id",
+              "method",
+              "params"
+            ],
+            "properties": {
+              "jsonrpc": {
+                "const": "2.0"
+              },
+              "id": {
+                "type": "string"
+              },
+              "method": {
+                "const": "add_vote_options"
+              },
+              "params": {
+                "$ref": "#/components/schemas/AddVoteOptions"
+              }
+            }
+          }
+        },
+        "add_vote_options_result": {
+          "name": "add_vote_options_result",
+          "title": "add_vote_options answer",
+          "payload": {
+            "oneOf": [
+              {
+                "type": "object",
+                "required": [
+                  "jsonrpc",
+                  "id",
+                  "result"
+                ],
+                "properties": {
+                  "jsonrpc": {
+                    "const": "2.0"
+                  },
+                  "id": {
+                    "type": "string"
+                  },
+                  "result": {
+                    "$ref": "#/components/schemas/WriteResult"
+                  }
+                }
+              },
+              {
+                "$ref": "#/components/schemas/SocketError"
+              }
+            ]
+          }
+        },
         "set_mandate": {
           "name": "set_mandate",
           "title": "set_mandate",
@@ -1374,6 +1548,64 @@
             ]
           }
         },
+        "update_expense": {
+          "name": "update_expense",
+          "title": "update_expense",
+          "summary": "Change who an expense is split between (and its note): the App's Fix the split, done by Go. The amount and the payer never change.",
+          "payload": {
+            "type": "object",
+            "required": [
+              "jsonrpc",
+              "id",
+              "method",
+              "params"
+            ],
+            "properties": {
+              "jsonrpc": {
+                "const": "2.0"
+              },
+              "id": {
+                "type": "string"
+              },
+              "method": {
+                "const": "update_expense"
+              },
+              "params": {
+                "$ref": "#/components/schemas/UpdateExpense"
+              }
+            }
+          }
+        },
+        "update_expense_result": {
+          "name": "update_expense_result",
+          "title": "update_expense answer",
+          "payload": {
+            "oneOf": [
+              {
+                "type": "object",
+                "required": [
+                  "jsonrpc",
+                  "id",
+                  "result"
+                ],
+                "properties": {
+                  "jsonrpc": {
+                    "const": "2.0"
+                  },
+                  "id": {
+                    "type": "string"
+                  },
+                  "result": {
+                    "$ref": "#/components/schemas/WriteResult"
+                  }
+                }
+              },
+              {
+                "$ref": "#/components/schemas/SocketError"
+              }
+            ]
+          }
+        },
         "request_spend_approval": {
           "name": "request_spend_approval",
           "title": "request_spend_approval",
@@ -1670,6 +1902,50 @@
         ]
       }
     },
+    "place_info": {
+      "action": "receive",
+      "channel": {
+        "$ref": "#/channels/socket"
+      },
+      "summary": "What a place is like, for the ideas on the home screen: its photos, a tag, the way there from a city and the best months.",
+      "messages": [
+        {
+          "$ref": "#/channels/socket/messages/place_info"
+        }
+      ],
+      "reply": {
+        "channel": {
+          "$ref": "#/channels/socket"
+        },
+        "messages": [
+          {
+            "$ref": "#/channels/socket/messages/place_info_result"
+          }
+        ]
+      }
+    },
+    "get_option_details": {
+      "action": "receive",
+      "channel": {
+        "$ref": "#/channels/socket"
+      },
+      "summary": "Everything about one option on a card, for its Details page: more than the card carries.",
+      "messages": [
+        {
+          "$ref": "#/channels/socket/messages/get_option_details"
+        }
+      ],
+      "reply": {
+        "channel": {
+          "$ref": "#/channels/socket"
+        },
+        "messages": [
+          {
+            "$ref": "#/channels/socket/messages/get_option_details_result"
+          }
+        ]
+      }
+    },
     "read_trip": {
       "action": "send",
       "channel": {
@@ -1880,6 +2156,28 @@
         ]
       }
     },
+    "add_vote_options": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/socket"
+      },
+      "summary": "1.3: add options to an open vote, for the options \"See more\" brought. At most 20 in all; votes cast stay.",
+      "messages": [
+        {
+          "$ref": "#/channels/socket/messages/add_vote_options"
+        }
+      ],
+      "reply": {
+        "channel": {
+          "$ref": "#/channels/socket"
+        },
+        "messages": [
+          {
+            "$ref": "#/channels/socket/messages/add_vote_options_result"
+          }
+        ]
+      }
+    },
     "set_mandate": {
       "action": "send",
       "channel": {
@@ -2012,6 +2310,28 @@
         ]
       }
     },
+    "update_expense": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/socket"
+      },
+      "summary": "Change who an expense is split between (and its note): the App's Fix the split, done by Go. The amount and the payer never change.",
+      "messages": [
+        {
+          "$ref": "#/channels/socket/messages/update_expense"
+        }
+      ],
+      "reply": {
+        "channel": {
+          "$ref": "#/channels/socket"
+        },
+        "messages": [
+          {
+            "$ref": "#/channels/socket/messages/update_expense_result"
+          }
+        ]
+      }
+    },
     "request_spend_approval": {
       "action": "send",
       "channel": {
@@ -2129,6 +2449,30 @@
         },
         "description": "Who did it: a person, Go, or the Server itself (system)."
       },
+      "Photo": {
+        "type": "object",
+        "properties": {
+          "url": {
+            "type": "string",
+            "format": "uri"
+          },
+          "label": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 40
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "url"
+        ]
+      },
       "Place": {
         "type": "object",
         "properties": {
@@ -2188,6 +2532,33 @@
               {
                 "type": "string",
                 "format": "uri"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "photos": {
+            "anyOf": [
+              {
+                "maxItems": 12,
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/Photo"
+                }
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "timezone": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 64,
+                "pattern": "^[A-Za-z][A-Za-z0-9_+-]*(\\/[A-Za-z0-9_+-]+)*$"
               },
               {
                 "type": "null"
@@ -2467,6 +2838,18 @@
             "type": "integer",
             "minimum": 0,
             "maximum": 9007199254740991
+          },
+          "per_person_minor": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "exclusiveMinimum": 0,
+                "maximum": 9007199254740991
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "required": [
@@ -2883,6 +3266,681 @@
         ],
         "description": "Spent against the plan, by category."
       },
+      "OptionCost": {
+        "type": "object",
+        "properties": {
+          "label": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 60
+          },
+          "emoji": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 16
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "amount_minor": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "currency": {
+            "type": "string",
+            "pattern": "^[A-Z]{3}$"
+          }
+        },
+        "required": [
+          "label",
+          "amount_minor",
+          "currency"
+        ]
+      },
+      "OptionFact": {
+        "type": "object",
+        "properties": {
+          "label": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 40
+          },
+          "value": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          }
+        },
+        "required": [
+          "label",
+          "value"
+        ]
+      },
+      "OptionDetails": {
+        "type": "object",
+        "properties": {
+          "gallery_urls": {
+            "anyOf": [
+              {
+                "maxItems": 12,
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "format": "uri"
+                }
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "caption": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 200
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "why": {
+            "anyOf": [
+              {
+                "maxItems": 5,
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 140
+                }
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "costs": {
+            "anyOf": [
+              {
+                "maxItems": 12,
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/OptionCost"
+                }
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "total_minor": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "amenities": {
+            "anyOf": [
+              {
+                "maxItems": 30,
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 40
+                }
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "activities": {
+            "anyOf": [
+              {
+                "maxItems": 20,
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 60
+                }
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "facts": {
+            "anyOf": [
+              {
+                "maxItems": 20,
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/OptionFact"
+                }
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "cancellation": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 200
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "rating": {
+            "anyOf": [
+              {
+                "type": "number",
+                "minimum": 0,
+                "maximum": 10
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "review_count": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "go_note": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 300
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        }
+      },
+      "RoomType": {
+        "type": "object",
+        "properties": {
+          "room_type_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "label": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 60
+          },
+          "sleeps": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 30
+          },
+          "price_minor": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "photos": {
+            "anyOf": [
+              {
+                "maxItems": 12,
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/Photo"
+                }
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "room_type_id",
+          "label",
+          "sleeps",
+          "price_minor"
+        ]
+      },
+      "MapPoint": {
+        "type": "object",
+        "properties": {
+          "lat": {
+            "type": "number",
+            "minimum": -90,
+            "maximum": 90
+          },
+          "lng": {
+            "type": "number",
+            "minimum": -180,
+            "maximum": 180
+          }
+        },
+        "required": [
+          "lat",
+          "lng"
+        ]
+      },
+      "OptionReview": {
+        "type": "object",
+        "properties": {
+          "rating": {
+            "anyOf": [
+              {
+                "type": "number",
+                "minimum": 0,
+                "maximum": 10
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "text": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 1000
+          },
+          "date": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^\\d{4}-(0[1-9]|1[0-2])(-(0[1-9]|[12]\\d|3[01]))?$"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "source": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 40
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "text"
+        ]
+      },
+      "NearbyPlace": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 120
+          },
+          "distance_m": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "name"
+        ]
+      },
+      "OptionFullDetails": {
+        "type": "object",
+        "properties": {
+          "gallery_urls": {
+            "anyOf": [
+              {
+                "maxItems": 12,
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "format": "uri"
+                }
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "caption": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 200
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "why": {
+            "anyOf": [
+              {
+                "maxItems": 5,
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 140
+                }
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "costs": {
+            "anyOf": [
+              {
+                "maxItems": 12,
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/OptionCost"
+                }
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "total_minor": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "amenities": {
+            "anyOf": [
+              {
+                "maxItems": 30,
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 40
+                }
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "activities": {
+            "anyOf": [
+              {
+                "maxItems": 20,
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 60
+                }
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "facts": {
+            "anyOf": [
+              {
+                "maxItems": 20,
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/OptionFact"
+                }
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "cancellation": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 200
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "rating": {
+            "anyOf": [
+              {
+                "type": "number",
+                "minimum": 0,
+                "maximum": 10
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "review_count": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "go_note": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 300
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "address": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 300
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "map": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/MapPoint"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "check_in": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^([01]\\d|2[0-3]):[0-5]\\d$"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "check_out": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^([01]\\d|2[0-3]):[0-5]\\d$"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "property_type": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 40
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "stars": {
+            "anyOf": [
+              {
+                "type": "number",
+                "minimum": 0,
+                "maximum": 7
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "rooms": {
+            "anyOf": [
+              {
+                "maxItems": 10,
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/RoomType"
+                }
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "policies": {
+            "anyOf": [
+              {
+                "maxItems": 20,
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 200
+                }
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "reviews": {
+            "anyOf": [
+              {
+                "maxItems": 10,
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/OptionReview"
+                }
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "nearby": {
+            "anyOf": [
+              {
+                "maxItems": 20,
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/NearbyPlace"
+                }
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "url": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uri"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "complete": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        }
+      },
       "Option": {
         "type": "object",
         "properties": {
@@ -3014,6 +4072,113 @@
                 "type": "null"
               }
             ]
+          },
+          "details": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/OptionDetails"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "return_journey": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Journey"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "price_oneway_minor": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "price_round_minor": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "photos": {
+            "anyOf": [
+              {
+                "maxItems": 12,
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/Photo"
+                }
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "price_min_minor": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "price_max_minor": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "room_types": {
+            "anyOf": [
+              {
+                "maxItems": 10,
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/RoomType"
+                }
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "url": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uri"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "required": [
@@ -3069,7 +4234,8 @@
               "bus",
               "place",
               "food",
-              "activity"
+              "activity",
+              "cab"
             ]
           },
           "checked_at": {
@@ -3078,11 +4244,23 @@
           },
           "options": {
             "minItems": 1,
-            "maxItems": 5,
+            "maxItems": 10,
             "type": "array",
             "items": {
               "$ref": "#/components/schemas/Option"
             }
+          },
+          "decision_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 64
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "actions": {
             "anyOf": [
@@ -3109,6 +4287,180 @@
           "options"
         ],
         "description": "Options Go found (stays, flights, places...), with prices and when they were checked."
+      },
+      "ArrangedRoom": {
+        "type": "object",
+        "properties": {
+          "room_type_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "label": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 60
+          },
+          "person_ids": {
+            "minItems": 1,
+            "maxItems": 30,
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64
+            }
+          },
+          "price_minor": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          }
+        },
+        "required": [
+          "room_type_id",
+          "label",
+          "person_ids",
+          "price_minor"
+        ]
+      },
+      "PersonAmount": {
+        "type": "object",
+        "properties": {
+          "person_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "amount_minor": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          }
+        },
+        "required": [
+          "person_id",
+          "amount_minor"
+        ]
+      },
+      "RoomArrangement": {
+        "type": "object",
+        "properties": {
+          "arrangement_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "label": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 80
+          },
+          "rooms": {
+            "minItems": 1,
+            "maxItems": 15,
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ArrangedRoom"
+            }
+          },
+          "total_minor": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "per_person": {
+            "minItems": 1,
+            "maxItems": 30,
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PersonAmount"
+            }
+          }
+        },
+        "required": [
+          "arrangement_id",
+          "label",
+          "rooms",
+          "total_minor",
+          "per_person"
+        ]
+      },
+      "RoomsCard": {
+        "type": "object",
+        "properties": {
+          "card_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "fallback_text": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 300
+          },
+          "for_person_ids": {
+            "anyOf": [
+              {
+                "maxItems": 30,
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 64
+                }
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "kind": {
+            "type": "string",
+            "const": "rooms"
+          },
+          "title": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 80
+          },
+          "option_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "arrangements": {
+            "minItems": 1,
+            "maxItems": 10,
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RoomArrangement"
+            }
+          },
+          "actions": {
+            "anyOf": [
+              {
+                "maxItems": 3,
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/CardAction"
+                }
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "card_id",
+          "fallback_text",
+          "kind",
+          "title",
+          "option_id",
+          "arrangements"
+        ],
+        "description": "10 Oct B5: after a stay is picked, the ways the group can take its rooms and who shares with whom. A tap is card_tap with option_id = the arrangement's id."
       },
       "WorkingCard": {
         "type": "object",
@@ -3190,6 +4542,17 @@
             }
           },
           "screenshot_url": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uri"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "live_url": {
             "anyOf": [
               {
                 "type": "string",
@@ -3386,6 +4749,29 @@
                     "text"
                   ]
                 }
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "recording_url": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uri"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "duration_s": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
               },
               {
                 "type": "null"
@@ -3674,6 +5060,187 @@
         ],
         "description": "Good to know (with its source) or a heads-up (a deadline, a price change, a clash)."
       },
+      "ChecklistRow": {
+        "type": "object",
+        "properties": {
+          "person_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "todo",
+              "started",
+              "done",
+              "info"
+            ]
+          },
+          "label": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 80
+          },
+          "sub": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 200
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "person_id",
+          "status",
+          "label"
+        ]
+      },
+      "ChecklistSuggestion": {
+        "type": "object",
+        "properties": {
+          "text": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 300
+          },
+          "cta": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "action_id": {
+                    "type": "string",
+                    "pattern": "^[a-z][a-z_]{0,31}$"
+                  },
+                  "label": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 24
+                  }
+                },
+                "required": [
+                  "action_id",
+                  "label"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "text"
+        ]
+      },
+      "ChecklistCard": {
+        "type": "object",
+        "properties": {
+          "card_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "fallback_text": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 300
+          },
+          "for_person_ids": {
+            "anyOf": [
+              {
+                "maxItems": 30,
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 64
+                }
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "kind": {
+            "type": "string",
+            "const": "checklist"
+          },
+          "title": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 80
+          },
+          "subtitle": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 200
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "due_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "rows": {
+            "maxItems": 30,
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ChecklistRow"
+            }
+          },
+          "suggestion": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ChecklistSuggestion"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "actions": {
+            "anyOf": [
+              {
+                "maxItems": 3,
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/CardAction"
+                }
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "card_id",
+          "fallback_text",
+          "kind",
+          "title",
+          "rows"
+        ],
+        "description": "1.1: a checklist for the group, one row a person, each todo, started, done or info. Updated in place."
+      },
       "Card": {
         "oneOf": [
           {
@@ -3714,6 +5281,12 @@
           },
           {
             "$ref": "#/components/schemas/NoticeCard"
+          },
+          {
+            "$ref": "#/components/schemas/ChecklistCard"
+          },
+          {
+            "$ref": "#/components/schemas/RoomsCard"
           }
         ],
         "discriminator": {
@@ -3797,6 +5370,17 @@
             "type": "integer",
             "minimum": 0,
             "maximum": 9007199254740991
+          },
+          "duration_s": {
+            "anyOf": [
+              {
+                "type": "number",
+                "minimum": 0
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "required": [
@@ -3807,6 +5391,54 @@
           "size_bytes"
         ]
       },
+      "LocationAttachment": {
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "const": "location"
+          },
+          "lat": {
+            "type": "number",
+            "minimum": -90,
+            "maximum": 90
+          },
+          "lng": {
+            "type": "number",
+            "minimum": -180,
+            "maximum": 180
+          },
+          "name": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 120
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "address": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 200
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "kind",
+          "lat",
+          "lng"
+        ]
+      },
       "Attachment": {
         "oneOf": [
           {
@@ -3814,11 +5446,39 @@
           },
           {
             "$ref": "#/components/schemas/FileAttachment"
+          },
+          {
+            "$ref": "#/components/schemas/LocationAttachment"
           }
         ],
         "discriminator": {
           "propertyName": "kind"
         }
+      },
+      "QuickReply": {
+        "type": "object",
+        "properties": {
+          "label": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 40
+          },
+          "text": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 500
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "label"
+        ]
       },
       "Reaction": {
         "type": "object",
@@ -3937,6 +5597,37 @@
               }
             ]
           },
+          "quick_replies": {
+            "anyOf": [
+              {
+                "maxItems": 6,
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/QuickReply"
+                }
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "visible_to_person_ids": {
+            "anyOf": [
+              {
+                "minItems": 1,
+                "maxItems": 30,
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 64
+                }
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "withheld": {
             "type": "boolean"
           },
@@ -4042,6 +5733,37 @@
           "mentions": {
             "anyOf": [
               {
+                "maxItems": 30,
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 64
+                }
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "quick_replies": {
+            "anyOf": [
+              {
+                "maxItems": 6,
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/QuickReply"
+                }
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "visible_to_person_ids": {
+            "anyOf": [
+              {
+                "minItems": 1,
                 "maxItems": 30,
                 "type": "array",
                 "items": {
@@ -4191,6 +5913,68 @@
                 "type": "null"
               }
             ]
+          },
+          "details": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/OptionDetails"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "photos": {
+            "anyOf": [
+              {
+                "maxItems": 12,
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/Photo"
+                }
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "price_min_minor": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "price_max_minor": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "room_types": {
+            "anyOf": [
+              {
+                "maxItems": 10,
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/RoomType"
+                }
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "required": [
@@ -4303,7 +6087,7 @@
           },
           "options": {
             "minItems": 2,
-            "maxItems": 10,
+            "maxItems": 20,
             "type": "array",
             "items": {
               "$ref": "#/components/schemas/DecisionOption"
@@ -4331,13 +6115,25 @@
             "maximum": 9007199254740991
           },
           "tally": {
-            "maxItems": 10,
+            "maxItems": 20,
             "type": "array",
             "items": {
               "type": "integer",
               "minimum": 0,
               "maximum": 9007199254740991
             }
+          },
+          "flexible_count": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "votes": {
             "anyOf": [
@@ -4418,6 +6214,126 @@
           "of",
           "tally",
           "opened_at"
+        ]
+      },
+      "Audience": {
+        "type": "string",
+        "enum": [
+          "group",
+          "shared",
+          "private"
+        ]
+      },
+      "BookingDetail": {
+        "type": "object",
+        "properties": {
+          "label": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 40
+          },
+          "value": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          }
+        },
+        "required": [
+          "label",
+          "value"
+        ]
+      },
+      "Passenger": {
+        "type": "object",
+        "properties": {
+          "person_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "seat": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 20
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "pnr": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 40
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "person_id"
+        ]
+      },
+      "BookingDocument": {
+        "type": "object",
+        "properties": {
+          "document_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          },
+          "mime": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 100
+          },
+          "size_bytes": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "pages": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "exclusiveMinimum": 0,
+                "maximum": 9007199254740991
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "visibility": {
+            "type": "string",
+            "enum": [
+              "covered",
+              "group"
+            ]
+          },
+          "url": {
+            "type": "string",
+            "format": "uri"
+          }
+        },
+        "required": [
+          "document_id",
+          "name",
+          "mime",
+          "size_bytes",
+          "visibility",
+          "url"
         ]
       },
       "BookingKind": {
@@ -4593,6 +6509,58 @@
           "created_at": {
             "type": "string",
             "format": "date-time"
+          },
+          "details": {
+            "anyOf": [
+              {
+                "maxItems": 20,
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/BookingDetail"
+                }
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "return_journey": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Journey"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "passengers": {
+            "anyOf": [
+              {
+                "maxItems": 30,
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/Passenger"
+                }
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "documents": {
+            "anyOf": [
+              {
+                "maxItems": 10,
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/BookingDocument"
+                }
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "required": [
@@ -4607,6 +6575,51 @@
           "payer_person_id",
           "for_person_ids",
           "created_at"
+        ]
+      },
+      "ExpenseConfirmation": {
+        "type": "object",
+        "properties": {
+          "person_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "pending",
+              "approved",
+              "disputed"
+            ]
+          },
+          "at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 200
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "person_id",
+          "state"
         ]
       },
       "Expense": {
@@ -4676,6 +6689,35 @@
           "created_at": {
             "type": "string",
             "format": "date-time"
+          },
+          "status": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "pending",
+                  "approved",
+                  "disputed"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "confirmations": {
+            "anyOf": [
+              {
+                "maxItems": 30,
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/ExpenseConfirmation"
+                }
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "required": [
@@ -4687,6 +6729,85 @@
           "category",
           "split_person_ids",
           "created_at"
+        ]
+      },
+      "Settlement": {
+        "type": "object",
+        "properties": {
+          "settlement_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "from_person_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "to_person_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "amount_minor": {
+            "type": "integer",
+            "exclusiveMinimum": 0,
+            "maximum": 9007199254740991
+          },
+          "currency": {
+            "type": "string",
+            "pattern": "^[A-Z]{3}$"
+          },
+          "method": {
+            "type": "string",
+            "enum": [
+              "upi",
+              "cash",
+              "bank_transfer",
+              "other"
+            ]
+          },
+          "note": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 200
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "status": {
+            "type": "string",
+            "const": "confirmed"
+          },
+          "recorded_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "confirmed_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "settlement_id",
+          "from_person_id",
+          "to_person_id",
+          "amount_minor",
+          "currency",
+          "method",
+          "status",
+          "confirmed_at"
         ]
       },
       "Transfer": {
@@ -4853,6 +6974,32 @@
                 "type": "null"
               }
             ]
+          },
+          "person_ids": {
+            "anyOf": [
+              {
+                "maxItems": 30,
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 64
+                }
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "audience": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Audience"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "required": [
@@ -4885,6 +7032,17 @@
             "items": {
               "$ref": "#/components/schemas/ItineraryItem"
             }
+          },
+          "image_url": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uri"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "required": [
@@ -5851,13 +8009,35 @@
             "maximum": 9007199254740991
           },
           "tally": {
-            "maxItems": 10,
+            "maxItems": 20,
             "type": "array",
             "items": {
               "type": "integer",
               "minimum": 0,
               "maximum": 9007199254740991
             }
+          },
+          "flexible": {
+            "anyOf": [
+              {
+                "type": "boolean",
+                "const": true
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "retracted": {
+            "anyOf": [
+              {
+                "type": "boolean",
+                "const": true
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "required": [
@@ -5905,7 +8085,7 @@
           "type",
           "data"
         ],
-        "description": "Someone voted (or changed their vote)."
+        "description": "Someone voted, changed their vote, said they are flexible (1.1), or took their vote back (1.1)."
       },
       "DecisionClosedData": {
         "type": "object",
@@ -5967,6 +8147,72 @@
           "data"
         ],
         "description": "A vote closed, with the result."
+      },
+      "DecisionOptionsAddedData": {
+        "type": "object",
+        "properties": {
+          "decision_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "options": {
+            "minItems": 1,
+            "maxItems": 10,
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/DecisionOption"
+            }
+          },
+          "by": {
+            "$ref": "#/components/schemas/Actor"
+          }
+        },
+        "required": [
+          "decision_id",
+          "options",
+          "by"
+        ]
+      },
+      "DecisionOptionsAdded": {
+        "type": "object",
+        "properties": {
+          "event_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "trip_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "seq": {
+            "type": "integer",
+            "exclusiveMinimum": 0,
+            "maximum": 9007199254740991
+          },
+          "occurred_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "type": {
+            "type": "string",
+            "const": "decision.options_added"
+          },
+          "data": {
+            "$ref": "#/components/schemas/DecisionOptionsAddedData"
+          }
+        },
+        "required": [
+          "event_id",
+          "trip_id",
+          "seq",
+          "occurred_at",
+          "type",
+          "data"
+        ],
+        "description": "1.3 (rev 5 R5): options were added to an open vote (\"see more\", add_vote_options). Their indexes continue from the last option; votes already cast stay."
       },
       "DecisionCancelledData": {
         "type": "object",
@@ -6339,11 +8585,26 @@
             "type": "string",
             "enum": [
               "added",
-              "removed"
+              "removed",
+              "updated",
+              "approved",
+              "disputed"
             ]
           },
           "by": {
             "$ref": "#/components/schemas/Actor"
+          },
+          "by_person_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 64
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "required": [
@@ -6390,7 +8651,281 @@
           "type",
           "data"
         ],
-        "description": "An expense was added or removed."
+        "description": "An expense was added, removed, or (1.1) changed."
+      },
+      "PaymentCompletedData": {
+        "type": "object",
+        "properties": {
+          "approval_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "booking_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 64
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "card_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 64
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "payer_person_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 64
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "amount_minor": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "currency": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^[A-Z]{3}$"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "merchant": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "purpose": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "decision_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 64
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "personal": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "person_id": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 64
+                  },
+                  "card_id": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 64
+                  },
+                  "option_id": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 64
+                  }
+                },
+                "required": [
+                  "person_id",
+                  "card_id",
+                  "option_id"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "expense_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 64
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "method": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "paid_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "by": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Actor"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "approval_id"
+        ]
+      },
+      "PaymentCompleted": {
+        "type": "object",
+        "properties": {
+          "event_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "trip_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "seq": {
+            "type": "integer",
+            "exclusiveMinimum": 0,
+            "maximum": 9007199254740991
+          },
+          "occurred_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "type": {
+            "type": "string",
+            "const": "payment.completed"
+          },
+          "data": {
+            "$ref": "#/components/schemas/PaymentCompletedData"
+          }
+        },
+        "required": [
+          "event_id",
+          "trip_id",
+          "seq",
+          "occurred_at",
+          "type",
+          "data"
+        ],
+        "description": "1.3: the Server paid a waiting pay card on its payer's tap (method demo), with the booking and expense written."
+      },
+      "SettlementRecordedData": {
+        "type": "object",
+        "properties": {
+          "settlement": {
+            "$ref": "#/components/schemas/Settlement"
+          },
+          "by": {
+            "$ref": "#/components/schemas/Actor"
+          }
+        },
+        "required": [
+          "settlement",
+          "by"
+        ]
+      },
+      "SettlementRecorded": {
+        "type": "object",
+        "properties": {
+          "event_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "trip_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "seq": {
+            "type": "integer",
+            "exclusiveMinimum": 0,
+            "maximum": 9007199254740991
+          },
+          "occurred_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "type": {
+            "type": "string",
+            "const": "settlement.recorded"
+          },
+          "data": {
+            "$ref": "#/components/schemas/SettlementRecordedData"
+          }
+        },
+        "required": [
+          "event_id",
+          "trip_id",
+          "seq",
+          "occurred_at",
+          "type",
+          "data"
+        ],
+        "description": "1.1: someone recorded paying someone back. It counts at once, so its status is always confirmed."
       },
       "Event": {
         "oneOf": [
@@ -6437,6 +8972,9 @@
             "$ref": "#/components/schemas/DecisionCancelled"
           },
           {
+            "$ref": "#/components/schemas/DecisionOptionsAdded"
+          },
+          {
             "$ref": "#/components/schemas/MandateSet"
           },
           {
@@ -6453,6 +8991,12 @@
           },
           {
             "$ref": "#/components/schemas/ExpenseChanged"
+          },
+          {
+            "$ref": "#/components/schemas/SettlementRecorded"
+          },
+          {
+            "$ref": "#/components/schemas/PaymentCompleted"
           }
         ],
         "discriminator": {
@@ -6616,6 +9160,18 @@
                 "type": "null"
               }
             ]
+          },
+          "budget_per_person_minor": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "exclusiveMinimum": 0,
+                "maximum": 9007199254740991
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "required": [
@@ -6681,6 +9237,41 @@
           "options"
         ],
         "description": "Opens a vote. Go then posts a message with a vote card to show it in the room."
+      },
+      "AddVoteOptions": {
+        "type": "object",
+        "properties": {
+          "request_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "trip_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "decision_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "options": {
+            "minItems": 1,
+            "maxItems": 10,
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/DecisionOption"
+            }
+          }
+        },
+        "required": [
+          "request_id",
+          "trip_id",
+          "decision_id",
+          "options"
+        ],
+        "description": "1.3: adds options to an open vote, for the options a \"See more\" tap brought."
       },
       "OpenDecisionResult": {
         "type": "object",
@@ -7128,6 +9719,58 @@
                 "type": "null"
               }
             ]
+          },
+          "details": {
+            "anyOf": [
+              {
+                "maxItems": 20,
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/BookingDetail"
+                }
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "return_journey": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Journey"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "passengers": {
+            "anyOf": [
+              {
+                "maxItems": 30,
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/Passenger"
+                }
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "documents": {
+            "anyOf": [
+              {
+                "maxItems": 10,
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/BookingDocument"
+                }
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "required": [
@@ -7300,6 +9943,18 @@
                 "type": "null"
               }
             ]
+          },
+          "approval_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 64
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "required": [
@@ -7332,7 +9987,7 @@
           "seq"
         ]
       },
-      "RequestSpendApproval": {
+      "UpdateExpense": {
         "type": "object",
         "properties": {
           "request_id": {
@@ -7345,7 +10000,51 @@
             "minLength": 1,
             "maxLength": 64
           },
-          "decision_id": {
+          "expense_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "split_person_ids": {
+            "minItems": 1,
+            "maxItems": 30,
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64
+            }
+          },
+          "note": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 120
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "request_id",
+          "trip_id",
+          "expense_id",
+          "split_person_ids"
+        ],
+        "description": "Change an expense's split (and its note). The amount and the payer never change."
+      },
+      "RequestGroupSpendApproval": {
+        "type": "object",
+        "properties": {
+          "request_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "trip_id": {
             "type": "string",
             "minLength": 1,
             "maxLength": 64
@@ -7379,16 +10078,113 @@
                 "type": "null"
               }
             ]
+          },
+          "decision_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
           }
         },
         "required": [
           "request_id",
           "trip_id",
-          "decision_id",
           "amount_minor",
           "currency",
           "merchant",
-          "purpose"
+          "purpose",
+          "decision_id"
+        ]
+      },
+      "PersonalPick": {
+        "type": "object",
+        "properties": {
+          "person_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "card_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "option_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          }
+        },
+        "required": [
+          "person_id",
+          "card_id",
+          "option_id"
+        ]
+      },
+      "RequestPersonalSpendApproval": {
+        "type": "object",
+        "properties": {
+          "request_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "trip_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "amount_minor": {
+            "type": "integer",
+            "exclusiveMinimum": 0,
+            "maximum": 9007199254740991
+          },
+          "currency": {
+            "type": "string",
+            "pattern": "^[A-Z]{3}$"
+          },
+          "merchant": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 120
+          },
+          "purpose": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          },
+          "refundable_until": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "personal": {
+            "$ref": "#/components/schemas/PersonalPick"
+          }
+        },
+        "required": [
+          "request_id",
+          "trip_id",
+          "amount_minor",
+          "currency",
+          "merchant",
+          "purpose",
+          "personal"
+        ]
+      },
+      "RequestSpendApproval": {
+        "anyOf": [
+          {
+            "$ref": "#/components/schemas/RequestPersonalSpendApproval"
+          },
+          {
+            "$ref": "#/components/schemas/RequestGroupSpendApproval"
+          }
         ]
       },
       "CancelSpendApproval": {
@@ -7438,7 +10234,10 @@
           "over_cap",
           "currency_mismatch",
           "not_refundable",
-          "approval_outstanding"
+          "approval_outstanding",
+          "not_in_trip",
+          "no_pick",
+          "already_booked"
         ]
       },
       "SpendApproved": {
@@ -7588,6 +10387,21 @@
           "duplicate"
         ]
       },
+      "CardTapPayload": {
+        "type": "object",
+        "properties": {
+          "trip": {
+            "type": "string",
+            "enum": [
+              "oneway",
+              "round"
+            ]
+          }
+        },
+        "required": [
+          "trip"
+        ]
+      },
       "CardTap": {
         "type": "object",
         "properties": {
@@ -7621,6 +10435,16 @@
                 "type": "string",
                 "minLength": 1,
                 "maxLength": 64
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "payload": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CardTapPayload"
               },
               {
                 "type": "null"
@@ -7987,6 +10811,32 @@
           "remaining_facts"
         ]
       },
+      "LinkContext": {
+        "type": "object",
+        "properties": {
+          "trip_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "purpose": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "visa"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "trip_id"
+        ]
+      },
       "CreateLink": {
         "type": "object",
         "properties": {
@@ -8008,7 +10858,32 @@
                 "enum": [
                   "home",
                   "add_card",
-                  "add_login"
+                  "add_login",
+                  "add_documents"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "context": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/LinkContext"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "display": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "sheet",
+                  "embedded"
                 ]
               },
               {
@@ -8053,6 +10928,145 @@
         "required": [
           "ok",
           "contract"
+        ]
+      },
+      "PlaceInfoRequest": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 120
+          },
+          "from_city": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 120
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "name"
+        ]
+      },
+      "PlaceTravel": {
+        "type": "object",
+        "properties": {
+          "mode": {
+            "type": "string",
+            "enum": [
+              "flight",
+              "train",
+              "bus",
+              "cab",
+              "drive"
+            ]
+          },
+          "duration_minutes": {
+            "type": "integer",
+            "exclusiveMinimum": 0,
+            "maximum": 9007199254740991
+          }
+        },
+        "required": [
+          "mode",
+          "duration_minutes"
+        ]
+      },
+      "PlaceInfo": {
+        "type": "object",
+        "properties": {
+          "place": {
+            "$ref": "#/components/schemas/Place"
+          },
+          "tag": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 80
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "travel": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PlaceTravel"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "best_months": {
+            "anyOf": [
+              {
+                "maxItems": 12,
+                "type": "array",
+                "items": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 12
+                }
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "complete": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "place"
+        ]
+      },
+      "GetOptionDetails": {
+        "type": "object",
+        "properties": {
+          "trip_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "card_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "option_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "person_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          }
+        },
+        "required": [
+          "trip_id",
+          "card_id",
+          "option_id",
+          "person_id"
         ]
       },
       "ErrorCode": {
@@ -8275,9 +11289,26 @@
             "maxLength": 64
           },
           "decision_id": {
-            "type": "string",
-            "minLength": 1,
-            "maxLength": 64
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 64
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "personal": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PersonalPick"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "payer_person_id": {
             "type": "string",
@@ -8330,7 +11361,6 @@
           "aud",
           "jti",
           "trip_id",
-          "decision_id",
           "payer_person_id",
           "amount_minor",
           "currency",
@@ -8339,7 +11369,7 @@
           "iat",
           "exp"
         ],
-        "description": "What the Server signs. exp is at most 600 seconds after iat."
+        "description": "What the Server signs. exp is at most 600 seconds after iat. A group approval carries decision_id; 1.3's personal approval carries personal (the person, Go's card and the option they picked) instead, and its payer is that person."
       }
     }
   }

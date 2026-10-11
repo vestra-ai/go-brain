@@ -2,7 +2,7 @@ import type * as C from '@go/contract';
 import type { Pool } from 'pg';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import type { Brain } from '../../app.js';
-import { createContext, type NowProvider } from '../../composer/context.js';
+import { createContext, type ForgottenProvider, type NowProvider } from '../../composer/context.js';
 import type { QuickTool } from '../../composer/tools.js';
 import { vote } from '../../__tests__/fixtures/goa.js';
 import { withSchema } from '../../db/test-db.js';
@@ -15,7 +15,7 @@ import { codeOnly, sure } from '../../reflex/read.js';
 import type { ReflexRead } from '../../reflex/reflex.js';
 import type { TripPack } from '../../trips/pack.js';
 import { linkLine } from '../decision-lines.js';
-import { currentFacts, saveFact } from '../facts.js';
+import { currentFacts, markForgotten, saveFact } from '../facts.js';
 import type { Fold, StoryProvider } from '../fold.js';
 import { joinFacts } from '../join-facts.js';
 import { reactionRequestId } from '../reactions.js';
@@ -62,12 +62,14 @@ function setup(
   const warnings: string[] = [];
   const stops: Array<() => Promise<void> | void> = [];
   let story: StoryProvider | undefined;
+  let forgotten: ForgottenProvider | undefined;
   const link = fakeLink(o.fail ? { fail: o.fail } : {});
   // The fake model goes where buildBrain puts the real one: brain.anthropic.
   const model = scriptedClient(answers);
   const t = manualTimers();
   const context: Record<string, unknown> = { addNow: (p: NowProvider) => nows.push(p), addWake: () => undefined };
   if (o.story !== false) context.setStory = (p: StoryProvider) => { story = p; };
+  context.setForgotten = (p: ForgottenProvider) => { forgotten = p; };
   const brain = {
     env: {
       SIDE_MODEL: 'side-test', FOLD_AT_TOKENS: 60_000, STORY_TOKENS: 5_000, CHAT_HARD_CAP_TOKENS: 90_000, NOTES_QUIET_MS: 20_000, FOLD_QUIET_MS: 60_000,
@@ -92,18 +94,22 @@ function setup(
   } as unknown as Brain;
   const jev = { ask: async () => ({ ok: false as const, fault: 'timeout' as const, totalMs: 1 }) };
   const wired = wireMemory(brain, { jev, timers: t.timers, clock: t.clock });
-  return { brain, pack, handlers, tools, nows, warnings, stops, link, model, t, wired, story: () => story };
+  return { brain, pack, handlers, tools, nows, warnings, stops, link, model, t, wired, story: () => story, forgotten: () => forgotten };
 }
 const read = (over: Partial<ReflexRead>): ReflexRead => ({ ...codeOnly({ namesGo: false, secretKinds: [], hasTasks: false, money: false }), ...over });
 
 describe('joinFacts', () => {
   it('turns join answers into facts with plain topics', () => {
     const [rahul, priya, arjun, meher, kabir] = goaPeople();
-    expect(joinFacts(rahul!)).toEqual([{ topic: 'from', text: 'From Delhi' }, { topic: 'leaving', text: 'Can leave Fri after 6 pm' }]);
-    expect(joinFacts(priya!)).toEqual([{ topic: 'from', text: 'From Delhi' }, { topic: 'food', text: 'Vegetarian' }, { topic: 'seats', text: 'Window seat' }]);
+    expect(joinFacts(rahul!)).toEqual([{ topic: 'from', text: 'From Delhi', scope: 'person' }, { topic: 'leaving', text: 'Can leave Fri after 6 pm', scope: 'trip' }]);
+    expect(joinFacts(priya!)).toEqual([
+      { topic: 'from', text: 'From Delhi', scope: 'person' }, { topic: 'food', text: 'Vegetarian', scope: 'person' }, { topic: 'seats', text: 'Window seat', scope: 'person' },
+    ]);
     expect(joinFacts(arjun!).map((f) => f.topic)).toEqual(['from', 'flights', 'arriving']);
+    // "Lands late on Friday" and "Fri after 6 pm" are this trip's answers: never carried into the next trip.
+    expect(joinFacts(arjun!).find((f) => f.topic === 'arriving')?.scope).toBe('trip');
     expect(joinFacts(meher!).map((f) => f.topic)).toEqual(['from', 'birthday']);
-    expect(joinFacts(kabir!)).toContainEqual({ topic: 'drinks', text: "I don't drink" });
+    expect(joinFacts(kabir!)).toContainEqual({ topic: 'drinks', text: "I don't drink", scope: 'person' });
   });
 });
 
@@ -113,10 +119,21 @@ describe('wireMemory', () => {
     expect(w.brain.memory).toBeDefined();
     expect([...w.handlers.keys()].sort()).toEqual(['catch_up', 'delete_fact', 'forget_person', 'get_person', 'update_person']);
     expect(w.tools.map((x) => x.name)).toEqual(['trip', 'person', 'recall', 'record']);
-    expect(w.nows.map((n) => [n.name, n.order])).toEqual([['record', 20], ['people', 22]]);
+    expect(w.nows.map((n) => [n.name, n.order])).toEqual([['record', 20], ['people', 22], ['forgot elsewhere', 23]]);
     expect(w.warnings).toEqual([]);
     // The provider P1's Context.setStory got answers in the shape master §6.3 fixes.
     expect(await w.story()!.get('t_r1')).toEqual({ story: null, chatFromSeq: 1, foldedToSeq: 0, tokens: 0 });
+  });
+
+  // Prod, 11 Oct: "Go forgot you in this trip" went to the whole room.
+  it('posts the forget notice to the person alone, never to the room', async () => {
+    const w = setup('t_r_forget', [], []);
+    await seedMessages(db.pool, 't_r_forget', [msg(5, 'p_meher', "I'm veg")]);
+    const forget = w.handlers.get('forget_person') as ToGoHandler<'forget_person'>;
+    await forget({ person_id: 'p_meher', trip_id: 't_r_forget' }, { instance: 'test', server: null } as never);
+    const posts = w.link.calls.filter((c) => c.method === 'post_message');
+    expect(posts).toHaveLength(1);
+    expect(posts[0]!.params).toMatchObject({ trip_id: 't_r_forget', visible_to_person_ids: ['p_meher'], card: { kind: 'notice' } });
   });
 
   it('says so, and carries on, when the context cannot take a story', () => {
@@ -169,13 +186,27 @@ describe('wireMemory', () => {
     expect(await currentFacts(db.pool, { personId: 'p_meher', tripId: 't_r4' })).toEqual([]);
   });
 
-  it('reacts 👍 at once, without the model, with a request_id derived from the message', async () => {
+  it('reacts 👍 once a burst could have landed, without the model, with a request_id derived from the message', async () => {
     const m = msg(10, 'p_priya', 'sounds good Go, thanks!');
     const w = setup('t_r5', [m], []);
     await w.wired.onRead(m, read({ reaction: sure('👍') }), w.pack);
+    expect(w.link.calls.filter((c) => c.method === 'add_reaction')).toEqual([]);
+    w.t.advance(3_000);
     await vi.waitFor(() => expect(w.link.calls.filter((c) => c.method === 'add_reaction')).toHaveLength(1));
     expect(w.link.calls[0]!.params).toMatchObject({ message_id: 'm_0010', emoji: '👍', request_id: expect.stringMatching(/^go_react_[0-9a-f]{24}$/) });
     expect(w.model.prompts).toHaveLength(0);
+  });
+
+  it('puts no 👍 on an "ok" that opens a burst to Go: the ask gets Go\'s answer, not a reaction', async () => {
+    // Meher's burst in the live drill (t_p1a_572dd322): Jev read "ok" as 👍, and it went on 0.2 s later.
+    const at = (s: number) => new Date(Date.parse('2026-10-07T09:00:00Z') + s * 1_000).toISOString();
+    const ok = msg(20, 'p_meher', 'ok', { sent_at: at(0) });
+    const w = setup('t_r15', [ok], []);
+    await w.wired.onRead(ok, read({ reaction: sure('👍') }), w.pack);
+    w.pack.messages.push(msg(21, 'p_meher', '@Go one thing', { sent_at: at(1), mentions_go: true }));
+    w.t.advance(3_000);
+    await new Promise((r) => setTimeout(r, 50));
+    expect(w.link.calls.filter((c) => c.method === 'add_reaction')).toEqual([]);
   });
 
   it('a sure fact + sure ✅ reacts within the hook, before any notes-pass timer, and the notes pass never doubles it', async () => {
@@ -261,6 +292,24 @@ describe('wireMemory', () => {
     expect(w.model.prompts[0]!).toMatchObject({ model: 'side-test', maxTokens: 1_500 });
   });
 
+  it("reads a line again 15 s after people react to it, with their reactions, and keeps a reactor's lean with no ✅ on the line", async () => {
+    // Staging, 10 Oct: 😍 on a beach photo and 👍 on a pool villa were never read.
+    const photo = msg(60, 'p_priya', 'this vibe 😍', { reactions: [{ emoji: '😍', person_id: 'p_kabir' }, { emoji: '😍', person_id: 'p_meher' }] });
+    const answer = JSON.stringify({ facts: [{ person_id: 'p_kabir', topic: 'stays', text: 'Likes beachy stays', message: 60, reaction: true }], lines: [] });
+    const w = setup('t_r10', [photo], [answer]);
+    await w.wired.onEvent(ev('t_r10', 61, 'reaction.added', { message_id: photo.message_id, reaction: { emoji: '😍', person_id: 'p_kabir' } }));
+    await w.wired.onEvent(ev('t_r10', 62, 'reaction.added', { message_id: photo.message_id, reaction: { emoji: '😍', person_id: 'p_meher' } }));
+    // Go's own reaction reads nothing again.
+    await w.wired.onEvent(ev('t_r10', 63, 'reaction.added', { message_id: photo.message_id, reaction: { emoji: '✅', person_id: null } }));
+    w.t.advance(14_000);
+    expect(w.model.prompts).toHaveLength(0);
+    w.t.advance(1_000);
+    await vi.waitFor(() => expect(w.model.prompts).toHaveLength(1));
+    expect(w.model.prompts[0]!.user).toContain('#60 [person Priya | p_priya]: this vibe 😍 (reactions: 😍 Kabir p_kabir, 😍 Meher p_meher)');
+    await vi.waitFor(async () => expect((await currentFacts(db.pool, { personId: 'p_kabir', tripId: 't_r10' })).map((f) => f.text)).toEqual(['Likes beachy stays']));
+    expect(w.link.calls.filter((c) => c.method === 'add_reaction')).toEqual([]);
+  });
+
   it('stop() clears every quiet and after-post timer: nothing runs after Go stops', async () => {
     const m = msg(40, 'p_kabir', 'scuba on Saturday?');
     const goes = msg(41, 'go', 'Two places do Saturday dives.');
@@ -300,6 +349,26 @@ describe('the fold in a chat that never goes quiet for a minute', () => {
       w.t.advance(30_000);
     }
     await vi.waitFor(async () => expect((await w.story()!.get('t_r23')).foldedToSeq).toBeGreaterThan(0));
+  });
+});
+
+describe('Forget me in the composer', () => {
+  it("hands the composer who was forgotten: after Kabir's forget, P1's real context hides his earlier lines and names him", async () => {
+    const w = setup('t_rf1', [
+      msg(2, 'p_kabir', "I'll book the cab from Mopa airport for all of us"),
+      msg(3, 'p_kabir', "also I'm allergic to peanuts"),
+      msg(4, 'p_meher', 'my birthday is on the 7th'),
+    ], []);
+    await markForgotten(db.pool, 'p_kabir', 't_rf1', 3, new Date('2026-10-07T10:00:00Z'));
+    const c = createContext(silentLog);
+    c.setForgotten(w.forgotten()!);
+    const p = await c.build({ tripId: 't_rf1', pack: w.pack, wake: [], seenSeq: 4, now: new Date('2026-10-07T10:00:00Z'), tz: 'Asia/Kolkata' });
+    const text = p.user.map((b) => b.text).join('\n');
+    expect(text).toContain('#2 [hidden: someone asked Go to forget them]');
+    expect(text).toContain('#3 [hidden: someone asked Go to forget them]');
+    expect(text).not.toContain('peanuts');
+    expect(text).toContain('#4 Meher: my birthday is on the 7th');
+    expect(text).toContain('Kabir used "Forget me in this trip" in the App');
   });
 });
 
@@ -371,6 +440,12 @@ describe('open lines a vote settles', () => {
     await mirrorLine(db.pool, 't_r31', line('r_v31'), 5);
     await linkLine(db.pool, 't_r31', 'r_v31', 'd_villa', w.pack);
     w.pack.trip.decisions = [closed];
+    // Its Server away: the sweep calls nothing for it (#390's away), and settles it once the Server is back.
+    let away = true;
+    Object.assign(w.link, { away: async (tripId: string) => away && tripId === 't_r31' });
+    await w.wired.sweep();
+    expect(doneCalls(w)).toEqual([]);
+    away = false;
     await w.wired.sweep();
     expect(doneCalls(w)).toEqual([['r_v31', 'done']]);
     // The Server's record.changed would follow; without it the line stays active in the copy and other sweeps here would try again.
@@ -408,6 +483,24 @@ describe('a trip the Server no longer has', () => {
     expect(ran).toContain('t_r15');
     expect(ran).not.toContain('t_r16');
     expect(await w.wired.sweep()).not.toContain('t_r16');
+  });
+});
+
+// Prod, 11 Oct: for trips whose Server instance was away, the sweep's notes pass and fold each failed "no socket from the
+// Server is open", 9 times in 48 minutes. #390's away gates them, as it gates the minute refresh and the proactive sweep.
+describe('a trip whose Server is away', () => {
+  it('gets no notes pass and no fold from the sweep while its Server is away, and both once it is back', async () => {
+    const m = msg(95, 'p_priya', 'Sunday works too');
+    const w = setup('t_r17', [m], [JSON.stringify({ facts: [], lines: [] })]);
+    await db.pool.query(`INSERT INTO trips (trip_id) VALUES ('t_r17') ON CONFLICT DO NOTHING`);
+    await seedMessages(db.pool, 't_r17', [m]);
+    let away = true;
+    const asked: string[] = [];
+    Object.assign(w.link, { away: async (tripId: string) => (asked.push(tripId), away && tripId === 't_r17') });
+    expect(await w.wired.sweep()).not.toContain('t_r17');
+    expect(asked).toContain('t_r17');
+    away = false;
+    expect(await w.wired.sweep()).toContain('t_r17');
   });
 });
 

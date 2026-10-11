@@ -1,0 +1,122 @@
+id: plan.explore
+title: Where to go from a city in a month, from ixigo's trip explorer, with what getting there and a night's stay cost
+asks:
+  - where can we go from delhi in december
+  - beach trips from bangalore in november
+  - mountains we can reach from mumbai in january
+  - visa-free trips from mumbai in december under 40k each
+  - somewhere with no rain from pune in july
+  - december mein delhi se kahan ghoomne jaayein
+inputs:
+  origin: { kind: text, about: "the city the group would start from, such as Delhi or Bengaluru" }
+  month: { kind: date, optional: true, about: "any day in the month they would travel; left out, next month" }
+  theme: { kind: choice, optional: true, from_page: true, about: "the kind of trip: religious, cultural, nature, food, festivals, historical, shopping, beaches, mountains (hills), outdoors, nightlife, luxury, wellness, romance, night skies, sports or offbeat" }
+  scope: { kind: choice, optional: true, about: "domestic, international or visa-free: the page's own buttons" }
+  weather: { kind: choice, optional: true, about: "rain, no rain, snow, pollution free, colder or warmer: the page's Weather & AQI buttons" }
+  max_budget: { kind: money, optional: true, about: "the most a person would spend on the trip, getting there and stays included, in paise" }
+  today: { kind: date, optional: true, value: $trip.today }
+auth: none
+changes_state: false
+# ixigo's explorer, /plan, takes the city as people write it and finds its nearest airport itself (Delhi reads as New
+# Delhi). The page carries its first 15 places in its Next.js flight payload. Its own controls (10 Oct 2026): a chip a
+# theme ("Beaches", "Romance", "NightSkies"…), the scope buttons ("Domestic", "International", "Visa-free") and the
+# Weather & AQI buttons ("No Rain", "Colder"…); each press makes the explorer's call (category, popularForFilter,
+# weatherType), which then holds the places. Go presses the scope and weather asked, as a person would. A theme is never
+# pressed: its chips are text on a strip that scrolls, a press there made no call, and the wait for one ran out (prod,
+# Ankur's "hills", 11 Oct: 20 s each, four times). Go keeps the places of that kind from ixigo's list instead (their
+# destinationType), or the whole list when none is. Its budget slider is a drag, so a budget is Go's own pick too:
+# places whose estimate for the trip fits. No month asked: next month, from the trip's today.
+let:
+  month_at: >-
+    $exists(month) ? month : (
+      $t := $toMillis($exists(today) ? $substring(today, 0, 10) : $substring($now(), 0, 10));
+      $y := $number($fromMillis($t, '[Y0001]'));
+      $m := $number($fromMillis($t, '[M01]'));
+      ($m = 12 ? $string($y + 1) : $string($y)) & '-' & ($m = 12 ? '01' : $m + 1 < 10 ? '0' & $string($m + 1) : $string($m + 1)) & '-01'
+    )
+  month_name: "$fromMillis($toMillis($month_at), '[MNn]')"
+  # A theme is ixigo's own name for it (a chip's on the page); one ixigo has no name for is left out.
+  theme_chip: >-
+    (
+      $t := $replace($lowercase($trim(theme)), /[^a-z]/, '');
+      $chips := { "religious": "Religious", "temples": "Religious", "spiritual": "Religious", "cultural": "Cultural", "culture": "Cultural",
+        "nature": "Nature", "wildlife": "Nature", "food": "Food", "festivals": "Festivals", "festival": "Festivals", "historical": "Historical",
+        "history": "Historical", "heritage": "Historical", "shopping": "Shopping", "beaches": "Beaches", "beach": "Beaches",
+        "mountains": "Mountains", "mountain": "Mountains", "hills": "Mountains", "hill": "Mountains", "hillstation": "Mountains",
+        "hillstations": "Mountains", "outdoors": "Outdoors", "adventure": "Outdoors",
+        "nightlife": "Nightlife", "party": "Nightlife", "luxury": "Luxury", "wellness": "Wellness", "spa": "Wellness",
+        "romance": "Romance", "romantic": "Romance", "honeymoon": "Romance", "nightskies": "NightSkies", "stargazing": "NightSkies",
+        "sports": "Sports", "offbeat": "Offbeat" };
+      $lookup($chips, $t)
+    )
+  # The kinds of place a theme keeps, by ixigo's own destinationType on each place.
+  theme_types: >-
+    $lookup({ "Religious": ["RELIGIOUS"], "Cultural": ["CULTURAL"], "Nature": ["NATURE_WILDLIFE", "NATURE", "WILDLIFE"],
+      "Food": ["FOOD_DRINK"], "Festivals": ["FESTIVALS_EVENTS"], "Historical": ["HISTORICAL_SITES", "HISTORICAL"], "Shopping": ["SHOPPING"],
+      "Beaches": ["BEACHES"], "Mountains": ["MOUNTAINS"], "Outdoors": ["ADVENTURE", "SCENIC_OUTDOORS", "OUTDOORS"], "Nightlife": ["NIGHTLIFE"],
+      "Luxury": ["LUXURY"], "Wellness": ["RELAXATION_WELLNESS"], "Romance": ["ROMANTIC"], "NightSkies": ["NIGHT_SKIES"],
+      "Sports": ["SPORTS_RECREATION"], "Offbeat": ["OFFBEAT"] }, $theme_chip)
+  scope_button: "($s := $replace($lowercase($trim(scope)), /[^a-z]/, ''); $s = 'domestic' ? 'Domestic' : $s = 'international' ? 'International' : $s = 'visafree' ? 'Visa-free')"
+  weather_button: >-
+    ($w := $replace($lowercase($trim(weather)), /[^a-z]/, '');
+    $lookup({ "rain": "Rain", "norain": "No Rain", "dry": "No Rain", "snow": "Snow", "pollutionfree": "Pollution Free", "cleanair": "Pollution Free",
+      "colder": "Colder", "cold": "Colder", "cool": "Colder", "warmer": "Warmer", "warm": "Warmer" }, $w))
+  asked: "$join([$theme_chip ? $lowercase($theme_chip), $scope_button ? $lowercase($scope_button), $weather_button ? $lowercase($weather_button)], ', ')"
+page: /plan?origin={origin}&travelMonth={$lowercase($month_name)}
+capture:
+  - { match: /plan?origin=, max_bytes: 1000000 }
+# The buttons asked, in this order, then the explorer's call the last press made. A button not asked is left out.
+fetch:
+  - when: "$exists($scope_button) or $exists($weather_button)"
+    capture: [{ match: /plan?origin=, max_bytes: 1000000 }, /itinerary-planner/api/explore?]
+    steps:
+      - { op: click, role: button, name: "{$scope_button}", optional: true }
+      - { op: click, role: button, name: "{$weather_button}", optional: true }
+      - { op: wait_for, match: /itinerary-planner/api/explore? }
+read:
+  # The places the last press brought, else the page's own; a theme keeps those of its kind (all, when none is); a budget
+  # keeps those whose estimate for the trip fits.
+  rows:
+    from: /plan?origin=
+    format: next_html
+    list: >-
+      ($all := $themed ? $themed : $find($, "destinations").destinations;
+      $want := $theme_types;
+      $kind := $exists($want) ? $all[$count(destinationType[$ in $want]) > 0] : $all;
+      $pick := $count($kind) > 0 ? $kind : $all;
+      $type($inputs.max_budget) = "number" ? $pick[$type(approximateBudget.price) = "number" and approximateBudget.price * 100 <= $inputs.max_budget] : $pick)
+  also:
+    themed: { from: /itinerary-planner/api/explore?, value: '($type($) = "array" ? $[-1] : $).data.destinations' }
+answer:
+  as: facts
+  title: "Where to go from {origin} in {$month_name}{$asked != '' ? ', ' & $asked}"
+  max: 15
+  # ixigo's prices here are its own estimates: the cheapest way there, and a night's stay.
+  each: |
+    (
+      $b := approximateBudget;
+      $type(name) = "string" ? {
+        "place": name,
+        "getting_there": $b.priceText,
+        "stay_a_night": $b.averagePricePerNight ? "about ₹" & $b.averagePricePerNight,
+        "trip_estimate": $type($b.price) = "number" and $type($b.nights) = "number" ? "about " & $rupees($b.price) & " for " & $string($b.nights) & " nights",
+        "estimate_minor": $type($b.price) = "number" and $b.price > 0 ? $paise($b.price),
+        "estimate_nights": $type($b.nights) = "number" and $b.nights > 0 ? $b.nights,
+        "getting_there_minor": $type($b.transportationPrice) = "number" and $b.transportationPrice > 0 ? $paise($b.transportationPrice),
+        "weather": $type(weatherAQI.min) = "number" ? $string(weatherAQI.min) & " to " & $string(weatherAQI.max) & " C",
+        "good_for": [travelAs.$lowercase($)],
+        "weather_tags": [weatherType],
+        "kind": [destinationType[$ != "TRENDING" and $ != "E_VISA" and $ != "VISA_ON_ARRIVAL" and $ != "VISA_FREE"].$lowercase($replace($, "_", " "))],
+        "visa_on_arrival": "VISA_ON_ARRIVAL" in destinationType ? true,
+        "e_visa": "E_VISA" in destinationType ? true,
+        "tag": tagChipText,
+        "guide": slug,
+        "photo_list": $type(imageUrl) = "string" ? [imageUrl]
+      }
+    )
+ttl_minutes: 60
+samples: { page: plan.explore.html, beaches: plan.explore.beaches.json }
+measured: { fast_ms: 224, page_ms: 2980, flow_ms: null }
+notes: >-
+  "guide" is the place's name for plan.destination. The trip estimate is ixigo's own, getting there plus the stays. The
+  explorer's travel-time slider is left out.

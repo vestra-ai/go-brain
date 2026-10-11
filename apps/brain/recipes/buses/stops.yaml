@@ -1,0 +1,75 @@
+id: buses.stops
+title: One bus's every pickup and drop point with its time and landmark, and its cancellation policy, from its seat layout
+asks:
+  - where exactly does this bus pick us up, and when
+  - what time does it reach Mapusa
+  - can we cancel this bus, how much do we get back
+  - yeh bus Mapusa kitne baje pahunchegi
+inputs:
+  bus: { kind: option, about: "the bus, one of Go's search results" }
+auth: none
+changes_state: false
+# ixigo has no page per bus: its "Select Seats" opens the bus's seat layout on the results (POST /wap/GetSeatLayout:
+# every pickup and drop with its time and landmark, and the cancellation policy). The bus's address is the results page
+# with its operator and departure after "#" (buses.between), and the click is that card's own button: the first
+# "Select Seats" after its operator's name and its time (bash #4637; a Bash before it refuses the fetch, before opening
+# anything). Read only: the seat map is never touched. A layout that is another bus's is never read as this one's.
+let:
+  route: '$substringBefore($substringAfter(bus, "/buses/bus_search/"), "#")'
+  operator: '$contains(bus, "#") ? $decodeUrlComponent($substringBefore($substringAfter(bus, "#"), "@")) : ""'
+  departs: '$contains(bus, "#") ? $substringAfter($substringAfter(bus, "#"), "@") : ""'
+page: "/buses/bus_search/{$route|raw}"
+capture:
+  - /wap/GetSeatLayout$
+fetch:
+  - when: "true"
+    steps:
+      - { op: wait_for, match: /buslist/v3/services$ }
+      - { op: click, role: button, name: Select Seats, near_text: ["{$operator}", "{$departs}"] }
+      - { op: wait_for, match: /wap/GetSeatLayout$ }
+    settle_ms: 550
+read:
+  rows:
+    from: /wap/GetSeatLayout$
+    list: |
+      ($type($) = "array" ? $[0] : $)[
+        $lowercase($trim(travelerAgentName)) = $lowercase($operator) and
+        (($type(startTimeDateFormat) = "string" and $contains(startTimeDateFormat, /\d{1,2}:\d{2}/)) ? $contains(startTimeDateFormat, $departs) : true)
+      ]
+answer:
+  as: facts
+  title: "{$operator} at {$departs}: its stops"
+  max: 1
+  # A point's name often carries its landmark and a phone number: the number is left out, and the landmark said when the
+  # name doesn't already hold it. A policy line is ixigo's own: its window, the share refunded and the amount.
+  # drop_times: each drop's short name and time, the earliest first, for the card's line (bus-drops.ts). ixigo's list gives
+  # a bus one arrival, its first stop's (10 Oct drill: the list said 7:20 am, the drops ran 9:40 to 10:30 am).
+  each: |
+    (
+      $said := function($p) {
+        (
+          $name := $trim($replace($p.placeName, /[\s-]*\+?\d[\d\s-]{7,}\d/, ""));
+          $mark := $type($p.landMark) = "string" ? $trim($replace($p.landMark, /[\s-]*\+?\d[\d\s-]{7,}\d/, "")) : "";
+          $name & ($mark != "" and $not($contains($lowercase($name), $lowercase($mark))) ? " (" & $mark & ")" : "") & ($p.placeTime ? ", " & $trim($p.placeTime) : "")
+        )
+      };
+      {
+        "bus": $trim(travelerAgentName),
+        "bus_type": busTypeName,
+        "pickups": [boardingPoints[$type(placeName) = "string"].$said($)],
+        "drops": [droppingPoints[$type(placeName) = "string"].$said($)],
+        "drop_times": [$sort(droppingPoints[$type(placeName) = "string" and $type(placeTimeTwfFormat) = "string"], function($a, $b) { $a.placeTimeTwfFormat > $b.placeTimeTwfFormat }).{
+          "name": $substring($trim($substringBefore($replace(placeName, /[\s-]*\+?\d[\d\s-]{7,}\d/, ""), " - ")), 0, 30),
+          "at": placeTimeTwfFormat
+        }],
+        "arrival_note": "The card's arrival is ixigo's first stop: each drop has its own time.",
+        "cancellation": [cancellationsPolicy[$type(con) = "string"].($trim(con) & ": " & $trim(rp) & " refund (" & $trim(cc) & ")")]
+      }
+    )
+ttl_minutes: 10
+samples: { paulo: buses.stops.json }
+measured: { fast_ms: null, page_ms: null, flow_ms: null }
+notes: >-
+  Seen on 10 Oct 2026, Bengaluru to Goa, logged out, read only: VRL Travels' 19:30 bus had 8 pickups and 3 drops; Paulo
+  Travels Express's, 16 and 7. ixigo's list call places only its ranked points; a layout's own points had no position.
+  The sample is Paulo Travels Express's, trimmed to 8 pickups, with its one pickup's phone number zeroed.

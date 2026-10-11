@@ -1,0 +1,36 @@
+id: help.services
+title: The things ixigo's help centre covers, each with its own questions and answers (help.faq)
+asks:
+  - ixigo customer care
+  - what can ixigo help with
+  - ixigo customer care se baat kaise karein
+auth: none
+changes_state: false
+# /support asks for its topics as it opens. The same answer names ixigo's own editors by email: only the topics are read.
+page: /support
+# The fast speed: the same call from the trip's warm tab, with ixigo's two client headers (no key, no cookie copied).
+fast: { url: /support/helpcenter/api/v1/service, headers: { ixisrc: ixiweb, clientid: ixiweb } }
+capture:
+  - /support/helpcenter/api/v1/service$
+read:
+  rows: { from: /support/helpcenter/api/v1/service$, list: '($type($) = "array" ? $[0] : $).data' }
+answer:
+  as: facts
+  title: ixigo help topics
+  max: 20
+  # ixigo money, its instant refunds and saved cards or wallets are never surfaced (Keshav's ruling): left out.
+  each: |
+    (
+      $faq := $substringAfter(action.link, "/support/services/");
+      $type(header) = "string" and $not($faq in ["money-faq", "money-max-faq", "payment-faq"]) ? {
+        "topic": $trim(header),
+        "about": $trim(subHeader),
+        "faq": $faq
+      }
+    )
+ttl_minutes: 60
+samples: { page: help.services.json }
+measured: { fast_ms: 115, page_ms: 2130, flow_ms: null }
+notes: >-
+  A question about someone's own booking needs their ixigo login ("Need help with your recent booking?"), so it is the
+  person's own step.

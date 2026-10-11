@@ -32,11 +32,20 @@ export function renderRecord(lines: C.RecordLine[], pack: TripPack, caps = { ful
       // The line's words came from people: fenced as data. Names, dates and message numbers are Go's own.
       return `${KIND_WORD[l.kind]}: ${inlineData(l.text, 200)} (${l.kind === 'open' ? 'asking' : 'on it'}: ${who}${due}${refs ? `; ${refs}` : ''})`;
     });
+  // An agreed line backed by part of the group, without the organizer, is only leaning: Go must never call it decided
+  // (the 10 Oct live proof: "Saudades is locked in" on 3 of 5, no vote). Everyone, or the organizer, makes it agreed.
+  const people = pack.trip.people.length;
+  const leaning = (l: C.RecordLine): boolean =>
+    l.kind === 'agreed' && l.person_ids.length > 0 && l.person_ids.length < people && !l.person_ids.includes(pack.trip.organizer_person_id);
+  // A vote's result keeps its id, so the closed vote is cited when it changes the trip (update_trip decision_id): the 7 to 0
+  // rename had closed long before anyone asked Go for it (Varkala, 11 Oct).
   const short = active
     .filter((l) => l.kind === 'agreed' || l.kind === 'decided' || l.kind === 'booked')
     .sort(newestFirst)
     .slice(0, caps.short)
-    .map((l) => `${KIND_WORD[l.kind]}: ${inlineData(l.text, 200)}`);
+    .map((l) => (leaning(l)
+      ? `Leaning (${l.person_ids.length} of ${people}: ${l.person_ids.map(nameOf).join(', ')}; not decided): ${inlineData(l.text, 200)}`
+      : `${KIND_WORD[l.kind]}: ${inlineData(l.text, 200)}${l.kind === 'decided' && l.decision_id ? ` (vote ${l.decision_id})` : ''}`));
   if (full.length === 0 && short.length === 0) return null;
   return limit(['The trip record:', ...full, ...short].join('\n'));
 }

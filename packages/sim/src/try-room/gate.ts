@@ -22,12 +22,16 @@ export const PAGE_HEADERS = {
   'x-content-type-options': 'nosniff',
 } as const;
 
+/** A bare origin: https://host[:port], or http on localhost for a Bash on this machine. */
+export const BARE_ORIGIN = /^(https:\/\/[a-z0-9.-]+|http:\/\/(localhost|127\.0\.0\.1))(:\d{1,5})?$/i;
+
 /**
  * The Content-Security-Policy: nothing runs but the page's own script (by its nonce; a page without one runs no script),
  * nothing connects but the live socket back to this host, and nobody can frame it. Inline styles are allowed: the room
- * draws avatars and vote bars with them.
+ * draws avatars and vote bars with them. It frames only `frameOrigin` (Bash's session page, for a login hand-off), and
+ * nothing without one.
  */
-export function contentSecurityPolicy(nonce: string | null, host: string | undefined): string {
+export function contentSecurityPolicy(nonce: string | null, host: string | undefined, frameOrigin?: string): string {
   const live = host && /^[a-z0-9.-]+(:\d{1,5})?$/i.test(host) ? ` wss://${host} ws://${host}` : '';
   return [
     "default-src 'none'",
@@ -35,6 +39,7 @@ export function contentSecurityPolicy(nonce: string | null, host: string | undef
     "style-src 'unsafe-inline'",
     'img-src https: data:',
     `connect-src 'self'${live}`,
+    ...(frameOrigin && BARE_ORIGIN.test(frameOrigin) ? [`frame-src ${frameOrigin}`] : []),
     "form-action 'self'",
     "base-uri 'none'",
     "frame-ancestors 'none'",

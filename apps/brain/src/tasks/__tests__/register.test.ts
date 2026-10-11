@@ -34,6 +34,18 @@ const VILLA = {
 };
 
 describe('registerTasks', () => {
+  it("makes a new trip's computer (start), then has its browser visit ixigo once (prime), before anyone asks", async () => {
+    await lb.brain.recipeRunners!.start('t_prime');
+    expect(fake.callsTo('POST', /^\/v1\/users\/[^/]+\/warm$/).length).toBeGreaterThan(0);
+    expect(fake.callsTo('POST', /\/browser\/fetch$/)).toHaveLength(0);
+    await lb.brain.recipeRunners!.prime('t_prime');
+    expect(fake.callsTo('POST', /\/browser\/fetch$/)).toHaveLength(1);
+    expect(fake.callsTo('POST', /\/browser\/fetch$/)[0]!.body).toMatchObject({
+      url: 'https://www.ixigo.com/',
+      steps: [{ op: 'click', name: 'Close modal', optional: true }, { op: 'page_fetch', url: '/', capture_as: 'prime' }],
+    });
+  });
+
   it('leaves jobs off when the /v1 settings are missing', async () => {
     const bare = makeLaneBrain({ pool: db.pool });
     await registerTasks(bare.brain);
@@ -47,7 +59,7 @@ describe('registerTasks', () => {
     expect([...lb.taps.handlers.keys()].sort()).toEqual(['working/stop', 'working/watch']);
     expect(lb.context.nows.map((n) => [n.name, n.order])).toEqual([['tasks', 30]]);
     expect(lb.context.wakes.has('task')).toBe(true);
-    expect(lb.setup.steps.map((s) => s.name)).toEqual(['computer.user', 'computer.warm']);
+    expect(lb.setup.steps.map((s) => s.name)).toEqual(['computer.user']);
     expect((await lb.http.inject({ method: 'POST', url: '/mcp', payload: {} })).statusCode).toBe(401);
     expect((await lb.http.inject({ method: 'POST', url: '/v1-webhooks', headers: { 'content-type': 'application/json' }, payload: '{}' })).statusCode).toBe(401);
   });

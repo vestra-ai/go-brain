@@ -32,6 +32,12 @@ const fired: Array<{ auth: string | undefined; body: unknown }> = [];
 const declined: CardTapParams[] = [];
 const routes: Array<{ method: unknown; url: string; logLevel: unknown }> = [];
 const stopped: string[] = [];
+/** The /v1 warms the admin page made: only "Check this trip's computer" may make one. */
+const warms: string[] = [];
+const warmFetch = (async (input: string | URL | Request, init?: RequestInit) => {
+  warms.push(`${init?.method ?? 'GET'} ${String(input instanceof Request ? input.url : input)}`);
+  return new Response('{"status":"waking"}', { status: 202 });
+}) as typeof fetch;
 
 /** Two checks that answer at once, so the page and health.json need no network. */
 const probes = (_brain: unknown, tripId: string | null): Probe[] => [
@@ -75,7 +81,10 @@ const payCard = (cardId: string, state: string) => ({
 beforeAll(async () => {
   db = await withSchema();
   const model = fakeAnthropic([]);
-  built = await buildBrain(loadEnv({ ...base, ADMIN_TOKEN: TOKEN, GO_ROLE: 'rehearsal' }), { pool: db.pool, anthropic: model.client, logger: false });
+  built = await buildBrain(
+    loadEnv({ ...base, ADMIN_TOKEN: TOKEN, GO_ROLE: 'rehearsal', VESTRA_API_URL: 'https://api.vestra.test', VESTRA_API_KEYS: `vk_test_${'a'.repeat(43)}` }),
+    { pool: db.pool, anthropic: model.client, logger: false, timings: { typingMinMs: 0 } },
+  );
   built.brain.tasks = fakeTasks;
   built.brain.taps.on('pay', 'decline', async (tap) => {
     declined.push(tap);
@@ -90,7 +99,7 @@ beforeAll(async () => {
   built.brain.http.addHook('onRoute', (r) => {
     routes.push({ method: r.method, url: r.url, logLevel: r.logLevel });
   });
-  await registerAdminWith({ probes, lanes })(built.brain);
+  await registerAdminWith({ probes, lanes, fetch: warmFetch })(built.brain);
 
   closed = await buildBrain(loadEnv(base), { pool: db.pool, anthropic: model.client, logger: false });
   await registerAdmin(closed.brain);
@@ -177,7 +186,9 @@ describe('the admin page', () => {
     const chosen = (await http.inject({ method: 'GET', url: '/admin/health.json?trip=t_old', headers: AUTH })).json();
     expect(chosen.trip_id).toBe('t_old');
     expect(chosen.server_socket_open).toBe(false);
-    expect(chosen.switches).toEqual({ TRAVEL_MODE: 'fake', TRAVEL_RUNNER: 'agent_job', PAY_RAIL: 'fake', CALLS_MODE: 'allowlist', REFLEX_LIVE: 'q1,q2,q3' });
+    expect(chosen.switches).toEqual({ TRAVEL_MODE: 'fake', TRAVEL_RUNNER: 'agent_job', PAY_RAIL: 'fake', CALLS_MODE: 'allowlist', REFLEX_LIVE: 'q1,q2,q3', BROWSER_FETCH_SLOTS: '2', RECIPE_WATCHES: 'off', BOOKING: 'off' });
+    // The watches groups asked for, per trip (none here): how many and the next check, never a watch id.
+    expect(chosen.watches).toEqual([]);
     expect(chosen.calls).toEqual({ mode: 'allowlist', allowlist: ['Villa Sol'], allowlist_count: 1 });
     expect(JSON.stringify(chosen)).not.toContain('9800000001');
   });
@@ -234,10 +245,36 @@ describe('the admin page', () => {
     expect(fired).toHaveLength(1);
   });
 
+  it('passes "now lands at", in the trip\'s own time, as the watch\'s arrive_at; an empty field passes none', async () => {
+    fired.length = 0;
+    const res = await built.brain.http.inject({
+      method: 'POST', url: '/admin/fire-watch', headers: FORM,
+      payload: 'trip_id=t_goa&person_id=p_arjun&label=IndiGo+6E+2134&delay_minutes=120&lands_at=2026-11-06T22%3A45&note=Cab+at+9+pm',
+    });
+    expect(res.statusCode).toBe(303);
+    // 10:45 pm in Goa (the trip's zone, India) is 17:15 UTC.
+    expect((fired[0]?.body as { arrive_at?: string }).arrive_at).toBe('2026-11-06T17:15:00.000Z');
+    await built.brain.http.inject({ method: 'POST', url: '/admin/fire-watch', headers: FORM, payload: 'trip_id=t_goa&person_id=p_arjun&lands_at=' });
+    expect(fired[1]?.body).not.toHaveProperty('arrive_at');
+    const bad = await built.brain.http.inject({ method: 'POST', url: '/admin/fire-watch', headers: AUTH, payload: { trip_id: 't_goa', person_id: 'p_arjun', lands_at: '10:45 pm' } });
+    expect(bad.statusCode).toBe(422);
+  });
+
   it('stops every running job for the trip through brain.tasks', async () => {
     const res = await built.brain.http.inject({ method: 'POST', url: '/admin/stop-jobs', headers: AUTH, payload: { trip_id: 't_goa' } });
     expect(res.json()).toEqual({ ok: true, stopped: ['gt_villa', 'gt_cab'] });
     expect(stopped).toEqual(['gt_villa', 'gt_cab']);
+  });
+
+  it("checks a trip's computer only when asked: one /v1 warm, and the note says what it found", async () => {
+    await built.brain.http.inject({ method: 'GET', url: '/admin/health.json?trip=t_goa', headers: AUTH });
+    await built.brain.http.inject({ method: 'GET', url: '/admin?trip=t_goa', headers: SIGNED_IN });
+    expect(warms).toEqual([]);
+    const res = await built.brain.http.inject({ method: 'POST', url: '/admin/check-computer', headers: AUTH, payload: { trip_id: 't_goa' } });
+    expect(res.json()).toEqual({ ok: true, detail: "The trip's computer was asleep and is waking now; check again in a minute." });
+    expect(warms).toEqual(['POST https://api.vestra.test/v1/users/vu_t_goa/warm']);
+    const form = await built.brain.http.inject({ method: 'POST', url: '/admin/check-computer', headers: FORM, payload: 'trip_id=t_goa' });
+    expect(new URL(String(form.headers.location), 'http://go.local').searchParams.get('note')).toMatch(/waking now/);
   });
 
   it('a job that will not stop never keeps the others running, and says so', async () => {
@@ -273,7 +310,7 @@ describe('the admin page', () => {
     for (const text of [
       'The Server&#39;s socket', 'computer waking for t_goa', 'TRAVEL_MODE', 'PAY_RAIL', 'CALLS_MODE', 'REFLEX_LIVE', 'DEMO_ROOM',
       '<option value="stripe_test"', 'Villa Sol (+91***001)', 'Fire a watch', 'Stop all running jobs for this trip',
-      'Decline the waiting pay card', 'href="/board"', DOCS_URL, 'This is the rehearsal Go.', 'action="/admin/sign-out"',
+      'Decline the waiting pay card', "Check this trip's computer (wakes it)", 'href="/board"', DOCS_URL, 'This is the rehearsal Go.', 'action="/admin/sign-out"',
     ]) expect(html, text).toContain(text);
     expect(html).not.toContain('fontshare');
     expect(html).not.toContain('9800000001');
@@ -351,9 +388,17 @@ describe('which Go this is', () => {
     expect(roleOf({ RAILWAY_SERVICE_NAME: 'brain-try' })).toBe('try');
     const page = renderAdminPage({
       tripId: null, role: 'try', trips: [], at: new Date('2026-10-06T10:00:00Z'), health: [], switches: [], people: [],
-      calls: { mode: 'off', deployed: false, allowlist: [] }, note: null, docsUrl: DOCS_URL,
+      calls: { mode: 'off', deployed: false, allowlist: [] }, note: null, docsUrl: DOCS_URL, recipes: [],
     });
     expect(page).toContain('This is the try-room Go, where visitors chat with Go.');
+    expect(page).toContain('No recipe has run since Go started.');
+    // Numbers, not adjectives: each ixigo recipe's middle and slow end, at each speed.
+    const timed = renderAdminPage({
+      tripId: null, role: 'stage', trips: [], at: new Date('2026-10-06T10:00:00Z'), health: [], switches: [], people: [],
+      calls: { mode: 'off', deployed: false, allowlist: [] }, note: null, docsUrl: DOCS_URL,
+      recipes: [{ recipe: 'trains.between', speed: 'page', runs: 3, failed: 1, p50_ms: 1605, p90_ms: 2400 }],
+    });
+    expect(timed).toContain('<td>trains.between</td><td>page</td><td class="num">1605 ms</td><td class="num">2400 ms</td><td class="num">3</td><td class="num">1</td>');
     expect(roleOf({ RAILWAY_SERVICE_NAME: 'something-else' })).toBeNull();
     expect(roleOf({})).toBeNull();
   });
@@ -367,6 +412,7 @@ describe('a lane that is not on this Go yet', () => {
     expect(health.probes.find((p: { name: string }) => p.name === 'ixigo')).toMatchObject({ dot: 'red', detail: `the ixigo connection is ${NOT_DEPLOYED}` });
     expect(health.calls).toEqual({ mode: 'allowlist', allowlist: [], allowlist_count: 0 });
     expect(health.role).toBe('stage');
+    expect(health.recipes).toEqual([]);
 
     const page = (await http.inject({ method: 'GET', url: '/admin?trip=t_goa', headers: SIGNED_IN })).body;
     expect(page).toContain('Calls are not deployed on this Go yet');
@@ -375,6 +421,10 @@ describe('a lane that is not on this Go yet', () => {
     const jobs = await http.inject({ method: 'POST', url: '/admin/stop-jobs', headers: AUTH, payload: { trip_id: 't_goa' } });
     expect(jobs.statusCode).toBe(409);
     expect(jobs.json().error.message).toBe(`Jobs are ${NOT_DEPLOYED}.`);
+
+    const check = await http.inject({ method: 'POST', url: '/admin/check-computer', headers: AUTH, payload: { trip_id: 't_goa' } });
+    expect(check.statusCode).toBe(404);
+    expect(check.json().error.message).toBe(`Trip computers are ${NOT_DEPLOYED}.`);
 
     const watch = await http.inject({ method: 'POST', url: '/admin/fire-watch', headers: AUTH, payload: { trip_id: 't_goa', person_id: 'p_arjun' } });
     expect(watch.statusCode).toBe(404);

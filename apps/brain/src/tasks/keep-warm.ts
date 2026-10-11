@@ -1,23 +1,23 @@
 /**
- * Keeps a trip's computer awake while its people talk, so an ixigo.com search never waits on a sleeping box (a box
- * takes 3 to 5.5 s to wake). One warm asks Bash to hold the box awake for 2 minutes once it is up (keep_ms); a travel
- * line that comes when the hold has under 20 s left extends it with one more. That is about one call per 100 s per
+ * Keeps a trip's computer awake while its people ask for travel, so an ixigo.com search never waits on a sleeping box (a
+ * box takes 3 to 5.5 s to wake). Called only through travel's warmForTravel. One warm asks Bash to hold the box awake for
+ * 2 minutes once it is up (keep_ms); travel intent that comes when the hold has under 20 s left extends it with one more. That is about one call per 100 s per
  * trip, inside /v1's rate, and each counts as one wake toward Go's warm limit.
  */
 export const KEEP_MS = 120_000;
-/** A hold with less than this left is extended by the next line in the trip. */
+/** A hold with less than this left is extended by the next travel intent in the trip. */
 export const EXTEND_WITHIN_MS = 20_000;
 const HOLDS_MAX = 500;
 
 export interface KeepWarmDeps {
-  /** computer.warm with a hold. */
+  /** The trip's browser's warm with a hold (browsers.warm). */
   warm: (tripId: string, keepMs: number) => Promise<unknown>;
   now: () => Date;
   log: { warn(obj: object, msg: string): void };
 }
 
 export interface KeepWarm {
-  /** A line in this trip: hold its computer awake for the next two minutes. */
+  /** Travel intent in this trip: hold its computer awake for the next two minutes. */
   touch(tripId: string): void;
 }
 

@@ -3,6 +3,7 @@
 // re-planned on every trip change, and checked again against the trip when they come due.
 import type { Trip } from '../door/methods.js';
 import type { TripPack } from '../trips/pack.js';
+import { flexibleOf } from '../trips/votes.js';
 import { addDays, zonedTime } from './clock.js';
 import type { Action, Candidate } from './policy.js';
 import type { ProactiveStore } from './store.js';
@@ -16,7 +17,8 @@ export const SETTLE_UP_HOUR = 11;
 
 export function nonVoters(trip: Trip, decisionId: string): string[] {
   const d = trip.decisions.find((x) => x.decision_id === decisionId);
-  if (!d || d.anonymous) return [];
+  // 1.1: someone flexible has voted but named no pick, so who hasn't voted is not known: nobody is pinned.
+  if (!d || d.anonymous || flexibleOf(d) > 0) return [];
   const voted = new Set((d.votes ?? []).map((v) => v.person_id));
   return trip.people.filter((p) => !voted.has(p.person_id)).map((p) => p.person_id);
 }
@@ -80,7 +82,8 @@ export function planTimers(trip: Trip, tz: string, now: Date): Candidate[] {
           expiresAt: new Date(closes),
           importance: 0.6,
           urgency: 0.8,
-          useful: d.anonymous ? ['message'] : ['pin'],
+          // A secret ballot, or one with a flexible vote: a message to the group, never a pin on someone who voted.
+          useful: d.anonymous || flexibleOf(d) > 0 ? ['message'] : ['pin'],
           personIds: d.anonymous ? [] : nonVoters(trip, d.decision_id),
           facts: { decision_id: d.decision_id, closes_at: d.closes_at },
         }));

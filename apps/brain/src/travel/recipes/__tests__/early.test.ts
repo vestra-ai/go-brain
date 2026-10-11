@@ -5,13 +5,16 @@ import { FakeSwitches } from '../../../tasks/testing/lane-brain.js';
 import { goaPack } from '../../../tasks/testing/goa.js';
 import { TravelError } from '../../mcp-travel.js';
 import type { Travel, TravelKind, TravelQuery } from '../../travel.js';
-import { createEarlyStart } from '../early.js';
+import { createEarlyStart, TERMS_MAX } from '../early.js';
 
 function world(mode = 'ixigo_web', fail = false) {
   const searches: Array<{ kind: TravelKind; q: TravelQuery; tripId: string | undefined }> = [];
+  /** The message each search was started for: its live card belongs to that message's turn. */
+  const forMessages: Array<string | undefined> = [];
   const travel = {
-    async search(kind: TravelKind, q: TravelQuery, o?: { tripId?: string }) {
+    async search(kind: TravelKind, q: TravelQuery, o?: { tripId?: string; messageId?: string }) {
       searches.push({ kind, q, tripId: o?.tripId });
+      forMessages.push(o?.messageId);
       if (fail) throw new TravelError('unreachable', 'ixigo took too long to answer.');
       return { results: [], checkedAt: '2026-10-07T12:00:00.000Z' };
     },
@@ -21,8 +24,8 @@ function world(mode = 'ixigo_web', fail = false) {
   const log = { warn: vi.fn() };
   let nowMs = Date.parse('2026-10-07T12:00:00Z');
   const warmed: string[] = [];
-  const early = createEarlyStart({ travel: () => travel, switches, today: async () => '2026-10-07', now: () => new Date(nowMs), log, keepWarm: (tripId) => warmed.push(tripId) });
-  return { hook: (...a: Parameters<typeof early.onRead>) => early.onRead(...a), early, searches, log, warmed, advance: (ms: number) => { nowMs += ms; } };
+  const early = createEarlyStart({ travel: () => travel, switches, today: async () => '2026-10-07', now: () => new Date(nowMs), log, warmForTravel: (tripId, kind) => warmed.push(`${tripId}:${kind}`) });
+  return { hook: (...a: Parameters<typeof early.onRead>) => early.onRead(...a), early, searches, forMessages, log, warmed, advance: (ms: number) => { nowMs += ms; } };
 }
 
 const forGo: ReflexRead = { ...UNSURE_READ, forGo: { value: true, sure: true } };
@@ -33,6 +36,7 @@ describe('the early start', () => {
     const answer = await w.hook(msg(41, 'p_rahul', '@Go flights Delhi to Goa Friday evening'), UNSURE_READ, goaPack());
     expect(answer).toEqual({ dueNow: true });
     expect(w.searches).toEqual([{ kind: 'flights', q: { from: 'delhi', to: 'goa', date: '2026-11-06', departAfter: '17:00' }, tripId: 't_goa' }]);
+    expect(w.forMessages).toEqual(['m_41']);
   });
 
   it('takes an ask the quick read is sure is for Go, even without its name', async () => {
@@ -49,6 +53,30 @@ describe('the early start', () => {
     expect(w.searches).toEqual([]);
   });
 
+  it("never searches the trip's destination for a stay in a place the tables don't know (the 8 Oct drill: Manali ran Goa)", async () => {
+    const w = world();
+    // Manali is not Goa: the composer looks it up on ixigo and searches it, and no Goa search runs first.
+    expect(await w.hook(msg(57, 'p_meher', '@Go hotels in Manali for our dates'), UNSURE_READ, goaPack())).toBeUndefined();
+    expect(w.searches).toEqual([]);
+    // With no place named, the trip's destination it is.
+    expect(await w.hook(msg(58, 'p_priya', '@Go a villa with a pool for our dates'), UNSURE_READ, goaPack())).toEqual({ dueNow: true });
+    expect(w.searches).toEqual([{ kind: 'stays', q: expect.objectContaining({ area: 'North Goa', mustHave: ['pool'] }), tripId: 't_goa' }]);
+  });
+
+  it("starts a search from any city when Jev is sure of its kind: the places as written, for ixigo's box to resolve (10 Oct: Bangalore)", async () => {
+    const line = '@Go buses from Bangalore to Goa on Friday night, AC sleeper';
+    const buses: ReflexRead = { ...UNSURE_READ, recipe: { value: 'buses', sure: true } };
+    const w = world();
+    expect(await w.hook(msg(60, 'p_arjun', line), buses, goaPack())).toEqual({ dueNow: true });
+    expect(w.searches).toEqual([{ kind: 'buses', q: expect.objectContaining({ from: 'bangalore', to: 'goa', date: '2026-11-06' }), tripId: 't_goa' }]);
+    // Jev unsure: only the places the tables know, so nothing starts and the composer searches.
+    expect(await w.hook(msg(61, 'p_arjun', line), UNSURE_READ, goaPack())).toBeUndefined();
+    // Off ixigo.com, no box resolves a city as written: nothing starts.
+    const fake = world('fake');
+    expect(await fake.hook(msg(62, 'p_arjun', line), buses, goaPack())).toBeUndefined();
+    expect([w.searches.length, fake.searches.length]).toEqual([1, 0]);
+  });
+
   it('starts the search in every travel mode, so a search ask is one model call wherever the list comes from', async () => {
     for (const mode of ['fake', 'ixigo']) {
       const w = world(mode);
@@ -59,16 +87,22 @@ describe('the early start', () => {
     }
   });
 
-  it("keeps the trip's computer awake on any line, from anyone, to Go or not, and only under ixigo_web", async () => {
+  it("wakes the trip's computer only for travel intent: Jev sure of a search kind, or a search the hook starts", async () => {
     const w = world();
-    await w.hook(msg(50, 'p_priya', 'trains from Mumbai on Thursday are cheaper I think'), UNSURE_READ, goaPack());
-    await w.hook(msg(51, 'p_priya', "I'm veg btw"), UNSURE_READ, goaPack());
-    // The keeper holds it once per hold; the hook asks on every line.
-    expect(w.warmed).toEqual(['t_goa', 't_goa']);
+    // Chatter, and travel talk Jev isn't sure asks for a search: no wake, whatever the mode.
+    await w.hook(msg(50, 'p_priya', "I'm veg btw"), UNSURE_READ, goaPack());
+    await w.hook(msg(51, 'p_priya', 'trains from Mumbai on Thursday are cheaper I think'), UNSURE_READ, goaPack());
+    expect(w.warmed).toEqual([]);
+    // Jev sure it asks for trains, though nobody named Go: the box wakes for the search to come, and nothing starts.
+    const trains: ReflexRead = { ...UNSURE_READ, recipe: { value: 'trains', sure: true } };
+    await w.hook(msg(52, 'p_kabir', 'trains from Mumbai on Thursday are cheaper I think'), trains, goaPack());
+    expect(w.warmed).toEqual(['t_goa:trains']);
     expect(w.searches).toEqual([]);
-    const fake = world('fake');
-    await fake.hook(msg(52, 'p_rahul', '@Go flights Delhi to Goa Friday evening'), UNSURE_READ, goaPack());
-    expect(fake.warmed).toEqual([]);
+    // Jev sure it is not a search ask: no wake.
+    await w.hook(msg(53, 'p_kabir', '@Go is Thursday a holiday?'), { ...UNSURE_READ, recipe: { value: null, sure: true } }, goaPack());
+    // A whole ask to Go that the parser reads: the search it starts is the intent, one wake for it.
+    await w.hook(msg(54, 'p_rahul', '@Go flights Delhi to Goa Friday evening'), UNSURE_READ, goaPack());
+    expect(w.warmed).toEqual(['t_goa:trains', 't_goa:flights']);
   });
 
   it('starts nothing for a kind that answers with a link, but the turn is still due now; off ixigo_web, flights are a search', async () => {
@@ -124,9 +158,248 @@ describe('the early start', () => {
     expect(w.early.searchFor('t_goa', 'm_48')).toBeNull();
   });
 
+  it("knows a line that asks for stays, so the stays head start loads nothing beside it: Jev sure of stays, or a stays search it starts", async () => {
+    const w = world();
+    // A stays search it starts, for any place.
+    await w.hook(msg(70, 'p_priya', '@Go a villa with a pool for our dates'), UNSURE_READ, goaPack());
+    // Jev sure it asks for stays, though nobody named Go: the turn may search, so it is the line's own load too.
+    await w.hook(msg(71, 'p_kabir', 'villas in Anjuna dekhte hain'), { ...UNSURE_READ, recipe: { value: 'stays', sure: true } }, goaPack());
+    // Another kind, and chatter.
+    await w.hook(msg(72, 'p_rahul', '@Go flights Delhi to Goa Friday evening'), UNSURE_READ, goaPack());
+    await w.hook(msg(73, 'p_arjun', 'haha'), UNSURE_READ, goaPack());
+    expect(['m_70', 'm_71', 'm_72', 'm_73'].map((id) => w.early.asksStays('t_goa', id))).toEqual([true, true, false, false]);
+    expect(w.early.asksStays('t_other', 'm_70')).toBe(false);
+  });
+
+  it("keeps Jev's sure pick for each message, whether or not anything started, for the turn's hint (now.ts jevPickNow)", async () => {
+    const w = world();
+    // Not said to Go, so nothing starts; the pick is kept all the same.
+    await w.hook(msg(80, 'p_kabir', 'Jaipur se Goa koi direct train hai?'), { ...UNSURE_READ, recipe: { value: 'trains', sure: true } }, goaPack());
+    await w.hook(msg(81, 'p_arjun', '@Go can Arjun board at Nizamuddin?'), { ...UNSURE_READ, recipe: { value: 'boarding_stations', sure: true } }, goaPack());
+    await w.hook(msg(82, 'p_meher', 'haha'), UNSURE_READ, goaPack());
+    expect(['m_80', 'm_81', 'm_82'].map((id) => w.early.pickFor('t_goa', id))).toEqual(['trains', 'boarding_stations', null]);
+    expect(w.searches).toEqual([]);
+  });
+
   it('never fails the message: a search that fails is logged, and the composer searches again', async () => {
     const w = world('ixigo_web', true);
     expect(await w.hook(msg(47, 'p_rahul', '@Go flights Delhi to Goa Friday evening'), UNSURE_READ, goaPack())).toEqual({ dueNow: true });
     await vi.waitFor(() => expect(w.log.warn).toHaveBeenCalledWith(expect.objectContaining({ tripId: 't_goa', kind: 'flights' }), expect.stringContaining('early search failed')));
+  });
+});
+
+// The lead, 10 Oct: a stays ask with a budget is one read, Jev's early one and the composer's search alike. The early
+// search takes the budget the search tool will: the ask's own a head, else the group's decided one.
+describe("the early start of a stays search with a budget", () => {
+  it("takes the ask's own budget a head, else the trip's decided one, and asks the trip only for stays", async () => {
+    const searches: TravelQuery[] = [];
+    const travel = { search: async (_k: TravelKind, q: TravelQuery) => { searches.push(q); return { results: [], checkedAt: '2026-10-07T12:00:00.000Z' }; } } as unknown as Travel;
+    const switches = new FakeSwitches();
+    await switches.set('TRAVEL_MODE', 'ixigo_web');
+    const asked: string[] = [];
+    const early = createEarlyStart({
+      travel: () => travel, switches, today: async () => '2026-10-07', now: () => new Date('2026-10-07T12:00:00Z'), log: { warn: vi.fn() },
+      stayBudget: async (tripId) => { asked.push(tripId); return 450_000; },
+    });
+    await early.onRead(msg(70, 'p_priya', '@Go a villa with a pool for our dates'), UNSURE_READ, goaPack());
+    await early.onRead(msg(71, 'p_priya', '@Go a villa with a pool for our dates, under 8k a head'), UNSURE_READ, goaPack());
+    expect(searches.map((q) => q.budgetMinor)).toEqual([450_000, 800_000]);
+    expect(searches[1]).toMatchObject({ maxShareMinor: 800_000 });
+    // The turn reads the same query back, so its search joins this one.
+    expect(early.searchFor('t_goa', 'm_70')?.query.budgetMinor).toBe(450_000);
+    await early.onRead(msg(72, 'p_rahul', '@Go trains from Mumbai on Thursday'), UNSURE_READ, goaPack());
+    expect(asked).toEqual(['t_goa']);
+    expect(searches[2]).not.toHaveProperty('budgetMinor');
+  });
+
+  it('searches with no budget when the trip has none decided, or its lookup fails', async () => {
+    const searches: TravelQuery[] = [];
+    const travel = { search: async (_k: TravelKind, q: TravelQuery) => { searches.push(q); return { results: [], checkedAt: '2026-10-07T12:00:00.000Z' }; } } as unknown as Travel;
+    const switches = new FakeSwitches();
+    await switches.set('TRAVEL_MODE', 'ixigo_web');
+    const make = (stayBudget: () => Promise<number | null>) =>
+      createEarlyStart({ travel: () => travel, switches, today: async () => '2026-10-07', now: () => new Date('2026-10-07T12:00:00Z'), log: { warn: vi.fn() }, stayBudget });
+    await make(async () => null).onRead(msg(73, 'p_priya', '@Go a villa with a pool for our dates'), UNSURE_READ, goaPack());
+    await make(async () => { throw new Error('db down'); }).onRead(msg(74, 'p_priya', '@Go a villa with a pool for our dates'), UNSURE_READ, goaPack());
+    expect(searches).toHaveLength(2);
+    for (const q of searches) expect(q).not.toHaveProperty('budgetMinor');
+  });
+});
+
+describe('the early start of an ixigo read beyond the searches', () => {
+  const BOOK = new Set(['trains.running_status', 'trains.schedule', 'plan.destination', 'offers.list', 'hotels.reviews']);
+  const runKeys: string[] = [];
+  function readWorld(mode = 'ixigo_web', o: { fail?: boolean; option?: { ref: string; page: string } | null; book?: Set<string> } = {}) {
+    const runs: Array<{ id: string; given: Record<string, unknown>; tripId: string }> = [];
+    const switches = new FakeSwitches();
+    void switches.set('TRAVEL_MODE', mode);
+    const log = { warn: vi.fn() };
+    const warmed: string[] = [];
+    const facts = { as: 'facts' as const, title: 'Train 12051 today', rows: [{ state: 'On time' }], page: 'https://www.ixigo.com/trains/12051/running-status', checkedAt: '2026-10-07T12:00:00.000Z', ms: 900 };
+    const early = createEarlyStart({
+      travel: () => ({ search: vi.fn() }) as unknown as Travel, switches, today: async () => '2026-10-07', now: () => new Date('2026-10-07T12:00:00Z'), log,
+      warmForTravel: (tripId, kind) => warmed.push(`${tripId}:${kind}`),
+      recipes: {
+        has: (id) => (o.book ?? BOOK).has(id),
+        run: async (id, given, r) => {
+          runs.push({ id, given, tripId: r.tripId });
+          runKeys.push(r.runKey);
+          if (o.fail) throw new TravelError('unreachable', 'PNR 4512873690 did not load');
+          return facts;
+        },
+      },
+      optionFor: async (_tripId, _text, kind) => (kind === 'stay' ? (o.option ?? null) : null),
+    });
+    return { early, runs, log, warmed, facts };
+  }
+  const picked = (value: string): ReflexRead => ({ ...forGo, recipe: { value: value as never, sure: true } });
+
+  it("runs a train's running status at once for a live pick, wakes the computer, and keeps the read for the turn", async () => {
+    const w = readWorld();
+    expect(await w.early.onRead(msg(60, 'p_arjun', 'Go 12051 abhi kahan chal rahi hai?'), picked('train_status'), goaPack())).toEqual({ dueNow: true });
+    expect(w.runs).toEqual([{ id: 'trains.running_status', given: { train: '12051' }, tripId: 't_goa' }]);
+    expect(w.warmed).toEqual(['t_goa:null']);
+    const read = w.early.readFor('t_goa', 'm_60')!;
+    expect(read).toMatchObject({ choice: 'train_status', recipe: 'trains.running_status', asked: { train: '12051' }, runKey: 'early:m_60|trains.running_status' });
+    expect(runKeys.at(-1)).toBe('early:m_60|trains.running_status');
+    await expect(read.answer).resolves.toBe(w.facts);
+  });
+
+  it("gives the tool's call that is the same read the read's card, so one read shows one card", async () => {
+    const w = readWorld();
+    await w.early.onRead(msg(72, 'p_arjun', 'Go 12051 abhi kahan chal rahi hai?'), picked('train_status'), goaPack());
+    // The model's call: the same recipe and train, as a number or as words.
+    expect(w.early.joinKey('t_goa', ['m_72'], 'trains.running_status', { train: 12051 })).toBe('early:m_72|trains.running_status');
+    expect(w.early.joinKey('t_goa', ['m_71', 'm_72'], 'trains.running_status', { train: ' 12051' })).toBe('early:m_72|trains.running_status');
+    // Another train, another recipe, another message, another trip: a read of its own, with its own card.
+    expect(w.early.joinKey('t_goa', ['m_72'], 'trains.running_status', { train: '16346' })).toBeNull();
+    expect(w.early.joinKey('t_goa', ['m_72'], 'trains.schedule', { train: '12051' })).toBeNull();
+    expect(w.early.joinKey('t_goa', ['m_73'], 'trains.running_status', { train: '12051' })).toBeNull();
+    expect(w.early.joinKey('t_other', ['m_72'], 'trains.running_status', { train: '12051' })).toBeNull();
+  });
+
+  it("reads a guide for the trip's own place, and a shown stay's reviews by its option", async () => {
+    const w = readWorld('ixigo_web', { option: { ref: 'r_ab12#2', page: 'https://www.ixigo.com/hotels/palm-grove/details?x=1' } });
+    await w.early.onRead(msg(61, 'p_meher', 'Go yahan kya kya ghoomne layak hai?'), picked('guide'), goaPack());
+    await w.early.onRead(msg(62, 'p_priya', 'Go Palm Grove ke reviews kaise hain?'), picked('hotel_reviews'), goaPack());
+    expect(w.runs.map((r) => [r.id, r.given])).toEqual([
+      ['plan.destination', { place: 'North Goa' }],
+      ['hotels.reviews', { hotel: 'https://www.ixigo.com/hotels/palm-grove/details?x=1' }],
+    ]);
+    expect(w.early.readFor('t_goa', 'm_62')!.asked).toEqual({ hotel: 'r_ab12#2' });
+  });
+
+  it('starts nothing when the words lack a slot, the book lacks the recipe, Go does not search ixigo.com, or the pick is not live', async () => {
+    const w = readWorld();
+    // A train by its name only: the composer looks its number up.
+    expect(await w.early.onRead(msg(63, 'p_meher', 'Go where is the Konkan Kanya Express right now?'), picked('train_status'), goaPack())).toBeUndefined();
+    // The book has no PNR recipe yet.
+    expect(await w.early.onRead(msg(64, 'p_kabir', 'Go PNR 4512873690 ka status batao'), picked('pnr'), goaPack())).toBeUndefined();
+    // No stay on a card that the line plainly points at.
+    expect(await w.early.onRead(msg(65, 'p_priya', 'Go us villa ke reviews?'), picked('hotel_reviews'), goaPack())).toBeUndefined();
+    // A watch is the watch tool's, never a read now.
+    expect(await w.early.onRead(msg(66, 'p_arjun', 'Go let us know when 12051 is running late'), picked('train_status'), goaPack())).toBeUndefined();
+    // Jev's shadow pick acts as none: the live read is sure no search is asked.
+    expect(await w.early.onRead(msg(67, 'p_arjun', 'Go 12051 abhi kahan hai?'), { ...forGo, recipe: { value: null, sure: true } }, goaPack())).toBeUndefined();
+    expect(w.runs).toEqual([]);
+    for (const mode of ['fake', 'ixigo']) {
+      const other = readWorld(mode);
+      expect(await other.early.onRead(msg(68, 'p_arjun', 'Go 12051 abhi kahan chal rahi hai?'), picked('train_status'), goaPack()), mode).toBeUndefined();
+      expect(other.runs, mode).toEqual([]);
+    }
+  });
+
+  it('never starts a search for an ask beyond the searches, even when its words would read as one', async () => {
+    const w = readWorld();
+    await w.early.onRead(msg(69, 'p_rahul', 'Go Mumbai se Madgaon 5 Nov ki train mein WL 18 hai, confirm hoga kya?'), picked('confirm_chance'), goaPack());
+    expect(w.runs).toEqual([]);
+    expect(w.early.searchFor('t_goa', 'm_69')).toBeNull();
+  });
+
+  it('logs a failed read with its error, but never a PNR read\'s, and keeps no copy of the number for the tool', async () => {
+    const w = readWorld('ixigo_web', { fail: true, book: new Set([...BOOK, 'trains.pnr_status']) });
+    await w.early.onRead(msg(70, 'p_arjun', 'Go 12051 abhi kahan chal rahi hai?'), picked('train_status'), goaPack());
+    await w.early.onRead(msg(71, 'p_kabir', 'Go PNR 4512873690 ka status batao'), picked('pnr'), goaPack());
+    await vi.waitFor(() => expect(w.log.warn).toHaveBeenCalledTimes(2));
+    const [[status], [pnr]] = w.log.warn.mock.calls as Array<[Record<string, unknown>, string]>;
+    expect(status).toMatchObject({ tripId: 't_goa', recipe: 'trains.running_status', err: expect.any(TravelError) });
+    expect(pnr).toEqual({ tripId: 't_goa', recipe: 'trains.pnr_status' });
+    expect(w.early.readFor('t_goa', 'm_71')!.asked).toEqual({});
+  });
+});
+
+// Exam, 10 Oct (#4, #20): the early read of an offers ask had no bank, the turn's call with one read the page again, and
+// "the ICICI offer" came back with no code, no minimum and no days.
+describe('the early start of an offers ask', () => {
+  const offer = (n: number, bank: string) => ({ offer: `Offer ${n}`, code: `CODE${n}`, bank, for: 'flights', until: '31 Dec 2026', details: `offer_${n}` });
+  const list = {
+    as: 'facts' as const, title: 'Offers on ixigo now', page: 'https://www.ixigo.com/offers/tag/flight-offers', checkedAt: '2026-10-10T13:01:55.000Z', ms: 2038,
+    rows: [{ offers_on_ixigo: 71 }, offer(1, 'ICICI Bank'), offer(2, 'HDFC Bank'), offer(3, 'ICICI Bank'), offer(4, 'ICICI Bank'), offer(5, 'ICICI Bank')],
+  };
+  const terms = (slug: string) => ({
+    as: 'facts' as const, title: slug, page: `https://www.ixigo.com/offers/${slug}`, checkedAt: '2026-10-10T13:01:56.000Z', ms: 200,
+    rows: [{ offer: slug, code: slug.toUpperCase(), min_booking: '₹5,000', max_off: '₹2,000', valid_on: 'Friday, Saturday, Sunday', terms: ['a long line'], about: ['more'] }],
+  });
+  function world(o: { failTerms?: string } = {}) {
+    const switches = new FakeSwitches();
+    void switches.set('TRAVEL_MODE', 'ixigo_web');
+    const runs: Array<{ id: string; given: Record<string, unknown> }> = [];
+    const reads: string[] = [];
+    const early = createEarlyStart({
+      travel: () => ({ search: vi.fn() }) as unknown as Travel, switches, today: async () => '2026-10-10', now: () => new Date('2026-10-10T13:01:51Z'), log: { warn: vi.fn() },
+      recipes: {
+        has: (id) => ['offers.list', 'offers.details', 'trains.offers'].includes(id),
+        run: async (id, given) => {
+          runs.push({ id, given });
+          return list;
+        },
+        read: async (id, given) => {
+          const slug = String(given['offer']);
+          reads.push(`${id} ${slug}`);
+          if (slug === o.failTerms) throw new TravelError('unreachable', 'the page did not load');
+          return terms(slug);
+        },
+      },
+    });
+    return { early, runs, reads };
+  }
+  const offers: ReflexRead = { ...UNSURE_READ, forGo: { value: true, sure: true }, recipe: { value: 'offers' as never, sure: true } };
+
+  it("reads the bank and the product from the words, so the turn's call is this read", async () => {
+    const w = world();
+    await w.early.onRead(msg(20, 'p_rahul', '@Go any ICICI offer on flights for this trip?'), offers, goaPack());
+    expect(w.runs).toEqual([{ id: 'offers.list', given: { product: 'flights', bank: 'ICICI Bank' } }]);
+    const read = w.early.joined('t_goa', ['m_20'], 'offers.list', { bank: 'icici bank', product: 'flights', journey: 'domestic' });
+    expect(read?.runKey).toBe('early:m_20|offers.list');
+    // The call without the bank is a wider ask: not this read.
+    expect(w.early.joined('t_goa', ['m_20'], 'offers.list', { product: 'flights' })).toBeNull();
+  });
+
+  it("reads the terms of the offers that fit the bank, at most a few, and puts their code, minimum, most off and days on each", async () => {
+    const w = world();
+    await w.early.onRead(msg(20, 'p_rahul', '@Go any ICICI offer on flights for this trip?'), offers, goaPack());
+    const got = await w.early.readFor('t_goa', 'm_20')!.answer;
+    expect(w.reads).toEqual(['offers.details offer_1', 'offers.details offer_3', 'offers.details offer_4']);
+    expect(TERMS_MAX).toBe(3);
+    if (got.as !== 'facts') throw new Error('facts');
+    expect(got.rows[1]).toEqual({ ...offer(1, 'ICICI Bank'), code: 'OFFER_1', min_booking: '₹5,000', max_off: '₹2,000', valid_on: 'Friday, Saturday, Sunday' });
+    // Never the terms' long text, and the HDFC offer and those past the few stay as listed.
+    expect(got.rows[1]).not.toHaveProperty('terms');
+    expect(got.rows[2]).toEqual(offer(2, 'HDFC Bank'));
+    expect(got.rows[5]).toEqual(offer(5, 'ICICI Bank'));
+  });
+
+  it('keeps an offer as listed when its terms page does not load, and reads no terms when no bank is named', async () => {
+    const failing = world({ failTerms: 'offer_3' });
+    await failing.early.onRead(msg(21, 'p_rahul', '@Go ICICI card offers?'), offers, goaPack());
+    const got = await failing.early.readFor('t_goa', 'm_21')!.answer;
+    if (got.as !== 'facts') throw new Error('facts');
+    expect(got.rows[3]).toEqual(offer(3, 'ICICI Bank'));
+    expect(got.rows[1]).toMatchObject({ min_booking: '₹5,000' });
+    const plain = world();
+    await plain.early.onRead(msg(22, 'p_rahul', '@Go any offers this weekend?'), offers, goaPack());
+    expect(plain.runs).toEqual([{ id: 'offers.list', given: {} }]);
+    await plain.early.readFor('t_goa', 'm_22')!.answer;
+    expect(plain.reads).toEqual([]);
   });
 });

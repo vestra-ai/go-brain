@@ -47,12 +47,17 @@ afterAll(async () => {
 
 describe('every response', () => {
   it('forbids framing and sends no referrer', async () => {
-    for (const url of ['/l/x', '/p/x', '/l/x/state', '/p/x/info', '/static/vault.js', '/static/vault.css', '/static/webauthn.js']) {
+    // A vault page and an approve page may be framed by the App's origins (pages/embedded.test.ts); nothing else may.
+    for (const url of ['/l/x/state', '/p/x/info', '/static/vault.js', '/static/vault.css', '/static/webauthn.js']) {
       const res = await v.app.inject({ method: 'GET', url });
       expect(res.headers['x-frame-options'], url).toBe('DENY');
       expect(String(res.headers['content-security-policy']), url).toContain("frame-ancestors 'none'");
       expect(res.headers['referrer-policy'], url).toBe('no-referrer');
     }
+    const page = await v.app.inject({ method: 'GET', url: '/l/x' });
+    expect(String(page.headers['content-security-policy'])).toMatch(/frame-ancestors https:\/\/app\.test http:\/\/localhost:3000$/);
+    expect(page.headers['x-frame-options']).toBeUndefined();
+    expect(page.headers['referrer-policy']).toBe('no-referrer');
   });
 });
 

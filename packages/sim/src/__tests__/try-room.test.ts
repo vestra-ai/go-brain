@@ -6,9 +6,12 @@ import { FakeServer } from '../fake-server.js';
 import { goaFreshTrip } from '../goa.js';
 import { Caps, DEFAULT_CAPS } from '../try-room/caps.js';
 import { TryEnv } from '../try-room/env.js';
-import { COOKIE_NAME, Gate, WrongTries, clientAddress } from '../try-room/gate.js';
-import { CLOSE_TOO_MANY, refusal, serveTryRoom, visitTrip, type TryRoom, type TryRoomOptions } from '../try-room/serve.js';
-import { DAILY_LIMIT_LINE, HINTS, NOT_IN_YOUR_TRIP, ROOM_FULL, SAY_FIRST, SIMULATED_LINE, SLOW_DOWN, TOO_MANY_TRIES, tooManyTabs, visitLimitLine } from '../try-room/words.js';
+import { COOKIE_NAME, Gate, WrongTries, clientAddress, contentSecurityPolicy } from '../try-room/gate.js';
+import { CLOSE_TOO_MANY, LIVE_BEHIND_BYTES, refusal, serveTryRoom, visitTrip, type TryRoom, type TryRoomOptions } from '../try-room/serve.js';
+import {
+  DAILY_LIMIT_LINE, HINTS, LIVE_HINTS, LIVE_LINE, NOT_IN_YOUR_TRIP, ROOM_FULL, SAY_FIRST, SIMULATED_LINE, SLOW_DOWN, TOO_MANY_TRIES, tooManyTabs,
+  visitLimitLine,
+} from '../try-room/words.js';
 import { startTestGo, type TestGo } from './helpers/test-go.js';
 
 const secret = 'sim-test-secret-0123456789abcdef';
@@ -544,6 +547,39 @@ describe('a trip for each visit', () => {
     await until(() => g.events.filter((e) => e.type === 'trip.created').length === 2);
   });
 
+  it('with stablePeople, every visit and Start over keeps the five ids, so the trips share their organizer', async () => {
+    const { go: g, room: r } = await setUp({ stablePeople: true });
+    const cookieA = await signIn(r);
+    const cookieB = await signIn(r);
+    const a = await inRoom(r, cookieA);
+    const b = await inRoom(r, cookieB);
+    const five = ['rahul', 'priya', 'arjun', 'meher', 'kabir'].map((n) => `p_${n}`);
+    expect(lastState(a.got).trip.people.map((p: { person_id: string }) => p.person_id)).toEqual(five);
+    expect(lastState(b.got).trip.people.map((p: { person_id: string }) => p.person_id)).toEqual(five);
+    sayAs(a, 'p_rahul', 'trip A begins');
+    sayAs(b, 'p_rahul', 'trip B begins');
+    await until(() => r.tripOf(visitOf(cookieA)) !== undefined && r.tripOf(visitOf(cookieB)) !== undefined);
+    const tripA = r.tripOf(visitOf(cookieA))!;
+    const tripB = r.tripOf(visitOf(cookieB))!;
+    // Two trips, one organizer.
+    expect(tripA).not.toBe(tripB);
+    await until(() => g.events.filter((e) => e.type === 'trip.created').length === 2);
+    const created = g.events.filter((e) => e.type === 'trip.created').map((e) => e.data.trip);
+    expect(created.map((t: { organizer_person_id: string }) => t.organizer_person_id)).toEqual(['p_rahul', 'p_rahul']);
+    a.ws.send(JSON.stringify({ type: 'start_over' }));
+    await until(() => lastState(a.got).trip.trip_id !== tripA);
+    expect(lastState(a.got).trip.organizer_person_id).toBe('p_rahul');
+    expect(personId(a, 'Kabir')).toBe('p_kabir');
+  });
+
+  it('keeps every visit to ids of its own by default (the public room)', () => {
+    expect(visitTrip('t_try_abc123', 'abc123').organizer_person_id).toBe('p_rahul_abc123');
+    const stable = visitTrip('t_try_abc123', 'abc123', true);
+    expect(stable.trip_id).toBe('t_try_abc123');
+    expect(stable.organizer_person_id).toBe('p_rahul');
+    expect(stable.people.map((p) => p.person_id)).toEqual(goaFreshTrip().people.map((p) => p.person_id));
+  });
+
   it('makes a trip with person ids of its own, the same names, and nothing else changed', () => {
     const trip = visitTrip('t_try_abc123', 'abc123');
     const fresh = goaFreshTrip();
@@ -614,6 +650,185 @@ describe('ids and memory', () => {
   });
 });
 
+describe('Go Live', () => {
+  /** A stand-in for Go's live view: each feed opened, the trip it is for, and a way to send on it. */
+  function fakeLive() {
+    const feeds: Array<{ tripId: string; send: (m: unknown) => void; closed: boolean }> = [];
+    const live: TryRoomOptions['live'] = (tripId, onMessage) => {
+      const feed = { tripId, send: onMessage, closed: false };
+      feeds.push(feed);
+      return { close: () => { feed.closed = true; } };
+    };
+    return { feeds, live };
+  }
+  const lives = (got: any[]) => got.filter((m) => m.type === 'live');
+
+  it("draws Go Live as the chat's mini browser and Details, never a second column, and the page's script still parses", async () => {
+    const plain = roomPage({ title: 'Try Go', nonce: 'n0nce', hints: HINTS, hosted: true });
+    expect(plain).not.toContain('onLive(');
+    expect(plain).not.toContain('id="details"');
+    const html = roomPage({ title: 'Try Go', nonce: 'n0nce', hints: HINTS, hosted: true, live: true });
+    expect(html).not.toContain('class="split"');
+    expect(html).not.toContain('<aside');
+    expect(html).toContain('<div class="app">');
+    expect(html).toContain('id="details-open"');
+    expect(html).toContain('<div class="details" id="details" role="dialog" aria-modal="true" aria-label="Details" hidden>');
+    expect(html).toContain('<div class="sheet" id="sheet" role="dialog" aria-modal="true" aria-labelledby="sheet-title" hidden>');
+    expect(html).toContain("} else if (data.type === 'live') {");
+    // A picture of Go's screen is shown at its own size or smaller, never cropped, stretched or dimmed (a790232): the mini
+    // browser's and the sheet's. Only an option's photo, a stay's own photo in a fixed tile, may be cropped to fill it.
+    expect(html).toContain('.mini-view img { max-width: 100%; max-height: 100%; width: auto; height: auto; display: block; pointer-events: none; }');
+    for (const rule of html.match(/[^{}]*\{[^{}]*object-fit: cover[^{}]*\}/g) ?? []) {
+      expect(rule.trim().split(' {')[0]).toMatch(/^(\.opt-ph img|\.gallery img)$/);
+    }
+    for (const screen of ['.mini-view img', '.sheet-view img']) {
+      const rule = html.match(new RegExp(`\\${screen} \\{[^}]*\\}`))?.[0] ?? '';
+      expect(rule).toContain('width: auto; height: auto;');
+      expect(rule).not.toContain('object-fit');
+    }
+    expect(html).not.toContain('grayscale');
+    expect(html).toContain("else if (m.type === 'screen' && m.event) { live.state = 'on'; screenEvent(m.event); }");
+    // A group of steps (how we all get there) has its own badge in the runs, and each step is named by its city.
+    expect(html).toContain("steps: 'GROUP'");
+    expect(html).toContain("return r.lane ? r.lane + ': ' + r.label : r.label;");
+    expect(html).not.toContain('—');
+    const script = html.slice(html.indexOf('<script nonce="n0nce">') + '<script nonce="n0nce">'.length, html.indexOf('</script>'));
+    expect(() => new Function(script)).not.toThrow();
+    const { feeds, live: open } = fakeLive();
+    const { room: r } = await setUp({ live: open });
+    const cookie = await signIn(r);
+    expect(await (await page(r, cookie)).text()).toContain('id="strip"');
+    expect(feeds).toEqual([]);
+  });
+
+  it("gives each socket the feed of its visit's trip once the first message makes it, relays what Go says, and lets it go", async () => {
+    const { feeds, live: open } = fakeLive();
+    const { room: r } = await setUp({ live: open });
+    const cookie = await signIn(r);
+    const l = await inRoom(r, cookie);
+    await pause(50);
+    expect(feeds).toEqual([]); // no trip yet: nothing to watch, and nothing opened
+    sayAs(l, personId(l, 'Rahul'), 'Goa in November?');
+    await until(() => feeds.length === 1);
+    const tripId = r.tripOf(visitOf(cookie))!;
+    expect(feeds[0]!.tripId).toBe(tripId);
+    feeds[0]!.send({ type: 'hello', trip_id: tripId, events: [] });
+    feeds[0]!.send({ type: 'run', event: { type: 'run_start', run_id: 'run_1', group_id: 'grp_1', recipe_id: 'trains.between', label: 'Trains', at: '2026-10-08T06:00:00Z' } });
+    await until(() => lives(l.got).length === 2);
+    expect(lives(l.got)[1]).toEqual({ type: 'live', trip_id: tripId, msg: { type: 'run', event: expect.objectContaining({ run_id: 'run_1' }) } });
+    // Start over: the old trip's feed goes, and the next trip gets its own once someone speaks in it.
+    l.ws.send(JSON.stringify({ type: 'start_over' }));
+    await until(() => feeds[0]!.closed);
+    sayAs(l, personId(l, 'Priya'), 'starting again');
+    await until(() => feeds.length === 2);
+    expect(feeds[1]!.tripId).not.toBe(tripId);
+    l.ws.close();
+    await until(() => feeds[1]!.closed);
+  });
+
+  it('says what is real in a live room, and offers only the hints that work there: no flights', async () => {
+    const { live: open } = fakeLive();
+    const { room: r } = await setUp({ live: open });
+    const cookie = await signIn(r);
+    const html = await (await page(r, cookie)).text();
+    for (const hint of LIVE_HINTS) expect(html).toContain(`data-fill="${hint}"`);
+    expect(html.match(/data-fill=/g)).toHaveLength(LIVE_HINTS.length);
+    expect(html).not.toMatch(/data-fill="[^"]*flight/i);
+    const l = await inRoom(r, cookie);
+    expect(states(l.got)[0].about).toEqual(['Go is live: this room talks to the real Go (contract 1.0.0).', LIVE_LINE]);
+    expect(LIVE_LINE).toMatch(/payments are blocked/i);
+    expect(LIVE_LINE).not.toMatch(/simulated/i);
+    for (const words of [LIVE_LINE, ...LIVE_HINTS]) expect(words).not.toMatch(/[\u2014\u2013]|claude/i);
+  });
+
+  it('keeps a line set by TRY_SIMULATED_LINE, live or not', async () => {
+    const { live: open } = fakeLive();
+    const { room: r } = await setUp({ live: open, simulatedLine: 'Payments are blocked here.' });
+    const l = await inRoom(r, await signIn(r));
+    expect(states(l.got)[0].about[1]).toBe('Payments are blocked here.');
+  });
+
+  it("never holds a run's events back behind a big picture", async () => {
+    const { feeds, live: open } = fakeLive();
+    const { room: r } = await setUp({ live: open });
+    const cookie = await signIn(r);
+    const l = await inRoom(r, cookie);
+    sayAs(l, personId(l, 'Rahul'), 'hi');
+    await until(() => feeds.length === 1);
+    const big = 'A'.repeat(LIVE_BEHIND_BYTES + 1024);
+    feeds[0]!.send({ type: 'run', event: { type: 'frames', run_id: 'run_1', frames: [{ label: 'results', at_ms: 1, page: '/hotels/search/result', jpeg_base64: big }] } });
+    feeds[0]!.send({ type: 'run', event: { type: 'run_end', run_id: 'run_1', ok: true, speed: 'page', ms: 10 } });
+    await until(() => lives(l.got).some((m) => m.msg.event?.type === 'run_end'));
+    expect(lives(l.got).map((m) => m.msg.event.type)).toContain('run_end');
+  });
+
+  it("may frame Bash's session page, and only with a watch origin: the CSP and the page say which", async () => {
+    const { live: open } = fakeLive();
+    const { room: r } = await setUp({ live: open, watchOrigin: 'https://staging.vestra.ai' });
+    const cookie = await signIn(r);
+    const res = await page(r, cookie);
+    expect(res.headers.get('content-security-policy')).toContain("frame-src https://staging.vestra.ai; form-action 'self'");
+    expect(await res.text()).toContain('<div class="sheet" id="sheet" role="dialog" aria-modal="true" aria-labelledby="sheet-title" hidden data-watch-origin="https://staging.vestra.ai">');
+    // The passcode page frames nothing, and nobody may frame the room.
+    expect((await page(r)).headers.get('content-security-policy')).not.toContain('frame-src');
+    expect(res.headers.get('content-security-policy')).toContain("frame-ancestors 'none'");
+    // No watch origin, or no Go Live: no frame-src at all, and Watch opens in a window.
+    const others: Array<Partial<TryRoomOptions>> = [{ live: open }, { watchOrigin: 'https://staging.vestra.ai' }];
+    for (const extra of others) {
+      await room?.close();
+      const plain = await serveTryRoom({ fake: fake!, passcode, cookieSalt, goUrl: go!.url, port: 0, goHealth: async () => ({ ok: true, contract: '1.0.0' }), ...extra });
+      room = plain;
+      const other = await page(plain, await signIn(plain));
+      expect(other.headers.get('content-security-policy')).not.toContain('frame-src');
+      // No element carries the origin (the script still names the attribute it reads), so the page frames nothing.
+      const text = await other.text();
+      expect(text).not.toMatch(/<[a-z]+ [^>]*data-watch-origin=/);
+      expect(text).toContain('<div class="sheet" id="sheet" role="dialog" aria-modal="true" aria-labelledby="sheet-title" hidden>');
+    }
+    // Anything but a bare origin never reaches the header.
+    expect(contentSecurityPolicy('n0nce', 'room.test', "https://bash.test; script-src *")).not.toContain('frame-src');
+    expect(contentSecurityPolicy('n0nce', 'room.test', 'https://bash.test/screen')).not.toContain('frame-src');
+    expect(contentSecurityPolicy('n0nce', 'room.test', 'http://localhost:3000')).toContain('frame-src http://localhost:3000;');
+  });
+
+  it("gives a Watch answer to the tapping socket only, and counts a Watch as a message, not a turn", async () => {
+    const { live: open } = fakeLive();
+    const { go: g, room: r } = await setUp({ live: open, watchOrigin: 'https://staging.vestra.ai', caps: { visitTurns: 2 } });
+    const cookie = await signIn(r);
+    const a = await inRoom(r, cookie);
+    const b = await inRoom(r, cookie);
+    const rahul = personId(a, 'Rahul');
+    // The first message makes the trip: the visit's two turns are gone.
+    sayAs(a, rahul, 'Hi all');
+    await until(() => said(g).length === 1);
+    const tripId = r.tripOf(visitOf(cookie))!;
+    await g.call('post_message', {
+      request_id: 'rq_login', trip_id: tripId,
+      card: {
+        kind: 'notice', card_id: 'c_login_1', tone: 'info', for_person_ids: [rahul], fallback_text: "Rahul is logging in to ixigo on Go's computer.",
+        title: 'Logging in to ixigo', body: "ixigo's log in is open on Go's screen.",
+        actions: [
+          { action_id: 'ixigo_watch', label: 'Watch', style: 'primary' },
+          { action_id: 'ixigo_logged_in', label: "I'm logged in", style: 'secondary', only_for_person_ids: [rahul] },
+        ],
+      },
+    });
+    await until(() => lastState(b.got).messages.some((m: any) => m.card?.card_id === 'c_login_1'));
+    g.tapAnswer = { result: 'open', url: 'https://staging.vestra.ai/screen?s=ses_1#token=tok_secret', expires_at: '2099-01-01T00:00:00Z' };
+    a.ws.send(JSON.stringify({ type: 'tap', cardId: 'c_login_1', actionId: 'ixigo_watch', personId: rahul }));
+    await until(() => a.got.some((m) => m.type === 'tap_result'));
+    expect(a.got.find((m) => m.type === 'tap_result')).toEqual({ type: 'tap_result', cardId: 'c_login_1', actionId: 'ixigo_watch', personId: rahul, result: g.tapAnswer });
+    // Over the visit's turns, a tap that can wake Go is turned away; the Watch above went through.
+    a.ws.send(JSON.stringify({ type: 'tap', cardId: 'c_login_1', actionId: 'ixigo_logged_in', personId: rahul }));
+    await until(() => a.got.some((m) => m.type === 'limit'));
+    expect(g.taps.map((t) => t.action_id)).toEqual(['ixigo_watch']);
+    // The other tab of the same visit never saw the session or its token.
+    await pause(100);
+    expect(b.got.filter((m) => m.type === 'tap_result')).toEqual([]);
+    expect(JSON.stringify(b.got)).not.toContain('tok_secret');
+  });
+});
+
 describe('the hosted page and its settings', () => {
   it('draws Start over, the hints, the limit line and the nonce, keeps the same person on a new trip, and leaves the dev room page as it was', () => {
     const html = roomPage({ title: 'Try Go', nonce: 'n0nce', hints: HINTS, hosted: true });
@@ -636,14 +851,27 @@ describe('the hosted page and its settings', () => {
       GO_URL: 'https://brain-try.example', GO_SIGNING_SECRET: 'a'.repeat(64), TRY_PASSCODE: 'judges-only-2026-passcode', TRY_COOKIE_SALT: 'b'.repeat(64),
     };
     expect(TryEnv.parse(base)).toMatchObject({
-      PORT: 8080, TRY_DAILY_TURNS: 200, TRY_DAILY_MESSAGES: 600, TRY_VISIT_TURNS: 30, TRY_SIMULATED_LINE: SIMULATED_LINE, TRY_INSTANCE: 'try-room',
+      PORT: 8080, TRY_DAILY_TURNS: 200, TRY_DAILY_MESSAGES: 600, TRY_VISIT_TURNS: 30, TRY_INSTANCE: 'try-room',
     });
+    // Left out, the room picks its own line: SIMULATED_LINE, or LIVE_LINE with TRY_LIVE=1.
+    expect(TryEnv.parse({ ...base, TRY_LIVE: '1' }).TRY_SIMULATED_LINE).toBeUndefined();
+    expect(TryEnv.parse({ ...base, TRY_SIMULATED_LINE: 'Payments are blocked here.' }).TRY_SIMULATED_LINE).toBe('Payments are blocked here.');
     expect(TryEnv.parse({ ...base, PORT: '9000', TRY_DAILY_TURNS: '10' })).toMatchObject({ PORT: 9000, TRY_DAILY_TURNS: 10 });
+    expect(TryEnv.parse(base).TRY_LIVE).toBe('0');
+    expect(TryEnv.parse({ ...base, TRY_LIVE: '1' }).TRY_LIVE).toBe('1');
+    expect(() => TryEnv.parse({ ...base, TRY_LIVE: 'yes' })).toThrow();
     expect(() => TryEnv.parse({ ...base, GO_SIGNING_SECRET: 'short' })).toThrow();
     expect(() => TryEnv.parse({ ...base, TRY_PASSCODE: 'nineteen-characters' })).toThrow();
     expect(() => TryEnv.parse({ ...base, TRY_COOKIE_SALT: 'c'.repeat(31) })).toThrow();
     const { TRY_COOKIE_SALT: _salt, ...noSalt } = base;
     expect(() => TryEnv.parse(noSalt)).toThrow();
     expect(() => TryEnv.parse({ ...base, GO_URL: 'brain-try.example' })).toThrow();
+    // Bash's session page origin, as the browser writes it; anything with a path, or http off this machine, is refused.
+    expect(TryEnv.parse(base).TRY_WATCH_ORIGIN).toBeUndefined();
+    expect(TryEnv.parse({ ...base, TRY_WATCH_ORIGIN: 'https://Staging.Vestra.ai' }).TRY_WATCH_ORIGIN).toBe('https://staging.vestra.ai');
+    expect(TryEnv.parse({ ...base, TRY_WATCH_ORIGIN: 'http://localhost:3000' }).TRY_WATCH_ORIGIN).toBe('http://localhost:3000');
+    for (const bad of ['https://staging.vestra.ai/', 'https://staging.vestra.ai/screen', 'http://staging.vestra.ai', 'staging.vestra.ai']) {
+      expect(() => TryEnv.parse({ ...base, TRY_WATCH_ORIGIN: bad })).toThrow();
+    }
   });
 });

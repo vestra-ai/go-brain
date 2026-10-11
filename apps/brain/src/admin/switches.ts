@@ -1,7 +1,7 @@
 import type pg from 'pg';
 
 /** Demo fallbacks that flip at runtime with no redeploy. P7 adds the admin page. */
-export type SwitchName = 'TRAVEL_MODE' | 'TRAVEL_RUNNER' | 'PAY_RAIL' | 'CALLS_MODE' | 'REFLEX_LIVE';
+export type SwitchName = 'TRAVEL_MODE' | 'TRAVEL_RUNNER' | 'PAY_RAIL' | 'CALLS_MODE' | 'REFLEX_LIVE' | 'BROWSER_FETCH_SLOTS' | 'RECIPE_WATCHES' | 'BOOKING';
 
 export interface Switches {
   /** The stored value, else the environment's, else the safe default. Read on every use, cached 2 s. */
@@ -20,7 +20,15 @@ export const SWITCH_RULES: Record<SwitchName, { valid: (v: string) => boolean; f
   PAY_RAIL: { valid: oneOf('ixigo', 'stripe_test', 'fake'), fallback: 'fake' },
   CALLS_MODE: { valid: oneOf('off', 'allowlist'), fallback: 'off' },
   // "q1,q2,..." names the live Jev questions, empty keeps all in shadow, "off" makes no Jev call (P2's kill switch).
-  REFLEX_LIVE: { valid: (v) => /^(off|q(?:10|[1-9])(,q(?:10|[1-9]))*)?$/.test(v), fallback: '' },
+  REFLEX_LIVE: { valid: (v) => /^(off|q(?:1[01]|[1-9])(,q(?:1[01]|[1-9]))*)?$/.test(v), fallback: '' },
+  // Bash's own cap on a computer's browser fetches at once: 2, and 4 once Bash runs four (its #4596).
+  BROWSER_FETCH_SLOTS: { valid: oneOf('1', '2', '3', '4'), fallback: '2' },
+  // Watches the group asks Go to keep on ixigo (travel/recipe-watches.ts): off unless a deployment says on (staging does).
+  RECIPE_WATCHES: { valid: oneOf('off', 'on'), fallback: 'off' },
+  // Go books on ixigo's own pages up to their pay button (travel/booking/): a traveller's own flight, and the group's voted
+  // stay. Off until proven on a drill, and on for some Server instances only ("instances:drill-p0,drill-p2") so a drill
+  // never reaches anyone's own room.
+  BOOKING: { valid: (v) => /^(off|on|instances:[\w.:@-]+(,[\w.:@-]+)*)$/.test(v), fallback: 'off' },
 };
 
 export function createSwitches(o: {

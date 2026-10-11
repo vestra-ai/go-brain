@@ -4,17 +4,20 @@
  * recipe and slots), applies constraints in code on every call,
  * and routes a hold or a confirm to the backend that made the offer. A search or a hold for a check-in or departure
  * before today in the trip's time zone is refused before any backend sees it, with the date to use instead.
- * ixigo_web searches ixigo.com itself, in the trip's browser: its options are link only, and status comes from ixigo's
- * MCP server when that is set up (never from the fake, whose readings are simulated).
+ * ixigo_web searches ixigo.com itself, in the trip's browser: its options are link only, except its stays, which book on
+ * Go's test rail once the trip's ixigo login is in (travel/web-stays.ts), and status comes from ixigo's MCP server when
+ * that is set up (never from the fake, whose readings are simulated).
  */
 import type { Switches } from '../admin/switches.js';
 import { localDay } from '../proactive/clock.js';
-import { ixigoPage } from './cards.js';
+import { ixigoPage, stayPayWords } from './cards.js';
 import { DEFAULT_TRIP_TZ, nextOccurrence } from './dates.js';
-import { applyConstraints, closest } from './filters.js';
+import { applyConstraints, missedByAll, nearest } from './filters.js';
 import { TravelError } from './mcp-travel.js';
+import type { PlaceFor } from './place-for.js';
 import type { ResultsStore } from './results.js';
-import { TravelQuery, type OfferRef, type Travel, type TravelBackend, type TravelKind, type TravelOptionKind, type TravelSearch } from './travel.js';
+import { checkInOf, WEB_STAY, type WebStays } from './web-stays.js';
+import { TravelQuery, type OfferRef, type SearchFor, type Travel, type TravelBackend, type TravelKind, type TravelOptionKind, type TravelSearch } from './travel.js';
 
 export const SEARCH_CACHE_MS = 180_000;
 const CACHE_MAX = 500;
@@ -26,11 +29,17 @@ export interface TravelLayerDeps {
   ixigo: TravelBackend | null;
   /** ixigo.com through the recipes (TRAVEL_MODE ixigo_web). */
   ixigoWeb?: TravelBackend | null;
-  results: Pick<ResultsStore, 'offer'> & Partial<Pick<ResultsStore, 'searchedFor' | 'placeOf'>>;
+  results: Pick<ResultsStore, 'offer'> & Partial<Pick<ResultsStore, 'searchedFor' | 'placeOf' | 'get'>>;
   /** Today (YYYY-MM-DD) in the trip's time zone. Default: India's. */
   today?: (tripId: string | null) => Promise<string>;
   simulate?: NonNullable<Travel['simulate']>;
   cacheMs?: number;
+  /** Stays from ixigo.com, booked on Go's test rail once the trip's ixigo login is in (travel/web-stays.ts). */
+  webStays?: WebStays | null;
+  /** Whether Go books each person's own flight on a trip (BOOKING): money says how a group flight is booked. */
+  booksFlights?: (tripId: string) => Promise<boolean>;
+  /** A place by its words as ixigo knows it (travel/place-for.ts): only under ixigo_web, where Go reads ixigo.com. */
+  placeFor?: PlaceFor | null;
 }
 
 /** The part of a query the backend sees; the rest are constraints Go applies itself. */
@@ -46,9 +55,27 @@ function backendQuery(q: TravelQuery): TravelQuery {
   };
 }
 
-/** What a backend sees. ixigo_web also sees the must-haves: ixigo filters on some itself, so its list holds the right stays. */
+/**
+ * What a backend sees. ixigo_web also sees the must-haves, and the site's own filters and sort: ixigo filters on them
+ * itself, so its list holds the right stays.
+ */
 const queryFor = (backend: string, q: TravelQuery): TravelQuery =>
-  backend === 'ixigo_web' && q.mustHave ? { ...backendQuery(q), mustHave: q.mustHave } : backendQuery(q);
+  backend === 'ixigo_web'
+    ? {
+        ...backendQuery(q),
+        ...(q.mustHave ? { mustHave: q.mustHave } : {}),
+        // A bus's named pickup or drop: ixigo's own chip for it is clicked on the stage.
+        ...(q.boardAt ? { boardAt: q.boardAt } : {}),
+        ...(q.dropAt ? { dropAt: q.dropAt } : {}),
+        ...(q.siteFilters?.length ? { siteFilters: q.siteFilters } : {}),
+        ...(q.siteSort ? { siteSort: q.siteSort } : {}),
+        // The rest of the ask: ixigo filters the part one of its own filters means (a gym, as its Fitness Centre).
+        ...(q.wants?.length ? { wants: q.wants } : {}),
+        ...(q.budgetMinor !== undefined ? { budgetMinor: q.budgetMinor } : {}),
+        // Stays: ixigo's next page too, for "See more" (taps.ts).
+        ...(q.pages ? { pages: q.pages } : {}),
+      }
+    : backendQuery(q);
 
 const keyOf = (q: TravelQuery): string =>
   JSON.stringify(Object.entries(q).sort(([a], [b]) => a.localeCompare(b)).map(([k, v]) => [k, typeof v === 'string' ? v.trim().toLowerCase() : v]));
@@ -89,7 +116,7 @@ export function createTravelLayer(d: TravelLayerDeps): Travel {
     throw new TravelError('unknown_offer', `No travel backend for ${id}.`);
   };
   return {
-    async search(kind: TravelKind, q: TravelQuery, o?: { tripId?: string }) {
+    async search(kind: TravelKind, q: TravelQuery, o?: SearchFor) {
       const parsed = TravelQuery.parse(q);
       const day = parsed.checkIn ?? parsed.date;
       if (day) {
@@ -105,9 +132,31 @@ export function createTravelLayer(d: TravelLayerDeps): Travel {
       const base = queryFor(name, parsed);
       const found = name === 'ixigo_web' ? await b.search(kind, base, o) : await kept(`${name}|${kind}|${keyOf(base)}`, () => b.search(kind, base, o));
       const all = found.results;
-      const results = applyConstraints(kind, parsed, all);
-      const near = results.length === 0 ? closest(kind, parsed, all) : null;
-      return { checkedAt: found.checkedAt, results, found: all.length, ...(near ? { closest: near } : {}), ...(found.runId ? { runId: found.runId } : {}) };
+      // Conditions ixigo did not filter on (unapplied): the options that say them fit as ever; when none does, the options
+      // without those conditions, and the search says it left them off. The site's own filters it left off are no Go
+      // check's: they go on, for the model to pick from the results.
+      // The site's own sort, when it applied one, is the order the group asked for: Go keeps it.
+      const order = { keepOrder: !!found.site?.sorted };
+      const fit = applyConstraints(kind, parsed, all, order);
+      const mustHave: readonly string[] = parsed.mustHave ?? [];
+      const off = fit.length === 0 ? (found.unapplied ?? []).filter((c) => mustHave.includes(c)) : [];
+      const loose = off.length > 0 ? applyConstraints(kind, { ...parsed, mustHave: (parsed.mustHave ?? []).filter((c) => !off.includes(c)) }, all, order) : [];
+      const results = loose.length > 0 ? loose : fit;
+      const unapplied = [...(loose.length > 0 ? off : []), ...(found.unapplied ?? []).filter((c) => !mustHave.includes(c))];
+      // When none fits, or fewer than three stays: the nearest of the rest, so a card can show how near ixigo gets.
+      const short = results.length === 0 || (kind === 'stays' && results.length < 3);
+      const near = short ? nearest(kind, parsed, all.filter((o) => !results.includes(o)), 3 - results.length) : [];
+      // None fits: which limit, on its own, left every one out, so the line says it rather than guessing.
+      const cutAll = results.length === 0 ? missedByAll(kind, parsed, all) : [];
+      return {
+        checkedAt: found.checkedAt, results, found: all.length, ...(near.length > 0 ? { nearest: near } : {}), ...(cutAll.length > 0 ? { missedByAll: cutAll } : {}),
+        ...(found.runId ? { runId: found.runId } : {}),
+        ...(found.page ? { page: found.page } : {}), ...(unapplied.length > 0 ? { unapplied } : {}), ...(found.site ? { site: found.site } : {}),
+        ...(found.earlier ? { earlier: true } : {}), ...(found.cut ? { cut: true } : {}), ...(found.notes ? { notes: found.notes } : {}),
+        ...(found.dropped?.length ? { dropped: found.dropped } : {}),
+        ...(found.listed !== undefined ? { listed: found.listed } : {}),
+        ...(found.none ? { none: found.none } : {}),
+      };
     },
     async waitMs(kind, q, o) {
       const { name, b } = pick();
@@ -119,6 +168,7 @@ export function createTravelLayer(d: TravelLayerDeps): Travel {
     },
     simulated: () => pick().name === 'fake',
     async hold(offerId, lead) {
+      if (offerId.startsWith(WEB_STAY) && d.webStays) return d.webStays.hold(offerId, lead);
       // The day the offer was searched for: a vote that outlived it cannot book the past.
       const searched = await d.results.searchedFor?.(offerId);
       if (searched?.day) {
@@ -130,19 +180,39 @@ export function createTravelLayer(d: TravelLayerDeps): Travel {
       return byPrefix(offerId).hold(offerId, lead);
     },
     async confirm(holdId, paid) {
+      if (holdId.startsWith(WEB_STAY) && d.webStays) return d.webStays.confirm(holdId, paid);
       return byPrefix(holdId).confirm(holdId, paid);
     },
     async placeOf(optionId) {
       return d.results.placeOf ? d.results.placeOf(optionId) : null;
     },
+    async placeFor(words, o) {
+      return d.placeFor && d.switches.get('TRAVEL_MODE') === 'ixigo_web' ? d.placeFor(words, o) : null;
+    },
     async offer(optionId): Promise<OfferRef | null> {
       const o = await d.results.offer(optionId);
       if (!o) return null;
-      // A vote and a payment use the whole stay; the card shows the nightly price.
+      // A stay's price is its whole stay here, as on its card and its vote, or none: never a night's (the Server team's 10 Oct §6c).
       // kind lets P5 refuse what Go cannot book for a group yet (flights, trains, buses); link is the option's own page on
       // ixigo.com (ixigo_web), where the group can book it, and null otherwise: a page a job found elsewhere is not handed out.
-      return { offerId: o.offerId, title: o.title, priceMinor: o.totalMinor ?? o.priceMinor, currency: o.currency, kind: o.kind as TravelOptionKind, link: ixigoPage(o.sourceUrl) };
+      // A stay from ixigo.com has no offer of its own: it gets Go's web-stay offer, booked on the test rail after the login.
+      const offerId = o.offerId ?? d.webStays?.offerIdFor(o) ?? null;
+      // The day it is for: what its search asked, or a stay page's own check-in. A vote that outlived it cannot book the past.
+      const day = (o.offerId ? (await d.results.searchedFor?.(o.offerId))?.day : null) ?? checkInOf(o.sourceUrl);
+      const past = day !== null && day !== undefined && day < (await today(o.tripId));
+      return {
+        offerId, title: o.title, priceMinor: o.kind === 'stay' ? o.totalMinor : (o.totalMinor ?? o.priceMinor), currency: o.currency, kind: o.kind as TravelOptionKind, link: ixigoPage(o.sourceUrl),
+        ...(day ? { day } : {}), ...(past ? { past: true as const } : {}),
+      };
     },
+    async payWords(optionId) {
+      const o = await d.results.offer(optionId);
+      if (!o || o.kind !== 'stay' || !d.results.get) return null;
+      const stay = (await d.results.get(o.tripId, o.resultsId))?.options[o.n - 1];
+      return stay ? stayPayWords(stay) : null;
+    },
+    ...(d.webStays ? { prepare: d.webStays.prepare } : {}),
+    ...(d.booksFlights ? { booksFlights: d.booksFlights } : {}),
     ...(d.simulate ? { simulate: d.simulate } : {}),
   };
 }

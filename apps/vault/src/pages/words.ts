@@ -38,6 +38,7 @@ export const PAY_MESSAGES: Record<'paid' | 'confirming' | PayRefusal | RailFailR
   card_declined: 'Your bank declined the card. Nothing was charged.',
   needs_authentication: "Your bank wants an extra check this card can't do here. Nothing was charged.",
   rail_error: "The payment didn't go through. Nothing was charged. Ask Go to try again.",
+  otp_wrong: "That code isn't right. The demo code is 123456.",
   rail_not_ready: "This way of paying isn't ready yet. Nothing was charged.",
   link_invalid: "This link doesn't work. Tap Approve on the card in Go again.",
   link_used: 'This payment link was already used.',
@@ -73,5 +74,16 @@ export function unlockLine(row: UnlockRow): string {
       return `A payment of ${amount}${to} didn't go through`;
     case 'pay_refused':
       return `Refused a payment of ${amount}${to}`;
+    case 'travel_saved':
+      return 'Saved your travel details';
+    case 'travel_read':
+      return `Go used your travel details${row.reason ? ` for ${row.reason}` : ''}`;
+    case 'travel_deleted':
+      return 'Deleted your travel details';
   }
+}
+
+/** "Last used: Flight to Goa, Sat, 6 Nov, 9:10 am": when Go last read the details for a booking, and what for. */
+export function lastUsedLabel(used: { at: Date; purpose: string | null }): string {
+  return `Last used: ${used.purpose ? `${used.purpose}, ` : ''}${whenLabel(used.at)}`;
 }

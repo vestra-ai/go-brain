@@ -18,6 +18,11 @@ let door: DoorImpl;
 let link: ServerLinkImpl;
 let base: string;
 const events: unknown[] = [];
+/** The trips the door heard a person act in (onTripActive), and the socket each came on. */
+const active: string[] = [];
+const activeFrom = new Map<string, unknown>();
+/** The meta each get_person was handed, by the person asked about. */
+const metas = new Map<string, unknown>();
 // A lane's own socket (P6's media stream works the same way): it answers each frame and records the path it was opened on.
 // It answers rather than greeting, because a greeting sent at once can arrive before the test's listener is attached.
 const laneWss = new WebSocketServer({ noServer: true });
@@ -36,12 +41,18 @@ beforeAll(async () => {
     now: () => new Date(),
     pingMs: 50,
     idleMs: 300,
+    onTripActive: (tripId, from) => {
+      active.push(tripId);
+      activeFrom.set(tripId, from);
+      if (tripId === 't_hook_throws') throw new Error('hook failed');
+    },
   });
   door.handle('send_event', async (ev) => {
     events.push(ev);
     return { accepted: true, duplicate: false };
   });
-  door.handle('get_person', async (p) => {
+  door.handle('get_person', async (p, meta) => {
+    metas.set(p.person_id, meta);
     if (p.person_id === 'p_slow') await new Promise((r) => setTimeout(r, 2_500));
     return { person_id: p.person_id, carry_over: false, facts: [] };
   });
@@ -74,7 +85,7 @@ const connect = () => rawServer(`${base}${target()}`, SECRET);
 describe('the door', () => {
   it('GET /v1/health answers without a signature', async () => {
     const r = await http.inject({ method: 'GET', url: '/v1/health' });
-    expect(r.json()).toEqual({ ok: true, contract: '1.0.0' });
+    expect(r.json()).toEqual({ ok: true, contract: '1.3.0' });
   });
 
   it('a good signature opens the socket, and Go pings', async () => {
@@ -115,6 +126,34 @@ describe('the door', () => {
     expect(await tryOpen(`${base}/v1/socket?instance=other`, signedHeaders('/v1/socket', SECRET))).toMatchObject({ status: 401 });
   });
 
+  // ?instance= names the replica; ?server=, the same on every replica of one Server, keys a person's browser.
+  // 10 Oct: a person opening the room (catch_up) or tapping names the trip before they type, so its computer can wake.
+  it("hears a person act in the trip a request names, before its handler, never from an event, and never in the answer's way", async () => {
+    const s = await connect();
+    active.length = 0;
+    await s.call('forget_person', { person_id: 'p_rahul', trip_id: 't_open' });
+    await s.call('forget_person', { person_id: 'p_rahul' });
+    await s.call('send_event', { event_id: 'ev_hook_1', type: 'trip.updated', trip_id: 't_event', occurred_at: '2026-10-10T10:00:00Z', seq: 1, by: { kind: 'system' }, data: { changed: ['title'] } });
+    // A hook that throws: the request is answered all the same (forget_person's own handler fails with 500 here).
+    const answered = await s.call('forget_person', { person_id: 'p_rahul', trip_id: 't_hook_throws' });
+    expect(answered).toHaveProperty('error');
+    expect(active).toEqual(['t_open', 't_hook_throws']);
+    // With the socket it came on: the trip's home follows it (app.ts), as it follows an event's.
+    expect(activeFrom.get('t_open')).toEqual({ instance: `test-${n}` });
+    await s.close();
+  });
+
+  it("hands each request the socket's instance, and the Server's own name when the socket gives one", async () => {
+    const named = await rawServer(`${base}/v1/socket?instance=named-${++n}&server=vestra-staging`, SECRET);
+    await named.call('get_person', { person_id: 'p_meta_named' });
+    expect(metas.get('p_meta_named')).toEqual({ instance: `named-${n}`, server: 'vestra-staging', frameId: expect.any(String) });
+    await named.close();
+    const plain = await connect();
+    await plain.call('get_person', { person_id: 'p_meta_plain' });
+    expect(metas.get('p_meta_plain')).toEqual({ instance: `test-${n}`, frameId: expect.any(String) });
+    await plain.close();
+  });
+
   it('closes a socket that stays silent for the idle time', async () => {
     const t = target();
     const r = await tryOpen(`${base}${t}`, signedHeaders(t, SECRET), { autoPong: false });
@@ -139,6 +178,20 @@ describe('the door', () => {
     await s.close();
   });
 
+  it('answers 409 conflict "not available yet" for a 1.3 method no lane answers yet (place_info, get_option_details)', async () => {
+    const s = await connect();
+    expect((await s.call('place_info', { name: 'Ladakh', from_city: 'Delhi' })).error).toMatchObject({
+      code: 409,
+      message: 'place_info is not available yet.',
+      data: { code: 'conflict' },
+    });
+    const details = { trip_id: 't_goa', card_id: 'c_opts_3', option_id: 'opt_2', person_id: 'p_priya' };
+    expect((await s.call('get_option_details', details)).error).toMatchObject({ code: 409, data: { code: 'conflict' } });
+    // Its params are still checked first, as for any method.
+    expect((await s.call('place_info', { from_city: 'Delhi' })).error.code).toBe(422);
+    await s.close();
+  });
+
   it('accepts an unknown event type before checking anything else', async () => {
     const before = events.length;
     const s = await connect();
@@ -155,6 +208,30 @@ describe('the door', () => {
     });
     expect(a.error.code).toBe(422);
     expect(a.error.data).toEqual({ code: 'invalid' });
+    await s.close();
+  });
+
+  // Contract 1.1 tolerance (3): an expense.changed with a change value newer than Go knows is refused 422 invalid,
+  // naming the field, as the guide says (the Server marks it failed and moves on; Go reads the trip at the gap), and
+  // the socket goes on: the next event is taken.
+  it('answers 422 for an expense change value Go does not know, and takes the next event on the same socket', async () => {
+    const s = await connect();
+    const expense = {
+      expense_id: 'x_1', paid_by_person_id: 'p_rahul', amount_minor: 240000, currency: 'INR', note: 'Cab', category: 'getting_around',
+      split_person_ids: ['p_rahul'], created_at: '2026-10-08T10:00:00Z',
+    };
+    const base = { trip_id: 't_goa', occurred_at: '2026-10-08T10:00:00Z', type: 'expense.changed' };
+    const newer = await s.call('send_event', { ...base, event_id: 'ev_x_new', seq: 7, data: { expense, change: 'reopened', by: { kind: 'system' } } });
+    expect(newer.error.code).toBe(422);
+    expect(newer.error.data).toEqual({ code: 'invalid' });
+    expect(newer.error.message).toMatch(/change/);
+    const before = events.length;
+    const known = await s.call('send_event', { ...base, event_id: 'ev_x_ok', seq: 8, data: { expense, change: 'disputed', by: { kind: 'person', person_id: 'p_priya' }, by_person_id: 'p_priya' } });
+    expect(known.result).toEqual({ accepted: true, duplicate: false });
+    // GO-TEAM-ASKS-REV4 B2: a fixed split. On 8 Oct Go answered it 422, so the Server sent nothing for one.
+    const fixed = await s.call('send_event', { ...base, event_id: 'ev_x_fixed', seq: 9, data: { expense, change: 'updated', by: { kind: 'person', person_id: 'p_priya' } } });
+    expect(fixed.result).toEqual({ accepted: true, duplicate: false });
+    expect(events.length).toBe(before + 2);
     await s.close();
   });
 
@@ -196,16 +273,15 @@ describe('the door', () => {
     await s.close();
   });
 
-  it("sends Go's requests for a trip back on the socket that brought that trip's events", async () => {
+  it("sends Go's requests for a trip on a socket of the trip's own Server instance, named by ?instance=", async () => {
     const page = { messages: [], has_more: false };
     const answer = (method: string) => (method === 'read_messages' ? page : {});
-    const a = await rawServer(`${base}${target()}`, SECRET, answer);
-    const b = await rawServer(`${base}${target()}`, SECRET, answer);
-    const left = (tripId: string, eventId: string) => ({
-      event_id: eventId, trip_id: tripId, seq: 1, occurred_at: '2026-10-05T10:00:00Z', type: 'person.left', data: { person_id: 'p_kabir' },
-    });
-    expect((await a.call('send_event', left('t_aff_a', 'ev_aff_a'))).result).toEqual({ accepted: true, duplicate: false });
-    expect((await b.call('send_event', left('t_aff_b', 'ev_aff_b'))).result).toEqual({ accepted: true, duplicate: false });
+    const [ta, tb] = [target(), target()];
+    const a = await rawServer(`${base}${ta}`, SECRET, answer);
+    const b = await rawServer(`${base}${tb}`, SECRET, answer);
+    // Each trip's instance, as intake records it from the trip's first event.
+    const instanceOf = (t: string) => new URL(t, 'http://go.local').searchParams.get('instance');
+    await db.pool.query('insert into trips (trip_id, server_instance) values ($1, $2), ($3, $4)', ['t_aff_a', instanceOf(ta), 't_aff_b', instanceOf(tb)]);
     for (let i = 0; i < 3; i++) {
       await expect(link.request('read_messages', { trip_id: 't_aff_a', after_seq: i })).resolves.toEqual(page);
       await expect(link.request('read_messages', { trip_id: 't_aff_b', after_seq: i })).resolves.toEqual(page);

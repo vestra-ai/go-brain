@@ -25,11 +25,30 @@ export interface QuickTool<A = unknown> {
    */
   endsTurn?: boolean;
   /**
+   * The words a reply would use to say this tool's work was done ("Noted"). When the tool was called this turn and refused
+   * every time, a sentence with them is not posted (sanitize.ts withoutRefused): Go never claims what it didn't do. A
+   * turn that didn't call the tool keeps them.
+   */
+  claims?: RegExp;
+  /**
    * When two or more calls in one reply use this same summary (the searches), the loop adds its line after their results:
    * a tally the model reads once, in code, instead of counting results itself.
    */
   summarizeRound?(results: Array<{ content: string; isError: boolean }>): string | null;
+  /**
+   * The model called a tool that doesn't exist, named after something of this tool's own (a recipe id for the ixigo
+   * tool): what to call instead, as the call's error. Undefined for any other name.
+   */
+  misnamed?(name: string): string | undefined;
+  /**
+   * false: left out of the model's tools for now (call_business while the CALLS_MODE switch is off), so Go never offers
+   * what it can't do. Read at every turn; the definitions change only when it flips, so the cache holds in between.
+   */
+  offered?(): boolean;
 }
+
+/** A 1.1 quick reply: the contract exports its schema only. */
+export type QuickReply = z.infer<typeof C.QuickReply>;
 
 export interface TurnCtx {
   tripId: string;
@@ -52,6 +71,19 @@ export interface TurnCtx {
   allowedTools?: string[];
   /** false: the turn's final text is not posted (cards and reactions still go). */
   mayPostText?: boolean;
+  /** The tools the model asked for in the round now running, set by the loop before they run. */
+  roundTools?: string[];
+  /** Set by a tool that put up its card and its line itself (a finished plain search): the turn ends on them. */
+  answered?: boolean;
+  /**
+   * Set by the loop when a tool this turn answers in the room by itself (its result says nothing is to be said: a live
+   * card that posts its own result): the turn may end with no words of its own.
+   */
+  toolAnswers?: boolean;
+  /** stay_silent was refused once this turn for a direct ask with no answer (room-tools.ts unansweredAsk): never twice. */
+  silenceRefused?: boolean;
+  /** 1.1 quick replies under this turn's message (offer_replies): each tap comes back as the tapper's own message. */
+  quickReplies?: QuickReply[];
 }
 
 export interface TurnOutcome {
@@ -91,7 +123,7 @@ export function createTools(): Tools {
       byName.set(t.name, t);
     },
     // Sorted, so the tool definitions are the same bytes whatever order the lanes registered in.
-    list: () => [...byName.values()].sort((a, b) => a.name.localeCompare(b.name)),
+    list: () => [...byName.values()].filter((t) => t.offered?.() !== false).sort((a, b) => a.name.localeCompare(b.name)),
   };
 }
 

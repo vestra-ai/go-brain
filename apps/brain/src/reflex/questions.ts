@@ -1,5 +1,5 @@
 /**
- * The ten questions Go asks Jev about every person's message, in one call.
+ * The eleven questions Go asks Jev about every person's message, in one call.
  * Question texts are product constants: a reworded question is a different question and needs its
  * test set recorded again (QUESTION_VERSIONS). People's words never sit inside a question; they ride
  * in the state, with the message last.
@@ -10,10 +10,10 @@ import type { TripPack } from '../trips/pack.js';
 import type { JevQuestion } from './jev.js';
 import { maskSecrets } from './secrets.js';
 
-export const QUESTION_NAMES = ['for_go', 'complete', 'size', 'task', 'fact', 'record', 'reaction', 'risky', 'opening', 'recipe'] as const;
+export const QUESTION_NAMES = ['for_go', 'complete', 'size', 'task', 'fact', 'record', 'reaction', 'risky', 'opening', 'recipe', 'actionable'] as const;
 export type QuestionName = (typeof QUESTION_NAMES)[number];
 export const QUESTION_NUMBER: Record<QuestionName, number> = {
-  for_go: 1, complete: 2, size: 3, task: 4, fact: 5, record: 6, reaction: 7, risky: 8, opening: 9, recipe: 10,
+  for_go: 1, complete: 2, size: 3, task: 4, fact: 5, record: 6, reaction: 7, risky: 8, opening: 9, recipe: 10, actionable: 11,
 };
 
 export const FENCE =
@@ -23,18 +23,40 @@ export const REACTIONS = { noted: '✅', thumbs: '👍', cheer: '🙌' } as cons
 export type ReactionEmoji = (typeof REACTIONS)[keyof typeof REACTIONS];
 
 /** The ixigo searches Go can start before the model call (travel/recipes): Jev picks one, the travel parser fills its slots. */
-export const RECIPE_CHOICES = ['flights', 'stays', 'trains', 'buses'] as const;
+export const SEARCH_CHOICES = ['flights', 'stays', 'trains', 'buses'] as const;
+export type SearchChoice = (typeof SEARCH_CHOICES)[number];
+/**
+ * The other ixigo asks Go can start before the model call: each is one recipe of the book, its slots read from the words
+ * (travel/recipes/fast.ts). A new one is a choice here, its line in q10_recipe's criteria, and its entry in fast.ts.
+ */
+export const FAST_CHOICES = [
+  'train_status', 'pnr', 'confirm_chance', 'schedule', 'coach_position', 'boarding_stations', 'flight_status', 'guide', 'offers', 'hotel_rooms',
+  'hotel_reviews', 'fare_review',
+] as const;
+export type FastChoice = (typeof FAST_CHOICES)[number];
+/** Question 10's choices, "none" aside. Only those in LIVE_RECIPES (live-gate.ts) act; the rest are read in shadow. */
+export const RECIPE_CHOICES = [...SEARCH_CHOICES, ...FAST_CHOICES] as const;
 export type RecipeChoice = (typeof RECIPE_CHOICES)[number];
+export const isSearchChoice = (c: RecipeChoice): c is SearchChoice => (SEARCH_CHOICES as readonly string[]).includes(c);
 
 function noul(instructions: string, yes: string, no: string): JevQuestion {
   return { type: 'noul', instructions: `${FENCE} ${instructions}`, criteria: { true: yes, false: no } };
 }
 
 const STATIC: Record<Exclude<QuestionName, 'task'>, Record<string, JevQuestion>> = {
+  // Keshav, 10 Oct: "jev decision model should know that many messages even without @go or go can be responded by go or
+  // acted upon by go". Question 1 asks who a line is spoken to; this one asks whether Go has anything to do with it.
+  actionable: {
+    q11_actionable: noul(
+      "Go, the AI member of this group, can do something useful with the last message, whether or not it names Go: answer it, act on it, note it for the trip, or offer something for it. That covers asks made without Go's name, facts and needs about the trip, plans, budgets, limits on someone's time, and questions to the group about the trip.",
+      'For example: mujhe ixigo pe dobara login karna hai; Kabir is allergic to peanuts; Goa chalein December mein?; budget 10k ke andar rakhte hain; Meher can only leave after 7 on Friday; what time is check-out?; koi achha cafe hai Panjim mein?',
+      'Pure banter, greetings, acknowledgements and side chat that is not about the trip: hahaha; good night all; ok done; thik hai; nice pic bhai; congrats on the new job!; see you tomorrow.',
+    ),
+  },
   for_go: {
     q1_addressed: noul(
-      'The last message speaks to Go, the AI member of this group: it names Go, asks Go to do or find something, or asks the group a question that Go could answer or look up.',
-      'For example: Go, train dekh lo Saturday ki; can someone check if it rains in Goa in November?; koi villa dhundho na; what time do we check in?; Go bhai total kitna hoga?',
+      'The last message speaks to Go, the AI member of this group: it names Go, asks Go to do or find something, asks for something Go does for the group even without naming Go (logging in to ixigo, a search, a booking, a vote, a reminder, checking something), or asks the group a question that Go could answer or look up.',
+      'For example: Go, train dekh lo Saturday ki; can someone check if it rains in Goa in November?; koi villa dhundho na; what time do we check in?; Go bhai total kitna hoga?; mujhe ixigo pe dobara login karna hai; can we look at hotels near Vagator?; someone set a reminder for the cab.',
       'Friends talking to each other: jokes, plans between them, teasing, greetings, reactions, photos, haha, lol, chal theek hai, bas aa raha hoon.',
     ),
     q1_chatter: noul(
@@ -165,13 +187,25 @@ const STATIC: Record<Exclude<QuestionName, 'task'>, Record<string, JevQuestion>>
   recipe: {
     q10_recipe: {
       type: 'choice',
-      instructions: `${FENCE} Which one travel search on ixigo does the last message ask Go or the group to run now, if any?`,
+      instructions: `${FENCE} Which one thing on ixigo does the last message ask Go or the group to look up now, if any?`,
       criteria: {
         flights: 'Flights. A search for flights from one place to another on a day: which flights there are, their times or their prices. For example: @Go Hyderabad to Goa flights on Saturday morning; Go Chennai se Goa flight kitne ki hai 12 tareekh ko; any direct flights Kolkata to Goa on the 14th?',
         stays: 'Stays. A search for hotels, villas, resorts or homestays in a place for some nights, with wishes such as a pool, an area or a budget. For example: Go hotels near Colva beach for 3 nights; Go Morjim mein villa dikhao jisme 6 log so sakein; any resorts in Palolem under 5k a night?',
         trains: 'Trains. A search for trains from one station or city to another on a day: which trains run, their seats or waitlist by class, and their fares. For example: Go Pune se Kudal train hai kya Friday ko?; trains from Bengaluru to Karwar on the 12th; 2A mein seat milegi kya Hazrat Nizamuddin se?',
         buses: 'Buses. A search for buses from one city to another on a day: which buses run, sleeper or AC, their fares and seats. For example: Go Hubli se Goa bus dikhao Saturday ki; any AC sleeper buses Kolhapur to Panjim tonight?; Belgaum to Goa bus kitne ki hai?',
-        none: 'No search, or more than one kind at once: talk about travel, seats or a past journey; the status of a flight, train or booking; booking, paying or cancelling; a question about one chosen hotel; how a running search is going, or stopping it; coupons; any other question or chatter.',
+        train_status: "Train running status. Where a train is right now or how late it is running today, by its number or name. For example: Go 12627 kitni late chal rahi hai?; is the Goa Express on time today?; Go check if 16346 is running late.",
+        pnr: 'PNR status. Whether a booked train ticket is confirmed, waitlisted or RAC, from its PNR. For example: Go PNR [10-digit number] check karo; what is the status of our PNR [10-digit number]?; Go hamara ticket confirm hua kya? PNR [10-digit number].',
+        confirm_chance: 'Waitlist chance. Whether a waitlisted or RAC train ticket is likely to confirm, or which trains have a good chance of confirming. For example: Go WL 23 hai 3A mein, confirm hoga kya?; what are the chances our RAC tickets confirm?; Go Mumbai se Madgaon Friday, kis train mein confirm hone ka chance zyada hai?',
+        schedule: "Train timetable. A train's stations and its times at them, by its number or name. For example: Go 12133 kahan kahan rukti hai?; what time does the Konkan Kanya reach Thivim?; Go Mandovi Express ka route bhejo.",
+        coach_position: "Coach position. Where a coach of one train stops on the platform, or how many coaches it has. For example: Go 12619 mein A1 coach kahan rukega?; where does coach S5 stop on the Mandovi Express?; Go 10103 mein kitne coach hain?",
+        boarding_stations: 'Boarding stations. Which stations someone can board one train at, or whether they can board it at another station. For example: Go 12780 mein Panvel se board kar sakte hain kya?; can Meher board the Goa Express at Ghaziabad instead?; Go 16346 ke boarding stations bata.',
+        flight_status: "Flight status. Whether one flight is on time, delayed or cancelled, or its terminal, gate or baggage belt, by its airline code and number. For example: Go UK 827 aaj late hai kya?; is QP 1402 on time tomorrow?; Go Kabir ki flight ka terminal kaunsa hai?",
+        guide: "A place's guide. What to see, do or eat in a place, or its famous spots. For example: Go Gokarna mein kya kya dekhne layak hai?; what are the must-visit places in South Goa?; Go Panjim mein khana kahan achha milta hai?",
+        offers: "ixigo's offers. The offers, sales, coupon codes or bank card deals on ixigo now, for flights, trains, buses or hotels. For example: Go koi bank offer hai kya flights pe?; any ixigo coupon for bus tickets right now?; Go HDFC card pe hotel discount milega?",
+        hotel_rooms: "A shown stay's rooms. The rooms of one stay Go already showed: their prices, beds, breakfast, free cancellation or paying at the hotel. For example: Go us villa mein kaun se rooms hain?; does the second hotel include breakfast?; Go cheapest room kitne ka hai wahan?",
+        hotel_reviews: "A shown stay's reviews. What guests say about one stay Go already showed: its reviews, cleanliness, food or service. For example: Go pehle wale hotel ke reviews kaise hain?; what do people say about the Candolim villa?; Go is the staff good at that resort?",
+        fare_review: "A shown flight's fare. The terms of one flight Go already showed: free cancellation and what it costs, the cancellation charges, the total to pay, baggage or add-ons. For example: Go free cancellation kitne ka hai us flight pe?; what is the cancellation charge on the IndiGo one?; Go teesri flight mein baggage kitna hai?",
+        none: 'Nothing to look up on ixigo, or more than one kind at once: talk about travel, seats or a past journey; booking, paying or cancelling; asking to be told later when something changes; any other question about one stay, such as its pool, parking or location; how a running search is going, or stopping it; the weather; any other question or chatter.',
       },
     },
   },
@@ -212,6 +246,7 @@ export function messageText(m: Message): string {
   if (m.text) parts.push(m.text);
   for (const a of m.attachments) {
     if (a.kind === 'photo') parts.push(a.caption ? `(photo: ${a.caption})` : '(a photo)');
+    else if (a.kind === 'location') parts.push(`(📍 ${a.name ?? `${a.lat},${a.lng}`})`);
     else parts.push(`(file: ${a.name})`);
   }
   return parts.join(' ');
@@ -236,6 +271,10 @@ function clean(s: string, max: number): string {
   return maskSecrets(s).text.replace(/[\r\n"]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, max);
 }
 
+/** A PNR (or a phone number): Jev reads that one is there, never its digits. */
+const TEN_DIGITS = /(?<!\d)\d{10}(?!\d)/g;
+const hideDigits = (s: string): string => s.replace(TEN_DIGITS, '[10-digit number]');
+
 export function buildState(input: ReflexInput): JevState {
   const { message, pack } = input;
   const idx = pack.messages.findIndex((m) => m.message_id === message.message_id);
@@ -243,14 +282,14 @@ export function buildState(input: ReflexInput): JevState {
   const chatBefore = before
     .filter((m) => !m.withheld && !m.deleted)
     .slice(-3)
-    .map((m) => `${speakerLabel(m, pack)}: ${lastChars(maskSecrets(messageText(m)).text, 300)}`);
+    .map((m) => `${speakerLabel(m, pack)}: ${lastChars(hideDigits(maskSecrets(messageText(m)).text), 300)}`);
   const jobs = input.runningTasks.slice(0, 20).map((t, i) => `t${i + 1}: ${clean(t.brief, 120)}`);
   // Key order is the order Jev reads: context first, the person's message last.
   return {
     ...(chatBefore.length ? { chat_before: chatBefore } : {}),
     ...(jobs.length ? { running_jobs: jobs } : {}),
     speaker: speakerLabel(message, pack),
-    message: lastChars(maskSecrets(messageText(message)).text, 800),
+    message: lastChars(hideDigits(maskSecrets(messageText(message)).text), 800),
   };
 }
 

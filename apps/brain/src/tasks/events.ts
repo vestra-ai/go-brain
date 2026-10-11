@@ -26,7 +26,7 @@ export interface TaskEventsDeps {
   tasks: TasksService;
   v1: V1Client;
   desk: Brain['desk'];
-  results: Pick<ResultsStore, 'save' | 'findOffer'>;
+  results: Pick<ResultsStore, 'save' | 'findOffer' | 'findBySource'>;
   packs: Pick<Brain['packs'], 'get'>;
   now: () => Date;
   log: { warn(obj: object, msg: string): void; info(obj: object, msg: string): void };
@@ -122,7 +122,8 @@ export function createTaskEvents(d: TaskEventsDeps): TaskEvents {
           const fresh = await d.store.get(row.id);
           if (fresh) await d.tasks.pushCard(fresh, true);
         }
-        await wake(row, `handoff:${id}`, { event: 'handoff', taskId: row.id, title: row.title, interactionId: id, personId, summary: summary ?? 'It needs someone to sign in or give a code.' });
+        // A quiet job's cards already say who is needed and what to tap (the ixigo login's), so no line in the chat.
+        if (!row.quiet) await wake(row, `handoff:${id}`, { event: 'handoff', taskId: row.id, title: row.title, interactionId: id, personId, summary: summary ?? 'It needs someone to sign in or give a code.' });
         return;
       }
       case 'approval': {
@@ -203,10 +204,14 @@ export function createTaskEvents(d: TaskEventsDeps): TaskEvents {
     const read = readReturned(kind, task.result?.data ?? null, task.result?.text ?? eventText);
     if (read.fromText) d.log.info({ taskId: row.id, v1TaskId }, "tasks: the job's answer came as JSON in its text, not as data; read it from the text");
     const optionKind = OPTION_KIND_FOR[kind];
-    // An offer id Go's search showed this trip becomes that offer, checked prices and whole stay included; any other
-    // stay or journey pick is "Found on the web", with no offer, so it can be voted on but never booked.
+    // An offer id Go's search showed this trip, or the ixigo.com page it read, becomes that option, checked prices and
+    // whole stay included; only a pick from another site is "Found on the web", with no offer, voted on but never booked.
     const picks = optionKind && read.options.length > 0
-      ? await resolvePicks(row.tripId, optionKind, read.options, (tripId, offerId) => d.results.findOffer(tripId, offerId))
+      ? await resolvePicks(
+        row.tripId, optionKind, read.options,
+        (tripId, offerId) => d.results.findOffer(tripId, offerId),
+        (tripId, kind, sourceUrl, title) => d.results.findBySource(tripId, kind, sourceUrl, title),
+      )
       : null;
     if (picks && picks.fromWeb > 0) d.log.info({ taskId: row.id, fromWeb: picks.fromWeb }, 'tasks: picks with no offer Go showed are shown as found on the web');
     const set = optionKind && picks
@@ -223,7 +228,8 @@ export function createTaskEvents(d: TaskEventsDeps): TaskEvents {
     if (!moved) return;
     const fresh = await d.store.get(row.id);
     if (fresh) await d.tasks.pushCard(fresh, true);
-    await wake(row, 'done', { event: 'completed', taskId: row.id, title: row.title, resultsId: set?.resultsId ?? null, count: read.options.length, summary: read.summary });
+    // A quiet job's lane speaks for it (the ixigo login's own card), so its end never wakes the composer.
+    if (!row.quiet) await wake(row, 'done', { event: 'completed', taskId: row.id, title: row.title, resultsId: set?.resultsId ?? null, count: read.options.length, summary: read.summary });
     await d.tasks.afterEnd(row.tripId);
   }
 

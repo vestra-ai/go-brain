@@ -17,7 +17,9 @@ afterEach(async () => {
 });
 
 async function setUp(extra: Partial<FakeServerOptions> = {}) {
-  go = await startTestGo(secret);
+  // A Server given its own clock signs its socket by it, so Go checks by the same clock.
+  const now = extra.now;
+  go = await startTestGo(secret, now ? { nowSeconds: () => Math.floor(now().getTime() / 1000) } : {});
   fake = new FakeServer({ goUrl: go.url, secret, ...extra });
   await fake.start(3000);
   await fake.createTrip(goaFreshTrip());
@@ -35,6 +37,18 @@ describe('connecting and the trip', () => {
     expect(TripSnapshot.safeParse(g.events[0].data.trip).success).toBe(true);
     expect(socketUrl('https://go.example', 'server-1')).toBe('wss://go.example/v1/socket?instance=server-1');
     expect(socketUrl('ws://localhost:8080/v1/socket', 'sim')).toBe('ws://localhost:8080/v1/socket?instance=sim');
+  });
+
+  it("signs its upgrade with its own clock, so a test that moves the clock (Go's and the Server's alike) still connects", async () => {
+    // Ten hours before the real time: a signature from the real clock would be outside Go's 300 s window.
+    const offset = -10 * 3_600_000;
+    go = await startTestGo(secret, { nowSeconds: () => Math.floor((Date.now() + offset) / 1000) });
+    fake = new FakeServer({ goUrl: go.url, secret, now: () => new Date(Date.now() + offset) });
+    await fake.start(3000);
+    expect(go.refused).toBe(0);
+    const moved = Math.floor((Date.now() + offset) / 1000);
+    expect(verifyRequest({ method: 'GET', target: go.targets[0]!, body: '' }, go.signatures[0], secret, moved).ok).toBe(true);
+    expect(verifyRequest({ method: 'GET', target: go.targets[0]!, body: '' }, go.signatures[0], secret).ok).toBe(false);
   });
 
   it('says things as people, with the next change number, and tells listeners', async () => {

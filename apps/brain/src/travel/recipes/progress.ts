@@ -2,8 +2,6 @@
  * What a recipe run tells the room while it works. The runner reports; the live card (live-search.ts) owns everything
  * the room sees. A runner calls OnProgress and never awaits it, and it never throws back into the runner.
  */
-import type { RecipeId } from './recipe.js';
-
 /** One picture of the page, as Bash's browser fetch returns it. */
 export interface LiveFrame {
   label: string;
@@ -16,14 +14,29 @@ export interface LiveFrame {
 
 export type RecipeProgress =
   /** Just before the page loads, by the browser fetch or the fallback's job. */
-  | { type: 'opening'; recipeId: RecipeId; url: string }
+  | { type: 'opening'; recipeId: string; url: string }
   /** The page's data is back. */
   | { type: 'captured'; ms: number }
   /** Pictures of the page, any time, oldest first. */
   | { type: 'frames'; frames: LiveFrame[] }
+  /** Pictures of the page as ixigo drew it after the answer (runners.ts look): the card's picture, even once it is done. */
+  | { type: 'drawn'; frames: LiveFrame[] }
   /** The options are read, before Go's own constraints are applied. */
   | { type: 'extracted'; count: number }
+  /** ixigo knows more than one place for the words: the model or the group chooses, and the search goes on after. */
+  | { type: 'choosing'; between: string[] }
+  /** A person has the trip's browser (ixigo's login open on Go's screen): the read waits, and runs once it is free. */
+  | { type: 'waiting' }
+  /** Go's one screen (the stage) shows the page of the ask before it: this read is next in line, never stopping that one. */
+  | { type: 'queued' }
+  /** Its turn on the stage came: the read opens its page now. */
+  | { type: 'turn' }
   /** The run failed with this TravelError code. */
-  | { type: 'failed'; code: string };
+  | { type: 'failed'; code: string }
+  /**
+   * The read didn't answer, and the search answered another way (ixigo's own page, Go's earlier read): the card ends done,
+   * saying how ("Here's ixigo's page, set for 3 from Delhi").
+   */
+  | { type: 'answered'; text: string };
 
 export type OnProgress = (e: RecipeProgress) => void;

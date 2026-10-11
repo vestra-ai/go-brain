@@ -7,7 +7,10 @@ import type { FastifyReply, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import type { Brain, RegisterLane } from '../app.js';
 import { newUlid } from '../door/ulid.js';
-import { checkAll, defaultProbes, type Probe, type ProbeResult } from './health.js';
+import { DEFAULT_TZ, isValidTz, zonedTime } from '../proactive/clock.js';
+import type { RecipeStat } from '../travel/book/engine.js';
+import type { TripWatches } from '../travel/recipe-watches.js';
+import { checkAll, checkComputer, defaultProbes, type Probe, type ProbeResult } from './health.js';
 import { ADMIN_LANES, NOT_DEPLOYED, type AdminLanes } from './lanes.js';
 import { renderAdminPage } from './page.js';
 import { PAGE_HEADERS, registerSessionRoute, signedIn, signInPage, type SessionOptions } from './session.js';
@@ -41,6 +44,10 @@ export interface HealthJson {
   switches: Record<SwitchName, string>;
   /** Names only: a phone number never leaves Go. */
   calls: { mode: string; allowlist: string[]; allowlist_count: number };
+  /** How fast each ixigo recipe answers, at each speed, since Go started. */
+  recipes: RecipeStat[];
+  /** The watches groups asked for that are going: per trip, how many and when the next is checked. */
+  watches: TripWatches[];
 }
 
 /** The "Fire a watch" form. The rest of P6's body is fixed for the demo. */
@@ -50,7 +57,18 @@ export const FireForm = z.object({
   label: z.string().min(1).max(80).default('IndiGo 6E 2134'),
   delay_minutes: z.coerce.number().int().min(0).max(1440).default(120),
   note: z.string().min(1).max(200).optional(),
+  /** When the flight now lands, in the trip's own time (the form's date and time), so the notice can say it. */
+  lands_at: z.string().regex(/^\d{4}-\d{2}-\d{2}T([01]\d|2[0-3]):[0-5]\d$/, 'a date and time, like 2026-11-06T22:45').optional(),
 });
+
+/** The form's "now lands at", a wall-clock time in the trip's zone, as the instant the watch carries (arrive_at). */
+async function landsAtInstant(brain: Pick<Brain, 'pool'>, tripId: string, local: string): Promise<string> {
+  const { rows } = await brain.pool.query<{ tz: string | null }>('select tz from trips where trip_id = $1', [tripId]);
+  const tz = rows[0]?.tz && isValidTz(rows[0].tz) ? rows[0].tz : DEFAULT_TZ;
+  const [day, time] = local.split('T') as [string, string];
+  const [hour, minute] = time.split(':').map(Number) as [number, number];
+  return zonedTime(day, hour, minute, tz).toISOString();
+}
 const TripForm = z.object({ trip_id: z.string().min(1).max(64) });
 
 type Query = { trip?: string; note?: string };
@@ -138,8 +156,8 @@ export function registerAdminWith(o: AdminOptions = {}): RegisterLane {
         const tripId = await tripOf(req.query);
         const [health, people, trips] = await Promise.all([checkAll(probesFor(brain, tripId)), peopleOf(tripId), newestTrips()]);
         const html = renderAdminPage({
-          tripId, trips, role, at: brain.now(), health, switches: switchValues(), people, calls: calls(),
-          note: req.query.note ?? null, docsUrl: DOCS_URL,
+          tripId, trips, role, at: brain.now(), health, switches: switchValues(), people, calls: calls(), recipes: brain.recipeStats?.() ?? [],
+          watches: (await brain.recipeWatches?.()) ?? [], note: req.query.note ?? null, docsUrl: DOCS_URL,
         });
         return reply.headers(PAGE_HEADERS).type('text/html; charset=utf-8').send(html);
       });
@@ -155,6 +173,8 @@ export function registerAdminWith(o: AdminOptions = {}): RegisterLane {
           probes: await checkAll(probesFor(brain, tripId)),
           switches: Object.fromEntries(switchValues().map((s) => [s.name, s.value])) as Record<SwitchName, string>,
           calls: { mode: c.mode, allowlist: c.allowlist.flatMap((a) => (a.name ? [a.name] : [])), allowlist_count: c.allowlist.length },
+          recipes: brain.recipeStats?.() ?? [],
+          watches: (await brain.recipeWatches?.()) ?? [],
         };
         return reply.header('cache-control', 'no-store').send(body);
       });
@@ -181,6 +201,7 @@ export function registerAdminWith(o: AdminOptions = {}): RegisterLane {
           const message = `Watches are ${NOT_DEPLOYED}.`;
           return answer(req, reply, 404, err('not_found', message), message, f.trip_id);
         }
+        const arriveAt = f.lands_at ? await landsAtInstant(brain, f.trip_id, f.lands_at) : null;
         // P6's route, in process, with the demo's body: the same bar as any watch, and its card says "Simulated for the demo".
         const res = await brain.http.inject({
           method: 'POST',
@@ -188,7 +209,7 @@ export function registerAdminWith(o: AdminOptions = {}): RegisterLane {
           headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
           payload: {
             trip_id: f.trip_id, label: f.label, person_ids: [f.person_id], delay_minutes: f.delay_minutes,
-            ...(f.note ? { note: f.note } : {}), importance: 1, urgency: 1, reset_budget: true, force: true,
+            ...(f.note ? { note: f.note } : {}), ...(arriveAt ? { arrive_at: arriveAt } : {}), importance: 1, urgency: 1, reset_budget: true, force: true,
           },
         });
         let out: unknown;
@@ -224,6 +245,21 @@ export function registerAdminWith(o: AdminOptions = {}): RegisterLane {
         const note = running.length === 0 ? 'No job was running.'
           : failed.length === 0 ? `Stopped ${plural(ids.length)}.` : `Stopped ${plural(ids.length)}; ${failed.length} did not stop.`;
         return answer(req, reply, failed.length === 0 ? 200 : 502, { ok: failed.length === 0, stopped: ids, ...(failed.length ? { failed } : {}) }, note, tripId);
+      });
+
+      // The one place the admin wakes a trip's computer: on purpose, never from the health view.
+      scope.post<{ Querystring: Query; Body: unknown }>('/admin/check-computer', async (req, reply) => {
+        const parsed = TripForm.safeParse(filled(req.body));
+        if (!parsed.success) return answer(req, reply, 422, err('invalid', 'trip_id is required'), 'Pick a trip first.', req.query.trip ?? null);
+        const tripId = parsed.data.trip_id;
+        if (!lanes.v1UserIdFor) {
+          const message = `Trip computers are ${NOT_DEPLOYED}.`;
+          return answer(req, reply, 404, err('not_found', message), message, tripId);
+        }
+        const checked = await checkComputer(brain.env, o.fetch ?? fetch, lanes.v1UserIdFor(tripId)).catch((e: unknown) => ({
+          ok: false, detail: `The check failed: ${e instanceof Error ? e.message : String(e)}`.slice(0, 200),
+        }));
+        return answer(req, reply, checked.ok ? 200 : 502, { ok: checked.ok, detail: checked.detail }, checked.detail, tripId);
       });
 
       scope.post<{ Querystring: Query; Body: unknown }>('/admin/decline-pay', async (req, reply) => {

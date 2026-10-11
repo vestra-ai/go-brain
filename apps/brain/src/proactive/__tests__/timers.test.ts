@@ -80,6 +80,17 @@ describe('stillTrue', () => {
     expect(stillTrue(vote, goaPack({ trip: goaTrip({ decisions: [d] }) }))).toEqual({ ok: true, personIds: ['p_meher'] });
   });
 
+  it('pins nobody once someone said they are flexible: who has not voted is not known, so the reminder goes to the group (1.1 A5)', () => {
+    const base = goaTrip();
+    // Arjun said he is flexible: voted 4 with three picks named, flexible_count 1.
+    const d = { ...base.decisions[0]!, voted: 4, flexible_count: 1 };
+    const trip = goaTrip({ decisions: [d] });
+    expect(nonVoters(trip, d.decision_id)).toEqual([]);
+    const plan = byTopic(planTimers(trip, TZ, NOON), 'vote_closing')[0]!;
+    expect(plan).toMatchObject({ useful: ['message'], personIds: [] });
+    expect(stillTrue(vote, goaPack({ trip }))).toEqual({ ok: true, personIds: [] });
+  });
+
   it('drops a vote reminder once the vote closed or moved', () => {
     const base = goaTrip();
     expect(stillTrue(vote, goaPack({ trip: goaTrip({ decisions: [{ ...base.decisions[0]!, status: 'closed' }] }) }))).toEqual({ ok: false });

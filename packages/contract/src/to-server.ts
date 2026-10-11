@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { AmountMinor, Category, Currency, HttpUrl, Id, IsoDate, IsoDateTime, Journey, Place, PositiveAmountMinor, Seq } from './common.js';
-import { BookingKind, Day, Decision, DecisionOption, Proof } from './trip.js';
+import { BookingDetail, BookingDocument, BookingKind, Day, Decision, DecisionOption, Passenger, Proof } from './trip.js';
 
 /**
  * Go's requests: what Go asks the Server over the socket, to read the trip or act in it.
@@ -34,6 +34,11 @@ export const UpdateTrip = z
     stay: z.string().max(60).nullish(),
     /** Replaces the whole itinerary. */
     itinerary: z.array(Day).max(30).nullish(),
+    /**
+     * 1.1: the group's budget per person, in the trip's currency, when the group settled one in the chat. Go cannot
+     * clear it: a person clears it in the App.
+     */
+    budget_per_person_minor: PositiveAmountMinor.nullish(),
   })
   .meta({ id: 'UpdateTrip', description: 'Only the fields sent change.' });
 
@@ -48,6 +53,14 @@ export const OpenDecision = z
     closes_at: IsoDateTime.nullish(),
   })
   .meta({ id: 'OpenDecision', description: 'Opens a vote. Go then posts a message with a vote card to show it in the room.' });
+
+/**
+ * 1.3 (rev 5 R5): "see more" adds options to the same open vote. Only an open vote, at most 20 options in all; votes
+ * already cast stay. The Server answers with the change's seq and sends decision.options_added.
+ */
+export const AddVoteOptions = z
+  .object({ request_id, trip_id, decision_id: Id, options: z.array(DecisionOption).min(1).max(10) })
+  .meta({ id: 'AddVoteOptions', description: '1.3: adds options to an open vote, for the options a "See more" tap brought.' });
 export const OpenDecisionResult = z.object({ decision_id: Id, seq: Seq }).meta({ id: 'OpenDecisionResult' });
 
 export const CloseDecision = z.object({ request_id, trip_id, decision_id: Id }).meta({ id: 'CloseDecision' });
@@ -121,6 +134,14 @@ export const AddBooking = z
     decision_id: Id.nullish(),
     /** Required when Go paid through the vault. The Server marks that approval used. */
     approval_id: Id.nullish(),
+    /** 1.1: more lines for the ticket. */
+    details: z.array(BookingDetail).max(20).nullish(),
+    /** 1.1: the way back, for a round trip. */
+    return_journey: Journey.nullish(),
+    /** 1.1: each traveller, with a seat and PNR when there are. */
+    passengers: z.array(Passenger).max(30).nullish(),
+    /** 1.1: tickets and vouchers. The Server fetches each `url` once (Go's signed link) and keeps its own copy. */
+    documents: z.array(BookingDocument).max(10).nullish(),
   })
   .meta({ id: 'AddBooking' });
 export const AddBookingResult = z.object({ booking_id: Id, seq: Seq }).meta({ id: 'AddBookingResult' });
@@ -149,24 +170,66 @@ export const AddExpense = z
     category: Category,
     split_person_ids: z.array(Id).min(1).max(30),
     booking_id: Id.nullish(),
+    /**
+     * 1.1: the spend approval this was paid with (its `jti`), when Go paid through the vault. The Server records such an
+     * expense as approved at once; without it, a 1.1 Server records the expense pending, for the people it is split
+     * between to approve or dispute.
+     */
+    approval_id: Id.nullish(),
   })
   .meta({ id: 'AddExpense' });
 export const AddExpenseResult = z.object({ expense_id: Id, seq: Seq }).meta({ id: 'AddExpenseResult' });
 
-/** Go asks the Server whether a payment may happen. The Server runs the spend check. */
-export const RequestSpendApproval = z
+/**
+ * Change who an expense that stands is split between, and its note when given: the App's Fix the split, done by Go
+ * ("split it evenly" changes the expense, never adds a second one). The amount and the payer never change. Everyone named
+ * is in the trip (422); an expense not in the trip or removed is 404. Answered with a WriteResult (the Server's, 12 Oct).
+ */
+export const UpdateExpense = z
   .object({
     request_id,
     trip_id,
-    decision_id: Id,
-    /** The most this payment may be. The vault refuses a checkout above it. */
-    amount_minor: PositiveAmountMinor,
-    currency: Currency,
-    merchant: z.string().min(1).max(120),
-    purpose: z.string().min(1).max(200),
-    /** When free cancellation ends. Required when the mandate is refundable only. */
-    refundable_until: IsoDateTime.nullish(),
+    expense_id: Id,
+    split_person_ids: z.array(Id).min(1).max(30),
+    note: z.string().min(1).max(120).nullish(),
   })
+  .meta({ id: 'UpdateExpense', description: "Change an expense's split (and its note). The amount and the payer never change." });
+
+const spendAsk = {
+  request_id,
+  trip_id,
+  /** The most this payment may be. The vault refuses a checkout above it. */
+  amount_minor: PositiveAmountMinor,
+  currency: Currency,
+  merchant: z.string().min(1).max(120),
+  purpose: z.string().min(1).max(200),
+  /** When free cancellation ends. Required when the mandate is refundable only. */
+  refundable_until: IsoDateTime.nullish(),
+};
+
+/** The group's payment: a closed vote whose payer tapped "Yes, book it". */
+export const RequestGroupSpendApproval = z.object({ ...spendAsk, decision_id: Id }).meta({ id: 'RequestGroupSpendApproval' });
+
+/** 1.3 (G3): the one option a person picked for themselves on Go's card: who, the card, and the option they tapped. */
+export const PersonalPick = z.object({ person_id: Id, card_id: Id, option_id: Id }).meta({ id: 'PersonalPick' });
+
+/**
+ * 1.3 (G3): a person's own payment, never voted on: their flight, train or bus ticket (B7), or a seat or a bag at check-in
+ * (B8, the check-in pick being the option). No decision_id: `personal` names the person, Go's card and the option they
+ * tapped on it. The Server grants it only when that person tapped that option on Go's card within the last 30 minutes,
+ * the card is theirs, the amount is at most the option's price plus 5%, and nothing else is approved or booked for that
+ * pick. It signs `personal` in place of decision_id, and the payer is always that person. Replaces 1.2's ticket form.
+ */
+export const RequestPersonalSpendApproval = z
+  .object({ ...spendAsk, personal: PersonalPick })
+  .meta({ id: 'RequestPersonalSpendApproval' });
+
+/**
+ * Go asks the Server whether a payment may happen. The Server runs the spend check. The group's form names its vote;
+ * 1.3's personal form names the person's own pick instead.
+ */
+export const RequestSpendApproval = z
+  .union([RequestPersonalSpendApproval, RequestGroupSpendApproval])
   .meta({ id: 'RequestSpendApproval' });
 
 /** Go releases an approval it will not use, so the next one is not refused as outstanding. */
@@ -190,6 +253,15 @@ export const SpendDenialReason = z
     'currency_mismatch',
     'not_refundable',
     'approval_outstanding',
+    /** The personal form: the person it is for is not in the trip. */
+    'not_in_trip',
+    /**
+     * 1.3, the personal form: that person has not tapped that option on their own card of Go's in the last 30 minutes, or
+     * the amount is more than the option's price plus 5%.
+     */
+    'no_pick',
+    /** 1.2: the vote is booked already (a confirmed booking exists), so a second payment would charge twice. */
+    'already_booked',
   ])
   .meta({ id: 'SpendDenialReason' });
 

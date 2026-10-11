@@ -10,6 +10,7 @@ import type { AddressInfo } from 'node:net';
 import type { Duplex } from 'node:stream';
 import type { TripSnapshot } from '@go/contract';
 import { WebSocketServer, type WebSocket } from 'ws';
+import { WATCH_ACTIONS } from '../dev-room/login-panel.js';
 import { roomPage } from '../dev-room/page.js';
 import { doAction, roomState, type Action } from '../dev-room/serve.js';
 import type { FakeServer } from '../fake-server.js';
@@ -17,12 +18,14 @@ import { goaFreshTrip } from '../goa.js';
 import { Caps, DEFAULT_CAPS, type CapLimits } from './caps.js';
 import { Gate, PAGE_HEADERS, WrongTries, clientAddress, contentSecurityPolicy, passcodePage } from './gate.js';
 import {
-  GO_DOWN_LINE, HINTS, NOT_IN_YOUR_TRIP, PICK_A_PERSON, ROOM_FULL, SAY_FIRST, SIMULATED_LINE, SLOW_DOWN, TOO_LONG, TOO_MANY_TRIES,
-  TYPE_SOMETHING, UNKNOWN_ACTION, WRONG_PASSCODE, goLiveLine, tooManyTabs,
+  GO_DOWN_LINE, HINTS, LIVE_HINTS, LIVE_LINE, NOT_IN_YOUR_TRIP, PICK_A_PERSON, ROOM_FULL, SAY_FIRST, SIMULATED_LINE, SLOW_DOWN,
+  TOO_LONG, TOO_MANY_TRIES, TYPE_SOMETHING, UNKNOWN_ACTION, WRONG_PASSCODE, goLiveLine, tooManyTabs,
 } from './words.js';
 
 /** The longest message a visitor can send. */
 export const MAX_TEXT = 1000;
+/** A socket this far behind skips Go Live's pictures until it catches up; runs' events always go. */
+export const LIVE_BEHIND_BYTES = 512 * 1024;
 /** The page stops reconnecting on this close code: the room said why just before. */
 export const CLOSE_TOO_MANY = 4429;
 const HEALTH_EVERY_MS = 30_000;
@@ -30,8 +33,12 @@ const SWEEP_EVERY_MS = 10 * 60_000;
 const PRUNE_TRIES_EVERY_MS = 60_000;
 const RECORDS_KEPT_PER_TRIP = 200;
 
-/** What can wake Go's model: anything said, a vote, a card tap, the payer's yes or no. A reaction or "Forget me" cannot. */
+/**
+ * What can wake Go's model: anything said, a vote, a card tap, the payer's yes or no. A reaction or "Forget me" cannot,
+ * and nor can Watch: it opens Go's screen and wakes no model.
+ */
 const WAKES_GO: ReadonlySet<string> = new Set(['say', 'vote', 'tap', 'confirm', 'decline']);
+const wakesGo = (a: Action): boolean => WAKES_GO.has(a.type) && !(a.type === 'tap' && WATCH_ACTIONS.includes(a.actionId));
 
 export interface GoHealth {
   ok: boolean;
@@ -50,10 +57,20 @@ export interface TryRoomOptions {
   /** Default 127.0.0.1. Use 0.0.0.0 on Railway. */
   host?: string;
   caps?: Partial<CapLimits>;
-  /** What is simulated in this demo. Default SIMULATED_LINE. */
+  /** What is real and what is simulated in this demo. Default SIMULATED_LINE, or LIVE_LINE with Go Live. */
   simulatedLine?: string;
   /** Behind Railway's proxy: the visitor's address comes from x-real-ip, or else the first x-forwarded-for address. */
   trustProxy?: boolean;
+  /**
+   * Go Live: opens Go's live view of a trip (live-feed.ts). With it, the page has its second column, and each open socket
+   * gets the feed of its visit's trip, as { type: 'live', msg }. Never counted against the caps: watching wakes nothing.
+   */
+  live?: (tripId: string, onMessage: (m: unknown) => void) => { close(): void };
+  /**
+   * With live: Bash's session page origin (TRY_WATCH_ORIGIN). The page's CSP may frame it, and a login hand-off's Watch
+   * answer on it fills Go Live's column for the person logging in (login-panel.ts).
+   */
+  watchOrigin?: string;
   /** Live sockets for one visit (default 3) and in all (default 300). */
   maxSocketsPerVisit?: number;
   maxSockets?: number;
@@ -65,6 +82,13 @@ export interface TryRoomOptions {
   wrongTriesPerSecond?: number;
   /** A trip nobody has used or watched for this long is dropped (default 6 hours). */
   idleTripMs?: number;
+  /**
+   * A room for one person on their own machine: every trip keeps the five people's own ids (p_rahul, ...), across visits
+   * and Start over, so their trips share an organizer and what Go keeps for that organizer (one ixigo login for all
+   * their trips). Off by default: the public room gives each visit ids of its own (visitTrip), so nothing Go learns
+   * about one visitor's people reaches another's.
+   */
+  stablePeople?: boolean;
   now?: () => Date;
   /** For tests: Go's health without a call over the network. */
   goHealth?: () => Promise<GoHealth>;
@@ -85,10 +109,12 @@ type PageAction = Action | { type: 'start_over' };
 
 /**
  * A fresh Goa trip for one visit. Its five people keep their names but get ids of their own (p_rahul_<suffix>), so
- * nothing Go learns about a person in one visit's trip can carry over to another visit's.
+ * nothing Go learns about a person in one visit's trip can carry over to another visit's. With stablePeople (a room for
+ * one person), they keep the ids they always have (p_rahul): only the trip is new.
  */
-export function visitTrip(tripId: string, suffix: string): TripSnapshot {
+export function visitTrip(tripId: string, suffix: string, stablePeople = false): TripSnapshot {
   const fresh = goaFreshTrip();
+  if (stablePeople) return { ...fresh, trip_id: tripId };
   const ids = new Set(fresh.people.map((p) => p.person_id));
   const text = JSON.stringify({ ...fresh, trip_id: tripId }, (_key, value: unknown) =>
     typeof value === 'string' && ids.has(value) ? `${value}_${suffix}` : value,
@@ -194,7 +220,7 @@ export async function serveTryRoom(o: TryRoomOptions): Promise<TryRoom> {
   const gate = new Gate(o.passcode, o.cookieSalt, now);
   const wrongTries = new WrongTries(now, undefined, undefined, undefined, o.wrongTriesPerSecond ?? 30);
   const caps = new Caps({ ...DEFAULT_CAPS, ...o.caps }, now);
-  const simulatedLine = o.simulatedLine ?? SIMULATED_LINE;
+  const simulatedLine = o.simulatedLine ?? (o.live ? LIVE_LINE : SIMULATED_LINE);
   const goHealth = o.goHealth ?? (() => fetchGoHealth(o.goUrl));
   const maxPerVisit = o.maxSocketsPerVisit ?? 3;
   const maxSockets = o.maxSockets ?? 300;
@@ -211,6 +237,8 @@ export async function serveTryRoom(o: TryRoomOptions): Promise<TryRoom> {
   const activity = new Map<string, number>();
   /** Each open live socket's visit. */
   const sockets = new Map<WebSocket, string>();
+  /** Go Live: each open socket's feed, of the trip its visit is in now. */
+  const feeds = new Map<WebSocket, { tripId: string; close(): void }>();
   let health: GoHealth = { ok: false, contract: null };
   let sourceLogged = false;
 
@@ -223,7 +251,7 @@ export async function serveTryRoom(o: TryRoomOptions): Promise<TryRoom> {
     let trip = pending.get(visit);
     if (!trip) {
       const suffix = randomBytes(6).toString('hex');
-      trip = visitTrip(`t_try_${suffix}`, suffix);
+      trip = visitTrip(`t_try_${suffix}`, suffix, o.stablePeople === true);
       pending.set(visit, trip);
     }
     return trip;
@@ -246,6 +274,23 @@ export async function serveTryRoom(o: TryRoomOptions): Promise<TryRoom> {
     if (ws.readyState === ws.OPEN) ws.send(JSON.stringify(message));
   };
 
+  /** Go Live: the socket's feed follows its visit's trip; a new trip (the first message, Start over) gets a new feed. */
+  const followTrip = (ws: WebSocket, tripId: string | undefined): void => {
+    if (!o.live) return;
+    const feed = feeds.get(ws);
+    if (feed?.tripId === tripId) return;
+    feed?.close();
+    feeds.delete(ws);
+    if (!tripId) return;
+    const opened = o.live(tripId, (msg) => {
+      if (ws.readyState !== ws.OPEN) return;
+      const text = JSON.stringify({ type: 'live', trip_id: tripId, msg });
+      if (text.includes('"jpeg_base64"') && ws.bufferedAmount > LIVE_BEHIND_BYTES) return;
+      ws.send(text);
+    });
+    feeds.set(ws, { tripId, close: () => opened.close() });
+  };
+
   const about = (): string[] => [health.ok ? goLiveLine(health.contract) : GO_DOWN_LINE, simulatedLine];
 
   /** What a visit sees before its first message: its trip-to-be, with nobody's needs and no messages. */
@@ -266,6 +311,7 @@ export async function serveTryRoom(o: TryRoomOptions): Promise<TryRoom> {
     for (const [ws, visit] of sockets) {
       if ((only !== undefined && visit !== only) || ws.readyState !== ws.OPEN) continue;
       const tripId = trips.get(visit);
+      followTrip(ws, tripId);
       const key = tripId ?? `pending:${visit}`;
       let frame = frames.get(key);
       if (frame === undefined) {
@@ -315,7 +361,7 @@ export async function serveTryRoom(o: TryRoomOptions): Promise<TryRoom> {
       const refused = refusal(o.fake, tripId, a);
       if (refused) return reply({ type: 'error', message: refused });
       // Counted before it reaches Go; over a cap nothing reaches Go.
-      const verdict = caps.send(visit, WAKES_GO.has(a.type));
+      const verdict = caps.send(visit, wakesGo(a));
       if (!verdict.ok) {
         reply({ type: 'limit', text: verdict.line });
         return pushAll(visit);
@@ -327,11 +373,13 @@ export async function serveTryRoom(o: TryRoomOptions): Promise<TryRoom> {
     }
   };
 
-  const html = (req: IncomingMessage, res: ServerResponse, status: number, body: string, nonce: string | null, extra: Record<string, string> = {}): void => {
+  const html = (
+    req: IncomingMessage, res: ServerResponse, status: number, body: string, nonce: string | null, extra: Record<string, string> = {}, frameOrigin?: string,
+  ): void => {
     res.writeHead(status, {
       ...PAGE_HEADERS,
       'content-type': 'text/html; charset=utf-8',
-      'content-security-policy': contentSecurityPolicy(nonce, req.headers.host),
+      'content-security-policy': contentSecurityPolicy(nonce, req.headers.host, frameOrigin),
       ...extra,
     });
     res.end(body);
@@ -373,7 +421,9 @@ export async function serveTryRoom(o: TryRoomOptions): Promise<TryRoom> {
     if (req.method === 'GET' && path === '/') {
       if (!gate.visit(req)) return html(req, res, 200, passcodePage(), null);
       const nonce = randomBytes(16).toString('base64');
-      return html(req, res, 200, roomPage({ title: 'Try Go', nonce, hints: HINTS, hosted: true }), nonce);
+      const watchOrigin = o.live ? o.watchOrigin : undefined;
+      const room = roomPage({ title: 'Try Go', nonce, hints: o.live ? LIVE_HINTS : HINTS, hosted: true, live: o.live !== undefined, ...(watchOrigin ? { watchOrigin } : {}) });
+      return html(req, res, 200, room, nonce, {}, watchOrigin);
     }
     return plain(res, 404, 'text/plain; charset=utf-8', 'Not found');
   };
@@ -403,6 +453,8 @@ export async function serveTryRoom(o: TryRoomOptions): Promise<TryRoom> {
       sockets.set(ws, visit);
       ws.on('close', () => {
         sockets.delete(ws);
+        feeds.get(ws)?.close();
+        feeds.delete(ws);
         // A trip-to-be is only kept while its visit has a socket open.
         if (![...sockets.values()].includes(visit)) pending.delete(visit);
       });
@@ -466,6 +518,8 @@ export async function serveTryRoom(o: TryRoomOptions): Promise<TryRoom> {
       clearInterval(healthTimer);
       clearInterval(sweepTimer);
       clearInterval(pruneTimer);
+      for (const feed of feeds.values()) feed.close();
+      feeds.clear();
       for (const ws of sockets.keys()) ws.terminate();
       await new Promise<void>((resolve) => http.close(() => resolve()));
     },

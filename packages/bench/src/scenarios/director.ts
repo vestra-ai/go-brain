@@ -20,7 +20,9 @@ export const DIRECTOR_WORDS = {
   callAnnounce: `I'll call ${DEMO_DIVE_SHOP.name} to ask if they can take five of us on Sunday morning.`,
   weather: 'November is dry and sunny in Goa, around 32 degrees by day. Good beach weather.',
   villasShown: 'Three villas that fit, with their prices for the whole stay.',
-  mandate: 'Villa Sol won. Rahul, tap Yes, book it when you are ready.',
+  // Go's own line on the closed stays vote, with no model round (money/claim-taps.ts stayClosedAnswer).
+  villaWon: "Villa Sol it is. Tap I'll book it to book it.",
+  mandate: "Rahul, you're booking for all 5. Tap Yes, book it when you're ready.",
   refusal: "I can't pay without a group vote and Rahul's OK on his phone. Want me to put scuba to a vote?",
 } as const;
 
@@ -143,7 +145,7 @@ export function createDirector(o: { trip: () => TripSnapshot | null }): Director
         ? { tools: [{ name: 'show_options', input: { results_id: id, title: 'Friday flights, Delhi to Goa', line: DIRECTOR_WORDS.flights } }] }
         : { text: DIRECTOR_WORDS.noFlights };
     }
-    // The villas go up as options only: the group opens the vote with the card's own "Put it to a vote" (the stage's way).
+    // The villas go up as options, which are the group's vote from the start (rev 5 R5): Vote on each option.
     // Only lines that arrived meanwhile bring Go back after a card: it says its line again.
     if (result('show_options')) return { text: now.includes('finished with') ? DIRECTOR_WORDS.villasShown : DIRECTOR_WORDS.flights };
     if (result('start_task')) return { text: DIRECTOR_WORDS.villaStarted };
@@ -163,6 +165,20 @@ export function createDirector(o: { trip: () => TripSnapshot | null }): Director
       return { tools: [{ name: 'ask_to_pay', input: { decision_id: 'd_scuba', option_ref: 'opt_scuba', purpose: 'Scuba for everyone' } }] };
     }
     if (/\bweather\b/i.test(fresh)) return { text: DIRECTOR_WORDS.weather };
+    // The person who asks Go to book the stay is the one who pays (their ask is their claim); the cap is the "8k a head"
+    // said in the chat.
+    if (!done.mandate && /\bI'll book it\b/i.test(fresh)) {
+      const decision = o.trip()?.decisions.find((x) => x.status === 'closed' && !x.mandate && x.result_index != null);
+      if (decision && decision.result_index != null) {
+        done.mandate = true;
+        return {
+          tools: [{
+            name: 'set_mandate',
+            input: { decision_id: decision.decision_id, choice_index: decision.result_index, cap_minor: DEMO_CAP_MINOR, refundable_only: false, payer_person_id: DEMO_PAYER },
+          }],
+        };
+      }
+    }
     if (/flights delhi to goa/i.test(fresh)) {
       return { tools: [{ name: 'search_flights', input: { from: 'Delhi', to: 'Goa', date: DEMO_DATE, depart_after: '18:00' } }] };
     }
@@ -209,18 +225,6 @@ export function createDirector(o: { trip: () => TripSnapshot | null }): Director
           input: { tone: 'heads_up', title: 'Your flight is 2 hours late', body: 'You now land at 10:45 pm but your cab is at 9. Want me to move it to 11?', for_person_ids: [DEMO_WATCH.person_id] },
         }],
       };
-    }
-    if (!done.mandate && now.includes(' closed: ')) {
-      const decision = o.trip()?.decisions.find((x) => x.status === 'closed' && !x.mandate && x.result_index != null);
-      if (decision && decision.result_index != null) {
-        done.mandate = true;
-        return {
-          tools: [{
-            name: 'set_mandate',
-            input: { decision_id: decision.decision_id, choice_index: decision.result_index, cap_minor: DEMO_CAP_MINOR, refundable_only: false, payer_person_id: DEMO_PAYER },
-          }],
-        };
-      }
     }
     const resultsId = /results_id "([^"]+)"/.exec(now)?.[1];
     if (resultsId && now.includes('finished with')) {

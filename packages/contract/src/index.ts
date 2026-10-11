@@ -1,5 +1,5 @@
 /** The contract version. Additive changes bump the minor; anything that breaks a reader bumps the major. */
-export const CONTRACT_VERSION = '1.0.0';
+export const CONTRACT_VERSION = '1.3.0';
 
 export * from './common.js';
 export * from './people.js';

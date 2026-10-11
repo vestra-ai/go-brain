@@ -28,6 +28,7 @@ const input: PayLinkInput = {
   tripId: 't_goa',
   payerPersonId: 'p_rahul',
   payerName: 'Rahul',
+  groupAgreed: true,
   hold: {
     holdId: 'hold_1',
     amountMinor: 5420000,
@@ -39,6 +40,12 @@ const input: PayLinkInput = {
 };
 
 describe('vaultClient', () => {
+  it('asks for the home the App frames when the Server asked for display embedded', async () => {
+    answer = { status: 200, body: { url: 'https://vault.test/l/abc', expires_at: '2026-10-05T09:06:00.000Z' } };
+    await client.homeLink({ personId: 'p_rahul', start: 'home', display: 'embedded' });
+    expect(JSON.parse(calls.at(-1)?.body ?? '{}')).toMatchObject({ person_id: 'p_rahul', start: 'home', display: 'embedded' });
+  });
+
   it('signs each call over its exact target and body, with a fresh nonce', async () => {
     answer = { status: 200, body: { url: 'https://vault.test/l/abc', expires_at: '2026-10-05T09:06:00.000Z' } };
     expect(await client.homeLink({ personId: 'p_rahul', start: 'add_card' })).toEqual({
@@ -68,6 +75,7 @@ describe('vaultClient', () => {
       trip_id: 't_goa',
       payer_person_id: 'p_rahul',
       payer_name: 'Rahul',
+      group_agreed: true,
       hold: { hold_id: 'hold_1', amount_minor: 5420000, currency: 'INR', merchant: 'ixigo: Villa Sol, Anjuna', payment_kind: 'stripe_test', expires_at: '2026-10-05T09:15:00Z' },
     });
   });
@@ -135,5 +143,33 @@ describe('checkVaultCall', () => {
     expect(await checkVaultCall(pool, secret, req(signRequest({ method: 'POST', target: '/internal/vault/paid', body }, 'x'.repeat(40), t)), body, now)).toBe(false);
     expect(await checkVaultCall(pool, secret, req(signRequest({ method: 'POST', target: '/internal/vault/paid', body: '{}' }, secret, t)), body, now)).toBe(false);
     expect(await checkVaultCall(pool, secret, req(signRequest({ method: 'POST', target: '/internal/vault/paid', body }, secret, t - 400)), body, now)).toBe(false);
+  });
+});
+
+// The vault's travel details (apps/vault store/travel.ts): read for a ticket of the person's own, signed, and the answer
+// never in an error.
+describe("a person's travel details", () => {
+  const ask = { tripId: 't_goa', personId: 'p_meher', booking: { ref: 'fb_01JA7Q3V8Z', travellerPersonId: 'p_meher', purpose: 'Flight to Goa, 6 Nov' } };
+
+  it("asks the vault, signed, for the booking's traveller, and gives Go's shape of the answer", async () => {
+    calls.length = 0;
+    answer = { status: 200, body: { first_name: 'Meher', last_name: 'Kapoor', gender: 'female', dob: '1996-03-14' } };
+    expect(await client.travelDetails(ask)).toEqual({ firstName: 'Meher', lastName: 'Kapoor', gender: 'female', dob: '1996-03-14' });
+    expect(calls[0]!.url).toBe('https://vault.test/internal/travel-details');
+    expect(JSON.parse(calls[0]!.body)).toMatchObject({
+      trip_id: 't_goa', person_id: 'p_meher', booking: { ref: 'fb_01JA7Q3V8Z', traveller_person_id: 'p_meher', purpose: 'Flight to Goa, 6 Nov' },
+    });
+    expect(calls[0]!.signature).not.toBe('null');
+  });
+
+  it('is none when none are kept, a refusal for anyone but the traveller, and never the values in an error', async () => {
+    answer = { status: 404, body: { error: { code: 'none' } } };
+    expect(await client.travelDetails(ask)).toBeNull();
+    answer = { status: 403, body: { error: { code: 'not_the_traveller' } } };
+    await expect(client.travelDetails(ask)).rejects.toThrow(/only for a ticket of their own/);
+    answer = { status: 200, body: { first_name: 'Meher', last_name: 'Kapoor', gender: 'x', dob: '1996-03-14' } };
+    const err = await client.travelDetails(ask).then(() => null, (e: unknown) => e as Error);
+    expect(err?.message).toMatch(/shape Go does not read/);
+    expect(err?.message).not.toMatch(/Meher|Kapoor|1996/);
   });
 });

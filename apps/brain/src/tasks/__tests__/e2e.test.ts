@@ -66,7 +66,9 @@ function goScript(body: any): Reply {
   return { tools: [{ name: 'stay_silent', input: { reason: 'chatter' } }] };
 }
 
-let offset = 0;
+// The trip's dates are fixed (6 to 9 Nov 2026) and Go refuses a day that has passed, so the clock starts a month before
+// them, whatever the real date, and runs on from there.
+let offset = Date.parse('2026-10-08T06:30:00.000Z') - Date.now();
 const now = (): Date => new Date(Date.now() + offset);
 let db: Awaited<ReturnType<typeof withSchema>>;
 let fake: FakeV1;
@@ -159,7 +161,10 @@ describe('G3: Go does real work', () => {
     expect(shown.text).toBe('Three villas that fit. Want a vote?');
     const card = shown.card as Extract<C.Card, { kind: 'options' }>;
     expect(card.options.map((o) => o.title)).toEqual(['Villa Sol', 'The Palms Villa', 'Ocean Breeze Villa']);
-    expect(card.actions?.map((a) => a.action_id)).toEqual(['pick', 'vote']);
+    // No budget asked for, even with none set (rev 4: one group budget, nobody gives a private one). The card is the
+    // group's vote from the start (rev 5 R5): it names its vote, and no button of its own is left to tap.
+    expect(card.actions ?? []).toEqual([]);
+    expect(card.decision_id).toEqual(expect.any(String));
     // Bookable end to end: each option is the offer the job picked, at the whole-stay price a vote and a payment use.
     const offers = await Promise.all(card.options.map((o) => built.brain.travel!.offer(o.option_id)));
     expect(offers.map((o) => [o?.offerId, o?.priceMinor])).toEqual(VILLAS.options.map((v) => [v.offer_id, v.total_paise]));
@@ -168,6 +173,9 @@ describe('G3: Go does real work', () => {
 
   it('a job stopped from its card says Stopped, and never posts results when /v1 finishes it anyway', async () => {
     const { cardId, v1TaskId } = await newJob('p_kabir', 'Go, find a villa in Morjim with a pool for us');
+    // Go has heard /v1 name the job, so this tests the stop, not the race with its start (tasks.test covers that one).
+    const taskId = String((cardOf(cardId) as { task_id?: string } | undefined)?.task_id);
+    await eventually(async () => (await lane.store.get(taskId))?.v1TaskId === v1TaskId, 10_000);
     expect(await server.tap(cardId, 'stop', 'p_kabir')).toMatchObject({ result: 'done' });
     await server.waitFor(() => (String(cardOf(cardId)?.fallback_text ?? '').startsWith('Stopped') ? true : null), 10_000);
     // The tap may land before Go has heard /v1 name the job; Go stops it on /v1 the moment it does (mapStarts).
@@ -268,7 +276,10 @@ describe('G3: Go does real work', () => {
     const shown = await server.waitFor(() => (options().length > optionsBefore ? options().at(-1)! : null), 20_000);
     const card = shown.card as Extract<C.Card, { kind: 'options' }>;
     expect(card.options.map((o) => o.title)).toEqual(['Villa Sol', 'The Palms Villa', 'Ocean Breeze Villa']);
-    expect(card.actions?.map((a) => a.action_id)).toEqual(['pick', 'vote']);
+    // No budget asked for, even with none set (rev 4: one group budget, nobody gives a private one). The card is the
+    // group's vote from the start (rev 5 R5): it names its vote, and no button of its own is left to tap.
+    expect(card.actions ?? []).toEqual([]);
+    expect(card.decision_id).toEqual(expect.any(String));
     await server.waitFor(() => (cardOf(cardId)?.state === 'done' ? true : null), 10_000);
     expect(cardOf(cardId).steps.map((st: { state: string }) => st.state)).toEqual(['done', 'done', 'done', 'done', 'done']);
     // The token goes at the real end, and only one options card came.

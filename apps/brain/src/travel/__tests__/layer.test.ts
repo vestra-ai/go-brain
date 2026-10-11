@@ -228,6 +228,66 @@ describe('ixigo.com through the recipes (TRAVEL_MODE ixigo_web)', () => {
     expect(ixigoWeb.queries).toEqual([{ area: 'Vagator', checkIn: '2026-11-06', checkOut: '2026-11-09', mustHave: ['pool'] }]);
   });
 
+  it("picks the stays that say a filter ixigo left off (unapplied); when none does, shows the stays without it and says so", async () => {
+    const stay = (title: string, pool: boolean, priceMinor = 500_000): TravelOption => ({
+      kind: 'stay', title, priceMinor, currency: 'INR', priceNote: 'per night, per room', highlights: [], facts: { pool, area: 'Anjuna' }, rating: 4.5,
+      sourceUrl: `https://www.ixigo.com/hotels/1/details?hName=${encodeURIComponent(title)}`,
+    });
+    let list: TravelOption[] = [];
+    const refused = async (): Promise<never> => {
+      throw new TravelError('refused', 'Booked on ixigo.');
+    };
+    const b: TravelBackend = {
+      search: async () => ({ checkedAt: '2026-10-07T12:00:00.000Z', results: list, unapplied: ['pool'] }),
+      status: refused,
+      hold: refused,
+      confirm: refused,
+    };
+    const { switches, layer } = setup(true, { ixigoWeb: b });
+    await switches.set('TRAVEL_MODE', 'ixigo_web');
+    const ask = { area: 'Goa', checkIn: '2026-11-06', checkOut: '2026-11-09', guests: 5, mustHave: ['pool' as const] };
+    list = [stay('Villa Sol', true), stay('Casa Azul', false)];
+    const some = await layer.search('stays', ask, { tripId: 't_goa' });
+    expect(some.results.map((o) => o.title)).toEqual(['Villa Sol']);
+    expect(some).not.toHaveProperty('unapplied');
+    list = [stay('Casa Azul', false), stay('Budget Inn', false), stay('Grand Palace', false, 2_000_000)];
+    const none = await layer.search('stays', { ...ask, maxPriceMinor: 1_000_000 }, { tripId: 't_goa' });
+    // Go's other conditions still hold: a stay over the price is never shown.
+    expect(none.results.map((o) => o.title)).toEqual(['Casa Azul', 'Budget Inn']);
+    expect(none).toMatchObject({ unapplied: ['pool'], found: 3 });
+    // Fewer than three fit: the nearest of the rest comes with them, with what it misses.
+    expect(none.nearest).toEqual([{ option: expect.objectContaining({ title: 'Grand Palace' }), misses: ['₹20,000 a night, over ₹10,000', 'no pool'] }]);
+  });
+
+  it("hands ixigo_web the site's own filters and sort, keeps the site's order when it sorted, and passes on what the site did", async () => {
+    const stay = (title: string, rating: number, priceMinor: number): TravelOption => ({
+      kind: 'stay', title, priceMinor, currency: 'INR', priceNote: 'per night, per room', highlights: [], facts: {}, rating,
+      sourceUrl: `https://www.ixigo.com/hotels/1/details?hName=${encodeURIComponent(title)}`,
+    });
+    const queries: TravelQuery[] = [];
+    const refused = async (): Promise<never> => {
+      throw new TravelError('refused', 'Booked on ixigo.');
+    };
+    const site = { filtered: ['Pet-friendly property'], sorted: 'Price (Low to High)', unknown: ['beachfront'], listed: true, offers: 'Facilities: Pet-friendly property' };
+    const b: TravelBackend = {
+      search: async (_kind, q) => {
+        queries.push(q);
+        return { checkedAt: '2026-10-07T12:00:00.000Z', results: [stay('Cheap', 3.9, 90_000), stay('Dear', 4.8, 900_000)], site, unapplied: ['beachfront'] };
+      },
+      status: refused,
+      hold: refused,
+      confirm: refused,
+    };
+    const { switches, layer } = setup(true, { ixigoWeb: b });
+    await switches.set('TRAVEL_MODE', 'ixigo_web');
+    const ask = { area: 'Anjuna', checkIn: '2026-11-06', checkOut: '2026-11-09', siteFilters: ['Pet-friendly property', 'beachfront'], siteSort: 'Price (Low to High)', wants: ['quiet'] };
+    const found = await layer.search('stays', ask, { tripId: 't_goa' });
+    expect(queries).toEqual([{ area: 'Anjuna', checkIn: '2026-11-06', checkOut: '2026-11-09', siteFilters: ['Pet-friendly property', 'beachfront'], siteSort: 'Price (Low to High)', wants: ['quiet'] }]);
+    // ixigo's cheapest first, not Go's best rated first.
+    expect(found.results.map((o) => o.title)).toEqual(['Cheap', 'Dear']);
+    expect(found).toMatchObject({ site, unapplied: ['beachfront'] });
+  });
+
   it("searches in the trip's own browser: the trip goes with every search (ixigo_web keeps its own), and nothing is simulated", async () => {
     const ixigoWeb = web();
     const { switches, layer, fake } = setup(true, { ixigoWeb: ixigoWeb.b });
@@ -274,5 +334,60 @@ describe('ixigo.com through the recipes (TRAVEL_MODE ixigo_web)', () => {
     });
     expect(await layer.offer('opt_ix')).toEqual({ offerId: null, title: 'IndiGo 6E 5341', priceMinor: 789600, currency: 'INR', kind: 'flight', link: PAGE });
     expect((await layer.offer('opt_web'))?.link).toBeNull();
+  });
+
+  it("gives a stay from ixigo.com Go's web-stay offer, and sends its hold, confirm and prepare to the web stays (travel/web-stays.ts)", async () => {
+    const STAY = 'https://www.ixigo.com/hotels/54381/details?checkinDate=06112026&checkoutDate=09112026&roomCount=3';
+    const calls: string[] = [];
+    const webStays: NonNullable<TravelLayerDeps['webStays']> = {
+      offerIdFor: (o) => (o.sourceUrl === STAY && !o.offerId ? `webstay:${o.optionId}` : null),
+      prepare: async () => ({ ok: true, priceMinor: 4768200 }),
+      hold: async (offerId) => {
+        calls.push(`hold ${offerId}`);
+        return { holdId: `${offerId}:1`, amountMinor: 4768200, currency: 'INR', merchant: 'ixigo (simulated): Saudades', expiresAt: 'x', payment: { kind: 'fake' } };
+      },
+      confirm: async (holdId) => {
+        calls.push(`confirm ${holdId}`);
+        return { ref: 'SIM-1', vendor: 'ixigo (simulated)', title: 'Saudades', kind: 'stay', simulated: true };
+      },
+    };
+    const { layer, fake } = setup(true, {
+      webStays,
+      results: {
+        offer: async (id) => ({
+          tripId: 't_goa', cardId: 'c', resultsId: 'r', checkedAt: 'x', optionId: id, n: 1, offerId: null, kind: 'stay', title: 'Saudades Homestays',
+          priceMinor: 1589400, totalMinor: 4768200, currency: 'INR', priceNote: 'per night, per room', sourceUrl: id === 'opt_sau' ? STAY : 'https://villa.example/book',
+        }),
+      },
+    });
+    expect(await layer.offer('opt_sau')).toMatchObject({ offerId: 'webstay:opt_sau', priceMinor: 4768200, kind: 'stay' });
+    // A stay a job found on another site stays unbookable.
+    expect(await layer.offer('opt_other')).toMatchObject({ offerId: null });
+    await layer.hold('webstay:opt_sau', { name: 'Rahul', personIds: ['p_rahul'] });
+    await layer.confirm('webstay:opt_sau:1', { approvalId: 'ap_1', railRef: 'fake_1' });
+    expect(calls).toEqual(['hold webstay:opt_sau', 'confirm webstay:opt_sau:1']);
+    expect(fake.calls).toEqual([]);
+    expect(layer.prepare).toBe(webStays.prepare);
+    // With no web stays (a test, a lane that never set it), nothing changes.
+    expect(setup().layer.prepare).toBeUndefined();
+  });
+
+  it('says the day an offer is for, and past once that day is behind the trip: a vote that outlived it cannot book the past', async () => {
+    const page = (day: string) => `https://www.ixigo.com/hotels/54381/details?checkinDate=${day}&checkoutDate=09112026&roomCount=3`;
+    const { layer } = setup(true, {
+      today: async () => '2026-10-08',
+      results: {
+        offer: async (id) => ({
+          tripId: 't_goa', cardId: 'c', resultsId: 'r', checkedAt: 'x', optionId: id, n: 1, offerId: id === 'opt_fake' ? 'fake:st' : null, kind: 'stay', title: 'Saudades',
+          priceMinor: 1589400, totalMinor: 4768200, currency: 'INR', priceNote: 'per night, per room', sourceUrl: id === 'opt_old' ? page('01102026') : page('06112026'),
+        }),
+        searchedFor: async () => ({ tripId: 't_goa', day: '2026-10-02' }),
+      },
+    });
+    expect(await layer.offer('opt_new')).toMatchObject({ day: '2026-11-06' });
+    expect(await layer.offer('opt_new')).not.toHaveProperty('past');
+    expect(await layer.offer('opt_old')).toMatchObject({ day: '2026-10-01', past: true });
+    // An offer of Go's own search: the day that search asked for.
+    expect(await layer.offer('opt_fake')).toMatchObject({ day: '2026-10-02', past: true });
   });
 });

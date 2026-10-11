@@ -6,6 +6,7 @@ import { rulesForTurn } from './allowed.js';
 import { localWhen } from './clock.js';
 import { fromPayload, proactiveOf } from './payload.js';
 import type { Action, Candidate } from './policy.js';
+import { CHIME_RULES } from '../composer/wakes.js';
 import { namesOf, quote, rupees } from './words.js';
 
 const H = 3600_000;
@@ -15,6 +16,13 @@ function inAbout(at: Date, now: Date): string {
   if (h <= 1) return 'within the hour';
   if (h < 48) return `in about ${h} hours`;
   return `in about ${Math.round(h / 24)} days`;
+}
+
+/** How late, as a friend says it: "2 hours", "1 hour 30 minutes", "45 minutes". */
+export function howLate(minutes: number): string {
+  const h = Math.floor(minutes / 60);
+  const m = minutes % 60;
+  return [h === 0 ? '' : h === 1 ? '1 hour' : `${h} hours`, m === 0 ? '' : m === 1 ? '1 minute' : `${m} minutes`].filter((x) => x !== '').join(' ');
 }
 
 function ago(iso: string, now: Date): string {
@@ -55,22 +63,33 @@ export function describeNoticed(c: Candidate, pack: TripPack, tz: string, now: D
     }
     case 'travel_day':
       return `Tomorrow (${str('start')}) is travel day. The group may want the plan for the day: who leaves when, and what is booked.`;
-    case 'settle_up':
-      return `The trip is over and ${trip.money.transfers.length} payments are still open in settle-up.`;
+    case 'settle_up': {
+      // The Server's balances as they are now: a payback someone recorded and the one paid confirmed (1.1
+      // settlement.recorded, which makes Go read the trip again) is gone from them, so that pair is never nudged.
+      const open = trip.money.transfers.map((x) => `${who([x.from_person_id])} to ${who([x.to_person_id])} ${rupees(x.amount_minor)}`);
+      return `The trip is over and ${open.length} payments are still open in settle-up: ${open.join('; ')}. Remind only these.`;
+    }
     case 'flight_status': {
       // Facts use P4's status words (state, delayMinutes, expectedDepartAt); the demo's fire adds arriveAt and a note.
       const delay = num('delayMinutes');
       const cancelled = str('state') === 'cancelled';
-      const state = cancelled
-        ? 'is cancelled'
-        : delay !== null && delay > 0 ? `is running ${delay} minutes late` : 'is back on time';
+      const late = !cancelled && delay !== null && delay > 0 ? howLate(delay) : null;
+      const state = cancelled ? 'is cancelled' : late ? `is running ${late} late` : 'is back on time';
       const leaves = cancelled ? null : at('expectedDepartAt');
       const lands = cancelled ? null : at('arriveAt');
       const when = `${leaves ? `, now leaving ${localWhen(leaves, tz)}` : ''}${lands ? `, now landing ${localWhen(lands, tz)}` : ''}`;
       const checked = str('checkedAt') ? ` (checked ${ago(str('checkedAt'), now)})` : '';
       const note = str('note') ? ` Also: ${quote(str('note'), 200)}` : '';
       const concerns = c.personIds.length > 0 ? ` It concerns ${who(c.personIds)}.` : '';
-      return `${quote(str('label') || 'A flight')} ${state}${when}${checked}.${note}${concerns}`;
+      // How it reads: a friend's heads-up, what changes for them and the one next step, never a status alert (the
+      // demo's 3:40 read "your flight is about 120 minutes behind… It may be worth moving the pickup later").
+      const moves = lands
+        ? ` (anything in the note set around the old time has to fit the new landing, ${localWhen(lands, tz)})`
+        : late ? ` (anything in the note set around the old time moves by ${late} too)` : '';
+      const how = c.personIds.length > 0
+        ? ` Write it as a friend's heads-up to ${who(c.personIds)}: their name first, what changed in plain words${lands ? ' and when they now land' : ''}, then what it changes for them${moves}, and the one next step as a question with the new time, using only what the flight and the note say (for example "Want me to move your cab to 11 pm?"). Say hours, not minutes, and never "flight status" or "it may be worth".`
+        : '';
+      return `${quote(str('label') || 'A flight')} ${state}${when}${checked}.${note}${concerns}${how}`;
     }
     case 'pnr_status': {
       const what = str('label') ? ` ${quote(str('label'))}` : '';
@@ -81,10 +100,21 @@ export function describeNoticed(c: Candidate, pack: TripPack, tz: string, now: D
       return `The train ticket${what} ${state}${detail}${checked}.${concerns}`;
     }
     case 'chat':
-      return `Message #${num('seq') ?? '?'} may be a moment to help without being asked: a question to the group Go can answer, a plan clash, or someone asking for help.`;
+      // A friend in the group chiming in, once, when it adds something real (Keshav: "whenever it can intervene it should").
+      return (
+        `Message #${num('seq') ?? '?'} may be a moment to chime in without being asked. Say one short line, in the group's own words and language, ` +
+        'only when it adds something real: a question to the group that the trip already answers; something someone needs that you will ' +
+        'keep to (say so in a few words: "Veg noted, I\'ll skip seafood shacks"); a choice part of the group backs; or a search someone ' +
+        `asked the group to run. ${CHIME_RULES} The examples show the shape only: use what the trip and the chat say. ` +
+        'Banter, a plan a person is already handling, or something you already said: call stay_silent.'
+      );
     case 'vote_closed': {
       const winner = str('winner');
-      return `The vote ${quote(str('question') || 'on the table')} closed${winner ? `; ${quote(winner)} won` : ' without a clear winner'}. The group may want the next step.`;
+      // The App posts the result line itself (the Server team's GO-TEAM-FINAL §8): Go never says it again.
+      return (
+        `The vote ${quote(str('question') || 'on the table')} closed${winner ? `; ${quote(winner)} won` : ' without a clear winner'}. ` +
+        'The App already posted the result: never say who won or the counts again. The group may want the next step.'
+      );
     }
     case 'booking_cancelled': {
       const by = str('by');
@@ -92,6 +122,17 @@ export function describeNoticed(c: Candidate, pack: TripPack, tz: string, now: D
     }
     case 'dates_clash':
       return `The trip dates are now ${str('start')} to ${str('end')}, but ${quote(str('title') || 'a booking')} starts ${str('starts_at').slice(0, 10)}${str('ends_at') ? ` and ends ${str('ends_at').slice(0, 10)}` : ''}.`;
+    case 'recipe_watch': {
+      // A watch the group asked for came true: what ixigo shows now, and its page.
+      const asker = c.personIds.length > 0 ? who(c.personIds) : 'The group';
+      const checked = str('checkedAt') ? ` (checked ${ago(str('checkedAt'), now)})` : '';
+      const page = str('page') ? ` Its ixigo page: ${quote(str('page'), 300)}.` : '';
+      return `${asker} asked Go to watch ixigo for ${quote(str('label') || 'this')}, and it came true${checked}: ${quote(str('what'), 400)}.${page} Tell them in one short message, naming who asked, and put it on a notice card (source ixigo).`;
+    }
+    case 'recipe_watch_stopped': {
+      const asker = c.personIds.length > 0 ? who(c.personIds) : 'the group';
+      return `Go could not check ixigo for ${quote(str('label') || 'the watch')} ${num('tries') ?? 6} times in a row, so it stopped watching. Tell ${asker} in one short line, and offer to watch again later.`;
+    }
     default:
       return `Go noticed: ${quote(JSON.stringify(f), 300)}.`;
   }
@@ -118,7 +159,9 @@ export function renderWake(item: DeskItem, pack: TripPack, now: Date): string {
     ? ` The earlier notice is card_id ${JSON.stringify(c.facts.noticeCardId)}.`
     : '';
   const loud = p.allowed.includes('message') ? ' At most one short message.' : ' Do not post a message to everyone.';
-  return `${lead}Go noticed this itself, nobody asked: ${describeNoticed(c, pack, p.tz, now)} Allowed: ${allowed}.${pin}${notice}${loud} Suggest, never act.`;
+  // A watch the group asked for is Go answering them, later: never "nobody asked".
+  const why = c.asked === true ? 'Go is answering an ask from earlier' : 'Go noticed this itself, nobody asked';
+  return `${lead}${why}: ${describeNoticed(c, pack, p.tz, now)} Allowed: ${allowed}.${pin}${notice}${loud} Suggest, never act.`;
 }
 
 export const OPENINGS_ORDER = 60;

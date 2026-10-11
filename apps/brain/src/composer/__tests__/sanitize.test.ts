@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { clip, sanitize, sanitizeDeep, stripIds, stripMessageRefs } from '../sanitize.js';
+import { clip, sanitize, sanitizeDeep, stripIds, stripMessageRefs, withoutRefused } from '../sanitize.js';
 
 describe('sanitize', () => {
   it('turns em and en dashes into commas, and number ranges into hyphens', () => {
@@ -20,6 +20,13 @@ describe('sanitize', () => {
   it('never names the model or who made it', () => {
     expect(sanitize("Sure — I'm Claude, made by Anthropic.")).toBe("Sure, I'm Go, made by the Go team.");
     expect(sanitize('Running on Sonnet 5.5 today')).toBe('Running on Go today');
+  });
+
+  it('takes markdown out: the App shows text as it is (staging, 10 Oct: "**Rahul:** from Delhi")', () => {
+    expect(sanitize("Here's what I have:\n- **Rahul:** from Delhi\n- __Priya__: vegetarian")).toBe("Here's what I have:\n- Rahul: from Delhi\n- Priya: vegetarian");
+    expect(sanitize('## Plan\n* beach day\n* dinner')).toBe('Plan\n- beach day\n- dinner');
+    // A lone asterisk or a star rating stays.
+    expect(sanitize('rated 4.5* on ixigo, 2 * 3 rooms')).toBe('rated 4.5* on ixigo, 2 * 3 rooms');
   });
 
   it('leaves plain text alone', () => {
@@ -68,6 +75,18 @@ describe('sanitize', () => {
     expect(stripMessageRefs("The plan per #14's note works.").text).toBe('The plan per the note works.');
     // A bracket with a real number in it is not a citation.
     expect(stripMessageRefs('Check in at reception (Room #12).')).toEqual({ text: 'Check in at reception (Room #12).', refs: [] });
+  });
+
+  it('drops a sentence whole when the cut leaves it unfinished: a line never ends mid-sentence (staging, 8 Oct)', () => {
+    const said =
+      "Yes, it's a good pick. ixigo rates Chapora Fort 4.2 and it's known for wide coastline views from the top, so it works well for sunset, " +
+      'though it gets busy around golden hour, so go a bit early. If you want a calmer sunset, Vagator Hill View (4.6) is the higher-rated one on ixigo.';
+    expect(stripMessageRefs(`${said} Arjun's plan for a sunset there is in #14.`)).toEqual({ text: said, refs: [14] });
+    expect(stripMessageRefs(`${said} Arjun's plan for a sunset there is #14.`)).toEqual({ text: said, refs: [14] });
+    // A cut that leaves a whole sentence keeps it.
+    expect(stripMessageRefs("Arjun's sunset plan in #14 works: go a bit early.").text).toBe("Arjun's sunset plan works: go a bit early.");
+    // Only a sentence the cut changed is judged: one that ends that way on its own is the model's.
+    expect(stripIds('Villa Sol it is. The vote for it is c_vote_turn_A_1.')).toBe('Villa Sol it is.');
   });
 
   it('keeps every "#" that is not a message number, and leaves text with no numbers exactly as it was', () => {
@@ -132,5 +151,34 @@ describe("Go's ids never reach people", () => {
       checked_at: '2026-10-07T09:00:00Z',
     };
     expect(sanitizeDeep(card)).toEqual({ ...card, title: 'Villas' });
+  });
+});
+
+describe('a reply after a refused call', () => {
+  // The 8 Oct rerun, word for word: the record call was refused, and nothing was noted.
+  const said = "The record call was refused, so I'll just acknowledge in the chat.\n\nNoted, speaker for the beach day is down as Arjun's. Arjun, shout if that's wrong, and everyone else can reply with their item.";
+  const claims = /\bnoted\b|\bdown as\b/i;
+
+  it('never names a tool that refused quietly, and never claims the work of a tool that did nothing', () => {
+    expect(withoutRefused(said, { names: ['record'], claims: [claims] })).toBe("Arjun, shout if that's wrong, and everyone else can reply with their item.");
+    // A tool written with an underscore is named either way.
+    expect(withoutRefused('I tried record expense for that. Kabir paid the cab.', { names: ['record_expense'], claims: [] })).toBe('Kabir paid the cab.');
+    // Its name in another word is not its name.
+    expect(withoutRefused('The record_expense list is up to date.', { names: ['record'], claims: [] })).toBe('The record_expense list is up to date.');
+  });
+
+  it('leaves a reply alone when nothing was refused, and leaves claims alone for a tool that went through', () => {
+    expect(withoutRefused(said, { names: [], claims: [] })).toBe(said);
+    expect(withoutRefused('Noted, Kabir has the cab.', { names: [], claims: [] })).toBe('Noted, Kabir has the cab.');
+  });
+
+  it('reads a sentence whole: the point in "4.6" never splits one (splitting there left "Villa Sol is rated 4.")', () => {
+    expect(withoutRefused('Villa Sol is rated 4.6 on ixigo and noted for the vote. Kabir paid the cab.', { names: [], claims: [/\bnoted\b/i] })).toBe(
+      'Kabir paid the cab.',
+    );
+  });
+
+  it('says nothing at all when every sentence was about the refusal', () => {
+    expect(withoutRefused('The record call was refused. Noted anyway.', { names: ['record'], claims: [claims] })).toBe('');
   });
 });

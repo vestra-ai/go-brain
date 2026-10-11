@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { goaTrip, msg, packOf } from '../goa.fixture.js';
-import { buildQuestions, buildState, QUESTION_NAMES, QUESTION_VERSIONS, RECIPE_CHOICES, speakerLabel } from '../questions.js';
+import { buildQuestions, buildState, FAST_CHOICES, QUESTION_NAMES, QUESTION_VERSIONS, RECIPE_CHOICES, SEARCH_CHOICES, speakerLabel } from '../questions.js';
 
 describe('buildState', () => {
   it('puts the message last, after at most three earlier lines, and skips withheld ones', () => {
@@ -25,6 +25,14 @@ describe('buildState', () => {
     expect(state.message).not.toContain('4111');
     expect(state.message).not.toContain('482913');
     expect(state.message).toContain('[card number hidden]');
+  });
+
+  it('shows Jev that a PNR is there, never its digits, here or in earlier lines', () => {
+    const before = msg(1, 'p_priya', 'mine is 6029384715');
+    const m = msg(2, 'p_kabir', 'Go PNR 4512873690 ka status batao, train 12051');
+    const state = buildState({ message: m, pack: packOf([before, m]), runningTasks: [] });
+    expect(state.message).toBe('Go PNR [10-digit number] ka status batao, train 12051');
+    expect(state.chat_before).toEqual(['Priya: mine is [10-digit number]']);
   });
 
   it('keeps the last 800 characters of a long message', () => {
@@ -62,7 +70,7 @@ describe('buildQuestions', () => {
     const { questions, taskKeys } = buildQuestions({ message: m, pack: packOf([m]), runningTasks: [] });
     expect(taskKeys).toEqual([]);
     expect(Object.keys(questions).sort()).toEqual([
-      'q10_recipe', 'q1_addressed', 'q1_chatter', 'q2_complete', 'q3_big_compare', 'q3_big_steps', 'q3_quick_act', 'q3_quick_answer',
+      'q10_recipe', 'q11_actionable', 'q1_addressed', 'q1_chatter', 'q2_complete', 'q3_big_compare', 'q3_big_steps', 'q3_quick_act', 'q3_quick_answer',
       'q3_quick_search', 'q5_dates', 'q5_food', 'q5_other', 'q5_travel', 'q6_agreed', 'q6_doing', 'q6_open',
       'q7_reaction', 'q8_secret', 'q8_spend', 'q8_steer', 'q9_circles', 'q9_group_question', 'q9_someone_look',
     ]);
@@ -88,6 +96,9 @@ describe('buildQuestions', () => {
     const q = buildQuestions({ message: m, pack: packOf([m]), runningTasks: [] }).questions.q10_recipe as { type: string; criteria: Record<string, string> };
     expect(q.type).toBe('choice');
     expect(Object.keys(q.criteria)).toEqual([...RECIPE_CHOICES, 'none']);
+    expect(RECIPE_CHOICES).toEqual([...SEARCH_CHOICES, ...FAST_CHOICES]);
+    // Every choice says in Hinglish too how people ask for it.
+    for (const choice of RECIPE_CHOICES) expect(q.criteria[choice], choice).toMatch(/For example: .*\b(hai|hain|ka|ki|ke|kya|mein|se|pe)\b/);
   });
 
   it('writes Hinglish phrasings into the criteria', () => {

@@ -7,7 +7,7 @@ import type { DeskItem } from '../../desk/desk.js';
 import { goaTrip, msg, packOf } from '../../reflex/goa.fixture.js';
 import type { TripPack } from '../../trips/pack.js';
 import type { CheckedLine } from '../checker.js';
-import { decisionOf, linkLine, settleDecisionLines } from '../decision-lines.js';
+import { answers, decisionOf, linkLine, settleDecisionLines, settledBy } from '../decision-lines.js';
 import { mirrorLine } from '../record.js';
 import { fakeLink } from './test-kit.js';
 
@@ -15,7 +15,7 @@ let db: { pool: Pool; drop: () => Promise<void> };
 beforeAll(async () => { db = await withSchema(); });
 afterAll(async () => { await db.drop(); });
 
-const card = (kind: 'vote' | 'mandate', decisionId: string) => ({ card: { kind, decision_id: decisionId } as unknown as C.Card });
+const card = (kind: 'vote' | 'mandate' | 'options', decisionId?: string) => ({ card: { kind, ...(decisionId ? { decision_id: decisionId } : {}) } as unknown as C.Card });
 const voteMsg = msg(40, 'go', 'Which villa? Vote below.', card('vote', 'd_villa'));
 const ask = msg(41, 'p_priya', 'Casa Mareia looks nice');
 const open = (proof: string[], over: Partial<CheckedLine> = {}): CheckedLine => ({
@@ -34,6 +34,9 @@ describe('decisionOf: the one vote an open line is about, by id', () => {
 
   it('reads it from the turn: a card the turn put up, or the vote that woke it', () => {
     expect(decisionOf(open(['m_0041']), pack, { cards: [card('vote', 'd_new').card], wake: [] })).toBe('d_new');
+    // Since rev 5 (R5) a shared thing's options card is its vote; one without a vote names none.
+    expect(decisionOf(open(['m_0041']), pack, { cards: [card('options', 'd_stays').card], wake: [] })).toBe('d_stays');
+    expect(decisionOf(open(['m_0041']), pack, { cards: [card('options').card], wake: [] })).toBeNull();
     expect(decisionOf(open(['m_0041']), pack, { cards: [], wake: [wake('d_villa')] })).toBe('d_villa');
   });
 
@@ -90,5 +93,94 @@ describe('settleDecisionLines: an open line about a vote is marked done once the
     expect(await settleDecisionLines(db.pool, link, T, cancelled)).toBe(1);
     expect(await settleDecisionLines(db.pool, link, T, cancelled)).toBe(1);
     expect(done(link)).toEqual(['r_a']);
+  });
+});
+
+describe('an open line people raised before the vote: the vote that answers it settles it too (8 Oct regression pass)', () => {
+  const stayVote = { question: 'Where should we stay in Goa: Candolim or Anjuna?', kind: 'choice' as const, options: [{ label: 'Candolim' }, { label: 'Anjuna' }] };
+
+  it('answers: two options named, or one and a word of the question; never the trip\'s own place alone; a yes-or-no by two shared words', () => {
+    expect(answers('Stay location: Candolim or Anjuna?', stayVote, 'Goa')).toBe(true);
+    expect(answers('Stay location: Candolim?', stayVote, 'Goa')).toBe(true);
+    expect(answers('Stay in Candolim?', stayVote, 'Goa')).toBe(true);
+    expect(answers('Dinner at Candolim beach shack?', stayVote, 'Goa')).toBe(false);
+    expect(answers('Dinner in Goa at Candolim?', stayVote, 'Goa')).toBe(false);
+    const beach = { question: 'Beach day: Saturday or Sunday?', kind: 'choice' as const, options: [{ label: 'Saturday 7 Nov' }, { label: 'Sunday 8 Nov' }] };
+    expect(answers('Beach day on Saturday or Sunday?', beach)).toBe(true);
+    expect(answers('Which villa: Casa Mareia or Villa Sol?', beach)).toBe(false);
+    const scooters = { question: 'Should we rent scooters?', kind: 'yesno' as const, options: [{ label: 'Yes' }, { label: 'No' }] };
+    expect(answers('Are we renting scooters or not?', scooters)).toBe(true);
+    expect(answers('Scooters or a cab from the airport?', scooters)).toBe(false);
+  });
+
+  // Prod, 11 Oct (Varkala): "South Goa" and "Dates 7 to 12 Dec" stayed open in everyone's record after their votes closed.
+  it('answers: one option named in full, numbers too, alone or with a word of the question', () => {
+    const where = { question: 'Which quieter beach place should we go to?', kind: 'choice' as const, options: [{ label: 'South Goa' }, { label: 'Pondicherry' }, { label: 'Varkala' }] };
+    expect(answers('South Goa', where)).toBe(true);
+    const dates = { question: 'Which dates for Varkala?', kind: 'choice' as const, options: [{ label: '1 to 7 Dec' }, { label: '7 to 12 Dec' }] };
+    expect(answers('Dates 7 to 12 Dec', dates, 'Varkala')).toBe(true);
+    // An option inside something else is not its question.
+    expect(answers('Dinner on 7 to 12 Dec?', dates, 'Varkala')).toBe(false);
+    expect(answers('Dinner in South Goa?', where)).toBe(false);
+  });
+
+  it('settles the lines a vote with a winner answers, written before it closed; not another question, not a tie', async () => {
+    const T = 't_dl9';
+    const line = (id: string, text: string, at: string): C.RecordLine => ({
+      line_id: id, kind: 'open', text, status: 'active', proof: [{ message_id: 'm_0041', person_id: 'p_priya' }],
+      person_ids: ['p_priya'], source: 'go', created_at: at, updated_at: at,
+    });
+    await mirrorLine(db.pool, T, line('r_one', 'Stay location: Candolim?', '2026-10-08T08:45:00Z'), 8);
+    await mirrorLine(db.pool, T, line('r_two', 'Stay location: Candolim or Anjuna?', '2026-10-08T08:46:00Z'), 27);
+    await mirrorLine(db.pool, T, line('r_dinner', 'Dinner at Candolim beach shack?', '2026-10-08T08:46:30Z'), 28);
+    await mirrorLine(db.pool, T, line('r_after', 'Stay in Candolim or Anjuna again?', '2026-10-08T09:30:00Z'), 60);
+    const pack = (d: C.Decision) => packOf([voteMsg, ask], goaTrip({ trip_id: T, destination: { name: 'Goa' }, decisions: [d] }));
+    const asVote = (over: Partial<C.Decision>) => vote({ decision_id: 'd_where', ...stayVote, ...over });
+    const link = fakeLink();
+    const done = () => link.calls.filter((c) => c.method === 'update_record_line' && c.params['status'] === 'done').map((c) => c.params['line_id']);
+    // Still open, or closed in a tie: nothing is settled.
+    expect(await settleDecisionLines(db.pool, link, T, pack(asVote({})))).toBe(0);
+    expect(await settleDecisionLines(db.pool, link, T, pack(asVote({ status: 'closed', result_index: null, closed_at: '2026-10-08T08:47:00Z' })))).toBe(0);
+    // Candolim won at 08:47: the two stay questions are done; the dinner one, and one asked after the vote, are not.
+    const closed = pack(asVote({ status: 'closed', result_index: 0, closed_at: '2026-10-08T08:47:00Z', tally: [3, 1], voted: 4 }));
+    expect(await settleDecisionLines(db.pool, link, T, closed)).toBe(2);
+    expect(done().sort()).toEqual(['r_one', 'r_two']);
+    // The sweep again: the same writes, nothing sent twice.
+    await settleDecisionLines(db.pool, link, T, closed);
+    expect(done().sort()).toEqual(['r_one', 'r_two']);
+  });
+});
+
+describe('settledBy: the open questions a new line settles (Server, 6 Oct: open lines were never closed)', () => {
+  const rec = (line_id: string, over: Partial<C.RecordLine> = {}): C.RecordLine => ({
+    line_id, kind: 'open', text: 'Candolim or Anjuna for the stay?', status: 'active', proof: [{ message_id: 'm_0240', person_id: 'p_priya' }],
+    person_ids: [], source: 'go', created_at: '2026-10-06T09:00:00Z', updated_at: '2026-10-06T09:00:00Z', ...over,
+  });
+  const line = (over: Partial<CheckedLine>): CheckedLine => ({
+    kind: 'agreed', text: 'Stay in Candolim', personIds: [], proof: [{ message_id: 'm_0241', person_id: 'p_rahul' }], ...over,
+  });
+  const record = [
+    rec('r_stay'),
+    rec('r_cab', { text: 'Who sorts the airport cab?', proof: [{ message_id: 'm_0243', person_id: 'p_kabir' }] }),
+    rec('r_done', { status: 'done' }),
+    rec('r_people', { source: 'person' }),
+    rec('r_agreed', { kind: 'agreed' }),
+  ];
+  const ids = (l: CheckedLine, named: string[] = []) => settledBy(l, named, record).map((r) => r.line_id);
+
+  it('closes the open question an agreed line cites as its proposal, and the ones the model names', () => {
+    expect(ids(line({ proof: [{ message_id: 'm_0240', person_id: 'p_priya' }, { message_id: 'm_0241', person_id: 'p_rahul' }] }))).toEqual(['r_stay']);
+    expect(ids(line({}), ['r_stay'])).toEqual(['r_stay']);
+    expect(ids(line({ kind: 'doing', text: 'Meher sorts the airport cab' }), ['r_cab'])).toEqual(['r_cab']);
+  });
+
+  it("never closes on nothing: no named line and no shared proof, a doing line's proof alone, or Go's own other lines", () => {
+    expect(ids(line({}))).toEqual([]);
+    expect(ids(line({ kind: 'doing', proof: [{ message_id: 'm_0240', person_id: 'p_priya' }] }))).toEqual([]);
+    // Only Go's own active open lines: never one already done, someone else's, or an agreed line.
+    expect(ids(line({}), ['r_done', 'r_people', 'r_agreed'])).toEqual([]);
+    // An open line settles nothing, and a line never closes itself.
+    expect(ids(line({ kind: 'open' }), ['r_stay'])).toEqual([]);
+    expect(ids(line({ lineId: 'r_stay' }), ['r_stay'])).toEqual([]);
   });
 });

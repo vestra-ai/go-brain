@@ -2,6 +2,7 @@
 // `pnpm --filter @go/sim try` after a build. The dev room's command line (cli.ts) stays as it is.
 import { FakeServer } from '../fake-server.js';
 import { TryEnv } from './env.js';
+import { openLiveFeed } from './live-feed.js';
 import { serveTryRoom } from './serve.js';
 
 const env = TryEnv.parse(process.env);
@@ -20,7 +21,13 @@ const room = await serveTryRoom({
   host: '0.0.0.0',
   trustProxy: true,
   caps: { dailyTurns: env.TRY_DAILY_TURNS, dailyMessages: env.TRY_DAILY_MESSAGES, visitTurns: env.TRY_VISIT_TURNS },
-  simulatedLine: env.TRY_SIMULATED_LINE,
+  ...(env.TRY_SIMULATED_LINE ? { simulatedLine: env.TRY_SIMULATED_LINE } : {}),
+  ...(env.TRY_LIVE === '1'
+    ? {
+      live: (tripId: string, onMessage: (m: unknown) => void) => openLiveFeed({ goUrl: env.GO_URL, secret: env.GO_SIGNING_SECRET, tripId, onMessage, log }),
+      ...(env.TRY_WATCH_ORIGIN ? { watchOrigin: env.TRY_WATCH_ORIGIN } : {}),
+    }
+    : {}),
   log,
 });
 log(`the try room is listening on port ${env.PORT}`);

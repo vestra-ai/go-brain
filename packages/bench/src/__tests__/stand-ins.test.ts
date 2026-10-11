@@ -149,10 +149,15 @@ describe('the bench reflex', () => {
     expect(r.reads.get("p_priya\u0000I'm veg btw")).toBe(1);
   });
 
-  it('prefers a recorded Jev read over the hand label', async () => {
+  it('prefers a recorded Jev read over the hand label: the recording wins, the labels fill only what it lacks', async () => {
     const recorded: ReflexRead = { ...allUnsure(), forGo: { value: false, sure: true } };
     const r = new BenchReflex(chat.lines, new Map([[0, recorded]]));
-    expect(await r.read(msg('p_rahul', '@Go flights Friday?'), ctx)).toEqual(recorded);
+    // A recording from before questions 1's banter and 11 has neither: those two come from the line's labels.
+    const label = labelRead(say(0));
+    expect(await r.read(msg('p_rahul', '@Go flights Friday?'), ctx)).toEqual({ ...recorded, banter: label.banter, actionable: label.actionable });
+    // A recording that has them keeps its own.
+    const own: ReflexRead = { ...recorded, banter: { value: true, sure: true }, actionable: { value: false, sure: true } };
+    expect(await new BenchReflex(chat.lines, new Map([[0, own]])).read(msg('p_rahul', '@Go flights Friday?'), ctx)).toEqual(own);
   });
 
   it('wraps a live reflex, counts its reads and keeps the first answer for each line', async () => {

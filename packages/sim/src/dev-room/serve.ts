@@ -61,7 +61,8 @@ export async function doAction(fake: FakeServer, tripId: string, a: Action, repl
       break;
     }
     case 'tap':
-      reply({ type: 'tap_result', result: await fake.tap(a.cardId, a.actionId, a.personId, a.optionId) });
+      // The tap comes back with its answer: the page knows a Watch answer for a login hand-off by its card and person.
+      reply({ type: 'tap_result', cardId: a.cardId, actionId: a.actionId, personId: a.personId, result: await fake.tap(a.cardId, a.actionId, a.personId, a.optionId) });
       break;
     case 'vote':
       await fake.vote(a.decisionId, a.personId, a.optionIndex);

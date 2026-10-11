@@ -32,8 +32,8 @@ describe('contract schemas', () => {
     expect(r.success).toBe(true);
     expect(TripSnapshot.shape.money.shape.spent_minor.safeParse(10.5).success).toBe(false);
   });
-  it('the trip snapshot never carries who picked which budget', () => {
-    expect(Object.keys(TripSnapshot.shape.budget.shape).sort()).toEqual(['answered', 'lowest', 'of']);
+  it('the trip snapshot never carries who picked which budget: only the lowest band, and (1.1) the group\'s one budget', () => {
+    expect(Object.keys(TripSnapshot.shape.budget.shape).sort()).toEqual(['answered', 'lowest', 'of', 'per_person_minor']);
   });
   it('every socket method has named params and result schemas, so the docs and the Python models get real names', () => {
     for (const x of SOCKET_METHODS) for (const s of [x.params, x.result]) if (s) expect(z.globalRegistry.get(s)?.id, x.name).toBeTruthy();

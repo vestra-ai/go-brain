@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { checkAll, ixigoProbe, jevProbe, modelProbe, PROBE_TIMEOUT_MS, runProbe, serverProbe, v1Probe, vaultProbe, type Probe } from '../health.js';
+import { checkAll, checkComputer, ixigoProbe, jevProbe, modelProbe, PROBE_TIMEOUT_MS, runProbe, serverProbe, v1Probe, vaultProbe, type Probe } from '../health.js';
 import { ADMIN_LANES, NOT_DEPLOYED } from '../lanes.js';
 
 /** Stands in for P4's v1UserIdFor. */
@@ -73,20 +73,33 @@ describe('the checks', () => {
     expect(await runProbe(serverProbe({ isOpen: () => false }))).toMatchObject({ dot: 'red', detail: 'no Server is connected to Go' });
   });
 
-  it("/v1 warms the chosen trip's computer: ready is green, waking amber, no computer red", async () => {
+  it("/v1 reads the chosen trip's user and never warms its computer: set up is green, no computer red", async () => {
     const first = `vk_test_${'a'.repeat(43)}`;
     const env = { VESTRA_API_URL: 'https://api.vestra.test/', VESTRA_API_KEYS: `${first},vk_test_${'b'.repeat(43)}` };
-    for (const [status, dot] of [[200, 'green'], [202, 'amber'], [404, 'red'], [500, 'red']] as const) {
+    for (const [status, dot] of [[200, 'green'], [404, 'red'], [500, 'red']] as const) {
       const { f, calls } = fakeFetch(() => new Response('{}', { status }));
       expect((await runProbe(v1Probe(env, f, 't_goa', v1UserIdFor))).dot, String(status)).toBe(dot);
-      expect(calls[0]?.url).toBe(`https://api.vestra.test/v1/users/${v1UserIdFor('t_goa')}/warm`);
-      expect(calls[0]?.init?.method).toBe('POST');
+      expect(calls.map((c) => [c.init?.method ?? 'GET', c.url])).toEqual([['GET', `https://api.vestra.test/v1/users/${v1UserIdFor('t_goa')}`]]);
       expect(new Headers(calls[0]?.init?.headers).get('authorization')).toBe(`Bearer ${first}`);
     }
     const listed = fakeFetch(() => new Response('{"data":[]}', { status: 200 }));
     expect((await runProbe(v1Probe(env, listed.f, null, v1UserIdFor))).dot).toBe('green');
     expect(listed.calls[0]?.url).toBe('https://api.vestra.test/v1/users?limit=1');
     expect(await runProbe(v1Probe({}, listed.f, 't_goa', v1UserIdFor))).toMatchObject({ dot: 'red', detail: 'VESTRA_API_URL or VESTRA_API_KEYS is not set' });
+  });
+
+  it("the explicit check of a trip's computer warms it: up, waking, no computer, or unset", async () => {
+    const env = { VESTRA_API_URL: 'https://api.vestra.test', VESTRA_API_KEYS: `vk_test_${'a'.repeat(43)}` };
+    for (const [status, ok, says] of [[200, true, /is up/], [202, true, /waking now/], [404, false, /no computer yet/], [500, false, /HTTP 500/]] as const) {
+      const { f, calls } = fakeFetch(() => new Response('{}', { status }));
+      const checked = await checkComputer(env, f, 'vu_t_goa');
+      expect(checked.ok, String(status)).toBe(ok);
+      expect(checked.detail, String(status)).toMatch(says);
+      expect(calls.map((c) => [c.init?.method, c.url])).toEqual([['POST', 'https://api.vestra.test/v1/users/vu_t_goa/warm']]);
+    }
+    const none = fakeFetch(() => new Response('{}', { status: 200 }));
+    expect(await checkComputer({}, none.f, 'vu_t_goa')).toEqual({ ok: false, detail: 'VESTRA_API_URL or VESTRA_API_KEYS is not set' });
+    expect(none.calls).toEqual([]);
   });
 
   it('ixigo: the listing is told to stop when the check runs out of time', async () => {
