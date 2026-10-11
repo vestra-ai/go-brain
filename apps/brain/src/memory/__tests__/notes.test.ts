@@ -2,7 +2,8 @@ import type { Pool } from 'pg';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { withSchema } from '../../db/test-db.js';
 import type { Message } from '../../door/methods.js';
-import { fakePacks, goaTrip, msg, packOf } from '../../reflex/goa.fixture.js';
+import { fakePacks, goaPeople, goaTrip, msg, packOf } from '../../reflex/goa.fixture.js';
+import { NOT_DECIDED } from '../../trips/save-trip.js';
 import { silentLog } from '../../log.js';
 import { currentFacts, markForgotten } from '../facts.js';
 import { createNotes, NOTES_RULES } from '../notes.js';
@@ -365,9 +366,13 @@ describe('the record in the notes prompt', () => {
 });
 
 describe("the trip's dates and place, from an agreed line (8 Oct regression pass)", () => {
-  /** A trip with no dates yet, Rahul organizing, and the notes pass over these lines. */
-  function dateless(tripId: string, messages: Message[], answers: string[], dates: { start: string; end: string } | null = null) {
-    const packs = fakePacks({ [tripId]: packOf(messages, goaTrip({ trip_id: tripId, dates })) });
+  /**
+   * A trip of one, Rahul's (or the group's, five of them), with no dates yet, and the notes pass over these lines. Only a
+   * trip of one moves on its own word: a group's dates and place are the vote's (Keshav, 11 Oct).
+   */
+  function dateless(tripId: string, messages: Message[], answers: string[], dates: { start: string; end: string } | null = null, group = false) {
+    const people = group ? goaPeople() : goaPeople().slice(0, 1);
+    const packs = fakePacks({ [tripId]: packOf(messages, goaTrip({ trip_id: tripId, dates, people })) });
     const link = fakeLink();
     const side = scriptedSide(answers);
     const notes = createNotes({ pool: db.pool, packs, link, side, log: silentLog, now: () => new Date('2026-10-08T10:00:00Z') });
@@ -375,7 +380,7 @@ describe("the trip's dates and place, from an agreed line (8 Oct regression pass
   }
   const trips = (link: ReturnType<typeof fakeLink>) => link.calls.filter((c) => c.method === 'update_trip').map((c) => c.params);
 
-  it("the organizer's own settled line sets the trip's dates through update_trip, with today in the prompt", async () => {
+  it("a trip of one's own settled line sets the trip's dates through update_trip, with today in the prompt", async () => {
     const said = [msg(3, 'p_rahul', 'Goa trip is happening!! 6 to 9 Nov, Diwali weekend 🌴')];
     const answer = JSON.stringify({
       facts: [],
@@ -390,13 +395,27 @@ describe("the trip's dates and place, from an agreed line (8 Oct regression pass
     expect(link.calls.map((c) => c.method).filter((m) => m !== 'add_reaction')).toEqual(['add_record_line', 'update_trip']);
   });
 
+  // Varkala, 11 Oct: the organizer's "Yes switch" moved the trip to Marrakech through this pass, with no vote.
+  it("in a group the organizer's settled line goes to the record and the trip waits for the vote", async () => {
+    const said = [msg(3, 'p_rahul', 'Goa trip is happening!! 6 to 9 Nov, Diwali weekend 🌴')];
+    const answer = JSON.stringify({
+      facts: [],
+      lines: [{ kind: 'agreed', text: 'Goa trip 6 to 9 Nov', person_ids: [], proof: [3], trip: { dates: { start: '2026-11-06', end: '2026-11-09' } } }],
+    });
+    const { link, notes } = dateless('t_d1g', said, [answer], null, true);
+    const out = await notes.run('t_d1g');
+    expect(link.calls.filter((c) => c.method === 'add_record_line').map((c) => c.params.text)).toEqual(['Goa trip 6 to 9 Nov']);
+    expect(trips(link)).toEqual([]);
+    expect(out.refused).toEqual([`trip: ${NOT_DECIDED}`]);
+  });
+
   it("a member's suggestion nobody agreed to sets nothing: the checker writes it as open, and an open line never moves the trip", async () => {
     const said = [msg(5, 'p_priya', 'how about 7 to 10 Nov instead?')];
     const answer = JSON.stringify({
       facts: [],
       lines: [{ kind: 'agreed', text: 'Goa trip 7 to 10 Nov', person_ids: [], proof: [5], trip: { dates: { start: '2026-11-07', end: '2026-11-10' } } }],
     });
-    const { link, notes } = dateless('t_d2', said, [answer]);
+    const { link, notes } = dateless('t_d2', said, [answer], null, true);
     await notes.run('t_d2');
     expect(link.calls.filter((c) => c.method === 'add_record_line').map((c) => c.params.kind)).toEqual(['open']);
     expect(trips(link)).toEqual([]);
@@ -434,11 +453,11 @@ describe("the trip's dates and place, from an agreed line (8 Oct regression pass
     const side = scriptedSide([answer]);
     const notes = createNotes({ pool: db.pool, packs, link, side, log: silentLog, now: () => new Date('2026-10-08T10:00:00Z') });
     const out = await notes.run('t_d6');
-    // The agreement is in the record; the trip is not touched (no Place for it was resolved, and a bare name is never
-    // sent), so Goa keeps its place_id, coordinates and photo.
+    // The agreement is in the record; the trip is not touched (a group's place is the vote's, and an area is never the
+    // place), so Goa keeps its place_id, coordinates and photo.
     expect(link.calls.filter((c) => c.method === 'add_record_line').map((c) => c.params.text)).toEqual(['North Goa, not South']);
     expect(trips(link)).toEqual([]);
-    expect(out.refused).toEqual([expect.stringContaining('ixigo knows no place called North Goa')]);
+    expect(out.refused).toEqual([`trip: ${NOT_DECIDED}`]);
     // The prompt's example is a real change of destination, and says an area is never the trip's place.
     expect(side.prompts[0]!.system).not.toContain('{"destination": "North Goa"}');
     expect(side.prompts[0]!.system).toContain('an area inside it ("North Goa, not South", "Candolim", "Anjuna") is where to stay there');
