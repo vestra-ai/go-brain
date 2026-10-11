@@ -276,6 +276,11 @@ export interface IxigoLogin {
    * in its time with no wait running here (Go restarted) is watched again; one past its time ends as a hand-off does.
    */
   sweep(): Promise<void>;
+  /**
+   * Hears a trip's login land (whatever saw it: the one-tap watch, "I'm logged in", a check), once per login: a flight
+   * booking that waited on it carries on (booking/flight-booking.ts resumeWaiting).
+   */
+  onLoggedIn(fn: (tripId: string) => void): void;
   /** Waits for the work taps started in the background (tests). */
   settled(): Promise<void>;
 }
@@ -393,6 +398,7 @@ export function loginCard(
 
 export function createIxigoLogin(d: LoginDeps): IxigoLogin {
   const inFlight = new Set<Promise<void>>();
+  const landed: Array<(tripId: string) => void> = [];
   /** The trips whose one-tap login this process is watching now (from the tap until the wait ends). */
   const waiting = new Set<string>();
   const track = (what: string, tripId: string, p: Promise<void>): void => {
@@ -570,6 +576,7 @@ export function createIxigoLogin(d: LoginDeps): IxigoLogin {
     }
     const next: LoginRow = { ...row, state: 'logged_in', loggedInAt: row.state === 'logged_in' ? row.loggedInAt : now, checkedAt: now, parked: null };
     await save(next);
+    if (row.state !== 'logged_in') for (const fn of landed) fn(row.tripId);
     return next;
   }
 
@@ -1184,6 +1191,10 @@ export function createIxigoLogin(d: LoginDeps): IxigoLogin {
     },
 
     personGone,
+
+    onLoggedIn(fn) {
+      landed.push(fn);
+    },
 
     async sweep() {
       if (!d.live() || !d.runner()?.cookies) return;

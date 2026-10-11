@@ -200,7 +200,7 @@ describe('registerTravel', () => {
     // login's keep-alive (login-keepalive.ts) and the minute's look at one-tap logins (login.ts sweep), each stopped by
     // name where it has one.
     expect(lb.stoppers).toHaveLength(7);
-    expect(lb.stoppers.map((f) => f.name)).toEqual(expect.arrayContaining(['stopWatchChecks', 'stopHeadStarts', 'stopLoginKeepAlive', 'stopLoginSweep']));
+    expect(lb.stoppers.map((f) => f.name)).toEqual(expect.arrayContaining(['stopWatchChecks', 'stopHeadStarts', 'stopLoginKeepAlive', 'stopLoginSweep', 'stopBookingSweep']));
     const withIxigo = makeLaneBrain({ pool: db.pool, env: { IXIGO_MCP_URL: 'http://127.0.0.1:1/mcp', IXIGO_MCP_TOKEN: 'tok-ixigo-123456' } });
     await registerTravel(withIxigo.brain);
     expect(withIxigo.stoppers).toHaveLength(8);
