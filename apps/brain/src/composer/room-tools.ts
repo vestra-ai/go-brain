@@ -154,8 +154,8 @@ export function roomTools(o: { now: () => Date; pool: Pool; travel?: () => Trave
     name: 'open_vote',
     description:
       `Open a vote in the room, with 2 to 10 short options. The vote card goes out with the line you give it. ${CARD_LINE} ` +
-      'Options already on an options card (stays, flights, trains, buses), even just one, go to a vote with put_to_vote and the card_id, never here: ' +
-      "only put_to_vote's vote is tied to the offers, so its winner can be booked. " +
+      'Options already on an options card are never voted here: a card of shared things (stays, places) is its own vote already, Vote on each option, ' +
+      'and a card of one goes to a vote with put_to_vote and the card_id. Only those votes are tied to the offers, so the winner can be booked. ' +
       'Never open a second vote on a question that already has an open one. ' +
       'Set anonymous when someone asks for a secret or anonymous vote.',
     input: OpenVoteInput,

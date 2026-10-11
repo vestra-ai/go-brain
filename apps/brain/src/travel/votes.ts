@@ -139,7 +139,8 @@ export async function openVoteFromCard(
   if (offers.length === 0) return { ok: false, reason: 'too_few_options' };
   if (!(await d.results.claimVote(o.cardId, o.key))) return { ok: false, reason: 'already_voting' };
   try {
-    if (o.onCard) await closeIdleVotes(d, o.tripId, row.optionKind, o.cardId);
+    // Best effort: a trip the Server can't read now still gets the card's vote.
+    if (o.onCard) await closeIdleVotes(d, o.tripId, row.optionKind, o.cardId).catch(() => undefined);
     const closesAt = new Date(d.now().getTime() + (o.closesInHours ?? VOTE_HOURS) * 3_600_000).toISOString();
     const opened = await d.link.request('open_vote', {
       trip_id: o.tripId, request_id: o.requestId, question, kind: 'choice', anonymous: o.anonymous ?? false, options, closes_at: closesAt,

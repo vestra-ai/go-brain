@@ -197,7 +197,7 @@ describe('the early answer, with no model call', () => {
     expect(a.ctx.answered).toBe(true);
   });
 
-  it('on a card of stays from ixigo.com, puts "See all on ixigo" for the whole list the search read', async () => {
+  it('on a card of stays from ixigo.com, keeps the list the search read, and shows up to 10 in the engine\'s order (rev 5 R3)', async () => {
     const line = msg(58, 'p_priya', '@Go stays with a pool in North Goa');
     const pack = { ...goaPack(), messages: [...goaPack().messages, line] };
     const stay = (title: string, priceMinor: number): TravelOption => ({
@@ -218,9 +218,10 @@ describe('the early answer, with no model call', () => {
     expect(await run({ tripId: 't_goa', wake: ctx.wake, pack, ctx })).toBe(true);
     expect(saved[0]).toMatchObject({ page });
     expect(ctx.cards[0]).toMatchObject({ kind: 'options', title: 'Pool stays in North Goa, 6 to 9 Nov' });
-    expect((ctx.cards[0] as { actions: Array<{ action_id: string }> }).actions.map((x) => x.action_id)).toEqual(['pick', 'vote', 'see_all']);
-    // The engine's first three, in its order.
-    expect((ctx.cards[0] as { options: Array<{ title: string }> }).options.map((o) => o.title)).toEqual(['Casa Azul', 'Meritas', 'Vedic Resort']);
+    // No buttons of its own: a stays card is its vote (rev 5 R5), which this card's store, saving nothing, never opens.
+    expect((ctx.cards[0] as { actions: Array<{ action_id: string }> }).actions).toEqual([]);
+    // The engine's first ones, up to 10, in its order.
+    expect((ctx.cards[0] as { options: Array<{ title: string }> }).options.map((o) => o.title)).toEqual(['Casa Azul', 'Meritas', 'Vedic Resort', 'HOLITEL']);
     expect(ctx.lines).toEqual(['Pool stays in North Goa for 6 to 9 Nov, from ₹4,334 a night.']);
   });
 

@@ -161,8 +161,10 @@ describe('G3: Go does real work', () => {
     expect(shown.text).toBe('Three villas that fit. Want a vote?');
     const card = shown.card as Extract<C.Card, { kind: 'options' }>;
     expect(card.options.map((o) => o.title)).toEqual(['Villa Sol', 'The Palms Villa', 'Ocean Breeze Villa']);
-    // No budget asked for, even with none set (rev 4: one group budget, nobody gives a private one).
-    expect(card.actions?.map((a) => a.action_id)).toEqual(['pick', 'vote']);
+    // No budget asked for, even with none set (rev 4: one group budget, nobody gives a private one). The card is the
+    // group's vote from the start (rev 5 R5): it names its vote, and no button of its own is left to tap.
+    expect(card.actions ?? []).toEqual([]);
+    expect(card.decision_id).toEqual(expect.any(String));
     // Bookable end to end: each option is the offer the job picked, at the whole-stay price a vote and a payment use.
     const offers = await Promise.all(card.options.map((o) => built.brain.travel!.offer(o.option_id)));
     expect(offers.map((o) => [o?.offerId, o?.priceMinor])).toEqual(VILLAS.options.map((v) => [v.offer_id, v.total_paise]));
@@ -271,8 +273,10 @@ describe('G3: Go does real work', () => {
     const shown = await server.waitFor(() => (options().length > optionsBefore ? options().at(-1)! : null), 20_000);
     const card = shown.card as Extract<C.Card, { kind: 'options' }>;
     expect(card.options.map((o) => o.title)).toEqual(['Villa Sol', 'The Palms Villa', 'Ocean Breeze Villa']);
-    // No budget asked for, even with none set (rev 4: one group budget, nobody gives a private one).
-    expect(card.actions?.map((a) => a.action_id)).toEqual(['pick', 'vote']);
+    // No budget asked for, even with none set (rev 4: one group budget, nobody gives a private one). The card is the
+    // group's vote from the start (rev 5 R5): it names its vote, and no button of its own is left to tap.
+    expect(card.actions ?? []).toEqual([]);
+    expect(card.decision_id).toEqual(expect.any(String));
     await server.waitFor(() => (cardOf(cardId)?.state === 'done' ? true : null), 10_000);
     expect(cardOf(cardId).steps.map((st: { state: string }) => st.state)).toEqual(['done', 'done', 'done', 'done', 'done']);
     // The token goes at the real end, and only one options card came.

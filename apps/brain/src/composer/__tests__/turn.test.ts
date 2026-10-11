@@ -733,7 +733,7 @@ describe('a reply of card tools ends the turn on its cards', () => {
   });
 });
 
-describe('show the options and put them to a vote in one reply', () => {
+describe("the group's options go up as their vote (rev 5 R5)", () => {
   // Travel's own tools on the fake travel backend, as the brain registers them.
   const now = (): Date => new Date('2026-10-07T12:00:00Z');
   const travelOf = () => {
@@ -745,7 +745,7 @@ describe('show the options and put them to a vote in one reply', () => {
   const STAYS = { area: 'North Goa', check_in: '2026-11-06', check_out: '2026-11-09', guests: 5, must_have: ['pool', 'beach'] };
   const resultsIdOf = (body: any): string => JSON.parse(body.messages.at(-1).content[0].content).results_id;
 
-  it('the card, the vote and the line in one reply: one model call after the search, one vote opened', async () => {
+  it('the card and its line in one reply, the card the vote: one model call after the search, one vote opened before the card', async () => {
     const ask = msg(3, 'p_priya', '@Go find villas with a pool and put them to a vote');
     const r = room({
       messages: [ask],
@@ -759,25 +759,20 @@ describe('show the options and put them to a vote in one reply', () => {
                 text:
                   'Five people at under 8k a head is ₹40,000 a night, so everything fits the cap. "Near the beach" rules out the 15 and 20 minute ones. ' +
                   "I'll show the best-rated villas that are close to the beach.",
-                tools: [
-                  { name: 'show_options', input: { results_id: resultsIdOf(body), title: 'Villas with a pool', line: 'Three villas with a pool.' } },
-                  { name: 'put_to_vote', input: { line: 'Vote is up, tap your pick.' } },
-                ],
+                tools: [{ name: 'show_options', input: { results_id: resultsIdOf(body), title: 'Villas with a pool', line: 'Villas with a pool, tap Vote on your pick.' } }],
               }
             : { text: 'never asked' },
     });
     await turn(r, [item(r.tripId, ask, true)]);
     expect(r.model.bodies).toHaveLength(2);
-    expect(r.calls.filter((c) => c.method === 'open_vote')).toHaveLength(1);
-    // Both lines ride with the options card, never the free text; the vote card follows it, as every second card does.
-    expect(r.posts().map((p) => [p.params.text, p.params.card?.kind])).toEqual([
-      ['Three villas with a pool.\nVote is up, tap your pick.', 'options'],
-      [undefined, 'vote'],
-    ]);
-    expect(r.posts()[1]?.params.card).toMatchObject({ decision_id: 'd_first' });
+    // The vote opens before its card goes up, so the App draws Vote on each option from the start.
+    expect(r.calls.map((c) => c.method).filter((m) => m === 'open_vote' || m === 'post_message')).toEqual(['open_vote', 'post_message']);
+    // Its line rides with the card, never the free text; no vote card beside it.
+    expect(r.posts().map((p) => [p.params.text, p.params.card?.kind])).toEqual([['Villas with a pool, tap Vote on your pick.', 'options']]);
+    expect(r.posts()[0]?.params.card).toMatchObject({ decision_id: 'd_first' });
   });
 
-  it('"put the three villas to a vote" on a card shown earlier: the chat line names the card, so one model call opens the vote', async () => {
+  it('"put the three villas to a vote" on a card shown earlier: the chat line names the card, and put_to_vote says it is the vote already', async () => {
     // goa-300 line 175 in live run 37578789333: three model calls (recall, trip, search_stays) and 9.88 s, because the
     // chat showed the villas card without its id.
     const find = msg(3, 'p_rahul', 'Go, find us a villa with a pool in North Goa under 8k a head, near the beach');
@@ -797,20 +792,24 @@ describe('show the options and put them to a vote in one reply', () => {
                   text: "I'll put the most recent villa options card (" + cardIn(body) + ') to a vote.',
                   tools: [{ name: 'put_to_vote', input: { card_id: cardIn(body), line: 'Vote is up, tap your pick.' } }],
                 }
-              : { text: 'never asked' },
+              : call === 3
+                ? { text: 'The villas card is the vote already: tap Vote on your pick.' }
+                : { text: 'never asked' },
     });
     await turn(r, [item(r.tripId, find, true)]);
     const shown = r.posts()[0]!.params.card;
     expect(shown.kind).toBe('options');
     r.pack.messages.push(msg(5, null, 'Three villas with a pool.', { card: shown }), ask);
     await turn(r, [item(r.tripId, ask, true)], `turn_${r.tripId}_vote`);
-    expect(r.model.bodies).toHaveLength(3);
+    // The card's own vote, opened with it: put_to_vote opens nothing, and the model says so in one more call.
+    expect(r.model.bodies).toHaveLength(4);
     expect(cardIn(r.model.bodies[2])).toBe(shown.card_id);
+    expect(shown.decision_id).toBe('d_first');
     expect(r.calls.filter((c) => c.method === 'open_vote')).toHaveLength(1);
-    expect(r.posts().slice(1).map((p) => [p.params.text, p.params.card?.kind])).toEqual([['Vote is up, tap your pick.', 'vote']]);
+    expect(r.posts().slice(1).map((p) => [p.params.text, p.params.card?.kind])).toEqual([['The villas card is the vote already: tap Vote on your pick.', undefined]]);
   });
 
-  it('a vote with no card_id after two options cards is refused, opens nothing, and goes back to the model', async () => {
+  it('a vote with no card_id after two options cards is refused, opens nothing more, and goes back to the model', async () => {
     const ask = msg(3, 'p_priya', '@Go villas, two sets, and a vote');
     const r = room({
       messages: [ask],
@@ -830,7 +829,8 @@ describe('show the options and put them to a vote in one reply', () => {
     });
     await turn(r, [item(r.tripId, ask, true)]);
     expect(r.model.bodies).toHaveLength(3);
-    expect(r.calls.filter((c) => c.method === 'open_vote')).toEqual([]);
+    // Each card is a vote of its own; put_to_vote opens none.
+    expect(r.calls.filter((c) => c.method === 'open_vote')).toHaveLength(2);
     expect(JSON.stringify(r.model.bodies[2].messages.at(-1).content)).toContain('which_card');
     expect(r.posts()[0]?.params.text).toBe('Which set should we vote on?');
   });

@@ -4,9 +4,10 @@ import { CARD_LINE } from '../../composer/rules.js';
 import { SAY_NOTHING } from '../../composer/tools.js';
 import { withSchema } from '../../db/test-db.js';
 import { msg } from '../../__tests__/fixtures/goa.js';
-import { goaPack } from '../../tasks/testing/goa.js';
+import { GOA_TRIP, goaPack } from '../../tasks/testing/goa.js';
 import { makeLaneBrain, type LaneBrain } from '../../tasks/testing/lane-brain.js';
 import { FakeIxigoStore } from '../fake-ixigo/data.js';
+import { stableId } from '../ids.js';
 import { createImages } from '../images.js';
 import { createTravelLayer } from '../layer.js';
 import { createFakeTravel } from '../mcp-travel.js';
@@ -297,13 +298,17 @@ describe('a search that answers itself', () => {
     expect(out).toMatchObject({ answered: true, card_id: 'c_opt_turn_s1_1' });
     expect(ctx.answered).toBe(true);
     const card = C.OptionsCard.parse(ctx.cards[0]);
-    expect(card.options.map((o) => o.title)).toEqual(['Casa Mareia', 'Villa Sol', 'The Palms Villa']);
+    // Up to 10 on a card (rev 5 R3): every stay that fits, here four, in the engine's order.
+    expect(card.options.map((o) => o.title)).toEqual(['Casa Mareia', 'Villa Sol', 'The Palms Villa', 'Ocean Breeze Villa']);
     expect(ctx.lines).toHaveLength(1);
     // From the card's cheapest whole stay, as its price says it: The Palms, 3 nights at ₹12,200 (the exam's #5 follow-up).
     expect(ctx.lines[0]).toMatch(/^Pool stays in North Goa for 6 to 9 Nov, .+, from ₹36,600 for 3 nights\.$/);
     // No count of the card's options: price and scope only.
     expect(ctx.lines[0]).not.toMatch(/\b\d+ (pool )?stays\b/i);
-    expect(card.actions?.map((a) => a.action_id)).toEqual(['pick', 'vote']);
+    // The group's vote from the start (rev 5 R5), with nothing more of its search to show: no buttons of its own.
+    expect(lb.link.sent('open_vote').at(-1)).toMatchObject({ request_id: 'go_vote_turn_s1_1', question: 'Where do we stay?' });
+    expect(card.decision_id).toMatch(/^d_\d+$/);
+    expect(card.actions).toEqual([]);
   });
 
   it('gives the model the list as before when the ask needs judgement, so a question is never swallowed', async () => {
@@ -409,16 +414,17 @@ describe('show_options', () => {
   });
 });
 
-describe('put_to_vote', () => {
-  it('opens one vote with option_ref set to each option id and the whole-stay price, and puts the vote card in ctx.cards', async () => {
+// Rev 5 R5 (the Server team, 11 Oct): a shared thing's card is the group's vote from the start, Vote on each option.
+describe("a shared thing's card is its vote", () => {
+  it('opens one vote before the card goes up, option_ref each option id at its whole-stay price, for a day, and the card names it', async () => {
     const found = (await lb.tools.run('search_stays', STAYS, lb.ctx({ turnId: 'turn_v1' }))) as any;
     const showCtx = lb.ctx({ turnId: 'turn_v2' });
     const shown = (await lb.tools.run('show_options', { line: 'Here are the villas.', results_id: found.results_id, title: 'Villas' }, showCtx)) as any;
     const card = C.OptionsCard.parse(showCtx.cards[0]);
-    const ctx = lb.ctx({ turnId: 'turn_v3' });
-    const out = (await lb.tools.run('put_to_vote', { line: 'Vote is up.', card_id: shown.card_id, closes_in_hours: 2 }, ctx)) as any;
     const vote = lb.link.sent('open_vote').at(-1)!;
-    expect(vote).toMatchObject({ request_id: 'go_vote_turn_v3_1', question: 'Where do we stay?', kind: 'choice', anonymous: false, closes_at: '2026-10-07T14:00:00.000Z' });
+    expect(vote).toMatchObject({ request_id: 'go_vote_turn_v2_1', question: 'Where do we stay?', kind: 'choice', anonymous: false, closes_at: '2026-10-08T12:00:00.000Z' });
+    expect(shown.decision_id).toMatch(/^d_\d+$/);
+    expect(card.decision_id).toBe(shown.decision_id);
     expect((vote.options as Array<{ option_ref: string }>).map((o) => o.option_ref)).toEqual(card.options.map((o) => o.option_id));
     // One meaning on the card and its vote: the whole stay, 3 nights at ₹16,900 (the Server team's 10 Oct §6c).
     expect((vote.options as Array<{ price_minor: number }>).map((o) => o.price_minor)).toEqual(card.options.map((o) => o.price_minor));
@@ -426,11 +432,25 @@ describe('put_to_vote', () => {
     // Its note says the whole stay first with what it covers and the night in brackets, as the pay card then does (the
     // lead, 10 Oct: "Paid ₹38,400 … ₹12,800 per night" read as a night's).
     expect((vote.options as Array<{ note?: string }>)[0]!.note).toBe('Morjim, ₹50,700 for 3 nights (₹16,900 a night)');
+    // And its details, as on the card (R5: photos, details and prices copied from the card option).
+    expect((vote.options as Array<{ details?: unknown }>)[0]!.details).toEqual(card.options[0]!.details);
     // Its payment names it beside the amount the pay card says: what it covers and its night, never the amount again.
     expect(await travel.payWords!(card.options[0]!.option_id)).toBe('Morjim: 3 nights (₹16,900 a night)');
-    expect(ctx.cards).toEqual([expect.objectContaining({ kind: 'vote', card_id: 'c_vote_turn_v3_1', decision_id: out.decision_id })]);
-    expect(ctx.lines).toEqual(['Vote is up.']);
-    expect((ctx.cards[0] as { fallback_text: string }).fallback_text).toMatch(/^Vote: Where do we stay\?/);
+    // No vote card beside it: the card is the vote.
+    expect(showCtx.cards.map((c) => c.kind)).toEqual(['options']);
+    expect(showCtx.lines).toEqual(['Here are the villas.']);
+    // put_to_vote on it opens nothing and posts no vote card: it says the card is the vote.
+    const opened = lb.link.sent('open_vote').length;
+    const ctx = lb.ctx({ turnId: 'turn_v3' });
+    expect(await lb.tools.run('put_to_vote', { line: 'Vote is up.', card_id: shown.card_id }, ctx)).toMatchObject({ decision_id: shown.decision_id });
+    expect(ctx.cards).toEqual([]);
+    expect(lb.link.sent('open_vote')).toHaveLength(opened);
+  });
+
+  it('takes the vote\'s anonymity and time from show_options', async () => {
+    const found = (await lb.tools.run('search_stays', STAYS, lb.ctx({ turnId: 'turn_anon1' }))) as any;
+    await lb.tools.run('show_options', { line: 'Here are the villas.', results_id: found.results_id, title: 'Villas', anonymous: true, closes_in_hours: 2 }, lb.ctx({ turnId: 'turn_anon2' }));
+    expect(lb.link.sent('open_vote').at(-1)).toMatchObject({ request_id: 'go_vote_turn_anon2_1', anonymous: true, closes_at: '2026-10-07T14:00:00.000Z' });
   });
 
   it("never asks \"which villa\" of ixigo.com's hotels: the kind of place becomes \"stay\", unless every option is one (re-drill 7)", async () => {
@@ -441,9 +461,7 @@ describe('put_to_vote', () => {
     const query = { area: 'north goa', checkIn: '2026-11-06', checkOut: '2026-11-09', mustHave: ['pool'] };
     const asked = async (names: string[], question: string, turn: string) => {
       const set = await results.save({ tripId: 't_goa', optionKind: 'stay', source: 'search', query, options: names.map(stay), checkedAt: '2026-10-07T12:00:00.000Z' });
-      const show = lb.ctx({ turnId: `${turn}a` });
-      const shown = (await lb.tools.run('show_options', { line: 'Here they are.', results_id: set.resultsId, title: 'Pool stays in North Goa, 6 to 9 Nov' }, show)) as any;
-      await lb.tools.run('put_to_vote', { line: 'Vote is up.', card_id: shown.card_id, question }, lb.ctx({ turnId: `${turn}b` }));
+      await lb.tools.run('show_options', { line: 'Here they are.', results_id: set.resultsId, title: 'Pool stays in North Goa, 6 to 9 Nov', question }, lb.ctx({ turnId: turn }));
       return lb.link.sent('open_vote').at(-1)!.question;
     };
     expect(await asked(['Meritas Auberge Calangute Goa', '3102bce - A Vedic Resort', 'Villa Mandrem'], 'Which pool villa for 6 to 9 Nov?', 'turn_q1')).toBe('Which pool stay for 6 to 9 Nov?');
@@ -453,21 +471,17 @@ describe('put_to_vote', () => {
     expect(await asked(['Meritas Auberge Calangute Goa', 'De Mandarin Hotel'], 'Which one for 6 to 9 Nov?', 'turn_q4')).toBe('Which one for 6 to 9 Nov?');
   });
 
-  it('asks for a secret ballot when the model sets anonymous', async () => {
-    const found = (await lb.tools.run('search_stays', STAYS, lb.ctx({ turnId: 'turn_anon1' }))) as any;
-    const shown = (await lb.tools.run('show_options', { line: 'Here are the villas.', results_id: found.results_id, title: 'Villas' }, lb.ctx({ turnId: 'turn_anon2' }))) as any;
-    await lb.tools.run('put_to_vote', { line: 'Vote is up.', card_id: shown.card_id, anonymous: true }, lb.ctx({ turnId: 'turn_anon3' }));
-    expect(lb.link.sent('open_vote').at(-1)).toMatchObject({ request_id: 'go_vote_turn_anon3_1', anonymous: true });
-  });
-
   // 8 Oct run sheet: a card with one stay could not go to a vote, so Go opened an unbound yes/no vote of its own, and
   // "I'll book it" then had nothing to book.
-  it('puts a one-option card to a vote too: that option, bound to its offer, or "Keep looking"', async () => {
+  it('gives a one-option card no vote of its own; put_to_vote puts it to the group as that option, bound to its offer, or "Keep looking"', async () => {
     const found = (await lb.tools.run('search_stays', STAYS, lb.ctx({ turnId: 'turn_one1' }))) as any;
     const showCtx = lb.ctx({ turnId: 'turn_one2' });
+    const opened = lb.link.sent('open_vote').length;
     const shown = (await lb.tools.run('show_options', { line: 'One fits.', results_id: found.results_id, option_numbers: [2], title: 'Villas' }, showCtx)) as any;
     const card = C.OptionsCard.parse(showCtx.cards[0]);
     expect(card.options).toHaveLength(1);
+    expect(card.decision_id).toBeUndefined();
+    expect(lb.link.sent('open_vote')).toHaveLength(opened);
     const out = (await lb.tools.run('put_to_vote', { line: 'Vote is up.', card_id: shown.card_id }, lb.ctx({ turnId: 'turn_one3' }))) as any;
     expect(out.decision_id).toBeDefined();
     const vote = lb.link.sent('open_vote').at(-1)!;
@@ -477,56 +491,69 @@ describe('put_to_vote', () => {
     expect(options[1]!.label).toBe('Keep looking');
   });
 
-  it('shows the same vote again when the same turn runs again, and refuses a second vote from another turn', async () => {
+  it('keeps its one vote when the same turn runs again', async () => {
     const found = (await lb.tools.run('search_stays', STAYS, lb.ctx({ turnId: 'turn_w1' }))) as any;
-    const shown = (await lb.tools.run('show_options', { line: 'Here are the villas.', results_id: found.results_id, title: 'Villas' }, lb.ctx({ turnId: 'turn_w2' }))) as any;
-    const first = lb.ctx({ turnId: 'turn_w3' });
-    const a = (await lb.tools.run('put_to_vote', { line: 'Vote is up.', card_id: shown.card_id }, first)) as any;
+    const first = lb.ctx({ turnId: 'turn_w2' });
+    const a = (await lb.tools.run('show_options', { line: 'Here are the villas.', results_id: found.results_id, title: 'Villas' }, first)) as any;
     const opened = lb.link.sent('open_vote').length;
-    const rerun = lb.ctx({ turnId: 'turn_w3' });
-    const b = (await lb.tools.run('put_to_vote', { line: 'Vote is up.', card_id: shown.card_id }, rerun)) as any;
+    const rerun = lb.ctx({ turnId: 'turn_w2' });
+    const b = (await lb.tools.run('show_options', { line: 'Here are the villas.', results_id: found.results_id, title: 'Villas' }, rerun)) as any;
     expect(b.decision_id).toBe(a.decision_id);
     expect(rerun.cards).toEqual(first.cards);
     expect(lb.link.sent('open_vote')).toHaveLength(opened);
-    expect(await lb.tools.run('put_to_vote', { line: 'Vote is up.', card_id: shown.card_id }, lb.ctx({ turnId: 'turn_w4' }))).toMatchObject({ error: 'already_voting', decision_id: a.decision_id });
   });
 
-  it('with no card_id, votes on the options card shown earlier in the same reply', async () => {
-    // Turns of its own: turn_r2 already showed a card of flights (above), which a rerun of that turn would show again.
+  it('with no card_id, put_to_vote finds the card shown earlier in the same reply, and says it is the vote', async () => {
     const found = (await lb.tools.run('search_stays', STAYS, lb.ctx({ turnId: 'turn_nc1' }))) as any;
     const reply = lb.ctx({ turnId: 'turn_nc2' });
-    await lb.tools.run('show_options', { line: 'Here are the villas.', results_id: found.results_id, title: 'Villas' }, reply);
-    const out = (await lb.tools.run('put_to_vote', { line: 'Vote is up.' }, reply)) as any;
-    expect(out).toMatchObject({ decision_id: expect.any(String) });
-    const card = C.OptionsCard.parse(reply.cards[0]);
-    const vote = lb.link.sent('open_vote').at(-1)!;
-    expect((vote.options as Array<{ option_ref: string }>).map((o) => o.option_ref)).toEqual(card.options.map((o) => o.option_id));
-    expect(reply.cards.map((c) => c.kind)).toEqual(['options', 'vote']);
+    const shown = (await lb.tools.run('show_options', { line: 'Here are the villas.', results_id: found.results_id, title: 'Villas' }, reply)) as any;
+    expect(await lb.tools.run('put_to_vote', { line: 'Vote is up.' }, reply)).toMatchObject({ decision_id: shown.decision_id });
+    expect(reply.cards.map((c) => c.kind)).toEqual(['options']);
   });
 
-  it('with no card_id, refuses when the reply showed two options cards, or none, and opens nothing', async () => {
+  it('with no card_id, put_to_vote refuses when the reply showed two options cards, or none; each card is a vote of its own', async () => {
     const found = (await lb.tools.run('search_stays', STAYS, lb.ctx({ turnId: 'turn_r3' }))) as any;
     const two = lb.ctx({ turnId: 'turn_r4' });
+    const opened = lb.link.sent('open_vote').length;
     await lb.tools.run('show_options', { line: 'Here are the villas.', results_id: found.results_id, option_numbers: [1, 2], title: 'Two villas' }, two);
     await lb.tools.run('show_options', { line: 'Here are the villas.', results_id: found.results_id, option_numbers: [3, 4], title: 'Two more villas' }, two);
-    const opened = lb.link.sent('open_vote').length;
+    expect(lb.link.sent('open_vote')).toHaveLength(opened + 2);
     expect(await lb.tools.run('put_to_vote', { line: 'Vote is up.' }, two)).toMatchObject({ error: 'which_card' });
     expect(await lb.tools.run('put_to_vote', { line: 'Vote is up.' }, lb.ctx({ turnId: 'turn_r5' }))).toMatchObject({ error: 'no_card' });
-    expect(lb.link.sent('open_vote')).toHaveLength(opened);
+    expect(lb.link.sent('open_vote')).toHaveLength(opened + 2);
     expect(two.cards.map((c) => c.kind)).toEqual(['options', 'options']);
+  });
+
+  // The lead, 11 Oct (rev 5 Q1): two open votes on stays could pick two winners.
+  it("closes the trip's earlier vote on stays when nobody has voted on it, and keeps one somebody has", async () => {
+    const found = (await lb.tools.run('search_stays', STAYS, lb.ctx({ turnId: 'turn_iv1' }))) as any;
+    const earlier = (await lb.tools.run('show_options', { line: 'Here are the villas.', results_id: found.results_id, title: 'Villas' }, lb.ctx({ turnId: 'turn_iv2' }))) as any;
+    // The Server's trip, the earlier vote open with this many votes in it.
+    const withVote = (voted: number) => ({
+      request: async (method: string, params: unknown) =>
+        method === 'read_trip'
+          ? { ...GOA_TRIP, decisions: [{ decision_id: earlier.decision_id, status: 'open', voted }] }
+          : lb.link.request(method as 'open_vote', params as never),
+    }) as unknown as typeof lb.link;
+    const closed = () => lb.link.sent('close_vote').filter((c) => c['decision_id'] === earlier.decision_id);
+    await lb.tools.run('show_options', { line: 'Here are the villas.', results_id: found.results_id, title: 'Villas' }, lb.ctx({ turnId: 'turn_iv3', link: withVote(1) }));
+    expect(closed()).toEqual([]);
+    await lb.tools.run('show_options', { line: 'Here are the villas.', results_id: found.results_id, title: 'Villas' }, lb.ctx({ turnId: 'turn_iv4', link: withVote(0) }));
+    expect(closed()).toEqual([{ request_id: stableId('go_close_idle', earlier.decision_id), trip_id: 't_goa', decision_id: earlier.decision_id }]);
   });
 
   it("never puts a ticket to a group vote: a train's card is each traveller's own pick, and the model is told so", async () => {
     const found = (await lb.tools.run('search_trains', { from: 'Delhi', to: 'Goa', date: '2026-11-06' }, lb.ctx({ turnId: 'turn_tr1' }))) as any;
     const showCtx = lb.ctx({ turnId: 'turn_tr2' });
+    const votes = lb.link.sent('open_vote').length;
     const shown = (await lb.tools.run('show_options', { line: 'Here are the villas.', results_id: found.results_id, title: 'Trains to Goa' }, showCtx)) as any;
     const card = C.OptionsCard.parse(showCtx.cards[0]);
     expect(card.option_kind).toBe('train');
-    const votes = lb.link.sent('open_vote').length;
+    expect(card.decision_id).toBeUndefined();
     const out = (await lb.tools.run('put_to_vote', { line: 'Vote is up.', card_id: shown.card_id }, lb.ctx({ turnId: 'turn_tr3' }))) as any;
     expect(out).toMatchObject({ error: 'personal', note: expect.stringContaining("its traveller's own, never a group vote") });
     expect(lb.link.sent('open_vote')).toHaveLength(votes);
-    expect(card.actions?.map((a) => a.action_id)).not.toContain('vote');
+    expect(card.actions?.map((a) => a.action_id)).toEqual(['pick']);
     // The option is still a train the travel layer knows, searchable and picked by each person.
     expect((await travel.offer(card.options[0]!.option_id))?.kind).toBe('train');
   });

@@ -438,7 +438,7 @@ export async function putUpCard(
       d.log?.warn({ err: String(err).slice(0, 200), cardId }, 'travel: a card went up without its vote');
       return null;
     });
-    if (voted?.ok) {
+    if (voted && voted.ok) {
       const more = unseenNumbers(set, await d.results.shownFrom(ctx.tripId, set.resultsId)).length > 0;
       shown = (await d.results.setCardDecision(ctx.tripId, cardId, voted.decisionId, more)) ?? shown;
     }
