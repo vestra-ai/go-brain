@@ -100,6 +100,12 @@ const UpdateTripInput = z.object({
     .describe('Where the trip goes: a city or region, like "Goa". Never an area to stay in or a hotel: that is the stay.'),
   dates: z.object({ start: z.iso.date(), end: z.iso.date() }).optional(),
   vibe: z.array(z.string().min(1).max(40)).max(12).optional(),
+  proof_message_ids: z
+    .array(z.string().min(1).max(64))
+    .max(10)
+    .optional()
+    .describe("For a title, place or dates: the people's own messages that decided it (the organizer's, or two people agreeing)."),
+  decision_id: z.string().min(1).max(64).optional().describe('For a title, place or dates: the closed vote that decided it.'),
   stay: z
     .string()
     .min(1)
@@ -204,11 +210,27 @@ export function roomTools(o: { now: () => Date; pool: Pool; travel?: () => Trave
 
   const updateTrip: QuickTool<z.infer<typeof UpdateTripInput>> = {
     name: 'update_trip',
-    description: "Change the trip's title, place, dates, vibe or the stay the group wants. Only when the group agreed or the organizer asked.",
+    description:
+      "Change the trip's title, place, dates, vibe or the stay the group wants. A title, place or dates change only on the organizer's word, " +
+      'two people agreeing in words (proof_message_ids), or a closed vote (decision_id). One person asking is a wish: offer a vote instead.',
     input: UpdateTripInput,
     async run(a, ctx) {
-      // The trip's one writer: the checks (a stay or place a vote decided, days before today) and the request are there.
-      const r = await saveTrip(o, { link: ctx.link, tripId: ctx.tripId, pack: ctx.pack, requestId: () => ctx.stableId('go_trip') }, a);
+      // The trip's one writer: the checks (who decided it, a stay or place a vote decided, days before today) and the request are there.
+      const { proof_message_ids: proof, decision_id: decisionId, ...change } = a;
+      const r = await saveTrip(
+        o,
+        { link: ctx.link, tripId: ctx.tripId, pack: ctx.pack, requestId: () => ctx.stableId('go_trip') },
+        { ...change, ...(proof ? { proof } : {}), ...(decisionId ? { decisionId } : {}) },
+      );
+      if (!r.ok && r.notDecided) {
+        return {
+          ok: false,
+          error: r.error,
+          tell_the_room:
+            "Say in one short line that the organizer or the group decides that, and offer to put it to a vote (open_vote), or point at the vote already open on it. " +
+            'Never say it changed, and never say who said or picked what unless their own message says it.',
+        };
+      }
       if (!r.ok) return { ok: false, error: r.error, ...(r.quiet ? { tell_the_room: SAY_NOTHING } : {}) };
       // The lines this turn woke for are noted: their ✅ stays, even when the reply ends on a next-step question (prod,
       // 11 Oct: "Goa" and "1 to 7 Dec" were saved, and their ✅ came off two seconds later with "What should I pull up first?").

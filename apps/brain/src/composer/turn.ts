@@ -284,8 +284,9 @@ export function createComposer(d: ComposerDeps): Composer {
       // A turn under limits (Go woke for itself) skips it: people's messages wait on the desk for their own turn,
       // which runs under the normal rules, never this turn's. A message the prompt already held (it landed before the
       // prompt was built, its desk item after) needs no extra round. But one that names Go was never a reason this turn
-      // woke, so the model may have passed over it (a hello that only says hello): it goes back on the desk for a turn
-      // of its own, which sees what Go just said.
+      // woke, so the model may have passed over it (a hello that only says hello): it is read again in the extra round, so
+      // the one reply covers it, and it stays this turn's. Released for a turn of its own, it was answered twice (p2's
+      // re-audit, 11 Oct 09:28: two asks landed together, the first turn answered both, and a second turn said it again).
       // A direct answer has no exchange to go on: new lines wait for a turn of their own.
       if (!direct && !r.silent && r.text && ctx.mayPostText !== false && ctx.allowedTools === undefined && rounds < MAX_ROUNDS) {
         // The desk's items for the lines that landed, waited for a little when a line is in the pack but not on the desk yet.
@@ -296,9 +297,8 @@ export function createComposer(d: ComposerDeps): Composer {
           await sleep(LATE_WAIT_MS);
           claimed.push(...(await d.claimNew(t.tripId, t.turnId)));
         }
-        const passedOver = claimed.filter((i) => isForGo(i) && (seqOf(i, pack) ?? Number.POSITIVE_INFINITY) <= prompt.newestSeq);
-        await d.release(t.turnId, passedOver.map((i) => i.id));
-        pulled.push(...claimed.filter((i) => !passedOver.includes(i)));
+        const held = claimed.filter((i) => isForGo(i) && (seqOf(i, pack) ?? Number.POSITIVE_INFINITY) <= prompt.newestSeq);
+        pulled.push(...claimed);
         pulledBy.set(t.turnId, pulled);
         // A pulled message is this turn's to answer, so the next round's tools see it as part of what woke the turn: "I'll
         // pay for it" said as the vote closed is Rahul's claim (set_mandate), as it would be on a turn of its own.
@@ -308,7 +308,9 @@ export function createComposer(d: ComposerDeps): Composer {
         const unqueued = landedSince(pack, prompt.newestSeq)
           .filter((m) => !queued.has(m.message_id))
           .map((m): DeskItem => ({ id: `landed:${m.message_id}`, tripId: t.tripId, kind: 'message', ref: m.message_id, dueAt: d.now(), payload: { messageId: m.message_id } }));
-        const fresh = linesFor([...pulled, ...unqueued], pack, prompt.forgotten, prompt.newestSeq);
+        const landed = linesFor([...pulled.filter((i) => !held.includes(i)), ...unqueued], pack, prompt.forgotten, prompt.newestSeq);
+        const asked = linesFor(held, pack, prompt.forgotten, 0);
+        const fresh = { lines: [...asked.lines, ...landed.lines], seqs: [...asked.seqs, ...landed.seqs] };
         if (fresh.lines.length) {
           const more = await runLoop({
             ...base,
