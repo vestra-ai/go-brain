@@ -44,6 +44,8 @@ export const TravelQuery = z.object({
    * one band over kept (backend.ts). Never a guess: a decided budget, or the ask's own per-person cap.
    */
   budgetMinor: z.int().positive().optional(),
+  /** Stays: how many of ixigo's pages of the list to read; two for "See more" past the first page (taps.ts). One when absent. */
+  pages: z.int().min(1).max(2).optional(),
   mustHave: z.array(z.enum(MUST_HAVES)).max(5).optional(),
   /** Buses: a pickup or drop point the group named ("Majestic", "Mapusa"): a bus that doesn't stop there doesn't fit. */
   boardAt: z.string().min(2).max(60).optional(),
@@ -108,6 +110,11 @@ export interface TravelSearch {
   page?: string;
   /** ixigo's list came cut short: these are the first it sent (a long flights stream past what Bash keeps), not all of it. */
   cut?: true;
+  /**
+   * How many ixigo's list held in this read, before Go kept a half of it (North Goa of all of Goa's page): one full page
+   * of stays says ixigo has more, for a card's "See more" (ixigo_web).
+   */
+  listed?: number;
   /** The page's own lines about the whole list, for the model (ixigo's Smart Lock for a route). */
   notes?: string[];
   /** Buses: the group's stay each bus's nearest drop was measured from, and whose it is ("Casa Anjuna, the stay you voted for"). */
