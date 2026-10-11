@@ -317,8 +317,9 @@ const KIND_WORDS: Record<OptionKind, [string, string]> = {
 /**
  * A shared thing's card (a stay, a place) is its vote (rev 5 R5): decisionId, the vote opened for its options, draws Vote
  * on each, and it has no buttons of its own but more ("See more", R4: more of the same search, in the same vote). A
- * ticket's card (PERSONAL_KINDS) has "I'll take this", never a vote. forPersonIds: a card for those people alone (each
- * person's own flights, flights-each.ts): the room sees it, and only they act on it, each tap their own.
+ * ticket's card (PERSONAL_KINDS) has "I'll take this", never a vote, and "See more" too while its search has more.
+ * forPersonIds: a card for those people alone (each person's own flights, flights-each.ts; a ticket's See more): the room
+ * sees it, and only they act on it, each tap their own.
  */
 export function buildOptionsCard(i: {
   cardId: string; title: string; optionKind: OptionKind; checkedAt: string; picks: CardPick[]; decisionId?: string; more?: boolean; forPersonIds?: string[];
@@ -344,7 +345,7 @@ export function buildOptionsCard(i: {
 
 function optionsActions(i: { optionKind: OptionKind; more?: boolean }) {
   // A ticket is its traveller's own: picked, never voted (PERSONAL_KINDS).
-  if (PERSONAL_KINDS.has(i.optionKind)) return [PICK_ACTION];
+  if (PERSONAL_KINDS.has(i.optionKind)) return i.more ? [PICK_ACTION, C.MORE_OPTIONS] : [PICK_ACTION];
   return i.more ? [C.MORE_OPTIONS] : [];
 }
 

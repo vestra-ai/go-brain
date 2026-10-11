@@ -7,7 +7,7 @@ import type { ReadOptions, RecipeRunner } from '../../recipes/runners.js';
 import { createResultsStore, type ResultOption } from '../../results.js';
 import type { StoredOffer } from '../../travel.js';
 import { ageOn, busOf, createBusBooking, SEAT_LAYOUT, type BusBooking } from '../bus-booking.js';
-import type { TicketPay } from '../flight-booking.js';
+import { TRAVEL_DETAILS, type TicketPay } from '../flight-booking.js';
 
 let db: Awaited<ReturnType<typeof withSchema>>;
 let lb: LaneBrain;
@@ -46,6 +46,7 @@ function fakeRunner(o: { fill?: boolean } = {}): { runner: RecipeRunner; reads: 
 function money(o: { details?: boolean } = {}) {
   const kept = { details: o.details !== false };
   const cards: Array<Record<string, unknown>> = [];
+  const links: Array<{ personId: string; fields: unknown }> = [];
   let paid: ((p: { tripId: string; approvalId: string; railRef: string }) => Promise<void>) | null = null;
   const pay: TicketPay = {
     async requestTicketCard(_trip, req) {
@@ -56,18 +57,20 @@ function money(o: { details?: boolean } = {}) {
       paid = fn;
     },
     travelDetails: async () => (kept.details ? DETAILS : null),
+    travelLink: async (personId, fields) => {
+      links.push({ personId, fields });
+      return { url: 'https://vault.test/l/travel', expiresAt: '2026-10-11T08:00:00.000Z' };
+    },
   };
-  return { pay, cards, paid: () => paid, kept };
+  return { pay, cards, paid: () => paid, kept, links };
 }
 
-type Asked = { tripId: string; personId: string; name: string; need: string[]; key: string; what: string };
-function booking(runner: RecipeRunner, pay: TicketPay | null, on = true, more: { name?: string; asked?: Asked[]; results?: ReturnType<typeof createResultsStore> } = {}): BusBooking {
+function booking(runner: RecipeRunner, pay: TicketPay | null, on = true, more: { name?: string; results?: ReturnType<typeof createResultsStore> } = {}): BusBooking {
   void lb.switches.set('BOOKING', on ? 'on' : 'off');
   void lb.switches.set('TRAVEL_MODE', 'ixigo_web');
   return createBusBooking({
     pool: db.pool, runner: () => runner, link: lb.link, switches: lb.switches, now: lb.brain.now, log: lb.brain.log, pay: () => pay ?? undefined,
     nameOf: async () => more.name ?? 'Meher',
-    ...(more.asked ? { detailsAsk: async (i: Asked) => { more.asked!.push(i); } } : {}),
     ...(more.results ? { results: more.results } : {}),
   });
 }
@@ -133,34 +136,34 @@ describe("Go books a person's own bus up to ixigo's pay button", () => {
     expect(row?.seats).toEqual(['6LB']);
   });
 
-  // The lead, 11 Oct: never "add them" and stop. Their name in the trip, #478's one-tap gender card, the one ask for the
-  // rest, and the booking carries on by itself.
-  it('with no vault details: their trip name, the one-tap gender card, the one ask for their age, then it carries on by itself', async () => {
+  // The lead, 11 Oct: never "add them" and stop, and one ask beats two: their date of birth and gender in one card (the
+  // one ask p0's trains use), its Add it opening their vault's form at just those, and the booking carries on by itself.
+  it('with no vault details: one ask for their date of birth and gender, Add it opens their vault at those, then it carries on by itself', async () => {
     const m = money({ details: false });
-    const asked: Asked[] = [];
     // The bus on its card, as the person picked it: a booking that waited reads its offer again from there.
     const results = createResultsStore(db.pool);
     const bus: ResultOption = { kind: 'bus', title: OFFER.title, priceMinor: 385_800, currency: 'INR', priceNote: 'per seat', highlights: [], facts: {}, sourceUrl: OFFER.sourceUrl! };
     const set = await results.save({ tripId: 't_bus', optionKind: 'bus', source: 'search', query: {}, options: [bus], checkedAt: '2026-10-11T07:00:00.000Z' });
     await results.saveCard({ cardId: 'c_bus', tripId: 't_bus', resultsId: set.resultsId, title: 'Buses', optionKind: 'bus', card: { card_id: 'c_bus' } as never }, [{ optionId: 'opt_bus1', n: 1, option: bus }], '2026-10-11T07:00:00.000Z');
-    const b = booking(fakeRunner().runner, m.pay, true, { name: 'Kabir Shah', asked, results });
+    const b = booking(fakeRunner().runner, m.pay, true, { name: 'Kabir Shah', results });
     const from = lb.link.requests.length;
     await b.start({ tapId: 'tap_bus3', tripId: 't_bus', personId: 'p_kabir', name: 'Kabir Shah', offer: OFFER });
     await b.settled();
-    // 1. Their gender, asked once, theirs alone.
-    const ask = lb.link.requests.slice(from).find((r) => (r.params['card'] as { actions?: Array<{ action_id: string }> } | undefined)?.actions?.some((a) => a.action_id === 'traveller_male'));
-    expect(ask?.params['visible_to_person_ids']).toEqual(['p_kabir']);
-    expect((await db.pool.query(`select why from bus_bookings where person_id = 'p_kabir'`)).rows[0]).toEqual({ why: 'gender_needed' });
-    expect(await b.gender({ tripId: 't_bus', cardId: 'c_nope', personId: 'p_kabir', gender: 'male' })).toEqual({ result: 'refused', toast: 'This booking has moved on' });
-    const cardId = String((ask!.params['card'] as { card_id: string }).card_id);
-    expect(await b.gender({ tripId: 't_bus', cardId, personId: 'p_kabir', gender: 'male' })).toEqual({ result: 'done', toast: 'Go carries on with your booking' });
-    await b.settled();
-    // 2. Their age: the one ask, for their date of birth alone (their name is their trip name, split), and it waits.
-    expect(asked).toEqual([expect.objectContaining({ tripId: 't_bus', personId: 'p_kabir', need: ['dob'], what: 'IntrCity SmartBus 22:35' })]);
+    // 1. One card, theirs alone: their date of birth and gender, no separate gender card.
+    const posted = lb.link.requests.slice(from).filter((r) => r.method === 'post_message' && (r.params['card'] as { kind?: string } | undefined)?.kind === 'notice');
+    expect(posted).toHaveLength(1);
+    const ask = posted[0]!;
+    expect(ask.params['visible_to_person_ids']).toEqual(['p_kabir']);
+    expect(ask.params['card']).toMatchObject({ for_person_ids: ['p_kabir'], actions: [{ action_id: TRAVEL_DETAILS, only_for_person_ids: ['p_kabir'] }] });
     expect((await db.pool.query(`select why from bus_bookings where person_id = 'p_kabir'`)).rows[0]).toEqual({ why: 'details_needed' });
+    // 2. Add it: their vault's form at exactly what the booking waits on.
+    expect(await b.detailsLink({ tripId: 't_bus', cardId: 'c_nope', personId: 'p_kabir' })).toEqual({ result: 'refused', toast: 'This booking has moved on' });
+    const cardId = String((ask.params['card'] as { card_id: string }).card_id);
+    expect(await b.detailsLink({ tripId: 't_bus', cardId, personId: 'p_kabir' })).toEqual({ result: 'open', url: 'https://vault.test/l/travel', expires_at: '2026-10-11T08:00:00.000Z' });
+    expect(m.links).toEqual([{ personId: 'p_kabir', fields: ['dob', 'gender'] }]);
+    // 3. Not kept yet: it waits. Kept: the sweep carries the booking on to their pay card.
     await b.sweep();
     expect((await db.pool.query(`select why from bus_bookings where person_id = 'p_kabir'`)).rows[0]).toEqual({ why: 'details_needed' });
-    // 3. Kept in their vault: the sweep carries the booking on to their pay card.
     m.kept.details = true;
     await b.sweep();
     await b.settled();

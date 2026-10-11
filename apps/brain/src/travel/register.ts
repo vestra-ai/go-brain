@@ -40,6 +40,7 @@ import { createRunLog } from './runs.js';
 import { createScreenFeed } from './screen-feed.js';
 import { renderSearchWake, searchWakeAnswer, tryAgainAnswer } from './search-wake.js';
 import { registerTravelTaps, renderOptionsTap } from './taps.js';
+import { typedMoreAnswer } from './typed-more.js';
 import { travelTools } from './tools.js';
 import { budgetNow, budgetTool, createTripBudgets, stayCap } from './trip-budget.js';
 import { showBusDrops } from './bus-drops.js';
@@ -409,7 +410,9 @@ export const registerTravel: RegisterLane = async (brain) => {
   brain.onStop(function stopBookingSweep() {
     clearInterval(bookingSweep);
   });
-  registerTravelTaps(brain.taps, { results, pool: brain.pool, link: brain.door.link, desk: brain.desk, now: brain.now, log: brain.log, booking, busBooking, nameOf, images });
+  const { seeMore } = registerTravelTaps(brain.taps, { results, pool: brain.pool, link: brain.door.link, desk: brain.desk, now: brain.now, log: brain.log, booking, busBooking, nameOf, images, travel });
+  // "show more" typed right after an options card: its See more, with no model round (the lead, 11 Oct).
+  brain.context.addDirect(typedMoreAnswer({ seeMore, results }));
   // With BOOKING on for a trip, the model is told Go books its people's flights, and books a pick made before by words.
   brain.tools.register(bookFlightTool({ booking, pool: brain.pool, results, nameOf }));
   brain.context.addNow(bookingNow({ booking, pool: brain.pool, nameOf }));

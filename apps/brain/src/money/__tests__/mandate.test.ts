@@ -154,7 +154,7 @@ describe('set_mandate refuses, in code, what Go cannot book', () => {
   it('a flight: group fares are not booked, so it says so and points to its card, never the link, and sets nothing', async () => {
     winnerIs('ixigo:flight:6e-2134', { ...flight, link: 'https://www.ixigo.com/flights/6e-2134' });
     expect(await setMandate(k.deps, ctxWith(), mandate)).toEqual({
-      refused: "I can't book flights for the whole group yet. Each of you can book on ixigo: View on ixigo, in its details on its card, opens it there.",
+      refused: "I can't book flights for the whole group yet. View on ixigo, in its details on its card, opens each one set up for you.",
       unbookable: true,
     });
     expect(k.server.writesOf('set_mandate')).toEqual([]);
@@ -216,13 +216,13 @@ describe('set_mandate refuses, in code, what Go cannot book', () => {
 
   it('a check that failed just now is not unbookable: a plain try again, no flag, nothing set', async () => {
     k.travel.failOffer = true;
-    expect(await setMandate(k.deps, ctxWith(), mandate)).toEqual({ refused: "I couldn't check Villa Sol just now. Try again in a moment." });
+    expect(await setMandate(k.deps, ctxWith(), mandate)).toEqual({ refused: "ixigo didn't answer when I checked Villa Sol, so nothing is set up or charged. Want me to check again now?" });
     expect(k.server.writesOf('set_mandate')).toEqual([]);
     const [out] = await runToolCalls([setMandateTool((ctx, o) => setMandate(k.deps, ctx, o))], ctxWith(), [
       { name: 'set_mandate', input: { decision_id: 'd_villa', choice_index: 0, refundable_only: false, payer_person_id: 'p_rahul' } },
     ]);
     expect(out).toEqual({
-      refused: "I couldn't check Villa Sol just now. Try again in a moment.",
+      refused: "ixigo didn't answer when I checked Villa Sol, so nothing is set up or charged. Want me to check again now?",
       tell_the_room: 'Say this in your own short words. Never offer another way to pay.',
     });
   });
@@ -300,7 +300,7 @@ describe('set_mandate on a stay from ixigo.com: the login first, and ixigo\'s pr
     const calls = prepared({ ok: false, note });
     expect(await setMandate(k.deps, ctxWith(), noCap)).toEqual({ refused: note, parked: true });
     expect(calls).toEqual([
-      { optionId: 'opt_villa_sol', tripId: 't_goa', what: 'Villa Sol', resume: { decision_id: 'd_villa', choice_index: 0, payer_person_id: 'p_rahul', refundable_only: true } },
+      { optionId: 'opt_villa_sol', tripId: 't_goa', what: 'Villa Sol', resume: { decision_id: 'd_villa', choice_index: 0, payer_person_id: 'p_rahul', refundable_only: true }, for: 'p_rahul' },
     ]);
     expect(k.server.writesOf('set_mandate')).toEqual([]);
     // A cap someone said rides along, so the call made later is the same one.
@@ -365,7 +365,7 @@ describe('set_mandate on a stay from ixigo.com: the login first, and ixigo\'s pr
 
   it('a check that failed says try again and sets nothing', async () => {
     Object.assign(k.travel, { prepare: async () => { throw new Error('db down'); } });
-    expect(await setMandate(k.deps, ctxWith(), noCap)).toEqual({ refused: "I couldn't check Villa Sol just now. Try again in a moment." });
+    expect(await setMandate(k.deps, ctxWith(), noCap)).toEqual({ refused: "ixigo didn't answer when I checked Villa Sol, so nothing is set up or charged. Want me to check again now?" });
     expect(k.server.writesOf('set_mandate')).toEqual([]);
   });
 });

@@ -284,7 +284,7 @@ export function roomTools(o: { now: () => Date; pool: Pool; travel?: () => Trave
         const who = (author.kind === 'person' ? ctx.pack.trip.people.find((p) => p.person_id === author.person_id)?.name : null) ?? 'Someone';
         throw new Error(
           `${who} asked you directly (#${ask.seq}): never stay silent on it. Answer in this turn: do it with your tools, or ask the ` +
-            "one thing you need (\"which villa? there's no vote yet\"), or say what you can't do yet and why.",
+            "one thing you need (\"which villa? there's no vote yet\"), or do the nearest thing you can now and say what you did.",
         );
       }
       ctx.outcome.silent = true;

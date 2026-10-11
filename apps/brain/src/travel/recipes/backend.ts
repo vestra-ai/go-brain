@@ -201,7 +201,7 @@ export function recipeInputs(kind: TravelKind, q: TravelQuery): { given: Record<
       filters: [...(q.siteFilters ?? [])], ...(q.siteSort ? { sort: q.siteSort } : {}), ...(q.wants?.length ? { wants: [...q.wants] } : {}),
       ...(q.budgetMinor !== undefined ? { budget: q.budgetMinor } : {}),
     };
-    return { given: { place: q.area ?? q.to, check_in: q.checkIn, check_out: q.checkOut, adults: q.guests }, conditions, site };
+    return { given: { place: q.area ?? q.to, check_in: q.checkIn, check_out: q.checkOut, adults: q.guests, pages: q.pages }, conditions, site };
   }
   if (kind === 'flights') {
     return {
@@ -556,6 +556,7 @@ export function createIxigoWebBackend(d: IxigoWebDeps): IxigoWebBackend {
           results: run.options, checkedAt: run.checkedAt, runId, page: run.page, ...(unapplied ? { unapplied } : {}), ...(said ? { site: said } : {}),
           ...(run.cut ? { cut: true } : {}),
           ...(run.notes ? { notes: run.notes } : {}),
+          ...(run.listed !== undefined ? { listed: run.listed } : {}),
         };
       },
       async (err: unknown): Promise<never> => {

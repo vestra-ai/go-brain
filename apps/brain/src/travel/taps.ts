@@ -1,6 +1,7 @@
 /**
  * Taps on Go's options cards. A shared thing's card is its vote since rev 5 (votes.ts): the App's Vote goes to the Server,
- * and "See more" puts more of the same search on a new card in the same vote. On cards from before, "Put it to a vote"
+ * and "See more" puts the next 10 of the same search on a new card in the same vote (a ticket's, on a card of the
+ * tapper's own). On cards from before, "Put it to a vote"
  * opens the vote in code (fast and once). "I'll take this" goes on the
  * desk, so the composer answers the person in the room, except on a ticket (a flight, train or bus fare: PERSONAL_KINDS),
  * which is the picker's own: Go posts their own confirm at once, "Book it" or "Change", for them alone, never a vote, and
@@ -14,26 +15,25 @@ import type * as C from '@go/contract';
 import type { Brain } from '../app.js';
 import type { CardTapParams } from '../door/methods.js';
 import type { DeskItem } from '../desk/desk.js';
-import { SocketCallError } from '../door/rpc.js';
 import type { TripPack } from '../trips/pack.js';
 import type { BusBooking } from './booking/bus-booking.js';
-import { PAY_FLIGHT, TRAVELLER_FEMALE, TRAVELLER_MALE, type FlightBooking } from './booking/flight-booking.js';
-import { BOOK_MINE, budgetSheet, buildConfirmMineCard, buildOptionsCard, CHANGE_MINE, clip, ixigoPage, PERSONAL_KINDS } from './cards.js';
+import { PAY_FLIGHT, TRAVEL_DETAILS, TRAVELLER_FEMALE, TRAVELLER_MALE, type FlightBooking } from './booking/flight-booking.js';
+import { BOOK_MINE, budgetSheet, buildConfirmMineCard, CHANGE_MINE, clip, ixigoPage, PERSONAL_KINDS } from './cards.js';
 import { stableId } from './ids.js';
 import type { Images } from './images.js';
 import { recordPick, wayOf } from './picks.js';
-import { MORE_CARD, unseenNumbers, type ResultsStore } from './results.js';
-import { cardPicks } from './tools.js';
-import type { StoredOffer } from './travel.js';
-import { addToVote, openVoteFromCard, VOTE_MOST } from './votes.js';
+import type { ResultsStore } from './results.js';
+import type { StoredOffer, Travel } from './travel.js';
+import { createSeeMore, type SeeMore } from './see-more.js';
+import { openVoteFromCard } from './votes.js';
 
 export interface TravelTapDeps {
   results: ResultsStore;
   pool: Brain['pool'];
   /** Go booking a person's own flight itself (BOOKING, booking/flight-booking.ts); absent, "Book it" opens ixigo. */
-  booking?: Pick<FlightBooking, 'onFor' | 'start' | 'pay' | 'gender'>;
+  booking?: Pick<FlightBooking, 'onFor' | 'start' | 'pay' | 'gender' | 'detailsLink'>;
   /** Go booking a person's own bus itself (BOOKING, booking/bus-booking.ts); absent, "Book it" opens ixigo. */
-  busBooking?: Pick<BusBooking, 'onFor' | 'start' | 'gender'>;
+  busBooking?: Pick<BusBooking, 'onFor' | 'start' | 'detailsLink'>;
   /** A person's name in the trip, for the room's words about their booking. */
   nameOf?: (tripId: string, personId: string) => Promise<string>;
   link: Brain['door']['link'];
@@ -42,7 +42,11 @@ export interface TravelTapDeps {
   log: Brain['log'];
   /** Go's image cache, for the photos on a "See more" card; absent, See more is refused. */
   images?: Images;
+  /** ixigo's next page of a stays search, for "See more" once the set's own are shown (results.siteMore); absent, none. */
+  travel?: Pick<Travel, 'search'>;
 }
+
+export { ALL_SHOWN } from './see-more.js';
 
 /** A second tap while their booking is under way: it goes on, and nothing starts twice. */
 export const ALREADY_BOOKING = 'Go is already booking your flight';
@@ -50,10 +54,9 @@ export const ALREADY_BOOKING = 'Go is already booking your flight';
 /** How long the App may hold an ixigo page it was told to open: the time its prices count as fresh. */
 export const OPEN_FOR_MS = 10 * 60_000;
 
-export function registerTravelTaps(taps: Brain['taps'], d: TravelTapDeps): void {
-  // The searches whose "See more" is running: a second tap meanwhile (a double tap, two people, another card of the same
-  // search) would add the same stays again.
-  const moreRunning = new Set<string>();
+/** Registers the options cards' taps; its See more is the one a typed "show more" asks too (typed-more.ts). */
+export function registerTravelTaps(taps: Brain['taps'], d: TravelTapDeps): { seeMore: SeeMore } {
+  const seeMore = createSeeMore(d);
 
   taps.on('options', 'vote', async (tap) => {
     const row = await d.results.card(tap.trip_id, tap.card_id);
@@ -101,7 +104,8 @@ export function registerTravelTaps(taps: Brain['taps'], d: TravelTapDeps): void 
       // The App team's G2 (11 Oct): with Go booking it (BOOKING), the pick is the booking. Their own card shows their flight
       // alone, with no buttons left, and no second card goes up; Go books it on the trip's computer up to ixigo's pay step.
       // A card the room shares stays as it is, for the others to pick from.
-      if (d.booking && offer.kind === 'flight' && offer.sourceUrl && (await d.booking.onFor(tap.trip_id))) {
+      // A train is booked as a flight is (Keshav, 11 Oct: "trains and buses are crying to get booked like flights").
+      if (d.booking && (offer.kind === 'flight' || offer.kind === 'train') && offer.sourceUrl && (await d.booking.onFor(tap.trip_id))) {
         const forWho = row.card.for_person_ids ?? [];
         const own = forWho.length === 1 && forWho[0] === tap.person_id;
         if (own) {
@@ -114,6 +118,20 @@ export function registerTravelTaps(taps: Brain['taps'], d: TravelTapDeps): void 
         // Their card as it was goes with the booking, put back if it stops before the pay card.
         const started = await d.booking.start({ tapId: tap.tap_id, tripId: tap.trip_id, personId: tap.person_id, name, offer, choice: 'basic', ...(own ? { restore: row.card } : {}) });
         return { result: 'done', toast: started === 'running' ? ALREADY_BOOKING : "Go is booking it on the trip's computer" };
+      }
+      // A bus, as a flight: the pick is the booking (booking/bus-booking.ts), seats and stops chosen in code.
+      if (d.busBooking && offer.kind === 'bus' && offer.sourceUrl && (await d.busBooking.onFor(tap.trip_id))) {
+        const forWho = row.card.for_person_ids ?? [];
+        const own = forWho.length === 1 && forWho[0] === tap.person_id;
+        if (own) {
+          const chosen = { ...row.card, options: [shown], actions: [] };
+          void d.results.replaceCard(tap.trip_id, chosen)
+            .then(() => d.link.request('replace_card', { trip_id: tap.trip_id, card: chosen }))
+            .catch((err: unknown) => d.log.error({ err, cardId: tap.card_id }, "travel: showing a person's pick on their card failed"));
+        }
+        const name = (await d.nameOf?.(tap.trip_id, tap.person_id).catch(() => null)) ?? 'you';
+        const started = await d.busBooking.start({ tapId: tap.tap_id, tripId: tap.trip_id, personId: tap.person_id, name, offer, ...(own ? { restore: row.card } : {}) });
+        return { result: 'done', toast: started === 'running' ? 'Go is already booking your bus' : "Go is booking it on the trip's computer" };
       }
       const card = buildConfirmMineCard({ cardId: stableId('c_mine', tap.tap_id), personId: tap.person_id, optionKind: row.optionKind, checkedAt: offer.checkedAt, option: shown });
       // Posted after the answer, as a vote is: a request to the Server must not hold the 3 s tap answer.
@@ -142,7 +160,7 @@ export function registerTravelTaps(taps: Brain['taps'], d: TravelTapDeps): void 
     const m = await mine(tap, card);
     if ('refused' in m) return { result: 'refused', toast: m.refused };
     // Go books it itself, on the stage, up to ixigo's pay button (BOOKING): the tap answers at once, the booking goes on.
-    if (d.booking && m.offer.kind === 'flight' && m.offer.sourceUrl && (await d.booking.onFor(tap.trip_id))) {
+    if (d.booking && (m.offer.kind === 'flight' || m.offer.kind === 'train') && m.offer.sourceUrl && (await d.booking.onFor(tap.trip_id))) {
       const name = (await d.nameOf?.(tap.trip_id, tap.person_id).catch(() => null)) ?? 'you';
       const started = await d.booking.start({ tapId: tap.tap_id, tripId: tap.trip_id, personId: tap.person_id, name, offer: m.offer, choice: 'basic' });
       return { result: 'done', toast: started === 'running' ? ALREADY_BOOKING : "Go is booking it on the trip's computer" };
@@ -182,10 +200,7 @@ export function registerTravelTaps(taps: Brain['taps'], d: TravelTapDeps): void 
     taps.on('notice', action, async (tap, card) => {
       const forWho = 'for_person_ids' in card ? (card.for_person_ids ?? []) : [];
       if (!d.booking || !forWho.includes(tap.person_id)) return { result: 'refused', toast: 'This one is for someone else' };
-      // The flight's ask, or a bus booking's (the same card, its own id).
-      const i = { tripId: tap.trip_id, cardId: tap.card_id, personId: tap.person_id, gender };
-      const flight = await d.booking.gender(i);
-      const r = flight.result === 'refused' && d.busBooking ? await d.busBooking.gender(i) : flight;
+      const r = await d.booking.gender({ tripId: tap.trip_id, cardId: tap.card_id, personId: tap.person_id, gender });
       if (r.result === 'done' && card.kind === 'notice') {
         const answered = { ...card, actions: [], body: 'Thanks. Go carries on with your booking.', fallback_text: 'Thanks. Go carries on with your booking.' };
         void d.link.request('replace_card', { trip_id: tap.trip_id, card: answered })
@@ -195,67 +210,25 @@ export function registerTravelTaps(taps: Brain['taps'], d: TravelTapDeps): void 
     });
   }
 
+  // A train's one ask for its passenger's details (flight-booking.ts detailsAsk): the vault's own travel form, theirs
+  // alone; the booking carries on by itself once the details are there.
+  taps.on('notice', TRAVEL_DETAILS, async (tap, card) => {
+    const forWho = 'for_person_ids' in card ? (card.for_person_ids ?? []) : [];
+    if (!d.booking || !forWho.includes(tap.person_id)) return { result: 'refused', toast: 'This one is for someone else' };
+    // A flight's or train's ask, or a bus booking's (the same card, its own id).
+    const i = { tripId: tap.trip_id, cardId: tap.card_id, personId: tap.person_id };
+    const flight = await d.booking.detailsLink(i);
+    return flight.result === 'refused' && d.busBooking ? d.busBooking.detailsLink(i) : flight;
+  });
+
   taps.on('notice', 'see_on_ixigo', async (_tap, card) => {
     const url = card.kind === 'notice' ? ixigoPage(card.source?.url) : null;
     if (!url) return { result: 'refused', toast: 'This card has no ixigo page' };
     return { result: 'open', url, expires_at: new Date(d.now().getTime() + OPEN_FOR_MS).toISOString() };
   });
 
-  // "See more" (rev 5 R4): up to 10 more of the same search that no card has shown, on a new card in the same vote. The
-  // tap answers at once and the card follows; with nothing new left, the vote closed or full, a toast says so instead.
-  taps.on('options', 'more_options', async (tap) => {
-    const row = await d.results.card(tap.trip_id, tap.card_id);
-    const set = row ? await d.results.get(tap.trip_id, row.resultsId) : null;
-    const decisionId = row?.card.decision_id ?? null;
-    const images = d.images;
-    if (!row || !set || !decisionId || !images) return { result: 'refused', toast: 'Those options are no longer here' };
-    if (moreRunning.has(set.resultsId)) return { result: 'done', toast: 'More are on the way' };
-    // Claimed before anything waits, until its card is up or it gives up: a second tap meanwhile never adds the same stays.
-    moreRunning.add(set.resultsId);
-    let running = false;
-    try {
-      const unseen = unseenNumbers(set, await d.results.shownFrom(tap.trip_id, set.resultsId));
-      if (unseen.length === 0) return { result: 'done', toast: "That's everything ixigo listed for this search" };
-      const trip = await d.link.request('read_trip', { trip_id: tap.trip_id });
-      const vote = trip.decisions.find((x) => x.decision_id === decisionId);
-      if (vote?.status !== 'open') return { result: 'done', toast: 'The vote has closed' };
-      if (vote.options.length >= VOTE_MOST) return { result: 'done', toast: `This vote has ${VOTE_MOST} options, the most one vote takes` };
-      const numbers = unseen.slice(0, Math.min(10, VOTE_MOST - vote.options.length));
-      const people = typeof set.query['guests'] === 'number' ? set.query['guests'] : trip.people.length;
-      // Outside a turn, ids come from the tap, so a repeat does each write once.
-      const cardId = stableId(MORE_CARD, tap.tap_id);
-      const more = async (): Promise<void> => {
-        let added = false;
-        try {
-          const picks = await cardPicks(set, numbers, cardId, people, { images });
-          const title = `More: ${row.title.replace(/^More: /, '')}`;
-          const card = buildOptionsCard({ cardId, title, optionKind: row.optionKind, checkedAt: set.checkedAt, picks });
-          await d.results.saveCard({ cardId, tripId: tap.trip_id, resultsId: set.resultsId, title: card.title, optionKind: row.optionKind, card }, picks, set.checkedAt);
-          await addToVote({ results: d.results, link: d.link }, { tripId: tap.trip_id, cardId, decisionId, requestId: stableId('go_more', tap.tap_id) });
-          added = true;
-          // Its own "See more" while the search has more and the vote has room after these.
-          const left = unseen.length > numbers.length && vote.options.length + numbers.length < VOTE_MOST;
-          const voting = await d.results.setCardDecision(tap.trip_id, cardId, decisionId, left);
-          if (voting) await d.link.request('post_message', { trip_id: tap.trip_id, request_id: stableId('go_more_card', tap.tap_id), card: voting });
-        } catch (err) {
-          // Options the Server refused to add never joined the vote: never shown, so the next See more offers them again.
-          // A 503 (the Server unreachable, after the link's retries) may have added them all the same: the card and its
-          // offers are kept, unposted, so a winner among them can still be booked and none is added twice.
-          const refused = err instanceof SocketCallError && err.code !== 503;
-          if (!added && refused) await d.results.dropCard(tap.trip_id, cardId).catch(() => undefined);
-          throw err;
-        } finally {
-          moreRunning.delete(set.resultsId);
-        }
-      };
-      // The card goes up after the answer: a page of photos and two requests to the Server must not hold the 3 s tap answer.
-      running = true;
-      void more().catch((err: unknown) => d.log.error({ err, cardId: tap.card_id }, 'travel: See more failed'));
-      return { result: 'done' };
-    } finally {
-      if (!running) moreRunning.delete(set.resultsId);
-    }
-  });
+  // "See more" (see-more.ts): the next 10 of the same search, its card after the answer.
+  taps.on('options', 'more_options', (tap) => seeMore({ tripId: tap.trip_id, cardId: tap.card_id, personId: tap.person_id, key: tap.tap_id }));
 
   // A card of stays from before rev 5 shows a few: this opens the whole list the search read on ixigo.com.
   taps.on('options', 'see_all', async (tap) => {
@@ -291,6 +264,7 @@ export function registerTravelTaps(taps: Brain['taps'], d: TravelTapDeps): void 
     if (!url) return { result: 'refused', toast: 'This option has no ixigo page' };
     return { result: 'open', url, expires_at: new Date(d.now().getTime() + OPEN_FOR_MS).toISOString() };
   });
+  return { seeMore };
 }
 
 /** An ixigo results page set for one traveller: a ticket confirmed by its own person is booked for them alone. */

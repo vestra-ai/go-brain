@@ -14,17 +14,18 @@ import type pg from 'pg';
 import type { Switches } from '../../admin/switches.js';
 import type { ServerLink } from '../../door/server-link.js';
 import { dayText } from '../answer.js';
-import { buildIxigoLinkCard, buildOptionsCard, clip, formatInr, type OptionsCardT } from '../cards.js';
+import { buildOptionsCard, clip, formatInr, type OptionsCardT } from '../cards.js';
 import { stableId } from '../ids.js';
 import type { IxigoLogin } from '../login.js';
 import { bodiesFor } from '../recipes/recipe.js';
 import type { FetchPlan } from '../recipes/recipe.js';
 import type { RecipeRunner } from '../recipes/runners.js';
-import type { TravelDetails } from '../../money/vault-client.js';
+import type { TravelDetails, TravelField } from '../../money/vault-client.js';
 import type { ResultsStore } from '../results.js';
 import type { StoredOffer } from '../travel.js';
 import { fareFor, reviewAddress } from './review-address.js';
 import { FARE_TYPES, ixigoCoupon, reviewFare, type FareChoice } from './review-read.js';
+import { ageOn, classNow, dayLabel, seatWords, TRAIN_AVAILABILITY, trainOf, trainPassengerSteps, trainResultsAddress } from './train-steps.js';
 import { idNameOf, matchTravellers, savedTravellers, spokenFirstName } from './travellers.js';
 
 export const FLIGHT_STREAM = '/flights/v2/search/stream';
@@ -82,9 +83,11 @@ export interface TicketPay {
   onPaid(fn: (p: { tripId: string; approvalId: string; railRef: string }) => Promise<void>): void;
   /** Their travel details from their vault (#395), for a ticket of their own: typed only into ixigo's traveller form. */
   travelDetails?(i: { tripId: string; personId: string; booking: { ref: string; travellerPersonId: string; purpose: string } }): Promise<TravelDetails | null>;
+  /** The vault's own travel details form for them, showing the fields a booking's one ask needs (detailsAsk). */
+  travelLink?(personId: string, fields?: TravelField[]): Promise<{ url: string; expiresAt: string }>;
 }
 
-/** A payment the vault can't take (its rail not ready, or it refused): the one case its traveller is sent to ixigo, with why. */
+/** A payment the vault can't take (its rail not ready, or it refused): said in the vault's words, never sent to ixigo. */
 const VAULT_CANT: ReadonlySet<string> = new Set(['rail_not_ready', 'vault_refused']);
 /** Who sells a ticket Go books: ixigo, and simulated, as a stay is (web-stays.ts): Go stops before ixigo's own pay button. */
 export const TICKET_VENDOR = 'ixigo (simulated)';
@@ -142,8 +145,11 @@ export const FARE_MOVE_OK = 1.05;
 export const LOGIN_WAIT_MS = 30 * 60_000;
 
 /** What a booking waiting on the login carries on with: the ask, but its offer, read again by its option id. */
-/** What a booking that waits (a login, their gender) carries on with; askCardId: the card that asked them. */
-type Resume = { tapId: string; name: string; choice: FareChoice; restore?: OptionsCardT; gender?: 'male' | 'female'; askCardId?: string };
+/**
+ * What a booking that waits (a login, their gender, their travel details) carries on with; askCardId: the card that asked
+ * them; need: the travel details it waits on in their vault (askForDetails).
+ */
+type Resume = { tapId: string; name: string; choice: FareChoice; restore?: OptionsCardT; gender?: 'male' | 'female'; askCardId?: string; need?: TravelField[] };
 
 /** A day (DDMMYYYY, as ixigo's results address writes it) as ixigo's traveller list takes it: its midnight in India, in ms. */
 export function dayMs(ddmmyyyy: string): number | null {
@@ -259,6 +265,40 @@ export function genderAsk(cardId: string, personId: string, name: string): Notic
   };
 }
 
+/** A ticket's own kind of options card: a train's, else a flight's. */
+const kindOf = (ask: Pick<BookingAsk, 'offer'>): 'flight' | 'train' => (ask.offer.kind === 'train' ? 'train' : 'flight');
+
+/** A booking's one ask for what its form needs from the vault (detailsAsk, a train's or a bus's): its tap opens the vault's travel form. */
+export const TRAVEL_DETAILS = 'travel_details';
+
+/** A travel detail as the ask names it: a birthday is asked for as the age it gives. */
+const FIELD_WORDS: Record<TravelField, string> = { first_name: 'name as on your ID', last_name: 'name as on your ID', gender: 'gender', dob: 'age', irctc_user_id: 'IRCTC user ID' };
+
+/** Whether their vault's travel details have every one of these. */
+export function hasFields(t: TravelDetails | null, need: readonly TravelField[]): boolean {
+  if (!t) return false;
+  const has: Record<TravelField, boolean> = { first_name: !!t.firstName, last_name: !!t.lastName, gender: !!t.gender, dob: !!t.dob, irctc_user_id: !!t.irctcUserId };
+  return need.every((f) => has[f]);
+}
+
+/**
+ * A booking's one ask, one tap and short (the lead, 11 Oct; Keshav: "just ask me details"): the travel details its form
+ * needs that their vault doesn't have yet (need: a train's age and IRCTC user ID, a bus's age), added once in the
+ * vault's own form, never in the chat. The booking carries on by itself once they're there (sweep). ticket: "train", "bus".
+ */
+export function detailsAsk(cardId: string, personId: string, name: string, need: readonly TravelField[], ticket: string): NoticeCard {
+  const words = [...new Set(need.map((f) => FIELD_WORDS[f]))];
+  const what = words.length > 1 ? `${words.slice(0, -1).join(', ')} and ${words.at(-1)}` : (words[0] ?? 'travel details');
+  const them = words.length > 1 ? 'them' : 'it';
+  const body = `Your ${ticket} needs your ${what}: add ${them} once (30 s), and Go carries on with your booking.`;
+  const only = [personId];
+  return {
+    card_id: cardId, kind: 'notice', tone: 'heads_up', for_person_ids: only,
+    title: clip(`${name}, one step for your ${ticket}`, 80), body: clip(body, 500), fallback_text: clip(body, 300),
+    actions: [{ action_id: TRAVEL_DETAILS, label: words.length > 1 ? 'Add them' : 'Add it', style: 'primary', only_for_person_ids: only }],
+  };
+}
+
 /** A traveller typed into ixigo's form: their name as on their ID and the title their gender gives. */
 export interface NewTraveller { first: string; last: string; gender: 'male' | 'female' }
 
@@ -299,6 +339,8 @@ export interface FlightBooking {
   start(ask: BookingAsk): Promise<'started' | 'running'>;
   /** Their tap on the gender ask (genderAsk): kept for the booking that waits on it, which carries on by itself. */
   gender(i: { tripId: string; cardId: string; personId: string; gender: 'male' | 'female' }): Promise<{ result: 'done' | 'refused'; toast: string }>;
+  /** Their tap on a train's details ask (detailsAsk): the vault's travel form for them, when a booking waits on it. */
+  detailsLink(i: { tripId: string; cardId: string; personId: string }): Promise<{ result: 'open'; url: string; expires_at: string } | { result: 'refused'; toast: string }>;
   /** Pay on a traveller's ready card: the vault's pay page for them alone, or why not. Inside the tap's 2.5 s. */
   pay(i: { tripId: string; cardId: string; personId: string; tapId: string }): Promise<PayTap>;
   /** The trip's ixigo login just landed (login.ts onLoggedIn): every booking that waited on it carries on. */
@@ -410,14 +452,116 @@ export function createFlightBooking(d: FlightBookingDeps): FlightBooking {
     const optionId = stableId('opt', cardId, 1);
     const repriced = { ...option, priceMinor: nowMinor };
     const card = buildOptionsCard({
-      cardId, title: clip(`${ask.offer.title} at ${formatInr(nowMinor)} now`, 80), optionKind: 'flight', checkedAt: d.now().toISOString(),
+      cardId, title: clip(`${ask.offer.title} at ${formatInr(nowMinor)} now`, 80), optionKind: kindOf(ask), checkedAt: d.now().toISOString(),
       picks: [{ optionId, option: repriced, imageUrl: null }], forPersonIds: [ask.personId],
     });
-    await d.results.saveCard({ cardId, tripId: ask.tripId, resultsId: ask.offer.resultsId, title: card.title, optionKind: 'flight', card }, [{ optionId, n: 1, option: repriced }], card.checked_at);
+    await d.results.saveCard({ cardId, tripId: ask.tripId, resultsId: ask.offer.resultsId, title: card.title, optionKind: kindOf(ask), card }, [{ optionId, n: 1, option: repriced }], card.checked_at);
     await d.link.request('post_message', { request_id: stableId('go_fare', runId), trip_id: ask.tripId, text, card, visible_to_person_ids: [ask.personId] });
   }
 
-  async function book(asked: BookingAsk, runId: string): Promise<void> {
+  /**
+   * The trip's computer logged in, or a wait for it: its login card goes to the person booking (anyone in the trip can log
+   * in there), and the booking waits, their pick kept: the login landing carries it on (resumeWaiting); one let go, or
+   * never in, puts their card back (sweep). A booking that waits again keeps the time it first waited (Keshav, 11 Oct:
+   * "when logged in, automatically continue"). True when it is in.
+   */
+  async function waitForLogin(ask: BookingAsk, runId: string, live: ReturnType<typeof bookingLiveCard>, step: number): Promise<boolean> {
+    const title = ask.offer.title;
+    const login = d.login ? await d.login.ensure(ask.tripId, `Booking ${title} for ${ask.name}`, { booking: true, for: ask.personId }).catch(() => null) : { ok: true as const };
+    if (login?.ok) return true;
+    const holder = await d.pool.query<{ person_id: string }>('select person_id from ixigo_logins where trip_id = $1', [ask.tripId]).then((r) => r.rows[0]?.person_id ?? null).catch(() => null);
+    const owner = holder ? await d.nameOf(ask.tripId, holder).then(spokenFirstName, () => null) : null;
+    await d.link.request('post_message', {
+      request_id: stableId('go_book_login', runId), trip_id: ask.tripId,
+      card: travellerAsk(stableId('c_book_login', runId), ask, owner, holder === ask.personId), visible_to_person_ids: [ask.personId],
+    });
+    d.log.info({ runId, tripId: ask.tripId }, 'travel: a booking waits on the trip login');
+    const resume: Resume = { tapId: ask.tapId, name: ask.name, choice: ask.choice, ...(ask.restore ? { restore: ask.restore } : {}), ...(ask.gender ? { gender: ask.gender } : {}) };
+    await d.pool.query(
+      `update flight_bookings set state = 'failed', why = 'login_needed', resume = $2, waiting_since = coalesce(waiting_since, $3), updated_at = $3 where run_id = $1`,
+      [runId, JSON.stringify(resume), d.now()],
+    );
+    await live.step(step, 'failed');
+    await live.finish(false);
+    return false;
+  }
+
+  /**
+   * The one ask for the travel details a booking's form needs (need), theirs alone (detailsAsk), and the booking waits
+   * on it: the sweep carries it on once their vault has every one, or lets it go after LOGIN_WAIT_MS with their card back.
+   * A train's and a bus's run both wait here (p5's buses, 11 Oct).
+   */
+  async function askForDetails(ask: BookingAsk, runId: string, live: ReturnType<typeof bookingLiveCard>, step: number, need: TravelField[], ticket: string): Promise<void> {
+    const askCardId = stableId('c_book_details', runId);
+    await d.link.request('post_message', {
+      request_id: stableId('go_book_details', runId), trip_id: ask.tripId, card: detailsAsk(askCardId, ask.personId, ask.name, need, ticket), visible_to_person_ids: [ask.personId],
+    });
+    const resume: Resume = { tapId: ask.tapId, name: ask.name, choice: ask.choice, ...(ask.restore ? { restore: ask.restore } : {}), ...(ask.gender ? { gender: ask.gender } : {}), askCardId, need };
+    await d.pool.query(
+      `update flight_bookings set state = 'failed', why = 'details_needed', resume = $2, waiting_since = coalesce(waiting_since, $3), updated_at = $3 where run_id = $1`,
+      [runId, JSON.stringify(resume), d.now()],
+    );
+    await live.step(step, 'failed');
+    await live.finish(false);
+  }
+
+  /**
+   * Ready to pay (the App team's G2, 11 Oct): ONE pay card for them alone, money's, with the Server's personal approval for
+   * the card and option they tapped in it: Approve opens the vault, Face ID, and it is paid. Nothing on ixigo is
+   * submitted. A money without it: their ready card (ready) with Pay, as before.
+   */
+  async function readyToPay(o: {
+    ask: BookingAsk; runId: string; live: ReturnType<typeof bookingLiveCard>; step: number; amountMinor: number; purpose: string;
+    ready: (cardId: string) => NoticeCard;
+  }): Promise<void> {
+    const { ask, runId, live, step, amountMinor } = o;
+    const pay = d.pay?.();
+    if (pay?.requestTicketCard) {
+      hookPaid(pay);
+      const got = await pay
+        .requestTicketCard(ask.tripId, {
+          personId: ask.personId, cardId: ask.offer.cardId, optionId: ask.offer.optionId, amountMinor, currency: 'INR', purpose: o.purpose, key: runId, trigger: ask.tapId,
+        })
+        .catch((err: unknown) => ({ refused: "Go couldn't get the payment ready just now.", code: 'server_down', say: false, err }));
+      if ('cardId' in got) {
+        await save(runId, { state: 'ready_to_pay', card_id: got.cardId });
+        await live.step(step, 'done');
+        await live.finish(true);
+        return;
+      }
+      d.log.warn({ runId, code: got.code }, 'travel: a ticket pay card was refused');
+      await save(runId, { state: 'failed', why: `pay_${got.code}` });
+      await live.step(step, 'failed');
+      await live.finish(false);
+      // The vault can't take it (its rail not ready, or it refused the approval): why, in the vault's words, and the next
+      // step inside Go, theirs alone (p2's #481). Never ixigo's pay page (Keshav, 11 Oct: an ixigo page is never the answer;
+      // pay is always through the vault). A person with no card never gets here: the vault's own pay page has them add
+      // one. Any other no: said, theirs alone, where money doesn't say it.
+      if (VAULT_CANT.has(got.code)) {
+        const their = kindOf(ask) === 'train' ? 'train card' : 'flights card';
+        await d.link.request('post_message', {
+          request_id: stableId('go_book_vault', runId), trip_id: ask.tripId,
+          text: `${got.refused} Your pick is kept: tap I'll take this on your ${their} to pay once it goes through.`, visible_to_person_ids: [ask.personId],
+        });
+      } else if (!got.say) {
+        await d.link.request('post_message', { request_id: stableId('go_book_no', runId), trip_id: ask.tripId, text: got.refused, visible_to_person_ids: [ask.personId] });
+      }
+      await putBack(ask);
+      return;
+    }
+    await live.step(step, 'done');
+    const cardId = stableId('c_ready', runId);
+    await d.link.request('post_message', { request_id: stableId('go_book_ready', runId), trip_id: ask.tripId, card: o.ready(cardId), visible_to_person_ids: [ask.personId] });
+    await save(runId, { state: 'ready_to_pay', card_id: cardId });
+    await live.finish(true);
+  }
+
+  /** A booking by its ticket's kind: a train's run (bookTrain), else a flight's. */
+  function book(asked: BookingAsk, runId: string): Promise<void> {
+    return asked.offer.kind === 'train' ? bookTrain(asked, runId) : bookFlight(asked, runId);
+  }
+
+  async function bookFlight(asked: BookingAsk, runId: string): Promise<void> {
     // Their first name in every word of it, as Go says names (p2's prod audit, 11 Oct: "Booking … for <first last>").
     const ask = { ...asked, name: spokenFirstName(asked.name) };
     const runner = d.runner();
@@ -487,28 +631,7 @@ export function createFlightBooking(d: FlightBookingDeps): FlightBooking {
     // inside the logged-in page, matched by first name, then ticked on ixigo's traveller step in a private tab (no
     // picture). The list and their name live in this run's memory only. Nothing is submitted.
     await live.step(3, 'doing');
-    // The trip's computer not logged in: its login card goes to the person booking (anyone in the trip can log in there).
-    const login = d.login ? await d.login.ensure(ask.tripId, `Booking ${title} for ${ask.name}`, { booking: true, for: ask.personId }).catch(() => null) : { ok: true as const };
-    const holder = await d.pool.query<{ person_id: string }>('select person_id from ixigo_logins where trip_id = $1', [ask.tripId]).then((r) => r.rows[0]?.person_id ?? null).catch(() => null);
-    const ownerName = async (): Promise<string | null> => (holder ? await d.nameOf(ask.tripId, holder).then(spokenFirstName, () => null) : null);
-    if (!login?.ok) {
-      await d.link.request('post_message', {
-        request_id: stableId('go_book_login', runId), trip_id: ask.tripId,
-        card: travellerAsk(stableId('c_book_login', runId), ask, await ownerName(), holder === ask.personId), visible_to_person_ids: [ask.personId],
-      });
-      // Keshav, 11 Oct: "when logged in, automatically continue". The booking waits on the login, their pick kept: the
-      // login landing carries it on (resumeWaiting); one let go, or never in, puts their card back (sweep). A booking that
-      // waits again keeps the time it first waited.
-      d.log.info({ runId, tripId: ask.tripId }, 'travel: a flight booking waits on the trip login');
-      const resume: Resume = { tapId: ask.tapId, name: ask.name, choice: ask.choice, ...(ask.restore ? { restore: ask.restore } : {}), ...(ask.gender ? { gender: ask.gender } : {}) };
-      await d.pool.query(
-        `update flight_bookings set state = 'failed', why = 'login_needed', resume = $2, waiting_since = coalesce(waiting_since, $3), updated_at = $3 where run_id = $1`,
-        [runId, JSON.stringify(resume), d.now()],
-      );
-      await live.step(3, 'failed');
-      await live.finish(false);
-      return;
-    }
+    if (!(await waitForLogin(ask, runId, live, 3))) return;
     const ms = dayMs(results.searchParams.get('date') ?? '');
     const iso = ms !== null ? new Date(ms + 330 * 60_000).toISOString().slice(0, 10) : '';
     // The list as ixigo's traveller step asks for it itself once Continue is pressed, caught in a private tab: the page's
@@ -610,48 +733,115 @@ export function createFlightBooking(d: FlightBookingDeps): FlightBooking {
     if (!ticked) return fail('traveller_not_ticked', 3);
     await live.step(3, 'done');
 
-    // 5. Ready to pay (the App team's G2, 11 Oct): ONE pay card for them alone, money's, with the Server's personal approval
-    // for the card and option they tapped in it: Approve opens the vault, Face ID, and it is paid. Nothing on ixigo is
-    // submitted. A money without it: their ready card with Pay, as before.
+    // 5. Ready to pay.
     const flies = dayOf(ask.offer.sourceUrl);
-    const pay = d.pay?.();
-    if (pay?.requestTicketCard) {
-      hookPaid(pay);
-      const purpose = clip(`${title}${flies ? `, ${dayText(flies)}` : ''}, for ${ask.name}`, 200);
-      const got = await pay
-        .requestTicketCard(ask.tripId, {
-          personId: ask.personId, cardId: ask.offer.cardId, optionId: ask.offer.optionId, amountMinor, currency: 'INR', purpose, key: runId, trigger: ask.tapId,
-        })
-        .catch((err: unknown) => ({ refused: "Go couldn't get the payment ready just now.", code: 'server_down', say: false, err }));
-      if ('cardId' in got) {
-        await save(runId, { state: 'ready_to_pay', card_id: got.cardId });
-        await live.step(4, 'done');
-        await live.finish(true);
-        return;
-      }
-      d.log.warn({ runId, code: got.code }, 'travel: a ticket pay card was refused');
-      await save(runId, { state: 'failed', why: `pay_${got.code}` });
-      await live.step(4, 'failed');
+    await readyToPay({
+      ask, runId, live, step: 4, amountMinor,
+      purpose: clip(`${title}${flies ? `, ${dayText(flies)}` : ''}, for ${ask.name}`, 200),
+      ready: (cardId) => readyCard({ cardId, personId: ask.personId, name: ask.name, title, when: flies ? dayText(flies) : null, choice: ask.choice, amountMinor, coupon }),
+    });
+  }
+
+  /**
+   * A person's own train, booked on ixigo as their flight is, up to ixigo's pay button (Keshav, 11 Oct: "trains and buses
+   * are crying to get booked like flights"). p0's T1 drill: the day's results page, a row's SHOW AVAILABILITY, the class's
+   * tile, the day's BOOK, behind ixigo's login. Its passenger typed from their vault's travel details (their age on the
+   * day, their IRCTC user ID), asked once in one tap when missing; a waitlist or RAC said before they pay. Nothing on ixigo
+   * is submitted.
+   */
+  async function bookTrain(asked: BookingAsk, runId: string): Promise<void> {
+    const ask = { ...asked, name: spokenFirstName(asked.name) };
+    const runner = d.runner();
+    const title = ask.offer.title;
+    const train = trainOf(ask.offer.sourceUrl);
+    const option = d.results ? await d.results.optionOf(ask.offer.optionId).catch(() => null) : null;
+    const cls = typeof option?.facts['class_code'] === 'string' ? option.facts['class_code'] : null;
+    const live = bookingLiveCard(d, ask.tripId, stableId('c_book', runId), `Booking ${title} for ${ask.name}`, [
+      `Opening ${title} on ixigo`, `Checking seats${cls ? ` in ${cls}` : ''}`, 'Filling passengers privately', `Ready to pay for ${ask.name}`,
+    ], [ask.personId]);
+    const fail = async (why: string, step: number): Promise<void> => {
+      d.log.info({ runId, tripId: ask.tripId, why }, 'travel: a train booking stopped');
+      await save(runId, { state: 'failed', why });
+      await live.step(step, 'failed');
       await live.finish(false);
-      // The vault can't take it: ixigo's page for their flight, set for one, saying why. Any other no: said, theirs alone,
-      // where money doesn't say it.
-      if (VAULT_CANT.has(got.code)) {
-        const card = { ...buildIxigoLinkCard({ cardId: stableId('c_book_ixigo', runId), title: clip(`Book ${title} on ixigo`, 80), url: results.toString() }), for_person_ids: [ask.personId] };
-        await d.link.request('post_message', {
-          request_id: stableId('go_book_ixigo', runId), trip_id: ask.tripId, text: `${got.refused} You can book it on ixigo yourself: it opens set for you.`, card, visible_to_person_ids: [ask.personId],
-        });
-      } else if (!got.say) {
-        await d.link.request('post_message', { request_id: stableId('go_book_no', runId), trip_id: ask.tripId, text: got.refused, visible_to_person_ids: [ask.personId] });
-      }
       await putBack(ask);
+    };
+    const tell = (key: string, text: string) =>
+      d.link.request('post_message', { request_id: stableId(key, runId), trip_id: ask.tripId, text, visible_to_person_ids: [ask.personId] }).catch(() => undefined);
+    const results = trainResultsAddress(ask.offer.sourceUrl, cls);
+    const day = train ? dayLabel(train.date) : null;
+    if (!runner || !train || !cls || !results || !day) return fail('no_runner', 0);
+
+    // 1. Its seats and fare now, on the stage: the day's results page's own seats call, for its class and quota.
+    await live.step(0, 'doing');
+    const listed = await runner.read(ask.tripId, results, { capture: [{ match: TRAIN_AVAILABILITY, required: true }] }, { stage: true, tag: runId }).catch(() => null);
+    const now = listed ? bodiesFor(listed.captures, TRAIN_AVAILABILITY).map(parsed).map((b) => classNow(b, train.number, cls, train.quota)).find((x) => x !== null) ?? null : null;
+    if (!now) {
+      await tell('go_book_seats_unread', `Go couldn't read the seats on ${title} just now, so it stopped before booking it. Tap I'll take this to try again.`);
+      return fail('seats_not_read', 0);
+    }
+    await live.step(0, 'done');
+    await live.step(1, 'doing');
+    const amountMinor = now.fareMinor ?? ask.offer.priceMinor;
+    if (amountMinor === null) return fail('seats_not_read', 1);
+    // A fare more than 5% over the price they picked at: asked again at the new price, on a card of its own.
+    const picked = ask.offer.priceMinor;
+    if (picked !== null && amountMinor > Math.round(picked * FARE_MOVE_OK)) {
+      await save(runId, { state: 'failed', why: 'fare_moved', total_minor: amountMinor });
+      await live.step(1, 'failed');
+      await live.finish(false);
+      await askAgain(ask, runId, picked, amountMinor);
       return;
     }
-    await live.step(4, 'done');
-    const cardId = stableId('c_ready', runId);
-    const card = readyCard({ cardId, personId: ask.personId, name: ask.name, title, when: flies ? dayText(flies) : null, choice: ask.choice, amountMinor, coupon });
-    await d.link.request('post_message', { request_id: stableId('go_book_ready', runId), trip_id: ask.tripId, card, visible_to_person_ids: [ask.personId] });
-    await save(runId, { state: 'ready_to_pay', card_id: cardId });
-    await live.finish(true);
+    await save(runId, { state: 'travellers', total_minor: amountMinor });
+    await live.step(1, 'done');
+
+    // 2. The trip's login (its card the booker's), then their passenger, from their vault.
+    await live.step(2, 'doing');
+    if (!(await waitForLogin(ask, runId, live, 2))) return;
+    const purpose = clip(`${title} (${cls}), ${day}, for ${ask.name}`, 200);
+    const details = await d.pay?.()?.travelDetails?.({ tripId: ask.tripId, personId: ask.personId, booking: { ref: runId, travellerPersonId: ask.personId, purpose } }).catch(() => null) ?? null;
+    const age = details ? ageOn(details.dob, train.date) : null;
+    // One ask, one tap, for what the vault doesn't have: the vault's own form, showing exactly those.
+    const need: TravelField[] = [...(age === null ? ['dob' as const] : []), ...(details?.irctcUserId ? [] : ['irctc_user_id' as const])];
+    if (!details || age === null || !details.irctcUserId) return askForDetails(ask, runId, live, 2, need, 'train');
+    // In a private tab: the row's SHOW AVAILABILITY by its train, the class's tile, the day's BOOK, then the passenger
+    // form, its Gender tried as a select, chips, then radios. Nothing is submitted; their values go only into the form.
+    const passenger = { name: `${details.firstName} ${details.lastName}`, age, gender: details.gender, irctc: details.irctcUserId };
+    let filled = false;
+    for (const shape of TITLE_SHAPES) {
+      let ranOut = false;
+      filled = await runner
+        .read(
+          ask.tripId, results,
+          {
+            capture: [{ match: TRAIN_AVAILABILITY, required: true }],
+            steps: [
+              { op: 'click', name: 'SHOW AVAILABILITY', near_text: train.number },
+              { op: 'click', text: cls, near_text: [train.number, 'HIDE AVAILABILITY'] },
+              { op: 'click', role: 'button', name: 'BOOK', near_text: day },
+              ...trainPassengerSteps(passenger, shape),
+            ],
+          },
+          { private: true, tag: runId, onTrace: (t) => { if (t.failed) ranOut = true; } },
+        )
+        .then(() => !ranOut, () => false);
+      if (filled) break;
+    }
+    if (!filled) {
+      await tell('go_book_unfilled', `Go couldn't fill your passenger details on ixigo's form, so it stopped before booking ${title}. Tap I'll take this to try again.`);
+      return fail('passengers_not_filled', 2);
+    }
+    await live.step(2, 'done');
+
+    // A waitlist or RAC, said plainly before they pay (the lead, 11 Oct).
+    const seats = seatWords(now);
+    if (seats) await tell('go_book_seats', `Before you pay for ${title} (${cls}): ${seats}`);
+    // 3. Ready to pay.
+    await readyToPay({
+      ask, runId, live, step: 3, amountMinor, purpose,
+      ready: (cardId) => readyCard({ cardId, personId: ask.personId, name: ask.name, title: `${title} (${cls})`, when: day, choice: ask.choice, amountMinor, coupon: null }),
+    });
   }
 
   /**
@@ -688,10 +878,10 @@ export function createFlightBooking(d: FlightBookingDeps): FlightBooking {
   }
 
   /** A booking whose login was let go, or never came: no longer waiting, and its person's card back as it was. */
-  async function letGo(runId: string, from = 'login_needed'): Promise<void> {
+  async function letGo(runId: string, from = 'login_needed', why = 'login_let_go'): Promise<void> {
     const { rows } = await d.pool.query<{ trip_id: string; person_id: string; resume: Resume }>(
-      `update flight_bookings set why = 'login_let_go', updated_at = $3 where run_id = $1 and why = $2 returning trip_id, person_id, resume`,
-      [runId, from, d.now()],
+      `update flight_bookings set why = $4, updated_at = $3 where run_id = $1 and why = $2 returning trip_id, person_id, resume`,
+      [runId, from, d.now(), why],
     );
     const r = rows[0];
     if (r?.resume.restore) await putBack({ tripId: r.trip_id, restore: r.resume.restore });
@@ -726,6 +916,16 @@ export function createFlightBooking(d: FlightBookingDeps): FlightBooking {
       return 'started';
     },
     resumeWaiting: (tripId) => carryOn(tripId),
+    async detailsLink(i) {
+      const { rows } = await d.pool.query<{ run_id: string; resume: Resume }>(
+        `select run_id, resume from flight_bookings where trip_id = $1 and person_id = $2 and why = 'details_needed' and resume->>'askCardId' = $3`,
+        [i.tripId, i.personId, i.cardId],
+      );
+      const link = rows[0] ? await d.pay?.()?.travelLink?.(i.personId, rows[0].resume.need ?? []).catch(() => null) : null;
+      if (!rows[0]) return { result: 'refused', toast: 'This booking has moved on' };
+      if (!link) return { result: 'refused', toast: "Go couldn't open your travel details just now: try again in a moment" };
+      return { result: 'open', url: link.url, expires_at: link.expiresAt };
+    },
     async gender(i) {
       // Their answer kept for the booking that asked on this card, which carries on by itself; a second tap finds none.
       const { rows } = await d.pool.query<{ run_id: string; person_id: string; option_id: string; resume: Resume }>(
@@ -753,6 +953,27 @@ export function createFlightBooking(d: FlightBookingDeps): FlightBooking {
         else if (r.login === 'skipped' || now - r.waiting_since.getTime() >= LOGIN_WAIT_MS) await letGo(r.run_id);
       }
       for (const tripId of trips) await carryOn(tripId);
+      // Trains that wait on their person's travel details (detailsAsk): carried on once the vault has them, let go after
+      // LOGIN_WAIT_MS with their card back. Read for a ticket of their own, as the booking itself reads them.
+      const waiting = await d.pool.query<{ run_id: string; trip_id: string; person_id: string; option_id: string; title: string; resume: Resume; waiting_since: Date }>(
+        "select run_id, trip_id, person_id, option_id, title, resume, waiting_since from flight_bookings where why = 'details_needed' and resume is not null",
+      );
+      const pay = d.pay?.();
+      for (const r of waiting.rows) {
+        if (now - r.waiting_since.getTime() >= LOGIN_WAIT_MS) {
+          await letGo(r.run_id, 'details_needed', 'details_let_go');
+          continue;
+        }
+        const details = await pay?.travelDetails?.({
+          tripId: r.trip_id, personId: r.person_id, booking: { ref: r.run_id, travellerPersonId: r.person_id, purpose: clip(`${r.title}, for ${r.resume.name}`, 200) },
+        }).catch(() => null);
+        if (!hasFields(details ?? null, r.resume.need ?? ['dob', 'irctc_user_id'])) continue;
+        const claimed = await d.pool.query<{ run_id: string; person_id: string; option_id: string; resume: Resume }>(
+          `update flight_bookings set why = 'details_in', updated_at = $2 where run_id = $1 and why = 'details_needed' returning run_id, person_id, option_id, resume`,
+          [r.run_id, d.now()],
+        );
+        if (claimed.rows[0]) await resumeRun(r.trip_id, claimed.rows[0], 'details_in');
+      }
     },
     async pay(i) {
       const r = await d.pool.query<{

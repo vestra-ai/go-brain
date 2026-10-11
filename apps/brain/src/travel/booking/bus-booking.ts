@@ -23,8 +23,9 @@ import type { RecipeRunner } from '../recipes/runners.js';
 import type { ResultsStore } from '../results.js';
 import type { StoredOffer } from '../travel.js';
 import { busLayout, choosePoint, chooseSeats, seatWords, type BusLayout, type BusPoint, type BusSeat, type SeatAsk } from './bus-seats.js';
-import { bookingLiveCard, bookingOnFor, FARE_MOVE_OK, genderAsk, LOGIN_WAIT_MS, RUNNING_MS, travellerAsk, type TicketPay } from './flight-booking.js';
-import { idNameOf, spokenFirstName } from './travellers.js';
+import type { TravelField } from '../../money/vault-client.js';
+import { bookingLiveCard, bookingOnFor, detailsAsk, FARE_MOVE_OK, hasFields, LOGIN_WAIT_MS, RUNNING_MS, travellerAsk, type TicketPay } from './flight-booking.js';
+import { spokenFirstName } from './travellers.js';
 
 /** The list's own call, and the seat layout "Select Seats" opens. */
 export const BUS_LIST = '/buslist/v3/services$';
@@ -56,8 +57,6 @@ export interface BusAsk {
   near?: { board?: string[]; drop?: string[] };
   /** Their card as it was before their pick, put back when the booking stops before the pay card. */
   restore?: OptionsCardT;
-  /** Their gender as they said it on Go's one ask (#478's genderAsk), when their vault has none. */
-  gender?: 'male' | 'female';
 }
 
 export interface BusBookingDeps {
@@ -71,16 +70,10 @@ export interface BusBookingDeps {
   now: () => Date;
   log: Log;
   results?: Pick<ResultsStore, 'replaceCard' | 'offer'>;
-  /**
-   * The one ask for a ticket's missing details, trains' and buses' (p0's, 11 Oct): a card for the person alone whose tap
-   * opens their vault's travel form at just those fields. The booking waits, and the sweep carries it on once they are
-   * kept. Absent, the booking says what is missing in a line, and waits all the same.
-   */
-  detailsAsk?: (i: { tripId: string; personId: string; name: string; need: Array<'first_name' | 'last_name' | 'dob'>; key: string; what: string }) => Promise<void>;
 }
 
 /** What a booking that waited on the trip's login carries on with. */
-type Resume = { tapId: string; name: string; seat?: BusAsk['seat']; near?: BusAsk['near']; restore?: OptionsCardT; gender?: 'male' | 'female'; askCardId?: string };
+type Resume = { tapId: string; name: string; seat?: BusAsk['seat']; near?: BusAsk['near']; restore?: OptionsCardT; need?: TravelField[]; askCardId?: string };
 
 /**
  * A bus's address on Go's card: ixigo's results page, with the bus's operator and time after "#" (buses.between). The
@@ -151,8 +144,8 @@ export function passengerSteps(p: BusPassenger): NonNullable<FetchPlan['steps']>
 export interface BusBooking {
   onFor(tripId: string): Promise<boolean>;
   start(ask: BusAsk): Promise<'started' | 'running'>;
-  /** Their tap on the gender ask: kept for the booking that waits on it, which carries on by itself. */
-  gender(i: { tripId: string; cardId: string; personId: string; gender: 'male' | 'female' }): Promise<{ result: 'done' | 'refused'; toast: string }>;
+  /** "Add it" on the details ask: their vault's travel form, at the fields the booking waits on, for them alone. */
+  detailsLink(i: { tripId: string; cardId: string; personId: string }): Promise<{ result: 'open'; url: string; expires_at: string } | { result: 'refused'; toast: string }>;
   resumeWaiting(tripId: string): Promise<void>;
   sweep(): Promise<void>;
   settled(): Promise<void>;
@@ -298,40 +291,33 @@ export function createBusBooking(d: BusBookingDeps): BusBooking {
       await live.finish(false);
       return;
     }
-    // Their name as on their ID, their gender and their age on the day: from their vault when they kept them, else their
-    // name in the trip, #478's one-tap gender ask, and the one ask for the rest. Never a value in a log, the model or a card.
+    // Their name as on their ID, their gender and their age on the day, from their vault: typed only into ixigo's form,
+    // never a log, the model or a card. None kept: the one ask for a ticket's missing details (p0's, trains' too), for
+    // their date of birth and gender in one card (the lead: one ask beats two; the vault's form also takes whatever else a
+    // kept row needs), and the minute's sweep carries the booking on once they are kept.
     const vaulted = await d.pay?.()?.travelDetails?.({
       tripId: ask.tripId, personId: ask.personId, booking: { ref: runId, travellerPersonId: ask.personId, purpose: clip(`${title}, for ${ask.name}`, 200) },
     }).catch(() => null) ?? null;
-    const named = vaulted ? { first: vaulted.firstName, last: vaulted.lastName } : idNameOf(await d.nameOf(ask.tripId, ask.personId).catch(() => ''));
-    const gender = vaulted?.gender ?? ask.gender;
     const age = vaulted && bus.day ? ageOn(vaulted.dob, bus.day) : null;
-    const resume = (more: Partial<Resume> = {}): Resume => ({
-      tapId: ask.tapId, name: ask.name, ...(ask.seat ? { seat: ask.seat } : {}), ...(ask.near ? { near: ask.near } : {}), ...(ask.restore ? { restore: ask.restore } : {}),
-      ...(ask.gender ? { gender: ask.gender } : {}), ...more,
-    });
-    const wait = async (why: 'gender_needed' | 'details_needed', r: Resume): Promise<void> => {
+    if (!vaulted || age === null) {
+      const need: TravelField[] = ['dob', 'gender'];
+      const askCardId = stableId('c_bus_details', runId);
+      await d.link.request('post_message', {
+        request_id: stableId('go_bus_details', runId), trip_id: ask.tripId, card: detailsAsk(askCardId, ask.personId, ask.name, need, 'bus'), visible_to_person_ids: [ask.personId],
+      });
+      const resume: Resume = {
+        tapId: ask.tapId, name: ask.name, need, askCardId,
+        ...(ask.seat ? { seat: ask.seat } : {}), ...(ask.near ? { near: ask.near } : {}), ...(ask.restore ? { restore: ask.restore } : {}),
+      };
       await d.pool.query(
-        `update bus_bookings set state = 'failed', why = $2, resume = $3, waiting_since = coalesce(waiting_since, $4), updated_at = $4 where run_id = $1`,
-        [runId, why, JSON.stringify(r), d.now()],
+        `update bus_bookings set state = 'failed', why = 'details_needed', resume = $2, waiting_since = coalesce(waiting_since, $3), updated_at = $3 where run_id = $1`,
+        [runId, JSON.stringify(resume), d.now()],
       );
       await live.step(2, 'failed');
       await live.finish(false);
-    };
-    if (!gender) {
-      const askCardId = stableId('c_bus_gender', runId);
-      await d.link.request('post_message', {
-        request_id: stableId('go_bus_gender', runId), trip_id: ask.tripId, card: genderAsk(askCardId, ask.personId, ask.name), visible_to_person_ids: [ask.personId],
-      });
-      return wait('gender_needed', resume({ askCardId }));
+      return;
     }
-    if (!named || age === null) {
-      const need: Array<'first_name' | 'last_name' | 'dob'> = [...(named ? [] : ['first_name', 'last_name'] as const), ...(age === null ? ['dob'] as const : [])];
-      if (d.detailsAsk) await d.detailsAsk({ tripId: ask.tripId, personId: ask.personId, name: ask.name, need, key: runId, what: title });
-      else await tell(ask, runId, 'go_bus_details', `ixigo's bus form needs your ${age === null ? 'age' : 'name as on your ID'}. Add it once in your vault (You, then My vault) and Go carries on with your booking.`);
-      return wait('details_needed', resume());
-    }
-    const details = { firstName: named.first, lastName: named.last, gender };
+    const details = { firstName: vaulted.firstName, lastName: vaulted.lastName, gender: vaulted.gender };
     let ranOut = false;
     const filled = await runner
       .read(
@@ -383,7 +369,7 @@ export function createBusBooking(d: BusBookingDeps): BusBooking {
     const k = r.resume;
     start({
       tapId: k.tapId, tripId, personId: r.person_id, name: k.name, offer: stored,
-      ...(k.seat ? { seat: k.seat } : {}), ...(k.near ? { near: k.near } : {}), ...(k.restore ? { restore: k.restore } : {}), ...(k.gender ? { gender: k.gender } : {}),
+      ...(k.seat ? { seat: k.seat } : {}), ...(k.near ? { near: k.near } : {}), ...(k.restore ? { restore: k.restore } : {}),
     }, r.run_id);
     return true;
   }
@@ -417,17 +403,15 @@ export function createBusBooking(d: BusBookingDeps): BusBooking {
       return 'started';
     },
     resumeWaiting: (tripId) => carryOn(tripId),
-    async gender(i) {
-      const { rows } = await d.pool.query<{ run_id: string; person_id: string; option_id: string; resume: Resume }>(
-        `update bus_bookings set why = 'gender_in', resume = resume || jsonb_build_object('gender', $4::text), updated_at = $5
-         where trip_id = $1 and person_id = $2 and why = 'gender_needed' and resume->>'askCardId' = $3
-         returning run_id, person_id, option_id, resume`,
-        [i.tripId, i.personId, i.cardId, i.gender, d.now()],
+    async detailsLink(i) {
+      const r = await d.pool.query<{ resume: Resume }>(
+        `select resume from bus_bookings where trip_id = $1 and person_id = $2 and why = 'details_needed' and resume->>'askCardId' = $3`,
+        [i.tripId, i.personId, i.cardId],
       );
-      const r = rows[0];
-      if (!r) return { result: 'refused', toast: 'This booking has moved on' };
-      await resumeRun(i.tripId, r, 'gender_in');
-      return { result: 'done', toast: 'Go carries on with your booking' };
+      const row = r.rows[0];
+      if (!row) return { result: 'refused', toast: 'This booking has moved on' };
+      const link = await d.pay?.()?.travelLink?.(i.personId, row.resume.need ?? []).catch(() => null);
+      return link ? { result: 'open', url: link.url, expires_at: link.expiresAt } : { result: 'refused', toast: "Your vault didn't open just now. Tap Add it again" };
     },
     async sweep() {
       const { rows } = await d.pool.query<{ run_id: string; trip_id: string; waiting_since: Date; updated_at: Date; login: string | null; logged_in_at: Date | null; resume: Resume }>(
@@ -454,7 +438,7 @@ export function createBusBooking(d: BusBookingDeps): BusBooking {
         const kept = await d.pay?.()?.travelDetails?.({
           tripId: r.trip_id, personId: r.person_id, booking: { ref: r.run_id, travellerPersonId: r.person_id, purpose: clip(`${r.title}, for ${r.resume.name}`, 200) },
         }).catch(() => null) ?? null;
-        if (kept) {
+        if (hasFields(kept, r.resume.need ?? ['dob', 'gender'])) {
           const taken = await d.pool.query(`update bus_bookings set why = 'details_in', updated_at = $2 where run_id = $1 and why = 'details_needed'`, [r.run_id, d.now()]);
           if (taken.rowCount) await resumeRun(r.trip_id, r, 'details_in');
         } else if (now - r.waiting_since.getTime() >= LOGIN_WAIT_MS) {

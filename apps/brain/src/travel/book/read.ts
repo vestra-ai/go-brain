@@ -247,11 +247,14 @@ export async function readOptions(
   extra: Record<string, unknown> = {},
   /** The recipe's notes about the whole list, as they read, go here (answer.notes). */
   notes?: string[],
+  /** How many rows the list held, before the recipe's keep, goes here: a page's worth says the site may have more. */
+  listed?: { rows: number },
 ): Promise<RecipeOption[]> {
   if (!recipe.read || recipe.answer.as !== 'options') throw new Error(`${recipe.id} has no options to read`);
   const what = recipe.title.toLowerCase();
   const bindings: Record<string, unknown> = { ...extra, inputs, page };
   const rows = await rowsOf(recipe, captures, bindings);
+  if (listed) listed.rows = rows.length;
   const out: RecipeOption[] = [];
   for (const row of rows) {
     let made: unknown;

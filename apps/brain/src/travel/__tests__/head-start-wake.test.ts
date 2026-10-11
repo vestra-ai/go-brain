@@ -56,7 +56,7 @@ function store() {
       return set;
     },
     get: async (_t: string, id: string) => sets.get(id) ?? null,
-    saveCard: async () => undefined,
+    saveCard: async () => undefined, shownFrom: async () => [],
     card: async () => null,
   } as unknown as ResultsStore;
 }

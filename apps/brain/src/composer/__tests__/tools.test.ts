@@ -290,7 +290,7 @@ describe('the room\'s tools', () => {
       expect(await updateTrip.run({ proof_message_ids: ORG, destination: 'South Goa' }, ctx)).toMatchObject({ ok: false, tell_the_room: SAY_NOTHING });
       // With no resolved Place, nothing changes: the destination is never sent as {name} alone.
       const unresolved = run([closed('d_area', ['opt_north', 'opt_south'], 1, '2026-10-05T18:00:00Z')], GOA);
-      expect(await updateTrip.run({ proof_message_ids: ORG, destination: 'south goa' }, unresolved.ctx)).toMatchObject({ ok: false, error: expect.stringContaining("can't look up South Goa"), tell_the_room: SAY_NOTHING });
+      expect(await updateTrip.run({ proof_message_ids: ORG, destination: 'south goa' }, unresolved.ctx)).toMatchObject({ ok: false, error: expect.stringContaining('ixigo knows no place called South Goa'), tell_the_room: SAY_NOTHING });
       expect(unresolved.calls).toEqual([]);
     });
 
@@ -302,7 +302,7 @@ describe('the room\'s tools', () => {
       const { ctx, calls } = run([stayVote], GOA);
       // What the composer sent on staging.
       const r = await updateTrip.run({ proof_message_ids: ORG, destination: 'Candolim, Goa', stay: 'Villa with a pool in Candolim' }, ctx);
-      expect(r).toMatchObject({ ok: true, changed: ['stay'], stay: 'Candolim', note: expect.stringContaining("can't look up Candolim, Goa") });
+      expect(r).toMatchObject({ ok: true, changed: ['stay'], stay: 'Candolim', note: expect.stringContaining('ixigo knows no place called Candolim, Goa') });
       expect(calls.map((c) => c.params)).toEqual([{ request_id: expect.any(String), trip_id: 't_goa', stay: 'Candolim' }]);
       expect((ctx.pack.trip.destination as typeof GOA)).toEqual(GOA);
     });
@@ -322,7 +322,7 @@ describe('the room\'s tools', () => {
       const { ctx, calls } = run([], GOA);
       expect(await updateTrip.run({ proof_message_ids: ORG, destination: 'Kerala' }, ctx)).toEqual({ ok: true, changed: ['destination'] });
       expect(calls[0]?.params.destination).toEqual(places['kerala']);
-      expect(await updateTrip.run({ proof_message_ids: ORG, destination: 'Atlantis' }, ctx)).toMatchObject({ ok: false, error: expect.stringContaining("can't look up Atlantis"), tell_the_room: SAY_NOTHING });
+      expect(await updateTrip.run({ proof_message_ids: ORG, destination: 'Atlantis' }, ctx)).toMatchObject({ ok: false, error: expect.stringContaining('ixigo knows no place called Atlantis'), tell_the_room: SAY_NOTHING });
       expect(await updateTrip.run({ proof_message_ids: ORG, destination: 'goa' }, ctx)).toMatchObject({ ok: false, error: 'The trip already has that.' });
       expect(calls).toHaveLength(1);
     });
@@ -348,9 +348,9 @@ describe('the room\'s tools', () => {
 
     it('changes nothing when ixigo cannot be reached (a TravelError from placeFor), and the rest of the change still saves', async () => {
       const { ctx, calls } = run([], GOA);
-      expect(await updateTrip.run({ proof_message_ids: ORG, destination: 'Unreachable' }, ctx)).toMatchObject({ ok: false, error: expect.stringContaining("can't reach ixigo"), tell_the_room: SAY_NOTHING });
+      expect(await updateTrip.run({ proof_message_ids: ORG, destination: 'Unreachable' }, ctx)).toMatchObject({ ok: false, error: expect.stringContaining("ixigo didn't answer when Go looked up Unreachable, twice"), tell_the_room: SAY_NOTHING });
       expect(await updateTrip.run({ proof_message_ids: ORG, destination: 'Unreachable', dates: { start: '2026-11-06', end: '2026-11-09' } }, ctx))
-        .toMatchObject({ ok: true, changed: ['dates'], note: expect.stringContaining("can't reach ixigo") });
+        .toMatchObject({ ok: true, changed: ['dates'], note: expect.stringContaining("ixigo didn't answer when Go looked up Unreachable") });
       expect(calls.map((c) => c.params.destination)).toEqual([undefined]);
     });
   });

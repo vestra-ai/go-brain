@@ -73,8 +73,14 @@ export function claimTap(c: ClaimDeps) {
         });
         return;
       }
-      // Parked on the login: its card and line are already up, and Go carries on when the login is in.
-      if (!r.parked) await postLine(c.d, tap.trip_id, r.refused, rid('go_claim_said', tap.tap_id), payer);
+      // Parked on the login, and Go carries on when it is in. The login's own line and card went up just now, or they were
+      // up already (or someone is logging in): then its one plain line says so (prod drill, 11 Oct: a tap a minute after the
+      // hello's card said nothing at all), naming whoever it points at.
+      if (r.parked) {
+        if (r.line) await postLine(c.d, tap.trip_id, r.line, rid('go_claim_waits', tap.tap_id), pack.trip.people);
+        return;
+      }
+      await postLine(c.d, tap.trip_id, r.refused, rid('go_claim_said', tap.tap_id), payer);
     });
     return { result: 'done', toast: pack.trip.people.length === 1 ? "You're booking it" : "You're booking it for everyone" };
   };

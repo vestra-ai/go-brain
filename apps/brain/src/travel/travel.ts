@@ -44,6 +44,8 @@ export const TravelQuery = z.object({
    * one band over kept (backend.ts). Never a guess: a decided budget, or the ask's own per-person cap.
    */
   budgetMinor: z.int().positive().optional(),
+  /** Stays: how many of ixigo's pages of the list to read; two for "See more" past the first page (taps.ts). One when absent. */
+  pages: z.int().min(1).max(2).optional(),
   mustHave: z.array(z.enum(MUST_HAVES)).max(5).optional(),
   /** Buses: a pickup or drop point the group named ("Majestic", "Mapusa"): a bus that doesn't stop there doesn't fit. */
   boardAt: z.string().min(2).max(60).optional(),
@@ -108,6 +110,11 @@ export interface TravelSearch {
   page?: string;
   /** ixigo's list came cut short: these are the first it sent (a long flights stream past what Bash keeps), not all of it. */
   cut?: true;
+  /**
+   * How many ixigo's list held in this read, before Go kept a half of it (North Goa of all of Goa's page): one full page
+   * of stays says ixigo has more, for a card's "See more" (ixigo_web).
+   */
+  listed?: number;
   /** The page's own lines about the whole list, for the model (ixigo's Smart Lock for a route). */
   notes?: string[];
   /** Buses: the group's stay each bus's nearest drop was measured from, and whose it is ("Casa Anjuna, the stay you voted for"). */
@@ -270,9 +277,11 @@ export interface Travel {
    * needs the trip's ixigo login: with none, the person is asked on the login card and `resume` waits on the login, so Go
    * carries on with it once the login is in (ok false, and the note for the model). priceMinor is ixigo's price for it
    * now, read as the same number the vote showed (the whole stay from the same search's list), or null when that can't
-   * be read: then nothing is said about the price moving. Absent: nothing is needed first.
+   * be read: then nothing is said about the price moving. Absent: nothing is needed first. line: the login's one plain
+   * line when nothing went up now (its card already up is the ask, or someone is logging in), for a tap to say. for: the
+   * person booking it (the payer), who gets the login card (Keshav, 11 Oct: "if login required it should show the card").
    */
-  prepare?(optionId: string, o: { tripId: string; what: string; resume: Record<string, unknown> }): Promise<{ ok: true; priceMinor: number | null } | { ok: false; note: string }>;
+  prepare?(optionId: string, o: { tripId: string; what: string; resume: Record<string, unknown>; for?: string }): Promise<{ ok: true; priceMinor: number | null } | { ok: false; note: string; line?: string }>;
   /** Whether Go books each person's own flight on this trip (BOOKING, booking/flight-booking.ts bookingOnFor). */
   booksFlights?(tripId: string): Promise<boolean>;
   /** True while searches come from the fake ixigo (TRAVEL_MODE is fake, or ixigo is not set up): the listings are simulated. */

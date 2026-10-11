@@ -145,7 +145,7 @@ describe('askToPay refuses, in plain words, and posts nothing', () => {
 
   it('when the winner came from browsing, or the travel layer has no offer for it, and holds nothing', async () => {
     k.travel.options.set('opt_villa_sol', null);
-    expect(await k.ask()).toMatchObject({ code: 'not_bookable', refused: "I found this one on the web, so I can't book it here. Want me to call them instead?" });
+    expect(await k.ask()).toMatchObject({ code: 'not_bookable', refused: "I found this one on the web, so it can't be booked through me. Want the closest ones on ixigo, which I can book?" });
     k.travel.options.delete('opt_villa_sol');
     expect(await k.ask()).toMatchObject({ code: 'not_bookable' });
     expectNothingPosted();
@@ -161,7 +161,7 @@ describe('askToPay refuses, in plain words, and posts nothing', () => {
     });
     // A page anywhere but ixigo.com is never handed out.
     k.travel.pages.set('opt_villa_sol', 'https://villa-sol.example.com/book');
-    expect(await k.ask()).toMatchObject({ code: 'not_bookable', refused: "I found this one on the web, so I can't book it here. Want me to call them instead?" });
+    expect(await k.ask()).toMatchObject({ code: 'not_bookable', refused: "I found this one on the web, so it can't be booked through me. Want the closest ones on ixigo, which I can book?" });
     expectNothingPosted();
     expect(k.travel.holds).toEqual([]);
   });
@@ -176,7 +176,7 @@ describe('askToPay refuses, in plain words, and posts nothing', () => {
     expect(await k.ask()).toMatchObject({
       code: 'not_bookable_yet',
       say: true,
-      refused: "I can't book flights for the whole group yet. Each of you can book on ixigo: View on ixigo, in its details on its card, opens it there.",
+      refused: "I can't book flights for the whole group yet. View on ixigo, in its details on its card, opens each one set up for you.",
     });
     // A train with no booking page from the travel layer: the first sentence alone.
     k.travel.options.set('opt_villa_sol', 'ixigo:train:12432');
