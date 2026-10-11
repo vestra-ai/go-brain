@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { withSchema } from '../../db/test-db.js';
 import { buildOptionsCard } from '../cards.js';
-import { createResultsStore, type ResultOption } from '../results.js';
+import { createResultsStore, optionOnPage, type ResultOption } from '../results.js';
 
 let db: Awaited<ReturnType<typeof withSchema>>;
 beforeAll(async () => {
@@ -75,6 +75,22 @@ describe('result sets', () => {
     expect(await store.findOffer('t_find', 'fake:st-nowhere')).toBeNull();
   });
 
+  // The lead, 11 Oct: options read off ixigo.com have no offer id, so a job's pick of one is found by its page.
+  it("finds the option an ixigo page showed in this trip's newest search of that kind, never a job's or another trip's", async () => {
+    const store = createResultsStore(db.pool);
+    const page = 'https://www.ixigo.com/hotels/4395492/details?checkinDate=06112026&checkoutDate=09112026&adultCount=5';
+    const read = (night: number, url = page): ResultOption => ({ kind: 'stay', title: 'High Five Hotels', priceMinor: night, currency: 'INR', priceNote: 'per night', sourceUrl: url, highlights: [], facts: {} });
+    await store.save({ tripId: 't_page', optionKind: 'stay', source: 'search', query: {}, options: [read(900000)], checkedAt: '2026-10-07T11:00:00.000Z' });
+    await store.save({ tripId: 't_page', optionKind: 'stay', source: 'search', query: {}, options: [read(945000)], checkedAt: CHECKED });
+    await store.save({ tripId: 't_page', optionKind: 'stay', source: 'task', query: {}, options: [read(100, 'https://www.ixigo.com/hotels/1/details')], checkedAt: CHECKED });
+    expect(await store.findBySource('t_page', 'stay', page, 'High Five')).toEqual({ option: read(945000), checkedAt: CHECKED });
+    // The same page with another query is the same stay.
+    expect(await store.findBySource('t_page', 'stay', 'https://ixigo.com/hotels/4395492/details?adultCount=2', 'x')).toMatchObject({ option: { priceMinor: 945000 } });
+    expect(await store.findBySource('t_page', 'flight', page, 'High Five')).toBeNull();
+    expect(await store.findBySource('t_elsewhere', 'stay', page, 'High Five')).toBeNull();
+    expect(await store.findBySource('t_page', 'stay', 'https://www.ixigo.com/hotels/1/details', 'x')).toBeNull();
+  });
+
   it('keeps the currency of an offer that has only a whole price (a web pick with a total)', async () => {
     const store = createResultsStore(db.pool);
     const web: ResultOption = { kind: 'stay', title: 'Casa Lua', totalMinor: 4500000, currency: 'INR', highlights: ['Found on the web'], facts: { found_on_web: true } };
@@ -133,5 +149,25 @@ describe("a stay's position", () => {
     expect(await store.placeOf('c_where_1_2')).toMatchObject({ kind: 'stay', title: 'The Palms Villa', place: { lat: 15.55, lng: 73.75 }, area: 'Anjuna' });
     // No position from the search: none is made up.
     expect((await store.placeOf('c_where_2_2'))?.place).toBeNull();
+  });
+});
+
+describe('optionOnPage', () => {
+  const flights = 'https://www.ixigo.com/search/result/flight?from=DEL&to=GOI&date=06112026&adults=2';
+  const flight = (title: string): ResultOption => ({ kind: 'flight', title, highlights: [], facts: {}, sourceUrl: flights });
+
+  it('tells flights on one search page apart by their title, and finds none when the title is not one of them', () => {
+    const options = [flight('IndiGo 6E 2134'), flight('Air India AI 883')];
+    expect(optionOnPage(options, flights, 'Air India  AI-883')).toBe(options[1]);
+    expect(optionOnPage(options, flights, 'Akasa QP 1373')).toBeNull();
+  });
+
+  it("finds a page's one option by its exact address first, then by the same page with another query, and nothing else", () => {
+    const stay = (id: string, q: string): ResultOption => ({ kind: 'stay', title: `Stay ${id}`, highlights: [], facts: {}, sourceUrl: `https://www.ixigo.com/hotels/${id}/details?${q}` });
+    const options = [stay('11', 'adultCount=2'), stay('22', 'adultCount=2')];
+    expect(optionOnPage(options, 'https://www.ixigo.com/hotels/22/details?adultCount=2', 'anything')).toBe(options[1]);
+    expect(optionOnPage(options, 'https://ixigo.com/hotels/11/details?adultCount=5', 'anything')).toBe(options[0]);
+    expect(optionOnPage(options, 'https://www.ixigo.com/hotels/33/details', 'Stay 11')).toBeNull();
+    expect(optionOnPage(options, 'not a url', 'Stay 11')).toBeNull();
   });
 });
