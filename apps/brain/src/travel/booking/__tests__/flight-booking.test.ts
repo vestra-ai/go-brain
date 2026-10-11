@@ -288,7 +288,7 @@ describe("Go books a person's own flight up to ixigo's pay button", () => {
     expect((await db.pool.query(`select state from flight_bookings where person_id = 'p_meher18'`)).rows[0]).toEqual({ state: 'ready_to_pay' });
   });
 
-  it("stops after the second read fails too, saying what is missing and offering ixigo's page set for them, never that Go can't book", async () => {
+  it("stops after the second read fails too, saying what is missing and to tap again, never that Go can't book, and never an ixigo page", async () => {
     const { runner, calls, reads } = fakeRunner({ saved: 'never' });
     const b = booking(runner);
     const from = lb.link.requests.length;
@@ -300,13 +300,11 @@ describe("Go books a person's own flight up to ixigo's pay button", () => {
     const said = lb.link.requests.slice(from).filter((r) => r.method === 'post_message' && r.params['text']);
     expect(said.map((r) => r.params['text'])).toEqual([
       TRAVELLERS_RETRY,
-      "Go still couldn't read your saved travellers on ixigo, so it stopped before booking IndiGo 6E2150. Tap I'll take this to try again, or book it on ixigo yourself: it opens set for you.",
+      "Go still couldn't read your saved travellers on ixigo, so it stopped before booking IndiGo 6E2150. Tap I'll take this to try again.",
     ]);
     expect(said.every((r) => JSON.stringify(r.params['visible_to_person_ids']) === '["p_meher19"]')).toBe(true);
-    const card = said[1]!.params['card'] as C.Card & { source?: { url?: string } };
-    expect(card).toMatchObject({ kind: 'notice', for_person_ids: ['p_meher19'] });
-    expect(new URL(card.source!.url!).searchParams.get('adults')).toBe('1');
-    expect(JSON.stringify(said)).not.toMatch(/can't book|cannot book/i);
+    expect(said.every((r) => r.params['card'] === undefined)).toBe(true);
+    expect(JSON.stringify(said)).not.toMatch(/can't book|cannot book|on ixigo yourself/i);
     expect((await db.pool.query(`select state, why from flight_bookings where person_id = 'p_meher19'`)).rows[0]).toEqual({ state: 'failed', why: 'travellers_not_read' });
   });
 

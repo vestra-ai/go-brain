@@ -479,12 +479,12 @@ export function createFlightBooking(d: FlightBookingDeps): FlightBooking {
       list = await readSaved();
     }
     if (list === null) {
-      // Said as it is, with ixigo's page for their flight set for one: never "Go can't book flights".
-      const card = { ...buildIxigoLinkCard({ cardId: stableId('c_book_ixigo', runId), title: clip(`Book ${title} on ixigo`, 80), url: results.toString() }), for_person_ids: [ask.personId] };
+      // Said as it is, never "Go can't book flights", and never an ixigo page as the answer (Keshav's ruling): their card
+      // goes back (fail), to tap again.
       await d.link
         .request('post_message', {
-          request_id: stableId('go_book_unread', runId), trip_id: ask.tripId, card, visible_to_person_ids: [ask.personId],
-          text: `Go still couldn't read your saved travellers on ixigo, so it stopped before booking ${title}. Tap I'll take this to try again, or book it on ixigo yourself: it opens set for you.`,
+          request_id: stableId('go_book_unread', runId), trip_id: ask.tripId, visible_to_person_ids: [ask.personId],
+          text: `Go still couldn't read your saved travellers on ixigo, so it stopped before booking ${title}. Tap I'll take this to try again.`,
         })
         .catch(() => undefined);
       return fail('travellers_not_read', 3);
