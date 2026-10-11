@@ -87,9 +87,17 @@ export interface ResultsStore {
   /** True when the card had no vote, or this same key had already claimed it. */
   claimVote(cardId: string, key: string): Promise<boolean>;
   setDecision(cardId: string, decisionId: string): Promise<void>;
+  /** A card that is its vote (rev 5 R5): its vote set on its row and in the card itself, which a replace_card resends. */
+  setCardDecision(tripId: string, cardId: string, decisionId: string): Promise<OptionsCardT | null>;
   releaseVote(cardId: string, key: string): Promise<void>;
+  /** The votes opened on the trip's other cards of this kind of option, by their decision ids. */
+  votesOfKind(tripId: string, kind: OptionKind, exceptCardId: string): Promise<string[]>;
+  /** Every option of a search that a card has shown, as the search gave it: what "See more" never shows again. */
+  shownFrom(tripId: string, resultsId: string): Promise<ResultOption[]>;
   offer(optionId: string): Promise<StoredOffer | null>;
   offersOnCard(cardId: string): Promise<StoredOffer[]>;
+  /** Each option on a card as its search gave it (its facts, its night and its whole stay), by its option id. */
+  optionsOnCard(cardId: string): Promise<Map<string, ResultOption>>;
   /** The option's own name, place and area (a stay's), as the search gave them: what Go saves when a vote picked it. */
   placeOf(optionId: string): Promise<OptionPlace | null>;
   /** The top pick on the trip's latest card of this kind of option (a stay), as placeOf gives it; null with no such card. */
@@ -248,6 +256,29 @@ export function createResultsStore(pool: pg.Pool): ResultsStore {
       await pool.query('update options_cards set decision_id = $2 where card_id = $1', [cardId, decisionId]);
     },
 
+    async setCardDecision(tripId, cardId, decisionId) {
+      const { rows } = await pool.query<{ card: OptionsCardT }>(
+        `update options_cards set decision_id = $3, card = card || jsonb_build_object('decision_id', $3::text)
+         where trip_id = $1 and card_id = $2 returning card`,
+        [tripId, cardId, decisionId],
+      );
+      return rows[0]?.card ?? null;
+    },
+
+    async votesOfKind(tripId, kind, exceptCardId) {
+      const { rows } = await pool.query<{ decision_id: string }>(
+        `select distinct decision_id from options_cards
+         where trip_id = $1 and option_kind = $2 and card_id <> $3 and decision_id is not null and decision_id not like 'pending:%'`,
+        [tripId, kind, exceptCardId],
+      );
+      return rows.map((r) => r.decision_id);
+    },
+
+    async shownFrom(tripId, resultsId) {
+      const { rows } = await pool.query<{ option: ResultOption }>('select option from travel_offers where trip_id = $1 and results_id = $2', [tripId, resultsId]);
+      return rows.map((r) => r.option);
+    },
+
     async releaseVote(cardId, key) {
       await pool.query("update options_cards set decision_id = null, vote_key = null where card_id = $1 and decision_id = 'pending:' || $2", [cardId, key]);
     },
@@ -269,6 +300,11 @@ export function createResultsStore(pool: pg.Pool): ResultsStore {
         [tripId, kind],
       );
       return rows[0] ? placeOfRow(rows[0]) : null;
+    },
+
+    async optionsOnCard(cardId) {
+      const { rows } = await pool.query<{ option_id: string; option: ResultOption }>('select option_id, option from travel_offers where card_id = $1', [cardId]);
+      return new Map(rows.map((r) => [r.option_id, r.option]));
     },
 
     async offersOnCard(cardId) {
