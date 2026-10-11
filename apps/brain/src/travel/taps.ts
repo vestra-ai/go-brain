@@ -16,6 +16,7 @@ import type { CardTapParams } from '../door/methods.js';
 import type { DeskItem } from '../desk/desk.js';
 import { SocketCallError } from '../door/rpc.js';
 import type { TripPack } from '../trips/pack.js';
+import type { BusBooking } from './booking/bus-booking.js';
 import { PAY_FLIGHT, TRAVELLER_FEMALE, TRAVELLER_MALE, type FlightBooking } from './booking/flight-booking.js';
 import { BOOK_MINE, budgetSheet, buildConfirmMineCard, buildOptionsCard, CHANGE_MINE, clip, ixigoPage, PERSONAL_KINDS } from './cards.js';
 import { stableId } from './ids.js';
@@ -31,6 +32,8 @@ export interface TravelTapDeps {
   pool: Brain['pool'];
   /** Go booking a person's own flight itself (BOOKING, booking/flight-booking.ts); absent, "Book it" opens ixigo. */
   booking?: Pick<FlightBooking, 'onFor' | 'start' | 'pay' | 'gender'>;
+  /** Go booking a person's own bus itself (BOOKING, booking/bus-booking.ts); absent, "Book it" opens ixigo. */
+  busBooking?: Pick<BusBooking, 'onFor' | 'start'>;
   /** A person's name in the trip, for the room's words about their booking. */
   nameOf?: (tripId: string, personId: string) => Promise<string>;
   link: Brain['door']['link'];
@@ -143,6 +146,12 @@ export function registerTravelTaps(taps: Brain['taps'], d: TravelTapDeps): void 
       const name = (await d.nameOf?.(tap.trip_id, tap.person_id).catch(() => null)) ?? 'you';
       const started = await d.booking.start({ tapId: tap.tap_id, tripId: tap.trip_id, personId: tap.person_id, name, offer: m.offer, choice: 'basic' });
       return { result: 'done', toast: started === 'running' ? ALREADY_BOOKING : "Go is booking it on the trip's computer" };
+    }
+    // A bus as a flight: on the stage, seats and stops chosen in code, up to ixigo's pay button.
+    if (d.busBooking && m.offer.kind === 'bus' && m.offer.sourceUrl && (await d.busBooking.onFor(tap.trip_id))) {
+      const name = (await d.nameOf?.(tap.trip_id, tap.person_id).catch(() => null)) ?? 'you';
+      const started = await d.busBooking.start({ tapId: tap.tap_id, tripId: tap.trip_id, personId: tap.person_id, name, offer: m.offer });
+      return { result: 'done', toast: started === 'running' ? 'Go is already booking your bus' : "Go is booking it on the trip's computer" };
     }
     const url = ixigoPage(forOne(m.offer.sourceUrl));
     if (!url) return { result: 'refused', toast: 'This option has no ixigo page' };
