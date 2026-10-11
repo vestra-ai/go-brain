@@ -22,7 +22,7 @@ const LinkBody = z.object({
    * for a train); its page shows those, with any it must have that the person hasn't kept. Absent: every field.
    */
   fields: z.array(z.enum(TRAVEL_FIELDS)).min(1).max(TRAVEL_FIELDS.length).nullish(),
-  /** 1.3 (rev 5 R8): embedded, inside the App, for the unlock only; card and travel entry stay in the browser sheet. */
+  /** 1.3 (rev 5 R8): embedded, inside the App: its Done button and note. Any page may be framed by the App's origins. */
   display: z.enum(['sheet', 'embedded']).nullish(),
 });
 
@@ -56,9 +56,6 @@ export const internalRoutes: FastifyPluginAsync<{ deps: VaultDeps }> = async (ap
     await ensurePerson(deps.pool, body.data.person_id, now, body.data.display_name ?? undefined);
     const start = body.data.start === 'add_card' || body.data.start === 'add_travel' ? body.data.start : 'home';
     const display = body.data.display === 'embedded' ? 'embedded' : 'sheet';
-    if (display === 'embedded' && start !== 'home') {
-      return reply.code(409).send({ error: { code: 'conflict', message: 'adding a card or travel details opens in the browser sheet, never embedded' } });
-    }
     const link = await createHomeLink(deps.pool, now, { personId: body.data.person_id, start, display, fields: start === 'add_travel' ? (body.data.fields ?? null) : null });
     return { url: `${deps.env.VAULT_PUBLIC_URL}/l/${link.token}`, expires_at: link.expiresAt.toISOString() };
   });

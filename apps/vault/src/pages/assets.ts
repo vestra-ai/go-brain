@@ -50,8 +50,7 @@ export const VAULT_JS = `(() => {
   const apple = /iPhone|iPad|iPod/.test(navigator.userAgent);
   const li = (text) => { const el = document.createElement('li'); el.textContent = text; return el; };
   // Inside the App (rev 5 R8): the page says when it is done to its parent, at each of the App's origins (only the one
-  // that framed it hears it), and an embedded unlock keeps its session in memory for a header, as no cookie reaches it.
-  const embedded = document.body.dataset.display === 'embedded';
+  // that framed it hears it), and a framed unlock keeps its session in memory for a header, as no cookie reaches it.
   const framed = window.parent !== window;
   const origins = (document.body.dataset.frameOrigins || '').split(' ').filter(Boolean);
   let session = null;
@@ -61,7 +60,7 @@ export const VAULT_JS = `(() => {
   };
 
   async function api(path, body) {
-    const headers = session ? { 'x-vault-session': session } : {};
+    const headers = { ...(session ? { 'x-vault-session': session } : {}), ...(framed ? { 'x-vault-framed': '1' } : {}) };
     const init = body === undefined
       ? { credentials: 'same-origin', headers }
       : { method: 'POST', credentials: 'same-origin', headers: { ...headers, 'content-type': 'application/json' }, body: JSON.stringify(body) };
@@ -89,14 +88,12 @@ export const VAULT_JS = `(() => {
     // in place of a form whose Save could only fail.
     const mode = r.data.cards_mode || (r.data.cards_ready === false ? 'off' : 'stripe');
     const cardsReady = mode === 'stripe';
-    // Embedded: no card or travel form (card entry stays in the browser sheet), and Done tells the App.
-    show('card-form', cardsReady && !embedded);
-    show('demo-card-form', mode === 'demo' && !embedded);
-    show('cards-not-ready', mode === 'off' && !embedded);
-    show('travel-form', !embedded);
-    show('embedded-note', embedded);
-    show('done-btn', embedded);
-    if (cardsReady && !embedded && !stripe && window.Stripe) {
+    // Card and travel entry however it opened (11 Oct: only the App may frame it). Framed, Done tells the App.
+    show('card-form', cardsReady);
+    show('demo-card-form', mode === 'demo');
+    show('cards-not-ready', mode === 'off');
+    show('done-btn', framed);
+    if (cardsReady && !stripe && window.Stripe) {
       stripe = window.Stripe(r.data.publishable_key);
       cardField = stripe.elements().create('card', { hidePostalCode: true });
       cardField.mount('#card-element');

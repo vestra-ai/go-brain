@@ -30,6 +30,8 @@ const WEBAUTHN_JS = readFileSync(
 const SESSION = 'vs';
 /** The embedded page's session header (lower case, as Node reads headers). */
 const SESSION_HEADER = 'x-vault-session';
+/** Sent by a page inside a frame (the App's), which no cookie reaches: its unlock answers the session for that header. */
+const FRAMED_HEADER = 'x-vault-framed';
 const SESSION_SECONDS = 600;
 
 const Ceremony = z.object({
@@ -60,13 +62,14 @@ export const pageRoutes: FastifyPluginAsync<{ deps: VaultDeps; cards: CardsReady
   app.get('/static/vault.css', async (_req, reply) => reply.type('text/css; charset=utf-8').send(VAULT_CSS));
   app.get('/static/vault.js', async (_req, reply) => reply.type('application/javascript; charset=utf-8').send(VAULT_JS));
   app.get('/static/webauthn.js', async (_req, reply) => reply.type('application/javascript; charset=utf-8').send(WEBAUTHN_JS));
-  // An embedded home link's page (unlock, inside the App: rev 5 R8) may be framed by the App's origins; any other may not.
-  // Card entry is never embedded: an embedded page shows no card form, and Go makes no embedded add_card link.
+  // A vault page may be framed by the App's origins, and by no other (11 Oct: the App frames the links Go's asks carry,
+  // card and travel entry too; cards are demo cards on prod). embedded only shapes the page: its Done and its note.
   app.get<WithToken>('/l/:token', async (req, reply) => {
     const link = await findLink(db, req.params.token);
-    const embedded = link?.kind === 'home' && link.display === 'embedded';
-    if (embedded) allowFraming(reply, deps.env.VAULT_FRAME_ORIGINS);
-    return reply.type('text/html; charset=utf-8').send(homePage(embedded ? { origins: deps.env.VAULT_FRAME_ORIGINS } : null));
+    allowFraming(reply, deps.env.VAULT_FRAME_ORIGINS);
+    return reply
+      .type('text/html; charset=utf-8')
+      .send(homePage({ origins: deps.env.VAULT_FRAME_ORIGINS, embedded: link?.kind === 'home' && link.display === 'embedded' }));
   });
   // An approve page may be framed by the App's origins: the App opens it in its sheet or frames it, and the page tells it
   // when it is done either way.
@@ -92,7 +95,7 @@ export const pageRoutes: FastifyPluginAsync<{ deps: VaultDeps; cards: CardsReady
     return hashToken(value).equals(link.session_hash) && link.session_until.getTime() > deps.now().getTime();
   }
 
-  /** The session's value goes in the cookie, and back to an embedded page, which keeps it for its header. */
+  /** The session's value goes in the cookie, and back to an embedded or framed page, which keeps it for its header. */
   async function openSession(reply: FastifyReply, link: LinkRow, token: string): Promise<string> {
     const value = randomBytes(32).toString('base64url');
     await db.query('update links set session_hash = $2, session_until = $3 where link_id = $1', [
@@ -163,7 +166,7 @@ export const pageRoutes: FastifyPluginAsync<{ deps: VaultDeps; cards: CardsReady
     if (!done.ok) return reply.code(400).send({ message: "That didn't work. Try again." });
     await logUnlock(db, deps.now(), { personId: link.person_id, kind: 'passkey_added' });
     const session = await openSession(reply, link, req.params.token);
-    return { ok: true, ...(link.display === 'embedded' ? { session } : {}) };
+    return { ok: true, ...(link.display === 'embedded' || req.headers[FRAMED_HEADER] === '1' ? { session } : {}) };
   });
 
   app.post<WithToken>('/l/:token/unlock/options', async (req, reply) => {
@@ -188,7 +191,7 @@ export const pageRoutes: FastifyPluginAsync<{ deps: VaultDeps; cards: CardsReady
     if (check.personId !== link.person_id) return reply.code(403).send({ message: 'Only the owner can open this vault.' });
     await logUnlock(db, deps.now(), { personId: link.person_id, kind: 'unlock' });
     const session = await openSession(reply, link, req.params.token);
-    return { ok: true, ...(link.display === 'embedded' ? { session } : {}) };
+    return { ok: true, ...(link.display === 'embedded' || req.headers[FRAMED_HEADER] === '1' ? { session } : {}) };
   });
 
   /** A card call's Stripe failure, in words the page shows: off for good when Stripe refused the keys. */

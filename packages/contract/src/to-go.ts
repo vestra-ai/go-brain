@@ -115,8 +115,8 @@ export const CreateLink = z
     /**
      * 1.3 (rev 5 R8): where the App opens it. sheet (the default): the system browser sheet. embedded: inside the App, where
      * the page allows framing only by the App's origins and posts { type: "go-vault", status: "saved" | "cancelled" |
-     * "failed" } to its parent when done. embedded is for start home only: card and login entry stay in the sheet, and Go
-     * answers any other start embedded with 409 conflict.
+     * "failed" } to its parent when done. Any start may be embedded (11 Oct, the App's demo: cards are demo cards on prod);
+     * every vault page may be framed by the App's origins, and by no other.
      */
     display: z.enum(['sheet', 'embedded']).nullish(),
   })

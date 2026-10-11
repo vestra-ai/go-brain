@@ -28,7 +28,7 @@ export function keepRawJson(app: FastifyInstance): void {
 
 /**
  * Stripe's card form needs js.stripe.com; nothing else outside the vault is allowed. Nobody may frame a page, but the
- * App's origins may frame one marked so (an embedded unlock, an approve page: rev 5 R8; card entry never).
+ * App's origins may frame one marked so (a vault page or an approve page: rev 5 R8, every start since 11 Oct).
  */
 export function pageCsp(frameAncestors: readonly string[] | null): string {
   return [
