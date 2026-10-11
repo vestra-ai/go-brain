@@ -157,7 +157,8 @@ export const HELLO_LINE = '{name}, link ixigo once with one tap and I can book f
  * How a line in the chat names the person it asks: their first name, as a friend would ("Nishanth", never "Nishanth
  * Gunupudi": p2's audit, 11 Oct). The card keeps the whole name.
  */
-const addressOf = (name: string): string => (name === ORGANIZER ? name : name.trim().split(/\s+/)[0] || name);
+/** Who a login line addresses: "@FirstName" (Keshav, 11 Oct: "directed messages should send @name"), or the organizer. */
+const addressOf = (name: string): string => (name === ORGANIZER ? name : `@${name.trim().split(/\s+/)[0] || name}`);
 const ORGANIZER = 'the organizer';
 
 export type LoginState = 'asked' | 'logging_in' | 'logged_in' | 'skipped' | 'logged_out';

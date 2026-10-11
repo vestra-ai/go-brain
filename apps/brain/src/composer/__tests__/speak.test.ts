@@ -3,7 +3,7 @@ import type pg from 'pg';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { fakeLink } from '../../__tests__/fixtures/fake-link.js';
 import { withSchema } from '../../db/test-db.js';
-import { createSpeak, mentionsIn } from '../speak.js';
+import { atNames, createSpeak, mentionsIn } from '../speak.js';
 
 let db: Awaited<ReturnType<typeof withSchema>>;
 beforeAll(async () => {
@@ -163,5 +163,37 @@ describe('mentions: the people Go names get a push', () => {
     expect(calls[1]?.params.mentions).toBeUndefined();
     await speak.post({ ...base, text: 'Asha!', people: trip, mentions: ['p_rahul'] });
     expect(calls[2]?.params.mentions).toEqual(['p_rahul']);
+  });
+});
+
+// Keshav, 11 Oct: "directed messages should send @name".
+describe('@names: Go addresses people as @FirstName', () => {
+  const person = (person_id: string, name: string, go_paused = false) => ({ person_id, name, go_paused });
+  const trip = [person('p_saket', 'Saket Diwakar'), person('p_r1', 'Rahul Mehta'), person('p_r2', 'Rahul Kapoor'), person('p_meher', 'Meher', true), person('p_asha', 'Asha')];
+
+  it("writes each @name Go wrote as that person's first name, in full only when two people share it", () => {
+    expect(atNames('@saket, tap Log in to ixigo.', trip)).toBe('@Saket, tap Log in to ixigo.');
+    expect(atNames('@Saket Diwakar can you check?', trip)).toBe('@Saket can you check?');
+    expect(atNames('@rahul kapoor, your fare is up.', trip)).toBe('@Rahul Kapoor, your fare is up.');
+    expect(atNames('@ASHA and @saket!', trip)).toBe('@Asha and @Saket!');
+  });
+
+  it('leaves an @name that is nobody, more than one person, someone who paused Go, a longer word, or inside an address', () => {
+    expect(atNames('@Rahul, which one?', trip)).toBe('@Rahul, which one?');
+    expect(atNames('@Kabir, hi', trip)).toBe('@Kabir, hi');
+    expect(atNames('@meher, hi', trip)).toBe('@meher, hi');
+    expect(atNames('@Ashanti is not Asha', trip)).toBe('@Ashanti is not Asha');
+    expect(atNames('Write to help@asha.com', trip)).toBe('Write to help@asha.com');
+  });
+
+  it('post writes the @names and mentions those people; a private post mentions only who can see it', async () => {
+    const { link, calls } = fakeLink({ post_message: () => ({ message_id: `m_go_${calls.length}`, seq: 40 + calls.length }) });
+    const speak = createSpeak({ pool: db.pool, link, now: () => new Date() });
+    const base = { link, tripId: 't_goa', turnId: 'turn_A', requestId: (tag: string) => `go_${tag}_turn_A_${calls.length + 1}`, cards: [] };
+    await speak.post({ ...base, text: '@saket, tap Log in to ixigo. @asha, you pay.', people: trip });
+    expect(calls[0]?.params).toMatchObject({ text: '@Saket, tap Log in to ixigo. @Asha, you pay.', mentions: ['p_saket', 'p_asha'] });
+    expect(calls[0]?.params).not.toHaveProperty('visible_to_person_ids');
+    await speak.post({ ...base, text: '@Saket, your fare. @Asha sees nothing.', people: trip, visibleTo: ['p_saket'] });
+    expect(calls[1]?.params).toMatchObject({ mentions: ['p_saket'], visible_to_person_ids: ['p_saket'] });
   });
 });

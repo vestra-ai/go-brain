@@ -253,7 +253,7 @@ describe('the ixigo login, asked at setup', () => {
     const [post] = w.link.of('post_message');
     expect(post).toMatchObject({
       trip_id: w.tripId,
-      text: "Rahul, link ixigo for the trip: one login on the trip's computer, about a minute.",
+      text: "@Rahul, link ixigo for the trip: one login on the trip's computer, about a minute.",
       mentions: ['p_rahul'],
     });
     expect(post!['card']).toMatchObject({
@@ -297,7 +297,7 @@ describe('the ixigo login, asked at setup', () => {
   it("asks the first person who hasn't paused Go when the organizer has", async () => {
     const w = world({ paused: ['p_rahul'] });
     await w.setup();
-    expect(w.link.of('post_message')[0]).toMatchObject({ text: "Priya, link ixigo for the trip: one login on the trip's computer, about a minute.", mentions: ['p_priya'] });
+    expect(w.link.of('post_message')[0]).toMatchObject({ text: "@Priya, link ixigo for the trip: one login on the trip's computer, about a minute.", mentions: ['p_priya'] });
     expect(w.last()).toMatchObject({ for_person_ids: ['p_priya'], actions: [{ only_for_person_ids: ['p_priya'] }, { only_for_person_ids: ['p_priya'] }] });
   });
 
@@ -320,7 +320,7 @@ describe("a trip's first search, with no login asked for yet", () => {
     w.login.nudge(w.tripId);
     await w.login.settled();
     expect(w.link.of('post_message')).toHaveLength(1);
-    expect(w.link.of('post_message')[0]).toMatchObject({ text: "Rahul, link ixigo for the trip: one login on the trip's computer, about a minute.", card: { card_id: `c_login_${w.tripId}_0` } });
+    expect(w.link.of('post_message')[0]).toMatchObject({ text: "@Rahul, link ixigo for the trip: one login on the trip's computer, about a minute.", card: { card_id: `c_login_${w.tripId}_0` } });
     expect(await w.state()).toBe('asked');
     w.login.nudge(w.tripId);
     await w.login.settled();
@@ -750,7 +750,7 @@ describe('the login lines name the person by their first name', () => {
     const w = world({ statuses: [] });
     const trip = { ...w.trip, people: w.trip.people.map((p) => (p.person_id === 'p_rahul' ? { ...p, name: 'Rahul Varma' } : p)) };
     const hello = await w.login.helloCard({ tripId: w.tripId, wake: [greetWake], pack: goaPack({ trip }) });
-    expect(hello?.line).toBe('Rahul, link ixigo once with one tap and I can book for everyone.');
+    expect(hello?.line).toBe('@Rahul, link ixigo once with one tap and I can book for everyone.');
     expect(JSON.stringify(hello?.card)).toContain('Rahul Varma');
   });
 });
@@ -780,7 +780,7 @@ describe("one login for all of a person's trips: their browser (tasks/browsers.t
     expect(b.state?.login).toBe('out');
     expect(await w.state()).toBe('asked');
     expect(w.link.of('post_message')).toEqual([
-      expect.objectContaining({ text: "Rahul, link ixigo for the trip: one login on the trip's computer, about a minute.", card: expect.objectContaining({ card_id: `c_login_${w.tripId}_1` }) }),
+      expect.objectContaining({ text: "@Rahul, link ixigo for the trip: one login on the trip's computer, about a minute.", card: expect.objectContaining({ card_id: `c_login_${w.tripId}_1` }) }),
     ]);
 
     const n = world({ browser: fakeBrowser({ login: 'in', at: NOW, loggedInAt: NOW }) });
@@ -835,7 +835,7 @@ describe("one login for all of a person's trips: their browser (tasks/browsers.t
     await w.login.settled();
     expect(w.link.of('post_message')).toHaveLength(posts + 1);
     expect(w.link.of('post_message').at(-1)).toMatchObject({
-      text: "Rahul, ixigo logged Go's computer out: one login brings it back, about a minute.", card: expect.objectContaining({ card_id: `c_login_${w.tripId}_1` }),
+      text: "@Rahul, ixigo logged Go's computer out: one login brings it back, about a minute.", card: expect.objectContaining({ card_id: `c_login_${w.tripId}_1` }),
     });
     expect(await w.state()).toBe('asked');
     // More travel talk asks nothing more.
