@@ -22,7 +22,7 @@ afterAll(() => db.drop());
 const sure = <T>(value: T) => ({ value, sure: true as const });
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
-function harness(o: { reflex?: (order: string[]) => Reflex; answers?: FakeAnswers; failFirstPut?: boolean; dueNow?: (text: string | null | undefined) => boolean; away?: (tripId: string) => Promise<boolean> } = {}) {
+function harness(o: { reflex?: (order: string[]) => Reflex; answers?: FakeAnswers; failFirstPut?: boolean; dueNow?: (text: string | null | undefined) => boolean; away?: (tripId: string) => Promise<boolean>; rehome?: (tripId: string, home: { instance: string; server: string | null }) => void } = {}) {
   const now = () => new Date();
   const order: string[] = [];
   const f = fakeLink({
@@ -72,7 +72,7 @@ function harness(o: { reflex?: (order: string[]) => Reflex; answers?: FakeAnswer
   const reflex: Reflex = o.reflex?.(order) ?? { read: async () => { order.push('reflex'); return UNSURE_READ; } };
   const intake = createIntake({
     pool: db.pool, log: silentLog, now, tripLog, packs, setup, desk: flakyDesk, speak, hooks,
-    reflex: () => reflex, runningTasks: async () => [], waitMs: 2_000, ...(o.away ? { away: o.away } : {}),
+    reflex: () => reflex, runningTasks: async () => [], waitMs: 2_000, ...(o.away ? { away: o.away } : {}), ...(o.rehome ? { rehome: o.rehome } : {}),
   });
   const send = (e: TripEvent) => intake.sendEvent(e, { instance: 'test', frameId: `gs_${e.event_id}` });
   return { intake, send, f, order, emitted, packs, tripLog };
@@ -111,19 +111,23 @@ describe('intake', () => {
     expect(rows.map((r) => r.seq)).toEqual([1, 2]);
   });
 
-  it("keeps the Server instance that first brought the trip: the person's browser is keyed by it (tasks/browsers.ts)", async () => {
-    const h = harness();
+  // Prod, 11 Oct 07:24Z: the Server redeployed, its socket's instance changed, and every older trip waited for the old one.
+  it("moves the trip's home to the socket its newest event came on, and tells the link at once", async () => {
+    const moved: Array<[string, { instance: string; server: string | null }]> = [];
+    const h = harness({ rehome: (tripId, home) => { moved.push([tripId, home]); } });
     await h.send(created('t_in_inst'));
     await h.intake.sendEvent(ev(2, 'message.created', { message: msg(2, 'p_arjun', 'see you all there') }, 't_in_inst'), { instance: 'another', frameId: 'gs_other' });
     await h.intake.idle();
     const { rows } = await db.pool.query<{ server_instance: string; server_name: string | null }>('select server_instance, server_name from trips where trip_id = $1', ['t_in_inst']);
-    expect(rows[0]).toEqual({ server_instance: 'test', server_name: null });
-    // A Server that gives its own name (?server=) has it kept with the instance, from the trip's first event only.
+    expect(rows[0]).toEqual({ server_instance: 'another', server_name: null });
+    expect(moved).toEqual([['t_in_inst', { instance: 'test', server: null }], ['t_in_inst', { instance: 'another', server: null }]]);
+    // A Server that gives its own name (?server=) has it kept with the instance, both from the newest event.
     await h.intake.sendEvent(created('t_in_named'), { instance: 'server-1', server: 'vestra-staging', frameId: 'gs_named' });
-    await h.intake.sendEvent(ev(2, 'message.created', { message: msg(2, 'p_arjun', 'hi') }, 't_in_named'), { instance: 'server-2', server: 'another', frameId: 'gs_named_2' });
+    await h.intake.sendEvent(ev(2, 'message.created', { message: msg(2, 'p_arjun', 'hi') }, 't_in_named'), { instance: 'server-2', server: 'vestra-staging', frameId: 'gs_named_2' });
     await h.intake.idle();
     const named = await db.pool.query('select server_instance, server_name from trips where trip_id = $1', ['t_in_named']);
-    expect(named.rows[0]).toEqual({ server_instance: 'server-1', server_name: 'vestra-staging' });
+    expect(named.rows[0]).toEqual({ server_instance: 'server-2', server_name: 'vestra-staging' });
+    expect(moved.at(-1)).toEqual(['t_in_named', { instance: 'server-2', server: 'vestra-staging' }]);
   });
 
   it('trip.created: the pack comes from the event, setup runs, and Go is due to say hello', async () => {

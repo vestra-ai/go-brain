@@ -308,6 +308,58 @@ describe('ServerLink', () => {
     expect([...drill.sent, ...drillBack.sent]).toEqual([]);
   });
 
+  // Prod, 11 Oct 07:24Z: the Server redeployed, and its socket's instance (its container) went from ca6989a06930-80 to
+  // fb0da31b49f7-80. A person's message came on the new socket, and Go's reply waited for the old one until "no socket
+  // from the Server is open". The trip's home follows the socket its events come on (trips/log.ts, intake), and the
+  // link with it.
+  it("an older trip re-homes on its next event: the reply waiting for the old instance goes on the new socket, and so does the next", async () => {
+    await own('t_rehome', 'ca6989a06930-80');
+    await own('t_other_server', 'rahul-mac-rev4', 'rahul-mac');
+    const { l } = link({ timeoutMs: 5_000, waitForSocketMs: 5_000 });
+    const fresh = socketOf('prod-new', 'fb0da31b49f7-80');
+    const other = socketOf('mac-1', 'rahul-mac-rev4', 'rahul-mac');
+    l.attach(other);
+    l.attach(fresh);
+    const reply = l.request('post_message', { request_id: newRequestId(), trip_id: 't_rehome', text: 'On it.' });
+    const otherRead = l.request('read_messages', { trip_id: 't_other_server', after_seq: 0 });
+    await vi.waitFor(() => expect(other.sent).toHaveLength(1));
+    await new Promise((r) => setTimeout(r, 50));
+    // Still waiting for the old instance: never the other Server, never the new socket on a guess.
+    expect(fresh.sent).toHaveLength(0);
+    // The person's message came on the new socket: intake moved the trip's home there.
+    await db.pool.query('update trips set server_instance = $2 where trip_id = $1', ['t_rehome', 'fb0da31b49f7-80']);
+    l.rehome('t_rehome', { instance: 'fb0da31b49f7-80', server: null });
+    await vi.waitFor(() => expect(fresh.sent).toHaveLength(1));
+    expect(fresh.sent[0]!.params).toMatchObject({ trip_id: 't_rehome', text: 'On it.' });
+    answer(l, fresh.sent[0]!.id!, { message_id: 'm_9', seq: 9 });
+    await expect(reply).resolves.toEqual({ message_id: 'm_9', seq: 9 });
+    // The next request, and typing, go there at once.
+    const read = l.request('read_messages', { trip_id: 't_rehome', after_seq: 0 });
+    await vi.waitFor(() => expect(fresh.sent).toHaveLength(2));
+    answer(l, fresh.sent[1]!.id!, page);
+    await expect(read).resolves.toEqual(page);
+    l.notify('typing', { trip_id: 't_rehome', on: true });
+    expect(fresh.sent.at(-1)).toMatchObject({ method: 'typing', params: { trip_id: 't_rehome', on: true } });
+    // Another Server's trip never moves with it, and never goes on the new socket.
+    expect(other.sent.every((x) => x.params.trip_id === 't_other_server')).toBe(true);
+    expect(fresh.sent.every((x) => x.params.trip_id === 't_rehome')).toBe(true);
+    answer(l, other.sent[0]!.id!, page);
+    await expect(otherRead).resolves.toEqual(page);
+    expect(await l.away('t_rehome')).toBe(false);
+  });
+
+  it('a rehome to where the trip already is changes nothing, and a new trip\'s home is known before any read', async () => {
+    const { l } = link();
+    const a = socketOf('room-9', 'room-9');
+    l.attach(a);
+    l.rehome('t_new_home', { instance: 'room-9', server: null });
+    l.rehome('t_new_home', { instance: 'room-9', server: null });
+    const p = l.request('read_messages', { trip_id: 't_new_home', after_seq: 0 });
+    await vi.waitFor(() => expect(a.sent).toHaveLength(1));
+    answer(l, a.sent[0]!.id!, page);
+    await expect(p).resolves.toEqual(page);
+  });
+
   it("right after Go starts, a trip's request waits for its own instance rather than take the first Server to dial in", async () => {
     await own('t_boot', 'room');
     const { l } = link();
