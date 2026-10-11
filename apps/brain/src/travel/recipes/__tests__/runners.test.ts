@@ -698,6 +698,54 @@ describe("the browser fetch: how the recipe engine reads a page in the trip's br
     await expect(createBrowserFetchRunner(old.deps).handOff!('t1', 'https://www.ixigo.com/', plan, { keepOpenMs: 600_000, tab: 'ixigo_login', check: { url: '/api/v2/oauth/userinfo', method: 'POST' } })).rejects.toBeInstanceOf(TravelError);
   });
 
+  // One-tap login (10 Oct): Go sees a login land from ixigo's `at` cookie, by its name and expiry alone.
+  it("reads the browser's cookies by name and expiry alone, with no page and no slot; a Bash that can't say answers null", async () => {
+    const w = world(() => ({ object: 'browser_cookies', cookies: [{ name: 'at', domain: '.ixigo.com', expires_at: '2026-12-01T10:00:00.000Z' }, { name: 'lt', domain: '.ixigo.com', expires_at: null }], woke: false }));
+    expect(await createBrowserFetchRunner(w.deps).cookies!('t1', 'ixigo.com', ['at', 'lt'])).toEqual([
+      { name: 'at', expiresAt: Date.parse('2026-12-01T10:00:00.000Z') },
+      { name: 'lt', expiresAt: null },
+    ]);
+    expect(w.calls).toHaveLength(1);
+    expect(w.calls[0]).toMatchObject({ method: 'GET', path: '/v1/users/u-t1/browser/cookies', opts: { query: { domain: 'ixigo.com', names: 'at,lt' } } });
+    for (const err of [new V1Error(404, 'not_found', 'Route GET /v1/users/u-t1/browser/cookies not found'), new V1Error(503, 'browser_unavailable', 'The browser did not answer.')]) {
+      const old = world(() => {
+        throw err;
+      });
+      expect(await createBrowserFetchRunner(old.deps).cookies!('t1', 'ixigo.com', ['at'])).toBeNull();
+    }
+  });
+
+  // The App team, 10 Oct: "the login showed a laptop view of the browser instead of the mobile view". A desktop hand-off
+  // names the element its person's screen shows (Bash's front_crop, bash #4654); a Bash without it shows the page.
+  it("sends a desktop hand-off's front_crop, and its taps'; a Bash that refuses it gets the same fetch without, desktop kept", async () => {
+    const plan: FetchPlan = { capture: [{ match: '/action/content', required: true, max_bytes: 1 }], timeoutMs: 12_000 };
+    const crop = { role: 'dialog' };
+    const w = world(() => fetched([capture('/action/content', 'https://www.ixigo.com/action/content', '{', 200)], 'https://www.ixigo.com/'));
+    const runner = createBrowserFetchRunner(w.deps);
+    await runner.handOff!('t1', 'https://www.ixigo.com/', plan, { keepOpenMs: 600_000, tab: 'ixigo_login', device: 'desktop', crop });
+    await runner.tabSteps!('t1', 'ixigo_login', [{ op: 'click', role: 'button', name: 'Log in/Sign up' }], { keepOpenMs: 600_000, timeoutMs: 12_000, crop });
+    expect(w.calls.map((c) => (c.opts['body'] as Record<string, unknown>)['front_crop'])).toEqual([crop, crop]);
+    expect(w.calls[0]!.opts['body']).toMatchObject({ front: true, front_device: 'desktop' });
+    // A phone hand-off is a phone's page already: no crop asked.
+    const phone = world(() => fetched([capture('/action/content', 'https://www.ixigo.com/action/content', '{', 200)], 'https://www.ixigo.com/'));
+    await createBrowserFetchRunner(phone.deps).handOff!('t1', 'https://www.ixigo.com/', plan, { keepOpenMs: 600_000, tab: 'ixigo_login', crop });
+    expect(phone.calls[0]!.opts['body']).not.toHaveProperty('front_crop');
+    // A Bash before #4654: an unknown key at the body's top (no param). The same fetch without front_crop, still the
+    // desktop page; then none asked for a while, the taps' too.
+    const old = world((c) => {
+      if ('front_crop' in (c.opts['body'] as object)) throw new V1Error(400, 'invalid_request', 'The request body is not valid.', null, { param: '' });
+      return fetched([capture('/action/content', 'https://www.ixigo.com/action/content', '{', 200)], 'https://www.ixigo.com/');
+    });
+    const before = createBrowserFetchRunner(old.deps);
+    expect(await before.handOff!('t1', 'https://www.ixigo.com/', plan, { keepOpenMs: 600_000, tab: 'ixigo_login', device: 'desktop', crop })).toMatchObject({ device: 'desktop' });
+    expect(old.calls.map((c) => 'front_crop' in (c.opts['body'] as object))).toEqual([true, false]);
+    expect(old.calls[1]!.opts['body']).toMatchObject({ front_device: 'desktop' });
+    await before.tabSteps!('t1', 'ixigo_login', [{ op: 'click', role: 'button', name: 'Log in/Sign up' }], { keepOpenMs: 600_000, timeoutMs: 12_000, crop });
+    expect(old.calls).toHaveLength(3);
+    expect(old.calls[2]!.opts['body']).not.toHaveProperty('front_crop');
+    expect(old.log.warn.mock.calls.filter(([, msg]) => String(msg).includes('#4654'))).toHaveLength(1);
+  });
+
   it("names each fetch's tab by its run, so Bash's browser watch labels it: on a page and on a page call", async () => {
     const w = world((c) =>
       (c.opts['body'] as { steps?: Array<{ op: string }> }).steps?.[0]?.op === 'page_fetch'

@@ -16,9 +16,9 @@ export interface TaskTapDeps {
   log: { warn(obj: object, msg: string): void };
 }
 
-export async function openSession(v1: V1Client, userId: string, conversationId: string | null, screen: 'view' | 'control'): Promise<{ url: string; expires_at: string }> {
+export async function openSession(v1: V1Client, userId: string, conversationId: string | null, screen: 'view' | 'control'): Promise<{ id?: string; url: string; expires_at: string }> {
   try {
-    return await v1.call<{ url: string; expires_at: string }>('POST', '/v1/sessions', {
+    return await v1.call<{ id?: string; url: string; expires_at: string }>('POST', '/v1/sessions', {
       body: { user_id: userId, ...(conversationId ? { conversation_id: conversationId } : {}), screen },
       signal: AbortSignal.timeout(2_000),
     });

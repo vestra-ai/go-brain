@@ -9,6 +9,11 @@
 // says its picture is up (a postMessage: showing, a still of the screen, or live, the video), or, from an embed that says
 // nothing, for 5 s.
 // When the hand-off ends (logged in, Not now, out of time), the sheet closes and the card says so.
+// One tap (10 Oct, Keshav: "there is no point of watch buttons"): Log in answers with Go's screen at once, and the login
+// card has no Watch: its Log in opens the screen again. The answer goes in the frame as Watch's would (Watch is never
+// tapped for it: not while Log in waits for its answer either), and the sheet opens on it. A login card with a screen of
+// its own is a hand-off, and its Log in opens the sheet again. Go ends that session when the login lands (or the log in
+// ends), and Bash's embed says so (vestra:ended): the sheet closes then.
 // Like the room's own script, everything here sits inside template literals: no backticks, no dollar-brace and no
 // backslashes in it.
 
@@ -16,6 +21,8 @@
 export const WATCH_ACTIONS: readonly string[] = ['watch', 'ixigo_watch'];
 /** The action only the ixigo login card in its logging-in state carries: with no Watch yet, the login is opening. */
 export const LOGGING_IN_ACTIONS: readonly string[] = ['ixigo_logged_in'];
+/** The action that answers with Go's screen at once in a one-tap login: the login card's Log in. */
+export const LOGIN_ACTION = 'ixigo_login';
 
 export const LOGIN_CSS = `
 /* The login card's tile: a small browser drawn as ixigo's login box (Go never pictures a sign-in page). */
@@ -66,6 +73,7 @@ export const LOGIN_SCRIPT = `
   // is in the sheet's frame, kept while the sheet is closed or you play someone else, so a half-typed number stays.
   var WATCH = ${JSON.stringify(WATCH_ACTIONS)};
   var LOGGING_IN = ${JSON.stringify(LOGGING_IN_ACTIONS)};
+  var LOGIN_ACTION = ${JSON.stringify(LOGIN_ACTION)};
   var WATCH_ORIGIN = $('sheet').getAttribute('data-watch-origin') || '';
   var WATCH_WAIT_MS = 10000;
   // An embed that says nothing of its picture this long (one from before it could) is shown as it is, and a picture still
@@ -75,17 +83,32 @@ export const LOGIN_SCRIPT = `
   var IXIGO_LINE = 'Type your number and the code. They go to ixigo only. Go never sees them.';
   var OPENING = "Opening ixigo's login on Go's computer…";
   // login.picture: what Bash's embed in the frame last said of its picture ('' for nothing yet, connecting, live, error),
-  // and login.mountedAt when that frame was put up.
-  var login = { asked: {}, sessions: {}, framed: '', picture: '', mountedAt: 0 };
+  // and login.mountedAt when that frame was put up. login.openOn: the hand-off whose Log in answered with its screen, for
+  // the sheet to open on once the card says logging in.
+  var login = { asked: {}, sessions: {}, framed: '', picture: '', mountedAt: 0, openOn: '' };
 
   function watchOf(c) {
     var acts = c.actions || [];
     for (var i = 0; i < acts.length; i++) if (WATCH.indexOf(acts[i].action_id) >= 0) return acts[i];
     return null;
   }
-  /** A card that hands Go's screen to someone: it is for them and carries Watch; a working card only while it needs them. */
+  /** The ixigo login card for someone, offering Log in (which opens Go's screen, and opens it again). */
+  function isLoginCard(c) {
+    return !!(c && c.kind === 'notice' && c.for_person_ids && c.for_person_ids.length &&
+      (c.actions || []).some(function (a) { return a.action_id === LOGIN_ACTION; }));
+  }
+  /** Go's screen from this card's Log in (never a Watch's), still good, for someone it is for. */
+  function hasScreen(c) {
+    return c.for_person_ids.some(function (p) { var s = login.sessions[keyOf(c, p)]; return !!(s && s.url && s.fromLogin); });
+  }
+  /**
+   * A card that hands Go's screen to someone: it is for them and carries Watch (a working card only while it needs them),
+   * or it is the login card and its Log in answered with the screen.
+   */
   function isHandoff(c) {
-    return !!(c && c.for_person_ids && c.for_person_ids.length && (c.kind !== 'working' || c.state === 'needs_you') && watchOf(c));
+    if (!(c && c.for_person_ids && c.for_person_ids.length)) return false;
+    if (isLoginCard(c)) return hasScreen(c);
+    return (c.kind !== 'working' || c.state === 'needs_you') && !!watchOf(c);
   }
   /** The login card for someone, in its logging-in state with no Watch yet: Go is bringing the login page in front. */
   function isOpening(c) {
@@ -119,10 +142,11 @@ export const LOGIN_SCRIPT = `
       return '';
     }
   }
+  /** Asks Go for its screen: the card's Watch, or the login card's Log in. */
   function tapWatch(c, who) {
     login.asked[keyOf(c, who)] = Date.now();
     delete login.sessions[keyOf(c, who)];
-    tapCard(c.card_id, watchOf(c).action_id, '', who);
+    tapCard(c.card_id, watchOf(c) ? watchOf(c).action_id : LOGIN_ACTION, '', who);
   }
   /** The card's own buttons for you, but Watch: the page taps that itself. */
   function loginButtons(c) {
@@ -136,7 +160,7 @@ export const LOGIN_SCRIPT = `
     var c = WATCH_ORIGIN ? handoffFor(me, true) : null;
     return !!c && c.card_id === cardId;
   };
-  watchOpensSheet = function (cardId, actionId) { return WATCH.indexOf(actionId) >= 0 && handoffMine(cardId); };
+  watchOpensSheet = function (cardId, actionId) { return (WATCH.indexOf(actionId) >= 0 || actionId === LOGIN_ACTION) && handoffMine(cardId); };
 
   // The ixigo login card while someone logs in: for you, its tile; for anyone else, who is logging in. Go turns it to a
   // heads-up when I'm logged in found no login yet: its words show on the card and in the sheet. Null for other cards.
@@ -148,7 +172,7 @@ export const LOGIN_SCRIPT = `
       return '<span class="tag">Logging in</span><h3>' + esc(c.title) + '</h3><div>' + esc(nameOf(c.for_person_ids[0])) + ' is logging in to ixigo</div>' + acts;
     }
     var note = c.tone === 'heads_up' ? '<div class="login-note" role="status">' + esc(c.body || '') + '</div>' : '';
-    var face = watchOf(c)
+    var face = watchOf(c) || isLoginCard(c)
       ? '<b>Log in to ixigo</b><span class="login-field">Mobile number</span><span class="login-cta">Tap to log in</span>'
       : '<b>' + esc(OPENING) + '</b><span class="login-progress" aria-hidden="true"><i></i></span>';
     return '<span class="tag warn">Needs you</span><h3>' + esc(c.title) + '</h3>' + note +
@@ -156,22 +180,47 @@ export const LOGIN_SCRIPT = `
       '<span class="login-face">' + face + '</span></button><div class="meta">' + esc(IXIGO_LINE) + '</div>' + acts;
   };
 
-  // A Watch answer for a hand-off: its screen goes in the sheet's frame. Anything else opens as it always did.
+  /** Go's screen, from a Watch answer or a one-tap Log in: kept for its hand-off, so Watch is never tapped for it. */
+  function keepSession(key, r, fromLogin) {
+    var ends = Date.parse(r.expires_at) || Date.now() + 15 * 60000;
+    login.asked[key] = Date.now();
+    login.sessions[key] = { url: frameable(r.url), ends: ends, fromLogin: !!fromLogin };
+    setTimeout(function () { syncLogin(); renderSheet(); }, Math.max(0, ends - Date.now()) + 50);
+  }
+
+  // Log in tapped: Watch waits for its answer, which may be Go's screen itself (one tap).
+  loginTapped = function (cardId, actionId, who) {
+    if (actionId === LOGIN_ACTION) login.asked[cardId + ' ' + who] = Date.now();
+  };
+
+  // A Watch answer for a hand-off: its screen goes in the sheet's frame. A one-tap Log in's screen too, before the card
+  // says logging in: the sheet opens on it when it does. Anything else opens as it always did.
   watchHere = function (data) {
+    var r = data.result || {};
+    if (state && WATCH_ORIGIN && data.actionId === LOGIN_ACTION) {
+      var key = data.cardId + ' ' + data.personId;
+      // No screen in the answer (a Go without one tap): Watch is tapped when the card carries it, as before.
+      if (r.result !== 'open' || !frameable(r.url)) {
+        delete login.asked[key];
+        syncLogin();
+        return false;
+      }
+      keepSession(key, r, true);
+      if (data.personId === me) login.openOn = key;
+      syncLogin();
+      renderSheet();
+      return true;
+    }
     if (!state || !WATCH_ORIGIN || WATCH.indexOf(data.actionId) < 0) return false;
     var c = handoffFor(data.personId);
     if (!c || c.card_id !== data.cardId) return false;
     var key = keyOf(c, data.personId);
-    var r = data.result || {};
-    var url = r.result === 'open' ? frameable(r.url) : '';
-    if (!url) {
+    if (r.result !== 'open' || !frameable(r.url)) {
       login.sessions[key] = { why: 'refused' };
       renderSheet();
       return false;
     }
-    var ends = Date.parse(r.expires_at) || Date.now() + 15 * 60000;
-    login.sessions[key] = { url: url, ends: ends };
-    setTimeout(function () { syncLogin(); renderSheet(); }, Math.max(0, ends - Date.now()) + 50);
+    keepSession(key, r);
     syncLogin();
     renderSheet();
     return true;
@@ -181,8 +230,9 @@ export const LOGIN_SCRIPT = `
   function syncLogin() {
     if (!state) return;
     var mine = WATCH_ORIGIN ? handoffFor(me, true) : null;
-    // Null while the login is still opening on Go's computer: nothing to tap yet.
+    // Null while the login is still opening on Go's computer: nothing to tap yet. A login card's screen is its Log in's.
     var watch = mine ? watchOf(mine) : null;
+    var screen = !!watch || isLoginCard(mine);
     var now = Date.now();
     for (var k in login.sessions) if (login.sessions[k].url && now >= login.sessions[k].ends) login.sessions[k] = { why: 'ended' };
     // The frame keeps its screen while its hand-off is open and its session good, whoever you are playing now.
@@ -191,8 +241,13 @@ export const LOGIN_SCRIPT = `
       login.framed = '';
     }
     var key = mine ? keyOf(mine, me) : '';
+    // A one-tap Log in's sheet opens once the card says logging in.
+    if (key && login.openOn === key) {
+      login.openOn = '';
+      openSheet(mine.card_id);
+    }
     if (watch && !login.asked[key]) tapWatch(mine, me);
-    var s = watch ? login.sessions[key] : null;
+    var s = screen ? login.sessions[key] : null;
     if (s && s.url && login.framed !== key) {
       $('login-frame').innerHTML = '<iframe title="Go&#39;s computer" src="' + esc(s.url) + '" sandbox="allow-scripts allow-same-origin allow-forms" referrerpolicy="no-referrer"></iframe>';
       login.framed = key;
@@ -218,6 +273,14 @@ export const LOGIN_SCRIPT = `
     var d = e.data;
     var frame = login.framed ? $('login-frame').querySelector('iframe') : null;
     if (!WATCH_ORIGIN || e.origin !== WATCH_ORIGIN || !frame || e.source !== frame.contentWindow) return;
+    // Go ended the session (the login landed, or the log in closed): the sheet closes, and the card says the rest.
+    if (d && d.type === 'vestra:ended') {
+      login.sessions[login.framed] = { why: 'ended' };
+      if (sheet.mode === 'login') closeSheet();
+      syncLogin();
+      renderSheet();
+      return;
+    }
     if (!d || d.type !== 'vestra:embed') return;
     if (['connecting', 'showing', 'live', 'error'].indexOf(d.state) < 0) return;
     login.picture = d.state;
@@ -235,7 +298,7 @@ export const LOGIN_SCRIPT = `
     }
     var watch = watchOf(c);
     var key = keyOf(c, me);
-    var s = watch ? login.sessions[key] : null;
+    var s = watch || isLoginCard(c) ? login.sessions[key] : null;
     var ixigo = c.kind === 'notice';
     $('sheet-title').textContent = ixigo ? 'Log in to ixigo' : c.title;
     $('login-line').textContent = ixigo ? IXIGO_LINE : "Go's computer is yours for this step.";
@@ -247,7 +310,7 @@ export const LOGIN_SCRIPT = `
     var why = s && s.why ? s.why : (framed && login.picture === 'error') || slow ? 'refused' : '';
     // Over the frame, which keeps loading under it, until its picture is up.
     $('login-wait').hidden = framed && !why && pictureUp();
-    $('login-why').textContent = why === 'ended' ? 'Your view of the login closed after 15 minutes.' : why ? "Go's screen didn't open here." : OPENING;
+    $('login-why').textContent = why === 'ended' ? 'Your view of the login has closed.' : why ? "Go's screen didn't open here." : OPENING;
     $('login-progress').hidden = !!why;
     $('login-again').hidden = !why;
     $('login-acts').innerHTML = loginButtons(c);
