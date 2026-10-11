@@ -63,7 +63,8 @@ describe('contract 1.3 (rev 5)', () => {
     const working = {
       card_id: 'c_w', kind: 'working', fallback_text: 'Working', task_id: 'task_1', title: 'Booking Villa Sol', state: 'running', steps: [], updated_at: at,
     };
-    expect(WorkingCard.parse({ ...working, live_url: 'https://brain.go.example/live/task_1?sig=x' }).live_url).toBe('https://brain.go.example/live/task_1?sig=x');
+    const live = 'https://staging.vestra.ai/embed/browser?s=ses_8h2#token=tk_dummy_0000';
+    expect(WorkingCard.parse({ ...working, live_url: live }).live_url).toBe(live);
     expect(WorkingCard.safeParse({ ...working, live_url: 'http://brain.go.example/live/task_1' }).success).toBe(false);
   });
 
@@ -87,6 +88,13 @@ describe('contract 1.3 (rev 5)', () => {
     });
     expect(full.check_in).toBe('14:00');
     expect(OptionFullDetails.safeParse({ check_in: '2 pm' }).success).toBe(false);
+    // A review's date may be a month when the source gives no day; never free text.
+    expect(OptionFullDetails.safeParse({ reviews: [{ text: 'ok', date: '2026-09' }] }).success).toBe(true);
+    expect(OptionFullDetails.safeParse({ reviews: [{ text: 'ok', date: 'Sep 2026' }] }).success).toBe(false);
+    // complete: false is a partial answer the Server doesn't keep; absent means complete.
+    expect(OptionFullDetails.parse({ caption: 'x', complete: false }).complete).toBe(false);
+    expect(OptionFullDetails.parse({ caption: 'x' }).complete).toBeUndefined();
+    expect(PlaceInfo.parse({ place: { name: 'Ladakh' }, complete: false }).complete).toBe(false);
     expect(OptionFullDetails.safeParse({ reviews: Array.from({ length: 11 }, () => ({ text: 'ok' })) }).success).toBe(false);
   });
 

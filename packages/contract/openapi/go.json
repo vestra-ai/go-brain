@@ -1251,7 +1251,7 @@
             "anyOf": [
               {
                 "type": "string",
-                "format": "date"
+                "pattern": "^\\d{4}-(0[1-9]|1[0-2])(-(0[1-9]|[12]\\d|3[01]))?$"
               },
               {
                 "type": "null"
@@ -1597,6 +1597,16 @@
               {
                 "type": "string",
                 "format": "uri"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "complete": {
+            "anyOf": [
+              {
+                "type": "boolean"
               },
               {
                 "type": "null"
@@ -2216,7 +2226,7 @@
               }
             ]
           },
-          "page_url": {
+          "live_url": {
             "anyOf": [
               {
                 "type": "string",
@@ -2227,7 +2237,7 @@
               }
             ]
           },
-          "live_url": {
+          "page_url": {
             "anyOf": [
               {
                 "type": "string",
@@ -8391,6 +8401,16 @@
                   "minimum": 1,
                   "maximum": 12
                 }
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "complete": {
+            "anyOf": [
+              {
+                "type": "boolean"
               },
               {
                 "type": "null"

@@ -139,7 +139,13 @@ export const OptionFullDetails = OptionDetails.extend({
   reviews: z
     .array(
       z
-        .object({ rating: z.number().min(0).max(10).nullish(), text: z.string().min(1).max(1000), date: IsoDate.nullish(), source: z.string().min(1).max(40).nullish() })
+        .object({
+          rating: z.number().min(0).max(10).nullish(),
+          text: z.string().min(1).max(1000),
+          /** YYYY-MM-DD, or YYYY-MM when the source gives only the month ("Sep 2026"). */
+          date: z.string().regex(/^\d{4}-(0[1-9]|1[0-2])(-(0[1-9]|[12]\d|3[01]))?$/).nullish(),
+          source: z.string().min(1).max(40).nullish(),
+        })
         .meta({ id: 'OptionReview' }),
     )
     .max(10)
@@ -147,6 +153,8 @@ export const OptionFullDetails = OptionDetails.extend({
   nearby: z.array(z.object({ name: z.string().min(1).max(120), distance_m: z.int().nonnegative().nullish() }).meta({ id: 'NearbyPlace' })).max(20).nullish(),
   /** The option's own page on ixigo. */
   url: HttpsUrl.nullish(),
+  /** Absent or true: the whole answer. false: partial (reviews or photos still coming): don't keep it, and ask again later. */
+  complete: z.boolean().nullish(),
 }).meta({ id: 'OptionFullDetails' });
 
 export const Option = z
@@ -260,15 +268,16 @@ export const WorkingCard = z
     steps: z.array(z.object({ text: z.string().min(1).max(80), state: z.enum(['todo', 'doing', 'done', 'failed']) })).max(8),
     /** The latest picture of Go's screen while it works, if any. */
     screenshot_url: HttpUrl.nullish(),
-    /** The address of the page in that picture, for the App's address bar. Only ever a search, results or details page. */
-    page_url: HttpUrl.nullish(),
     /**
-     * 1.3 (rev 5 R7): a view-only page of the browser Go is driving, hosted by Go, signed and short-lived (at most 15
-     * minutes). The App opens it in a panel while the state is running or needs_you; it allows framing by the App's origins.
-     * Sent when the task starts; replace_card only at step changes. A screen with a person's own account goes in a message
-     * visible to that person alone.
+     * 1.3 (rev 5 R7): a live, view-only page of Go's screen while it works (the trip computer's screen page, WebRTC), for the
+     * App to open in an in-app panel or an iframe while the state is running or needs_you. https; its token rides in the
+     * url's #fragment, and it works for up to 15 minutes from when Go made it (Go puts a fresh one on the card at the next
+     * step change before then). Never on a card for someone else's private screen: such a card is posted with
+     * visible_to_person_ids. Absent or null: no live view.
      */
     live_url: HttpsUrl.nullish(),
+    /** The address of the page in that picture, for the App's address bar. Only ever a search, results or details page. */
+    page_url: HttpUrl.nullish(),
     updated_at: IsoDateTime,
     actions,
   })

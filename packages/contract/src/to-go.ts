@@ -141,6 +141,8 @@ export const PlaceInfo = z
       .nullish(),
     /** The best months to go, 1 to 12. */
     best_months: z.array(z.int().min(1).max(12)).max(12).nullish(),
+    /** Absent or true: the whole answer. false: partial (photos still coming): don't keep it, and ask again later. */
+    complete: z.boolean().nullish(),
   })
   .meta({ id: 'PlaceInfo' });
 
