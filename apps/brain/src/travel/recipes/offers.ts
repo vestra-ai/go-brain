@@ -16,6 +16,8 @@ export interface Offer {
   /** A price band's prices, in rupees, a night and a room as ixigo prices a stay. */
   min?: number;
   max?: number;
+  /** A filter's stays, as the site's list counts them for the place (its strictest is the fewest: strictestOf). */
+  count?: number;
 }
 
 export interface OfferList {
@@ -101,6 +103,22 @@ export function pickOffers(offers: Offer[], names: string[], kind: Offer['kind']
   return { picked, unknown };
 }
 
+/**
+ * Of the filters asked by name, the one the site's list says holds the fewest stays (its strictest), to drop first when
+ * together they leave none; the last one the site has when its list counts none of them; null when none is the site's.
+ */
+export function strictestOf(list: Pick<OfferList, 'offers'>, names: string[]): string | null {
+  let fewest: { name: string; count: number } | null = null;
+  let last: string | null = null;
+  for (const name of names) {
+    const hit = pickOffers(list.offers, [name], 'filter').picked[0];
+    if (!hit) continue;
+    last = name;
+    if (typeof hit.count === 'number' && (!fewest || hit.count < fewest.count)) fewest = { name, count: hit.count };
+  }
+  return fewest?.name ?? last;
+}
+
 /** The most names of one heading the model reads, in the site's own order (ixigo's hotel chains run to about sixty). */
 export const NAMES_PER_GROUP = 40;
 
@@ -138,6 +156,7 @@ export function asOffers(rows: unknown): Offer[] {
     .map((o) => ({
       kind: o.kind, group: unescaped(o.group), name: unescaped(o.name), code: o.code,
       ...(o.kind === 'price' ? { min: o.min!, max: o.max! } : {}),
+      ...(o.kind === 'filter' && typeof o.count === 'number' && Number.isFinite(o.count) && o.count >= 0 ? { count: o.count } : {}),
     }));
 }
 

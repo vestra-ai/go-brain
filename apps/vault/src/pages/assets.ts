@@ -72,7 +72,11 @@ export const VAULT_JS = `(() => {
     $('cards').replaceChildren(...r.data.cards.map((c) => li(c.brand_label + ' ending ' + c.last4 + ', expires ' + c.expires)));
     show('cards-empty', r.data.cards.length === 0);
     $('log').replaceChildren(...r.data.log.map((e) => li(e.when + ': ' + e.text)));
-    if (!stripe && window.Stripe) {
+    // A vault that can't add cards yet says so, in place of a form whose Save could only fail.
+    const cardsReady = r.data.cards_ready !== false;
+    show('card-form', cardsReady);
+    show('cards-not-ready', !cardsReady);
+    if (cardsReady && !stripe && window.Stripe) {
       stripe = window.Stripe(r.data.publishable_key);
       cardField = stripe.elements().create('card', { hidePostalCode: true });
       cardField.mount('#card-element');

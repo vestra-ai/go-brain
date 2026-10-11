@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import * as C from '@go/contract';
-import { arrivalWords, buildFlightsLinkCard, buildOptionsCard, clip, daysLater, formatClock, formatInr, ixigoPage, localClock, plain, subtitleFor } from '../cards.js';
+import { arrivalWords, buildFlightsLinkCard, buildOptionsCard, clip, daysLater, formatClock, formatInr, ixigoPage, localClock, plain, stayLine, stayPayWords, subtitleFor } from '../cards.js';
 import type { ResultOption } from '../results.js';
 
 const flight = (title: string, dep: string, arr: string, price: number): ResultOption => ({
@@ -111,6 +111,31 @@ describe('the options card', () => {
     expect(buildOptionsCard({ cardId: 'c_f', title: 'Flights', optionKind: 'flight', checkedAt: '2026-10-07T12:00:00.000Z', picks: [picks[0]!] }).options[0]).toMatchObject({ price_minor: 592000, price_note: 'per person' });
   });
 
+  // The lead, 10 Oct: the pay card's "Paid ₹38,400 … ₹12,800 per night" read as if ₹38,400 were a night's.
+  it('says a stay for its vote and payment as the whole stay first, the night in brackets', () => {
+    const villa: ResultOption = {
+      kind: 'stay', title: 'Lotus Villas', priceMinor: 1_197_200, totalMinor: 7_183_200, currency: 'INR', priceNote: 'per night, per room', highlights: [],
+      facts: { nights: 3, rooms: 2, guests: 5, area: 'Candolim' },
+    };
+    expect(stayLine(villa)).toBe('Candolim, ₹71,832 for 3 nights, 2 rooms (₹11,972 a room a night), about ₹14,400 each');
+    expect(stayLine({ ...villa, priceMinor: 1_280_000, totalMinor: 3_840_000, facts: { nights: 3, area: 'Anjuna' } })).toBe('Anjuna, ₹38,400 for 3 nights (₹12,800 a night)');
+    // No whole stay: what its card says.
+    expect(stayLine({ kind: 'stay', title: 'Casa Lua', priceMinor: 1_500_000, priceNote: 'per night', highlights: [], facts: { area: 'Assagao' } })).toBe('Assagao, ₹15,000 per night');
+  });
+
+  // The lead, 10 Oct: "Paid ₹38,400 … ₹38,400 for 3 nights" said the amount twice. The pay card says the amount; its words
+  // say what it covers and the night.
+  it('names a stay for its payment by what it covers and its night, never the amount the pay card already says', () => {
+    const villa: ResultOption = {
+      kind: 'stay', title: 'Lotus Villas', priceMinor: 1_197_200, totalMinor: 7_183_200, currency: 'INR', priceNote: 'per night, per room', highlights: [],
+      facts: { nights: 3, rooms: 2, guests: 5, area: 'Candolim' },
+    };
+    expect(stayPayWords(villa)).toBe('Candolim: 3 nights, 2 rooms (₹11,972 a room a night)');
+    expect(stayPayWords({ ...villa, priceMinor: 1_280_000, totalMinor: 3_840_000, facts: { nights: 3, area: 'Anjuna' } })).toBe('Anjuna: 3 nights (₹12,800 a night)');
+    expect(stayPayWords({ ...villa, facts: { area: 'Assagao' } })).toBe('Assagao: ₹11,972 a night');
+    expect(stayPayWords({ kind: 'stay', title: 'Somewhere', highlights: [], facts: {} })).toBeNull();
+  });
+
   // The exam, 10 Oct (#5): a stays card for five said "from ₹621 per night, per room, IXIFIRST applied".
   it("says a stays card's from as its cheapest whole stay and each person's share, never a night's", () => {
     const stay = (title: string, night: number, rooms: number): ResultOption => ({
@@ -161,8 +186,9 @@ describe('when a journey arrives, on its card', () => {
     // 6E 5341 DEL to GOI, and 6E 329 + 6E 5106 through Mumbai landing after midnight.
     expect(subtitleFor(journey('flight', '2026-11-06T05:00:00+05:30', '2026-11-06T07:35:00+05:30', {}, 0))).toBe('5:00 am to 7:35 am, non-stop');
     expect(subtitleFor(journey('flight', '2026-11-06T18:30:00+05:30', '2026-11-07T00:40:00+05:30', {}, 1))).toBe('6:30 pm to 12:40 am next day, 1 stop');
-    // Naik Tours, Mumbai to Goa overnight.
-    expect(subtitleFor(journey('bus', '2026-11-06T15:30:00+05:30', '2026-11-07T06:30:00+05:30', { bus_type: 'NON-AC Sleeper (2 + 1)' }))).toBe('3:30 pm to 6:30 am next day, NON-AC Sleeper (2 + 1)');
+    // Naik Tours, Mumbai to Goa overnight: a bus's arrival is its first stop in the city it goes to, never every drop's
+    // (the exam's re-run, 10 Oct: "reach Goa between 6 and 7:20 am, all dropping at Mapusa").
+    expect(subtitleFor(journey('bus', '2026-11-06T15:30:00+05:30', '2026-11-07T06:30:00+05:30', { bus_type: 'NON-AC Sleeper (2 + 1)' }))).toBe('3:30 pm, first stop in B 6:30 am next day, NON-AC Sleeper (2 + 1)');
   });
 
   it('counts days where the journey happens, not in UTC', () => {

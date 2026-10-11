@@ -160,7 +160,7 @@ export function createWebStays(d: WebStaysDeps): WebStays {
       .catch(() => null);
     const rates = read ? bodiesFor(read.captures, roomsCall(stay.hotelId)).flatMap((b) => {
       try {
-        return stayRates(JSON.parse(b), stay);
+        return stayRates(JSON.parse(b));
       } catch {
         return [];
       }

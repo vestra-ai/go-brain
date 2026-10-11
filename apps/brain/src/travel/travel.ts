@@ -123,7 +123,12 @@ export interface TravelSearch {
    * the names it didn't apply (not on its list, or its list not known before this read: listed false); and its list as
    * it is now known, in words, for the model.
    */
-  site?: { filtered: string[]; sorted: string | null; unknown: string[]; listed: boolean; offers: string | null; priced?: number | null };
+  site?: { filtered: string[]; sorted: string | null; unknown: string[]; listed: boolean; offers: string | null; priced?: number | null; strictest?: string };
+  /**
+   * ixigo's own filters left off because together they left no stay (stays: the strictest first, then the rest): these
+   * options are the nearest without them, and the line says so (tools.ts leftOffLead).
+   */
+  dropped?: string[];
   /** Not read now: ixigo's page didn't answer, and this is Go's earlier read of the same page, checked when it was (stays). */
   earlier?: boolean;
 }
@@ -242,6 +247,11 @@ export interface Travel {
     /** The check-in or departure day (YYYY-MM-DD) when Go knows it, and past when that day is before today in the trip's time zone. */
     day?: string | null; past?: true;
   } | null>;
+  /**
+   * A stay as its payment names it beside the amount ("Anjuna: 3 nights (₹12,800 a night)", cards.ts stayPayWords), from
+   * the stay as its search saved it; null for anything else, or an option Go never showed.
+   */
+  payWords?(optionId: string): Promise<string | null>;
   /** The option's own name, place and area, for saving a stay or place a vote picked (composer/room-tools.ts). */
   placeOf?(optionId: string): Promise<OptionPlace | null>;
   /**

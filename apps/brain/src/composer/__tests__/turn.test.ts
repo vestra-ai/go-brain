@@ -385,7 +385,7 @@ describe('a composer turn', () => {
     await expect(turn(r, [item(r.tripId, ask, true)])).rejects.toThrow('overloaded');
     expect(ended).toEqual([]);
     await turn(r, [item(r.tripId, ask, true)], `turn_${r.tripId}`, 2);
-    expect(ended).toEqual([{ tripId: r.tripId, turnId: `turn_${r.tripId}`, messageIds: ['m_3', 'm_5'] }]);
+    expect(ended).toEqual([{ tripId: r.tripId, turnId: `turn_${r.tripId}`, messageIds: ['m_3', 'm_5'], answered: true }]);
   });
 
   it('a message pulled in is part of what woke the turn for the next round\'s tools: "I will pay" said as a vote closes is that person\'s ask', async () => {
@@ -420,7 +420,7 @@ describe('a composer turn', () => {
     await turn(r, [closed]);
     expect(woke).toEqual([['trip_change'], ['trip_change', 'm_5']]);
     expect(r.posts()).toHaveLength(1);
-    expect(ended).toEqual([{ tripId: r.tripId, turnId: `turn_${r.tripId}`, messageIds: ['m_5'] }]);
+    expect(ended).toEqual([{ tripId: r.tripId, turnId: `turn_${r.tripId}`, messageIds: ['m_5'], answered: true }]);
   });
 
   it('giving up ends the turn for the lanes too', async () => {
@@ -429,7 +429,8 @@ describe('a composer turn', () => {
     const ended: unknown[] = [];
     r.context.addTurnEnd((t) => ended.push(t));
     await r.composer.giveUp({ tripId: r.tripId, turnId: 'turn_g', items: [item(r.tripId, ask, true)], attempt: 3 });
-    expect(ended).toEqual([{ tripId: r.tripId, turnId: 'turn_g', messageIds: ['m_3'] }]);
+    // Gave up: Go never answered, so its cards end as their reads did.
+    expect(ended).toEqual([{ tripId: r.tripId, turnId: 'turn_g', messageIds: ['m_3'], answered: false }]);
   });
 
   it('giving up: one calm message, only when someone was waiting', async () => {
