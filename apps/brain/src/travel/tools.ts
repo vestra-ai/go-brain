@@ -8,7 +8,7 @@ import { CARD_LINE } from '../composer/rules.js';
 import { CardLineArg, SAY_NOTHING, type QuickTool, type TurnCtx } from '../composer/tools.js';
 import type { Desk } from '../desk/desk.js';
 import { dateAs } from './book/expr.js';
-import { buildIxigoPageCard, buildOptionsCard, clip, formatInr, IXIGO_SEARCH_PAGES, ixigoPage, placeKindNotAll, subtitleFor } from './cards.js';
+import { buildOptionsCard, clip, formatInr, ixigoPage, placeKindNotAll, subtitleFor } from './cards.js';
 import { localDay } from '../proactive/clock.js';
 import { answerLine, answerTitle, directPicks, droppedWords, ledBy, leftOff, loadWhat, plainAsk } from './answer.js';
 import { flightDetails, stayDetails, trainDetails } from './details.js';
@@ -358,7 +358,7 @@ async function runSearch(kind: TravelKind, given: TravelQuery, ctx: TurnCtx, d: 
   } catch (err) {
     const search = searchName(kind, q);
     if (err instanceof TravelError && err.code === 'link_only') return notLoadedAnswer(kind, q, ctx, d, plainAsk(kind, q, { wake: ctx.wake, pack: ctx.pack, ...(ctx.roundTools ? { roundTools: ctx.roundTools } : {}), today: await todayOf(d, ctx.tripId) }).ok);
-    if (err instanceof TravelError && err.code === 'unknown_place') return pageAnswer(kind, q, ctx);
+    if (err instanceof TravelError && err.code === 'unknown_place') return placeAnswer(kind, q, err.message);
     // A date in the past is the model's slip (usually the year), not news for the room: search again with the date it names.
     if (err instanceof TravelError && err.code === 'past_date') return { search, count: 0, refused: err.message, tell_the_room: SAY_NOTHING };
     if (err instanceof TravelError) {
@@ -608,21 +608,24 @@ async function notLoadedAnswer(kind: TravelKind, q: TravelQuery, ctx: TurnCtx, d
   };
 }
 
+/** What ixigo calls a place each kind of search starts or ends at, for the line about one it doesn't know. */
+const STOP_WORDS: Record<TravelKind, string> = { flights: 'an airport', trains: 'a station', buses: 'a stop', stays: 'a place to stay' };
+
 /**
- * A place Go has no ixigo code for, even after asking ixigo's own search box: the card opens ixigo's page for this kind
- * of search, where the group searches it. Go never sends anyone to another site.
+ * A place Go has no ixigo code for (unknown_place): said in words, never ixigo's own search page as the answer (the lead,
+ * 11 Oct, with G1). The model reads a fact and the next step: the place ixigo doesn't know, then the nearest place it does,
+ * offered as a question to search from there.
  */
-function pageAnswer(kind: TravelKind, q: TravelQuery, ctx: TurnCtx): unknown {
-  const page = IXIGO_SEARCH_PAGES[kind];
-  ctx.cards.push(buildIxigoPageCard({ cardId: ctx.stableId('c_link'), title: suggestTitle(kind, q), kind }));
+function placeAnswer(kind: TravelKind, q: TravelQuery, why: string): unknown {
   return {
     search: searchName(kind, q),
     count: 0,
-    link: page.url,
-    note: `Go can't search this place on ixigo itself, so the card opens ixigo's ${page.noun} page, to search it there.`,
+    unknown_place: `${clip(why, 140)} Offer the nearest place ixigo knows as ${STOP_WORDS[kind]}, and ask whether to search from there.`,
     tell_the_room:
-      `Say in one short line that the card opens ixigo's ${page.noun} page, where they can search ${searchScope(kind, q)} and book it. ` +
-      'Never name or suggest any other travel or booking site or app, and quote no prices or times.',
+      `Say in one short line which place ixigo doesn't know as ${STOP_WORDS[kind]} (unknown_place), name the nearest place to it ixigo would ` +
+      "know (a city with an airport, a station or a bus stand, or a known stay area), and ask whether to search from there: \"ixigo doesn't " +
+      'know Kasol as a stop; the nearest it knows is Bhuntar. Search from there?" Never send them to ixigo. Never name or suggest any other travel or ' +
+      'booking site or app, and quote no prices or times.',
   };
 }
 

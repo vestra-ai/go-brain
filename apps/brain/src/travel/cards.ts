@@ -63,12 +63,6 @@ export function buildConfirmMineCard(i: { cardId: string; personId: string; opti
 /** On the card of each home city's ways to the trip: ixigo's flights from the tapper's own home city. */
 export const FLIGHTS_HOME_ACTION = { action_id: 'flights_home', label: 'Flights from my city', style: 'secondary' } as const;
 
-/**
- * On a card that opens ixigo's page for a kind of search (buildIxigoPageCard). A search ixigo didn't load never answers
- * with its results page on a card (G1, 11 Oct): Go says so and tries again (try-again.ts).
- */
-export const SEE_FLIGHTS_ACTION = { action_id: 'see_on_ixigo', label: 'See flights on ixigo', style: 'primary' } as const;
-
 /** On a card that opens one of ixigo's pages for the person to use there themselves. */
 export const OPEN_ON_IXIGO_ACTION = { action_id: 'see_on_ixigo', label: 'Open on ixigo', style: 'primary' } as const;
 
@@ -83,29 +77,6 @@ export function buildIxigoLinkCard(i: { cardId: string; title: string; url: stri
     body: 'It opens on ixigo, to check there on your own phone.',
     source: { name: 'ixigo', url: i.url },
     actions: [OPEN_ON_IXIGO_ACTION],
-  });
-}
-
-/** ixigo's own search page for each kind of search: where the group searches a place Go has no code for. */
-export const IXIGO_SEARCH_PAGES = {
-  flights: { url: 'https://www.ixigo.com/flights', noun: 'flights' },
-  trains: { url: 'https://www.ixigo.com/trains', noun: 'trains' },
-  buses: { url: 'https://www.ixigo.com/buses', noun: 'buses' },
-  stays: { url: 'https://www.ixigo.com/hotels', noun: 'hotels' },
-} as const;
-
-/** The card for a search Go has no ixigo code for: ixigo's own page for that kind of search, to search it there. */
-export function buildIxigoPageCard(i: { cardId: string; title: string; kind: keyof typeof IXIGO_SEARCH_PAGES }): NoticeCardT {
-  const page = IXIGO_SEARCH_PAGES[i.kind];
-  return C.NoticeCard.parse({
-    card_id: i.cardId,
-    kind: 'notice',
-    fallback_text: clip(`${i.title}: search it on ixigo`, 300),
-    tone: 'info',
-    title: clip(i.title, 80),
-    body: `Search it on ixigo's ${page.noun} page, and book it there.`,
-    source: { name: 'ixigo', url: page.url },
-    actions: [{ ...SEE_FLIGHTS_ACTION, label: `See ${page.noun} on ixigo` }],
   });
 }
 
