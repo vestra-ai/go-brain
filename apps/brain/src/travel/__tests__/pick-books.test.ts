@@ -55,6 +55,8 @@ describe("a person's pick, with Go booking it", () => {
     const from = lb.link.requests.length;
     expect(await pick(card, 'tap_g2_1', 'c_rahul_1')).toEqual({ result: 'done', toast: "Go is booking it on the trip's computer" });
     expect(started.at(-1)).toMatchObject({ tapId: 'tap_g2_1', tripId: 't_goa', personId: 'p_rahul', name: 'Rahul', choice: 'basic', offer: { optionId: 'c_rahul_1', cardId: 'c_rahul' } });
+    // Her card as it was goes with the booking, to be put back if it stops before the pay card.
+    expect(started.at(-1)?.restore).toEqual(card);
     await eventually(() => sentFor(from, 'replace_card').length === 1);
     const shown = C.OptionsCard.parse(sentFor(from, 'replace_card')[0]!.params['card']);
     expect(shown).toMatchObject({ card_id: 'c_rahul', for_person_ids: ['p_rahul'], options: [{ option_id: 'c_rahul_1', title: 'IndiGo 6E2150' }], actions: [] });
@@ -69,6 +71,7 @@ describe("a person's pick, with Go booking it", () => {
     const from = lb.link.requests.length;
     expect(await pick(card, 'tap_g2_2', 'c_room_2')).toEqual({ result: 'done', toast: "Go is booking it on the trip's computer" });
     expect(started.at(-1)).toMatchObject({ tapId: 'tap_g2_2', offer: { optionId: 'c_room_2', cardId: 'c_room' } });
+    expect(started.at(-1)?.restore).toBeUndefined();
     await new Promise((r) => setTimeout(r, 30));
     expect(sentFor(from, 'replace_card')).toEqual([]);
   });

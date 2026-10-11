@@ -14,7 +14,7 @@ import type pg from 'pg';
 import type { Switches } from '../../admin/switches.js';
 import type { ServerLink } from '../../door/server-link.js';
 import { dayText } from '../answer.js';
-import { buildIxigoLinkCard, buildOptionsCard, clip, formatInr } from '../cards.js';
+import { buildIxigoLinkCard, buildOptionsCard, clip, formatInr, type OptionsCardT } from '../cards.js';
 import { stableId } from '../ids.js';
 import type { IxigoLogin } from '../login.js';
 import { bodiesFor } from '../recipes/recipe.js';
@@ -84,6 +84,11 @@ export interface BookingAsk {
   name: string;
   offer: StoredOffer;
   choice: FareChoice;
+  /**
+   * The person's own card as it was before their pick showed it with their flight alone (taps.ts, G2): put back when the
+   * booking stops before the pay card, so they can pick again (the G2 drill, 11 Oct: logged out, nothing was left to tap).
+   */
+  restore?: OptionsCardT;
 }
 
 export interface FlightBookingDeps {
@@ -103,7 +108,7 @@ export interface FlightBookingDeps {
   now: () => Date;
   log: Log;
   /** Where a fare that moved is put to its traveller again, on a card of its own; absent, the run says it in a line. */
-  results?: Pick<ResultsStore, 'optionOf' | 'saveCard'>;
+  results?: Pick<ResultsStore, 'optionOf' | 'saveCard' | 'replaceCard' | 'offer'>;
 }
 
 /**
@@ -111,6 +116,15 @@ export interface FlightBookingDeps {
  * personal approval allows the same): more, and they are asked again at the new price.
  */
 export const FARE_MOVE_OK = 1.05;
+
+/**
+ * How long a booking waits on the trip's ixigo login before its person's card is put back for them to pick again
+ * (Keshav, 11 Oct: "when logged in, automatically continue"; the lead: one never in puts the card back).
+ */
+export const LOGIN_WAIT_MS = 30 * 60_000;
+
+/** What a booking waiting on the login carries on with: the ask, but its offer, read again by its option id. */
+type Resume = { tapId: string; name: string; choice: FareChoice; restore?: OptionsCardT };
 
 /** A day (DDMMYYYY, as ixigo's results address writes it) as ixigo's traveller list takes it: its midnight in India, in ms. */
 export function dayMs(ddmmyyyy: string): number | null {
@@ -193,15 +207,23 @@ export function readyCard(i: {
  * The card for a traveller ixigo's account doesn't have once: their own, saying whose ixigo to add them on. It names
  * nobody but the trip's own people, and none of the account's saved travellers.
  */
-export function travellerAsk(cardId: string, ask: Pick<BookingAsk, 'personId' | 'name'>, owner: string | null, why: 'none' | 'several' | 'login'): NoticeCard {
+/**
+ * The note when a booking can't tick its traveller: not a saved one, several, or no login. ownerIsThem: the login card is
+ * theirs. No login: Go carries on by itself once it's in (Keshav, 11 Oct: "when logged in, automatically continue").
+ */
+export function travellerAsk(cardId: string, ask: Pick<BookingAsk, 'personId' | 'name' | 'restore'>, owner: string | null, why: 'none' | 'several' | 'login', ownerIsThem = false): NoticeCard {
   const on = owner ? `${owner}'s ixigo` : "the trip's ixigo";
+  // Their own card is back as it was (restore): its pick starts the booking again; else the confirm card's Book it.
+  const again = ask.restore ? "tap I'll take this on your card again" : 'tap Book it again';
   // No login (the drill, 10 Oct 15:43Z: the booking stopped at its travellers, and the traveller heard nothing why): the
   // login card is the person's who was asked, so the traveller is told whose it is.
   const body = why === 'none'
-    ? `${ask.name} isn't a saved traveller on ${on} yet; add ${ask.name} there once, then tap Book it again.`
+    ? `${ask.name} isn't a saved traveller on ${on} yet; add ${ask.name} there once, then ${again}.`
     : why === 'several'
-      ? `${on.charAt(0).toUpperCase()}${on.slice(1)} has more than one saved traveller named ${ask.name}; keep one there, then tap Book it again.`
-      : `Your traveller details come from the trip's ixigo login, which isn't linked yet${owner ? `: ${owner} has the Log in to ixigo card` : ''}. Once it's in, tap Book it again.`;
+      ? `${on.charAt(0).toUpperCase()}${on.slice(1)} has more than one saved traveller named ${ask.name}; keep one there, then ${again}.`
+      : ownerIsThem
+        ? "Your traveller details come from the trip's ixigo login, which isn't linked yet. Log in on your card and Go carries on with your booking."
+        : `Your traveller details come from the trip's ixigo login, which isn't linked yet${owner ? `: ${owner} has the Log in to ixigo card` : ''}. Once it's in, Go carries on with your booking.`;
   return {
     card_id: cardId, kind: 'notice', tone: 'heads_up', for_person_ids: [ask.personId],
     title: clip(`${ask.name}, one step on ixigo first`, 80), body: clip(body, 500), fallback_text: clip(body, 300),
@@ -218,6 +240,13 @@ export interface FlightBooking {
   start(ask: BookingAsk): Promise<void>;
   /** Pay on a traveller's ready card: the vault's pay page for them alone, or why not. Inside the tap's 2.5 s. */
   pay(i: { tripId: string; cardId: string; personId: string; tapId: string }): Promise<PayTap>;
+  /** The trip's ixigo login just landed (login.ts onLoggedIn): every booking that waited on it carries on. */
+  resumeWaiting(tripId: string): Promise<void>;
+  /**
+   * Every LOGIN_SWEEP_MS: a booking whose login landed while nothing heard it carries on; one whose login was let go (Not
+   * now) or never came in LOGIN_WAIT_MS puts its person's card back as it was.
+   */
+  sweep(): Promise<void>;
   /** Waits for the bookings started in the background (tests). */
   settled(): Promise<void>;
 }
@@ -292,6 +321,20 @@ export function createFlightBooking(d: FlightBookingDeps): FlightBooking {
   };
 
   /**
+   * A booking that stopped before the pay card puts the person's own card back as it was, its options and "I'll take
+   * this", so they can pick again; never one whose fare moved (it gets its own card at the new price).
+   */
+  async function putBack(ask: Pick<BookingAsk, 'tripId' | 'restore'>): Promise<void> {
+    if (!ask.restore || !d.results) return;
+    try {
+      await d.results.replaceCard(ask.tripId, ask.restore);
+      await d.link.request('replace_card', { trip_id: ask.tripId, card: ask.restore });
+    } catch (err) {
+      d.log.warn({ err: String(err).slice(0, 200), cardId: ask.restore.card_id }, "travel: a person's card could not be put back after their booking stopped");
+    }
+  }
+
+  /**
    * The fare moved more than 5%: the traveller's own card of that flight at its new price, theirs alone, to pick again
    * (their pick books it, as any pick does); or, with no store for the card, the line alone.
    */
@@ -324,6 +367,7 @@ export function createFlightBooking(d: FlightBookingDeps): FlightBooking {
       await save(runId, { state: 'failed', why });
       await live.step(step, 'failed');
       await live.finish(false);
+      await putBack(ask);
     };
     if (!runner || !ask.offer.sourceUrl) return fail('no_runner', 0);
 
@@ -381,15 +425,25 @@ export function createFlightBooking(d: FlightBookingDeps): FlightBooking {
     // picture). The list and their name live in this run's memory only. Nothing is submitted.
     await live.step(3, 'doing');
     const login = d.login ? await d.login.ensure(ask.tripId, `Booking ${title} for ${ask.name}`, { booking: true }).catch(() => null) : { ok: true as const };
-    const ownerName = async (): Promise<string | null> => {
-      const holder = await d.pool.query<{ person_id: string }>('select person_id from ixigo_logins where trip_id = $1', [ask.tripId]).then((r) => r.rows[0]?.person_id ?? null).catch(() => null);
-      return holder ? await d.nameOf(ask.tripId, holder).catch(() => null) : null;
-    };
+    const holder = await d.pool.query<{ person_id: string }>('select person_id from ixigo_logins where trip_id = $1', [ask.tripId]).then((r) => r.rows[0]?.person_id ?? null).catch(() => null);
+    const ownerName = async (): Promise<string | null> => (holder ? await d.nameOf(ask.tripId, holder).catch(() => null) : null);
     if (!login?.ok) {
       await d.link.request('post_message', {
-        request_id: stableId('go_book_login', runId), trip_id: ask.tripId, card: travellerAsk(stableId('c_book_login', runId), ask, await ownerName(), 'login'), visible_to_person_ids: [ask.personId],
+        request_id: stableId('go_book_login', runId), trip_id: ask.tripId,
+        card: travellerAsk(stableId('c_book_login', runId), ask, await ownerName(), 'login', holder === ask.personId), visible_to_person_ids: [ask.personId],
       });
-      return fail('login_needed', 3);
+      // Keshav, 11 Oct: "when logged in, automatically continue". The booking waits on the login, their pick kept: the
+      // login landing carries it on (resumeWaiting); one let go, or never in, puts their card back (sweep). A booking that
+      // waits again keeps the time it first waited.
+      d.log.info({ runId, tripId: ask.tripId }, 'travel: a flight booking waits on the trip login');
+      const resume: Resume = { tapId: ask.tapId, name: ask.name, choice: ask.choice, ...(ask.restore ? { restore: ask.restore } : {}) };
+      await d.pool.query(
+        `update flight_bookings set state = 'failed', why = 'login_needed', resume = $2, waiting_since = coalesce(waiting_since, $3), updated_at = $3 where run_id = $1`,
+        [runId, JSON.stringify(resume), d.now()],
+      );
+      await live.step(3, 'failed');
+      await live.finish(false);
+      return;
     }
     const day = results.searchParams.get('date') ?? '';
     const ms = dayMs(day);
@@ -456,6 +510,7 @@ export function createFlightBooking(d: FlightBookingDeps): FlightBooking {
       } else if (!got.say) {
         await d.link.request('post_message', { request_id: stableId('go_book_no', runId), trip_id: ask.tripId, text: got.refused, visible_to_person_ids: [ask.personId] });
       }
+      await putBack(ask);
       return;
     }
     await live.step(4, 'done');
@@ -464,6 +519,43 @@ export function createFlightBooking(d: FlightBookingDeps): FlightBooking {
     await d.link.request('post_message', { request_id: stableId('go_book_ready', runId), trip_id: ask.tripId, card, visible_to_person_ids: [ask.personId] });
     await save(runId, { state: 'ready_to_pay', card_id: cardId });
     await live.finish(true);
+  }
+
+  /**
+   * The trip's login is in: each of its bookings that waited on it carries on, once (its row taken first), from the start,
+   * as the person's pick would run it, with their card as it was kept for a stop after.
+   */
+  async function carryOn(tripId: string): Promise<void> {
+    const { rows } = await d.pool.query<{ run_id: string; person_id: string; option_id: string; resume: Resume }>(
+      `update flight_bookings set why = 'login_in', updated_at = $2 where trip_id = $1 and why = 'login_needed' and resume is not null
+       returning run_id, person_id, option_id, resume`,
+      [tripId, d.now()],
+    );
+    for (const r of rows) {
+      const offer = d.results ? await d.results.offer(r.option_id).catch(() => null) : null;
+      if (!offer) {
+        await letGo(r.run_id, 'login_in');
+        continue;
+      }
+      d.log.info({ runId: r.run_id, tripId }, 'travel: a flight booking carries on after the trip login');
+      const ask: BookingAsk = { tapId: r.resume.tapId, tripId, personId: r.person_id, name: r.resume.name, offer, choice: r.resume.choice, ...(r.resume.restore ? { restore: r.resume.restore } : {}) };
+      const run = book(ask, r.run_id).catch(async (err: unknown) => {
+        d.log.warn({ runId: r.run_id, err: String(err).slice(0, 200) }, 'travel: a flight booking failed');
+        await save(r.run_id, { state: 'failed', why: 'error' }).catch(() => undefined);
+      });
+      running.add(run);
+      void run.finally(() => running.delete(run));
+    }
+  }
+
+  /** A booking whose login was let go, or never came: no longer waiting, and its person's card back as it was. */
+  async function letGo(runId: string, from = 'login_needed'): Promise<void> {
+    const { rows } = await d.pool.query<{ trip_id: string; person_id: string; resume: Resume }>(
+      `update flight_bookings set why = 'login_let_go', updated_at = $3 where run_id = $1 and why = $2 returning trip_id, person_id, resume`,
+      [runId, from, d.now()],
+    );
+    const r = rows[0];
+    if (r?.resume.restore) await putBack({ tripId: r.trip_id, restore: r.resume.restore });
   }
 
   return {
@@ -483,6 +575,22 @@ export function createFlightBooking(d: FlightBookingDeps): FlightBooking {
       });
       running.add(run);
       void run.finally(() => running.delete(run));
+    },
+    resumeWaiting: (tripId) => carryOn(tripId),
+    async sweep() {
+      const { rows } = await d.pool.query<{ run_id: string; trip_id: string; waiting_since: Date; updated_at: Date; login: string | null; logged_in_at: Date | null }>(
+        `select f.run_id, f.trip_id, f.waiting_since, f.updated_at, l.state as login, l.logged_in_at
+         from flight_bookings f left join ixigo_logins l on l.trip_id = f.trip_id
+         where f.why = 'login_needed' and f.resume is not null`,
+      );
+      const now = d.now().getTime();
+      const trips = new Set<string>();
+      for (const r of rows) {
+        // In since the booking last stopped: it carries on (a login that landed while nothing heard it).
+        if (r.login === 'logged_in' && r.logged_in_at && r.logged_in_at > r.updated_at) trips.add(r.trip_id);
+        else if (r.login === 'skipped' || now - r.waiting_since.getTime() >= LOGIN_WAIT_MS) await letGo(r.run_id);
+      }
+      for (const tripId of trips) await carryOn(tripId);
     },
     async pay(i) {
       const r = await d.pool.query<{

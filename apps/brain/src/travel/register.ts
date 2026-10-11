@@ -382,6 +382,18 @@ export const registerTravel: RegisterLane = async (brain) => {
     login,
     results,
   });
+  // Keshav, 11 Oct: "when logged in, automatically continue". The login landing carries on the bookings that waited on it;
+  // the minute's sweep catches one nothing heard land, and puts a person's card back for a login let go or never in.
+  login.onLoggedIn((tripId) => {
+    booking.resumeWaiting(tripId).catch((err: unknown) => brain.log.warn({ err, tripId }, 'travel: carrying on bookings after the login failed'));
+  });
+  const bookingSweep = setInterval(() => {
+    booking.sweep().catch((err: unknown) => brain.log.warn({ err }, 'travel: the flight bookings sweep failed'));
+  }, LOGIN_SWEEP_MS);
+  bookingSweep.unref();
+  brain.onStop(function stopBookingSweep() {
+    clearInterval(bookingSweep);
+  });
   registerTravelTaps(brain.taps, { results, pool: brain.pool, link: brain.door.link, desk: brain.desk, now: brain.now, log: brain.log, booking, nameOf, images });
   // The Server's REV4 B5: once a vote picks a stay, its rooms card (the ways to take its rooms, who shares, what each pays)
   // on the turn that says so; a tap keeps the way picked, for the expense per room (B6, chosenArrangement).
