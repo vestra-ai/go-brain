@@ -66,7 +66,7 @@ export function payPage(framed: { origins: readonly string[] } | null = null): s
 <div class="row"><span class="muted">Card</span><span id="card"></span></div>
 <button id="approve-btn" class="primary big">Approve with Face ID</button><p id="pay-msg" class="msg" role="status"></p>
 <button id="close-btn" type="button" hidden>Cancel</button>
-<p class="fine">The group agreed to this first. It works once, for this amount only.</p></section>
+<p class="fine"><span id="pay-agreed" hidden>The group agreed to this first. </span>It works once, for this amount only.</p></section>
 <section id="otp" class="card" hidden><h2>Enter the code from your bank</h2>
 <p class="demo-note">Demo OTP: 123456</p>
 <label for="otp-code">One-time code</label><input id="otp-code" class="field" inputmode="numeric" autocomplete="one-time-code" maxlength="6">

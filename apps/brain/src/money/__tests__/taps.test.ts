@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { askOutsideTurn } from '../ask.js';
 import { Later } from '../deps.js';
 import { getPayment } from '../store.js';
-import { approveTap, declineTap, type TapDeps } from '../taps.js';
+import { approveTap, declineTap, groupAgreed, type TapDeps } from '../taps.js';
 import { TOASTS } from '../words.js';
 import { moneyKit, type MoneyKit } from './kit.js';
 
@@ -28,6 +28,18 @@ beforeEach(async () => {
 afterEach(async () => {
   await t.later.settled();
   await k.drop();
+});
+
+// The vault's pay page says "The group agreed to this first" only when it did (the lead, 12 Oct).
+describe('whether the group agreed to a payment first', () => {
+  it("is a vote's payment among more than one person; never a person's own ticket or a trip of one", async () => {
+    expect(groupAgreed({ kind: 'group', decision_id: 'd_villa', for_person_ids: ['p_rahul', 'p_priya'] })).toBe(true);
+    expect(groupAgreed({ kind: 'group', decision_id: 'd_villa', for_person_ids: ['p_rahul'] })).toBe(false);
+    expect(groupAgreed({ kind: 'ticket', decision_id: null, for_person_ids: ['p_meher'] })).toBe(false);
+    expect(groupAgreed({ kind: 'group', decision_id: null, for_person_ids: ['p_rahul', 'p_priya'] })).toBe(false);
+    // And Go tells the vault, with the pay link it asked for (the villa's, for the whole group, asked before each test).
+    expect(k.vault.payLinks.at(-1)).toMatchObject({ groupAgreed: true });
+  });
 });
 
 describe('Approve', () => {

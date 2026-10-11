@@ -28,6 +28,7 @@ const input: PayLinkInput = {
   tripId: 't_goa',
   payerPersonId: 'p_rahul',
   payerName: 'Rahul',
+  groupAgreed: true,
   hold: {
     holdId: 'hold_1',
     amountMinor: 5420000,
@@ -74,6 +75,7 @@ describe('vaultClient', () => {
       trip_id: 't_goa',
       payer_person_id: 'p_rahul',
       payer_name: 'Rahul',
+      group_agreed: true,
       hold: { hold_id: 'hold_1', amount_minor: 5420000, currency: 'INR', merchant: 'ixigo: Villa Sol, Anjuna', payment_kind: 'stripe_test', expires_at: '2026-10-05T09:15:00Z' },
     });
   });

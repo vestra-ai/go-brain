@@ -25,6 +25,8 @@ export interface PayLinkInput {
   tripId: string;
   payerPersonId: string;
   payerName: string;
+  /** The group agreed to it first (its vote, among more than one person): the vault's pay page says so only then. */
+  groupAgreed: boolean;
   hold: { holdId: string; amountMinor: number; currency: string; merchant: string; paymentKind: PaymentKind; expiresAt: string };
 }
 
@@ -110,6 +112,7 @@ export function vaultClient(o: { baseUrl: string; secret: string; fetch?: typeof
             trip_id: i.tripId,
             payer_person_id: i.payerPersonId,
             payer_name: i.payerName,
+            group_agreed: i.groupAgreed,
             hold: {
               hold_id: i.hold.holdId,
               amount_minor: i.hold.amountMinor,
