@@ -62,6 +62,8 @@ export function amountsSaid(messages: Message[], group: { heads: number; nights:
 export async function whyNotBookable(
   d: Pick<MoneyDeps, 'travel'>,
   option: Trip['decisions'][number]['options'][number],
+  /** The trip: where Go books each person's own flight (BOOKING), a group flight says how they book theirs. */
+  tripId?: string,
 ): Promise<{ refused: string; unbookable?: true } | null> {
   const words = { payer: 'The payer', what: option.label };
   const travel = d.travel();
@@ -75,7 +77,8 @@ export async function whyNotBookable(
   // The option's own page, said only when it is on ixigo.com.
   const link = ixigoPage(offer?.link);
   if (offer && GROUP_FARES.has(offer.kind)) {
-    return { refused: refusalWords('not_bookable_yet', { ...words, kind: offer.kind, ...(link ? { link } : {}) }).text, unbookable: true };
+    const own = offer.kind === 'flight' && tripId !== undefined && ((await travel.booksFlights?.(tripId).catch(() => false)) ?? false);
+    return { refused: refusalWords('not_bookable_yet', { ...words, kind: offer.kind, ...(link ? { link } : {}), ...(own ? { own } : {}) }).text, unbookable: true };
   }
   if (!offer?.offerId) return { refused: refusalWords('not_bookable', { ...words, ...(link ? { link } : {}) }).text, unbookable: true };
   // A vote that outlived its stay's or journey's day: nothing to book, so no mandate.
@@ -120,7 +123,7 @@ export async function setMandate(
   if (!allowed || !chosen) return { refused: `${alone ? 'You' : 'The group'} picked ${winnerLabel}. I can only set that.` };
 
   // Something Go cannot book needs no payer: say so before anyone is asked who pays. A failed check only says try again.
-  const cannot = await whyNotBookable(d, chosen);
+  const cannot = await whyNotBookable(d, chosen, ctx.tripId);
   if (cannot) return cannot;
 
   const payer = trip.people.find((p) => p.person_id === o.payerPersonId);

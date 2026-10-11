@@ -206,6 +206,49 @@ describe('a composer turn', () => {
     });
   });
 
+  // p2's prod audit, 11 Oct 08:26: "december I meant" landed 1 s before Go posted "Did you mean the first week of
+  // November?". A line in the pack before its desk item exists (intake reads it first) is waited for, and read.
+  describe('a line that lands while the turn writes', () => {
+    it('waits a moment for its desk item, takes it into the turn, and posts the redone reply', async () => {
+      const q = msg(10, 'p_priya', '@Go first week works for me');
+      const late = msg(11, 'p_priya', 'december I meant');
+      let calls = 0;
+      const r = room({
+        messages: [q],
+        script: [{ text: 'Did you mean the first week of November?' }, { text: 'Got it, Priya: taking 1 to 7 Dec.' }],
+        claimNew: async (tripId) => {
+          calls += 1;
+          if (calls === 1) {
+            r.pack.messages.push(late); // landed, its desk item not put yet
+            return [];
+          }
+          return calls === 2 ? [item(tripId, late, false)] : [];
+        },
+      });
+      await turn(r, [item(r.tripId, q, true)]);
+      expect(r.slept.slice(0, 1)).toEqual([300]);
+      expect(r.model.bodies).toHaveLength(2);
+      expect(JSON.stringify(r.model.bodies[1].messages.at(-1))).toContain('december I meant');
+      expect(r.posts().map((p) => p.params.text)).toEqual(['Got it, Priya: taking 1 to 7 Dec.']);
+    });
+
+    it('reads a line that never reaches the desk too, after the short wait', async () => {
+      const q = msg(12, 'p_kabir', '@Go dates are 6 to 9 Nov?');
+      const late = msg(13, 'p_kabir', 'wait no, 7 to 10');
+      const r = room({
+        messages: [q],
+        script: [{ text: 'Yes, 6 to 9 Nov.' }, { text: 'Got it, 7 to 10 Nov.' }],
+        claimNew: async () => {
+          if (!r.pack.messages.includes(late)) r.pack.messages.push(late);
+          return [];
+        },
+      });
+      await turn(r, [item(r.tripId, q, true)]);
+      expect(r.slept.filter((ms) => ms === 300)).toHaveLength(4);
+      expect(r.posts().map((p) => p.params.text)).toEqual(['Got it, 7 to 10 Nov.']);
+    });
+  });
+
   it('the greeting: hello only, and the model is not told to open a vote', async () => {
     const r = room({ messages: [], script: [{ text: 'Hi all, I am Go! I can find stays, run votes and keep the plan.' }] });
     await turn(r, [{ id: `setup:${r.tripId}:greet`, tripId: r.tripId, kind: 'setup', ref: 'greet', dueAt: new Date(), payload: {} }]);
@@ -1036,7 +1079,7 @@ describe("a lane's card on the turn's own post (p2's regression red: a new trip 
     expect(r.posts()).toHaveLength(1);
     const hello = r.posts()[0]!.params;
     expect(hello.text).toBe(`${HELLO}\n${HELLO_LINE.replace('{name}', 'Rahul')}`);
-    expect(hello.text).toBe(`${HELLO}\nRahul, first link ixigo once so I can search and book for everyone.`);
+    expect(hello.text).toBe(`${HELLO}\nRahul, link ixigo once with one tap and I can book for everyone.`);
     expect(hello.mentions).toEqual(['p_rahul']);
     expect(hello.card).toMatchObject({
       card_id: `c_login_${r.tripId}_0`, kind: 'notice', title: 'Link ixigo for this trip', for_person_ids: ['p_rahul'],

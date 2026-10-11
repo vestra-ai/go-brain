@@ -5,7 +5,7 @@ import { looksLikeMoney, saysMoneyMoved } from '../reflex/money-line.js';
 import { plainlyNamesGo } from '../trips/names-go.js';
 import type { TripPack } from '../trips/pack.js';
 import { flexibleOf } from '../trips/votes.js';
-import { answersToGo, inlineData, personName } from './fence.js';
+import { answersToGo, followsGoAnswer, inlineData, personName } from './fence.js';
 
 /** For a line that says someone paid but no amount: record_expense would ask, but with no amount the model never calls it. */
 export const ASK_HOW_MUCH =
@@ -46,7 +46,8 @@ export function renderMessageWake(item: DeskItem, pack: TripPack): string {
  * the cache point, not in GO_RULES: the rules' cached bytes never change. A line saying someone paid or owes keeps its own instruction (record_expense from the rules, or ASK_HOW_MUCH); a
  * price or a budget ("villa under 8k a head") gets the note like any other line. A line by someone who named Go in
  * the same turn goes on with what they asked ("@Go one thing" ... "is there a good bakery near Anjuna?"), and so does a
- * line by someone answering a question Go asked them (answersToGo): it is a reply to Go, not the group talking.
+ * line by someone answering a question Go asked them (answersToGo), or going on from Go's answer to them (followsGoAnswer):
+ * it is a reply to Go, not the group talking.
  */
 export function quietNote(items: DeskItem[], pack: TripPack): string | null {
   const messages = items.flatMap((item) => {
@@ -57,7 +58,8 @@ export function quietNote(items: DeskItem[], pack: TripPack): string | null {
     return m && m.author.kind === 'person' ? [{ m, person: m.author.person_id, namesGo: p.namesGo === true || p.asksGo === true, actionable: p.actionable === true }] : [];
   });
   const answers = answersToGo(pack);
-  const named = new Set(messages.filter((x) => x.namesGo || answers.has(x.m.message_id)).map((x) => x.person));
+  const follows = followsGoAnswer(pack);
+  const named = new Set(messages.filter((x) => x.namesGo || answers.has(x.m.message_id) || follows.has(x.m.message_id)).map((x) => x.person));
   const seqs = messages.filter((x) => !named.has(x.person) && !saysMoneyMoved(x.m.text)).map((x) => x.m.seq);
   if (seqs.length === 0) return null;
   const refs = seqs.map((s) => `#${s}`);
@@ -112,6 +114,30 @@ export function askNote(items: DeskItem[], pack: TripPack): string | null {
     'A list, a recap or a comparison they asked for may be longer. When you cite what someone said, keep its message number. ' +
     'Start with the answer: never with what they asked for, why your answer takes the shape it does, or what you will leave out.' +
     points.map((x) => ` ${x}`).join('')
+  );
+}
+
+/** An ask this much older than the turn waited for Go: Go was away (an outage, a restart, the trip's Server unreachable). */
+export const WAITED_MS = 2 * 60_000;
+
+/**
+ * The asks Go missed while it was away, answered together: when a turn takes asks that waited, the oldest real ask
+ * comes first (prod, 11 Oct, Manali: "whats going on", "plan a stay", "hi" and "respond" waited 30 minutes on a stranded
+ * socket, and Go came back answering only the newest line, "are you back alive?").
+ */
+export function catchUpNote(items: DeskItem[], pack: TripPack, now: Date): string | null {
+  const asks = items.flatMap((item) => {
+    const asked = item.payload as { namesGo?: boolean; asksGo?: boolean; messageId?: string } | null;
+    if (item.kind !== 'message' || (asked?.namesGo !== true && asked?.asksGo !== true)) return [];
+    const m = pack.messages.find((x) => x.message_id === (asked?.messageId ?? item.ref));
+    return m && m.author.kind === 'person' ? [m] : [];
+  });
+  const waited = asks.filter((m) => now.getTime() - Date.parse(m.sent_at) > WAITED_MS).sort((a, b) => a.seq - b.seq);
+  if (waited.length === 0) return null;
+  return (
+    `You couldn't reach the room when ${listOfRefs(waited.map((m) => m.seq))} came, and they waited. Answer every ask that waited ` +
+    'together in this one reply, the oldest real ask first, doing what it asked (an ask for stays gets the stays card), ' +
+    'never only the newest line. A greeting or "are you there" needs no more than that you are back.'
   );
 }
 

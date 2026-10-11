@@ -80,10 +80,13 @@ const Because = z
   .optional()
   .describe('Only when a time above comes from the trip, not from this ask: who it is for and why, in plain words, e.g. "Rahul can leave Friday after 6 pm".');
 
+/** A journey search's day: the one asked, else the trip's own, never a question back (p2's prod audit, 11 Oct #8). */
+const DAY = "YYYY-MM-DD: the day asked, else the trip's own (its start, or its end for the way back). Never ask for it when the trip has one.";
+
 export const FlightsArgs = z.object({
   from: Where.describe('City or airport code, e.g. "Delhi" or "DEL"; a city abroad with its airport code, e.g. "London (LHR)"'),
   to: Where.describe('City or airport code, e.g. "Goa" or "Dubai (DXB)"'),
-  date: z.iso.date().describe('YYYY-MM-DD'),
+  date: z.iso.date().describe(DAY),
   return_date: z.iso.date().optional()
     .describe('YYYY-MM-DD, the day back, for a round trip ("6 ko jaana 9 ko wapas"): both ways on one ixigo page, shown as pairs priced there and back. The times and stops given are the way there. Several legs (multi-city) are one search_flights a leg instead.'),
   depart_after: Clock.optional().describe('24-hour HH:MM. Someone who can only leave after 6 pm is "18:00".'),
@@ -106,7 +109,7 @@ export const FlightsArgs = z.object({
 export const JourneyArgs = z.object({
   from: Where.describe('City or station, e.g. "Jaipur"; for trains, a station with its Indian Railways code works too, e.g. "Udaipur City (UDZ)"'),
   to: Where.describe('City or station, e.g. "Goa"; for trains, a station with its code works too, e.g. "Madgaon (MAO)"'),
-  date: z.iso.date().describe('YYYY-MM-DD'),
+  date: z.iso.date().describe(DAY),
   depart_after: Clock.optional().describe('24-hour HH:MM'),
   depart_before: Clock.optional(),
   arrive_before: Clock.optional(),
@@ -135,7 +138,10 @@ export const StaysArgs = z.object({
     ),
   site_sort: z.string().min(1).max(80).optional().describe("ixigo's own sort the ask means, by its name on that list"),
   wants: z.array(z.string().min(1).max(80)).max(8).optional()
-    .describe("Anything else the group asked for that no filter covers, in their words: you pick it from the results' amenities and details"),
+    .describe(
+      "Anything else the group asked for, in their words (a gym, a jacuzzi): ixigo filters it itself when one of its own filters means it " +
+        "(a gym is its Fitness Centre), and the rest you pick from the results' amenities and details",
+    ),
 });
 
 export function flightsQuery(a: z.infer<typeof FlightsArgs>): TravelQuery {
@@ -551,7 +557,9 @@ function answeredAs(q: TravelQuery, found: TravelSearch): TravelQuery {
 export function leftToPick(q: TravelQuery, found: TravelSearch): string[] {
   const asked = [...(q.siteFilters ?? []), ...(q.siteSort ? [q.siteSort] : [])];
   const notApplied = found.site ? [...found.site.unknown, ...(found.unapplied ?? []).filter((n) => asked.includes(n))] : asked;
-  return [...new Set([...notApplied, ...(q.wants ?? [])])];
+  // A want the site's own filter covered (a gym, as its Fitness Centre) is filtered, never the model's to pick.
+  const wanted = found.site?.wanted ?? [];
+  return [...new Set([...notApplied, ...(q.wants ?? []).filter((w) => !wanted.includes(w))])];
 }
 
 /** What goes before the card's line of a search ixigo left filters off: "ixigo's pool filter didn't load in time, …: ". */
@@ -830,7 +838,7 @@ export async function searchAnswer(kind: TravelKind, ask: TravelQuery, found: Tr
       `${found.notes?.length ? "What ixigo itself offers for this list is in the summary: say it in one short line when it helps the ask (holding a fare while the group decides, a budget), as ixigo's to set, never Go's. " : ''}` +
       (pick.length
         ? `Pick the options whose amenities or details fit ${listOf(pick)}, best first (the card shows the rest after them, 10 in all), and say which part ixigo filtered, which you picked, and that the ones after them don't say it; ` +
-          "a want the data can't show (quiet) is no reason to show fewer: pick on what it does show and say plainly what ixigo doesn't tell. " +
+          "a want the data can't show (quiet) is no reason to show fewer: pick on what it does show and say plainly what ixigo doesn't tell, never that they should check it. " +
           'If none clearly fits, say so and show the closest. ' +
           (list ? "If one of ixigo's own filters is what was asked, you may search again with it in site_filters. " : '')
         : '') +
@@ -872,8 +880,8 @@ const SEARCH_RULE = 'Put every constraint people gave into the arguments: Go app
  * "Meher, does this feel quiet enough?").
  */
 const NO_HOMEWORK =
-  "Never hand the work back to the group: no maths for them to check (each stay's share a head is on the card, worked out by Go) and no " +
-  '"does this work for you?" about whether an option fits: you make that call from the results and say it.';
+  "Never hand the work back to the group: no maths for them to check (each stay's share a head is on the card, worked out by Go), no " +
+  '"does this work for you?" about whether an option fits, and never "check each one\'s amenities": you make that call from the results and say it.';
 
 const ShowArgs = z.object({
   results_id: z.string().min(3).max(64),

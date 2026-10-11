@@ -181,6 +181,8 @@ export interface SiteSaid {
   filtered: string[];
   sorted: string | null;
   unknown: string[];
+  /** The group's other asks (RunFor.siteWants) the site's own filters covered: a gym, as its Fitness Centre. */
+  wanted?: string[];
   listed: boolean;
   list: OfferList | null;
   /** The cap a night and a room, in rupees, that the site's own price bands were picked by (a decided budget); null when none. */
@@ -193,6 +195,8 @@ interface Site {
   filters: Offer[];
   sort: Offer | null;
   unknown: string[];
+  /** The asks of siteWants its filters covered. */
+  wanted: string[];
   listed: boolean;
   /** The site's price bands a decided budget picked (RunFor.budgetMinor), and the cap a night and a room they were picked by. */
   price: Offer[];
@@ -269,6 +273,8 @@ export interface RunFor {
   /** The site's own filters and sort the run asks for, by their names on the list the recipe's page offers (offers.ts). */
   siteFilters?: string[];
   siteSort?: string;
+  /** The group's other asks ("a gym"): applied as the site's own filters that mean them, when its list has one; never unknown. */
+  siteWants?: string[];
   /**
    * The group's decided budget for the stay, per person, in paise: the site's own price bands at or under each room's
    * share of it a night, and one band over, filter the read (offers.ts bandsFor). Only a decided budget, never a guess.
@@ -620,10 +626,15 @@ export function createEngine(d: EngineDeps) {
     const asked = [...(o.siteFilters ?? []), ...(o.siteSort ? [o.siteSort] : [])];
     const key = recipe.offers ? await fill(recipe.offers.for, inputs, { url: false }) : null;
     const list = key !== null ? (d.offers?.get(recipe.id, key) ?? null) : null;
-    if (!list) return { key, filters: [], sort: null, unknown: asked, listed: false, price: [], cap: null };
+    if (!list) return { key, filters: [], sort: null, unknown: asked, wanted: [], listed: false, price: [], cap: null };
     const f = pickOffers(list.offers, o.siteFilters ?? [], 'filter');
     const s = o.siteSort ? pickOffers(list.offers, [o.siteSort], 'sort') : { picked: [], unknown: [] };
-    const site: Site = { key, filters: f.picked, sort: s.picked[0] ?? null, unknown: [...f.unknown, ...s.unknown], listed: true, price: [], cap: null };
+    // The rest of the ask that is one of the site's own filters (a gym, its Fitness Centre) is filtered by the site too,
+    // on its page, never left for anyone to check (the Manali room, 11 Oct); what isn't stays the model's to pick.
+    const w = pickOffers(list.offers, o.siteWants ?? [], 'filter');
+    const filters = [...f.picked, ...w.picked.filter((x) => !f.picked.includes(x))];
+    const wanted = (o.siteWants ?? []).filter((x) => !w.unknown.includes(x));
+    const site: Site = { key, filters, sort: s.picked[0] ?? null, unknown: [...f.unknown, ...s.unknown], wanted, listed: true, price: [], cap: null };
     if (o.budgetMinor === undefined) return site;
     // Each room's share a night of the budget for every head, as the page books it (the rooms its let says it books: an
     // entire house is one), in rupees as the site prices a stay.
@@ -960,7 +971,7 @@ export function createEngine(d: EngineDeps) {
       if (!recipe.offers || answer.as !== 'options') return answer;
       // What the site did with the ask, and its list as it is now known (the page just brought it, when none was kept).
       const list = site.key !== null ? (d.offers?.get(recipe.id, site.key) ?? null) : null;
-      return { ...answer, site: { filtered: site.filters.map(offerWords), sorted: site.sort?.name ?? null, unknown: site.unknown, listed: site.listed, list, priced: site.cap } };
+      return { ...answer, site: { filtered: site.filters.map(offerWords), sorted: site.sort?.name ?? null, unknown: site.unknown, wanted: site.wanted, listed: site.listed, list, priced: site.cap } };
     };
     /**
      * A decided budget on a place's first read: its list came with that page, so the bands the budget picks are known only

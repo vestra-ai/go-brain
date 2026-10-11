@@ -164,6 +164,16 @@ describe('checkLine', () => {
       .toMatchObject({ ok: true, value: { kind: 'open', proof: [{ message_id: 'm_0143', person_id: null }] } });
     expect(checkLine(lineP({ text: 'Scuba on Saturday', proof: ['m_0143'] }), env()).ok).toBe(false);
   });
+  // Prod, 11 Oct: "Goa or Gokarna for the beach trip?" was opened as the person tapped Goa.
+  it("refuses an open line resting on Go's own question once the people it asks have spoken after it", () => {
+    const refused = { ok: false, reason: "Go's question was answered: the people it asks spoke after it" };
+    // Arjun spoke after Go's question (151): answered.
+    expect(checkLine(lineP({ kind: 'open', text: 'Scuba on Saturday?', proof: ['m_0143'], person_ids: ['p_arjun'] }), env())).toEqual(refused);
+    // Asking nobody by name, anyone speaking after it counts.
+    expect(checkLine(lineP({ kind: 'open', text: 'Scuba on Saturday?', proof: ['m_0143'] }), env())).toEqual(refused);
+    // Kabir never spoke after it, and Meher's line is withheld: still open.
+    expect(checkLine(lineP({ kind: 'open', text: 'Scuba on Saturday?', proof: ['m_0143'], person_ids: ['p_kabir'] }), env()).ok).toBe(true);
+  });
   it('refuses a stranger, no proof, a deleted or secret proof, and a forgotten person\'s proof', () => {
     expect(checkLine(lineP({ proof: ['m_0122', 'm_0124'], person_ids: ['p_nobody'] }), env()).ok).toBe(false);
     expect(checkLine(lineP({ proof: [] }), env()).ok).toBe(false);

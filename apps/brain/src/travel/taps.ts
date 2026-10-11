@@ -45,6 +45,9 @@ export interface TravelTapDeps {
 
 export { ALL_SHOWN } from './see-more.js';
 
+/** A second tap while their booking is under way: it goes on, and nothing starts twice. */
+export const ALREADY_BOOKING = 'Go is already booking your flight';
+
 /** How long the App may hold an ixigo page it was told to open: the time its prices count as fresh. */
 export const OPEN_FOR_MS = 10 * 60_000;
 
@@ -109,8 +112,8 @@ export function registerTravelTaps(taps: Brain['taps'], d: TravelTapDeps): { see
         }
         const name = (await d.nameOf?.(tap.trip_id, tap.person_id).catch(() => null)) ?? 'you';
         // Their card as it was goes with the booking, put back if it stops before the pay card.
-        await d.booking.start({ tapId: tap.tap_id, tripId: tap.trip_id, personId: tap.person_id, name, offer, choice: 'basic', ...(own ? { restore: row.card } : {}) });
-        return { result: 'done', toast: "Go is booking it on the trip's computer" };
+        const started = await d.booking.start({ tapId: tap.tap_id, tripId: tap.trip_id, personId: tap.person_id, name, offer, choice: 'basic', ...(own ? { restore: row.card } : {}) });
+        return { result: 'done', toast: started === 'running' ? ALREADY_BOOKING : "Go is booking it on the trip's computer" };
       }
       const card = buildConfirmMineCard({ cardId: stableId('c_mine', tap.tap_id), personId: tap.person_id, optionKind: row.optionKind, checkedAt: offer.checkedAt, option: shown });
       // Posted after the answer, as a vote is: a request to the Server must not hold the 3 s tap answer.
@@ -141,8 +144,8 @@ export function registerTravelTaps(taps: Brain['taps'], d: TravelTapDeps): { see
     // Go books it itself, on the stage, up to ixigo's pay button (BOOKING): the tap answers at once, the booking goes on.
     if (d.booking && m.offer.kind === 'flight' && m.offer.sourceUrl && (await d.booking.onFor(tap.trip_id))) {
       const name = (await d.nameOf?.(tap.trip_id, tap.person_id).catch(() => null)) ?? 'you';
-      await d.booking.start({ tapId: tap.tap_id, tripId: tap.trip_id, personId: tap.person_id, name, offer: m.offer, choice: 'basic' });
-      return { result: 'done', toast: "Go is booking it on the trip's computer" };
+      const started = await d.booking.start({ tapId: tap.tap_id, tripId: tap.trip_id, personId: tap.person_id, name, offer: m.offer, choice: 'basic' });
+      return { result: 'done', toast: started === 'running' ? ALREADY_BOOKING : "Go is booking it on the trip's computer" };
     }
     const url = ixigoPage(forOne(m.offer.sourceUrl));
     if (!url) return { result: 'refused', toast: 'This option has no ixigo page' };

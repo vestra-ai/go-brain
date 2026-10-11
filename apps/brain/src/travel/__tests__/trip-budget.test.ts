@@ -10,7 +10,7 @@ import { createTravelLayer } from '../layer.js';
 import { createFakeTravel } from '../mcp-travel.js';
 import { createResultsStore } from '../results.js';
 import { travelTools } from '../tools.js';
-import { budgetNow, budgetTool, budgetWords, createTripBudgets, stayCap, type TripBudgets } from '../trip-budget.js';
+import { WEIGH, budgetNow, budgetTool, budgetWords, createTripBudgets, stayCap, type TripBudgets } from '../trip-budget.js';
 
 let db: Awaited<ReturnType<typeof withSchema>>;
 let lb: LaneBrain;
@@ -103,7 +103,7 @@ describe('the decided budget, kept and read', () => {
     await budgets.set('t_now', { perPersonMinor: 2_000_000, covers: 'whole_trip', messageId: 'm_3' });
     expect(await now.render('t_now', [])).toBe(
       "The trip's budget, decided in the chat: up to ₹20,000 per person for the whole trip. Search and pick with it in mind, mostly within it; " +
-        'anything you show over it, say so plainly. It holds until the group changes it.',
+        `anything you show over it, say so plainly. ${WEIGH} It holds until the group changes it.`,
     );
     expect(budgetWords({ perPersonMinor: 1_500_000, covers: 'stay', source: 'app', messageId: null })).toBe(
       'up to ₹15,000 per person for the stay and food (the lowest band in the App answers, flights separate)',
@@ -115,12 +115,12 @@ describe('the decided budget, kept and read', () => {
     const now = budgetNow({ budgets, trip: async () => groupOf(2_000_000) });
     expect(await now.render('t_now_group', [])).toBe(
       "The trip's budget, the group's in the App: up to ₹20,000 per person for the whole trip. Search and pick with it in mind, mostly within it; " +
-        'anything you show over it, say so plainly. It holds until the group changes it.',
+        `anything you show over it, say so plainly. ${WEIGH} It holds until the group changes it.`,
     );
     await budgets.set('t_now_group', { perPersonMinor: 900_000, covers: 'stay', messageId: 'm_7' });
     expect(await now.render('t_now_group', [])).toBe(
       "The trip's budget, decided in the chat: up to ₹9,000 per person for the stay. Search and pick with it in mind, mostly within it; " +
-        "anything you show over it, say so plainly. It holds until the group changes it. The group's budget in the App is up to ₹20,000 per person for the whole trip.",
+        `anything you show over it, say so plainly. ${WEIGH} It holds until the group changes it. The group's budget in the App is up to ₹20,000 per person for the whole trip.`,
     );
     await budgets.clear('t_now_group');
   });

@@ -8,6 +8,7 @@ import { leftToPeople } from '../reflex/read.js';
 import { UNSURE_READ, type Reflex, type ReflexRead } from '../reflex/reflex.js';
 import type { HooksImpl } from './hooks.js';
 import type { TripLogImpl } from './log.js';
+import { answersToGo, followsGoAnswer } from '../composer/fence.js';
 import { asksWhatTheyMissed, continuesAskToGo, endsThought, namesGoInText, plainlyNamesGo } from './names-go.js';
 import { TripGoneError } from './gone.js';
 import type { PacksImpl, TripPack } from './pack.js';
@@ -129,7 +130,11 @@ export function createIntake(d: IntakeDeps) {
     // is told so, and jumps in.
     const actionable = !namesGo && !asksGo && read.actionable?.sure === true && read.actionable.value === true;
     if (asksGo) d.speak.typingOn(tripId);
-    if (wakesComposer(namesGo, read, m.text)) {
+    // A plain answer to Go's question, or a line going on from Go's answer to this person, is for Go though it names no
+    // one (prod, 11 Oct 08:22: "also mention that he should be my roommate" after Go answered them got silence): it
+    // always reaches the composer, which reads it as a reply (fence.ts) and still says nothing to an "ok".
+    const toGo = !namesGo && (answersToGo(pack).has(m.message_id) || followsGoAnswer(pack).has(m.message_id));
+    if (wakesComposer(namesGo || toGo, read, m.text)) {
       const now = d.now();
       const complete = dueAtOnce(m, pack, read, namesGo || asksGo, said.dueNow === true);
       await d.desk.put({
@@ -192,6 +197,9 @@ export function createIntake(d: IntakeDeps) {
     // Setup runs on trip.created and on any event for a trip not set up yet; it never holds up the events.
     d.setup.ensureSoon(tripId);
     await react(ev);
+    // The Server reached Go for this trip, so it is back: a turn that waited on it runs now, together with this event's
+    // message, so the asks it missed are answered in one reply.
+    await d.desk.wake?.(tripId);
     await d.tripLog.emit(ev);
     await setProcessed(tripId, ev.seq);
   }
