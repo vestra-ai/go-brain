@@ -113,10 +113,14 @@ export async function saveTrip(
     const won = await decided(d, at.pack, 'place');
     const voted = won ? (won.place?.name ?? won.title) : null;
     const named = voted !== null && ` ${plain(a.destination)} `.includes(` ${plain(voted)} `);
+    // The place card names a place with its state ("Gokarna, Karnataka"), which ixigo pins only as the city: the city
+    // alone is the group's pick (prod, 12 Oct: Gokarna won, and the trip never got a place).
+    const city = voted !== null && voted.includes(',') ? voted.split(',')[0]!.trim() : null;
+    const cityOfVote = !named && city !== null && city !== '' && plain(a.destination) === plain(city);
     const place = await destinationOf(d, at, named ? voted : a.destination);
     // A city in the place the group voted for is that place, pinned: Marrakech for Morocco, by ixigo's own word for
     // where Marrakech is, since ixigo pins no country (Varkala, 11 Oct).
-    if (voted !== null && !named && !('within' in place && place.within.some((w) => plain(w) === plain(voted)))) {
+    if (voted !== null && !named && !cityOfVote && !('within' in place && place.within.some((w) => plain(w) === plain(voted)))) {
       return { ok: false, error: `The group voted for ${voted}. Save that, or ask the group before changing the place.`, quiet: true };
     }
     if ('error' in place) note = note ? `${note} ${place.error}` : place.error;

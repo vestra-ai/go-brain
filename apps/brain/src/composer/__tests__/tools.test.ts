@@ -257,6 +257,7 @@ describe('the room\'s tools', () => {
     const options: Record<string, unknown> = {
       opt_sol: sol, opt_casa: casa, opt_north: north, opt_south: { ...north, title: 'South Goa', place: { name: 'South Goa', address: null } },
       opt_morocco: { ...north, title: 'Morocco', place: { name: 'Morocco', address: null } },
+      opt_manali_hp: { ...north, title: 'Manali, Himachal Pradesh', place: { name: 'Manali, Himachal Pradesh', address: null } },
     };
     // The places ixigo resolves (placeFor, p4's travel lane).
     const GOA = { name: 'Goa', place_id: 'ixigo_goa', lat: 15.3, lng: 74.1, photo_url: 'https://images.ixigo.com/goa.jpg' };
@@ -343,6 +344,21 @@ describe('the room\'s tools', () => {
       expect(await updateTrip.run({ decision_id: 'd_card', destination: 'Marrakech' }, card.ctx)).toEqual({ ok: true, changed: ['destination'] });
       expect(await updateTrip.run({ decision_id: 'd_card', destination: 'Manali' }, card.ctx)).toMatchObject({ ok: false, error: 'The group voted for Morocco. Save that, or ask the group before changing the place.' });
       expect(card.calls).toHaveLength(1);
+    });
+
+    // Prod, 12 Oct: the place card's "Gokarna, Karnataka" won, ixigo pinned no place by that label, and the city alone was
+    // refused as "a different place", so the trip never got one.
+    it('a place card\'s "City, State" winner is saved as the city alone, and another city is still refused', async () => {
+      const { ctx, calls } = run([closed('d_hp', ['opt_manali_hp', 'opt_north'], 0, '2026-10-12T00:10:00Z')]);
+      expect(await updateTrip.run({ decision_id: 'd_hp', destination: 'Manali, Himachal Pradesh' }, ctx)).toMatchObject({
+        ok: false, error: expect.stringContaining('ixigo pins no place called Manali, Himachal Pradesh'),
+      });
+      expect(await updateTrip.run({ decision_id: 'd_hp', destination: 'Manali' }, ctx)).toEqual({ ok: true, changed: ['destination'] });
+      expect(calls.map((c) => c.params.destination)).toEqual([places['manali']]);
+      expect(await updateTrip.run({ decision_id: 'd_hp', destination: 'Panaji' }, ctx)).toMatchObject({
+        ok: false, error: 'The group voted for Manali, Himachal Pradesh. Save that, or ask the group before changing the place.',
+      });
+      expect(calls).toHaveLength(1);
     });
 
     it('staging 09:32: a vote on where to stay in Goa sets the stay to its winner and leaves Goa the destination, with its place_id', async () => {
