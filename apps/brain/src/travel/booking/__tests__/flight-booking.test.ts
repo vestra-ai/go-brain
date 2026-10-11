@@ -8,6 +8,7 @@ import type { ReadOptions, RecipeRunner } from '../../recipes/runners.js';
 import { createResultsStore, type ResultOption } from '../../results.js';
 import type { StoredOffer } from '../../travel.js';
 import { SWITCH_RULES } from '../../../admin/switches.js';
+import { spokenFirstName } from '../travellers.js';
 import { createFlightBooking, dayMs, dayOf, FLIGHT_FARE, FLIGHT_STREAM, GRAPH, LOGIN_WAIT_MS, numbersOf, readyCard, SAVED_TRAVELLERS, TRAVELLER_FIELDS, travellerAsk, type FlightBooking, type TicketPay } from '../flight-booking.js';
 import { buildOptionsCard } from '../../cards.js';
 
@@ -257,6 +258,19 @@ describe("Go books a person's own flight up to ixigo's pay button", () => {
       const row = (await db.pool.query(`select state, why from flight_bookings where person_id = $1`, [person])).rows[0];
       expect(row, String(tick)).toEqual({ state: 'failed', why: 'traveller_not_ticked' });
     }
+  });
+
+  // p2's prod audit (11 Oct, #15): its words said "Booking … for <first last>". Go says first names.
+  it("says the traveller's first name in every word of the booking, past a title", async () => {
+    expect(['Dr. Meher Kapoor', 'Meher', '  Ankur Sharma ', 'Mr Rahul'].map(spokenFirstName)).toEqual(['Meher', 'Meher', 'Ankur', 'Rahul']);
+    const b = booking(fakeRunner().runner);
+    const from = lb.link.requests.length;
+    await b.start({ tapId: 'tap_fn1', tripId: 't_goa', personId: 'p_meher22', name: 'Dr. Meher Kapoor', offer: OFFER, choice: 'basic' });
+    await b.settled();
+    const cards = lb.link.requests.slice(from).map((r) => r.params['card'] as { kind?: string; title?: string } | undefined).filter((c) => c !== undefined);
+    expect(cards.find((c) => c.kind === 'working')?.title).toBe('Booking IndiGo 6E2150 for Meher');
+    expect(cards.find((c) => c.kind === 'notice')?.title).toBe('Ready to pay ₹7,536 for Meher');
+    expect(JSON.stringify(lb.link.requests.slice(from))).not.toContain('Kapoor');
   });
 
   it('stops and says so when the flight is gone or the review page did not answer', async () => {

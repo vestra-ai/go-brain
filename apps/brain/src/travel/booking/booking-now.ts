@@ -1,15 +1,16 @@
 /**
- * A person's own flight booking as Go has it (flight_bookings), in the turns they speak in: under way, waiting for the
- * trip's ixigo login, stopped and why, its pay card up, or paid. Go's own state, never anyone's private words. The lead,
- * 11 Oct: Ankur's "?" 20 s after his booking stopped privately got "Ankur, what do you need?", the composer knowing
- * nothing of it.
+ * The trip's flight bookings as Go has them (flight_bookings), "right now": under way, waiting for the trip's ixigo login,
+ * stopped and why, the pay card up, or paid. Go's own state in its own words, never a private post's (screen.ts blanks
+ * those for the group's turns, so without this no turn knew a booking step was up). The lead, 11 Oct: Ankur's "?" 20 s
+ * after his booking stopped privately got "Ankur, what do you need?"; p2's prod audit, #16. Whoever spoke comes first.
  */
 import type pg from 'pg';
 import type { NowProvider } from '../../composer/context.js';
 import type { Packs } from '../../trips/pack.js';
 import { formatInr } from '../cards.js';
+import { spokenFirstName } from './travellers.js';
 
-/** How long a booking stays in its person's turns after it last moved. */
+/** How long a booking stays "right now" after it last moved. */
 export const BOOKING_NOW_MS = 3 * 60 * 60_000;
 /** A booking that hasn't moved for this long while under way was cut off (a restart): its card is theirs to tap again. */
 const STALLED_MS = 3 * 60_000;
@@ -57,24 +58,23 @@ export function bookingsNow(d: { pool: pg.Pool; packs: Pick<Packs, 'get'>; now: 
     name: 'bookings',
     order: 41,
     async render(tripId, wake) {
-      const ids = new Set(wake.flatMap((i) => (i.kind === 'message' ? [(i.payload as { messageId?: string } | null)?.messageId ?? i.ref] : [])));
-      if (ids.size === 0) return null;
-      const pack = await d.packs.get(tripId);
-      const speakers = [...new Set(pack.messages.flatMap((m) => (ids.has(m.message_id) && m.author.kind === 'person' ? [m.author.person_id] : [])))];
-      if (speakers.length === 0) return null;
       const now = d.now();
-      // Each speaker's latest booking that moved lately.
+      // Each traveller's latest booking that moved lately.
       const { rows } = await d.pool.query<Row>(
         `select distinct on (person_id) person_id, title, state, why, total_minor, updated_at from flight_bookings
-         where trip_id = $1 and person_id = any($2) and updated_at > $3 order by person_id, updated_at desc`,
-        [tripId, speakers, new Date(now.getTime() - BOOKING_NOW_MS)],
+         where trip_id = $1 and updated_at > $2 order by person_id, updated_at desc`,
+        [tripId, new Date(now.getTime() - BOOKING_NOW_MS)],
       );
       if (rows.length === 0) return null;
-      const nameOf = (id: string) => pack.trip.people.find((p) => p.person_id === id)?.name ?? 'Someone';
+      const pack = await d.packs.get(tripId);
+      const ids = new Set(wake.flatMap((i) => (i.kind === 'message' ? [(i.payload as { messageId?: string } | null)?.messageId ?? i.ref] : [])));
+      const spoke = new Set(pack.messages.flatMap((m) => (ids.has(m.message_id) && m.author.kind === 'person' ? [m.author.person_id] : [])));
+      const nameOf = (id: string) => spokenFirstName(pack.trip.people.find((p) => p.person_id === id)?.name ?? 'Someone');
+      const ordered = [...rows].sort((a, b) => Number(spoke.has(b.person_id)) - Number(spoke.has(a.person_id)) || a.person_id.localeCompare(b.person_id));
       return [
-        "Their own flight bookings, as Go has them now. When they ask, or seem lost (\"?\"), say where theirs is in a line, " +
-          "as this says it: never that Go can't book flights.",
-        ...rows.map((r) => `- ${nameOf(r.person_id)}: ${bookingWords(r, now.getTime())}`),
+        'Right now, the trip\'s flight bookings as Go has them (each one is its traveller\'s: when they ask, or seem lost ("?"), ' +
+          "say where theirs is in a line, as this says it, never that Go can't book flights; bring up nobody's unasked):",
+        ...ordered.map((r) => `- ${nameOf(r.person_id)}${spoke.has(r.person_id) ? ' (spoke now)' : ''}: ${bookingWords(r, now.getTime())}`),
       ].join('\n');
     },
   };
