@@ -40,6 +40,11 @@ export interface QuickTool<A = unknown> {
    * tool): what to call instead, as the call's error. Undefined for any other name.
    */
   misnamed?(name: string): string | undefined;
+  /**
+   * false: left out of the model's tools for now (call_business while the CALLS_MODE switch is off), so Go never offers
+   * what it can't do. Read at every turn; the definitions change only when it flips, so the cache holds in between.
+   */
+  offered?(): boolean;
 }
 
 /** A 1.1 quick reply: the contract exports its schema only. */
@@ -118,7 +123,7 @@ export function createTools(): Tools {
       byName.set(t.name, t);
     },
     // Sorted, so the tool definitions are the same bytes whatever order the lanes registered in.
-    list: () => [...byName.values()].sort((a, b) => a.name.localeCompare(b.name)),
+    list: () => [...byName.values()].filter((t) => t.offered?.() !== false).sort((a, b) => a.name.localeCompare(b.name)),
   };
 }
 
