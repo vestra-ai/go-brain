@@ -18,8 +18,9 @@ let door: DoorImpl;
 let link: ServerLinkImpl;
 let base: string;
 const events: unknown[] = [];
-/** The trips the door heard a person act in (onTripActive). */
+/** The trips the door heard a person act in (onTripActive), and the socket each came on. */
 const active: string[] = [];
+const activeFrom = new Map<string, unknown>();
 /** The meta each get_person was handed, by the person asked about. */
 const metas = new Map<string, unknown>();
 // A lane's own socket (P6's media stream works the same way): it answers each frame and records the path it was opened on.
@@ -40,8 +41,9 @@ beforeAll(async () => {
     now: () => new Date(),
     pingMs: 50,
     idleMs: 300,
-    onTripActive: (tripId) => {
+    onTripActive: (tripId, from) => {
       active.push(tripId);
+      activeFrom.set(tripId, from);
       if (tripId === 't_hook_throws') throw new Error('hook failed');
     },
   });
@@ -136,6 +138,8 @@ describe('the door', () => {
     const answered = await s.call('forget_person', { person_id: 'p_rahul', trip_id: 't_hook_throws' });
     expect(answered).toHaveProperty('error');
     expect(active).toEqual(['t_open', 't_hook_throws']);
+    // With the socket it came on: the trip's home follows it (app.ts), as it follows an event's.
+    expect(activeFrom.get('t_open')).toEqual({ instance: `test-${n}` });
     await s.close();
   });
 

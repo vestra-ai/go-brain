@@ -11,7 +11,8 @@ import { allowFraming, readCookie, sessionCookie } from '../http/security.js';
 import { findLink, hashToken, linkProblem, type LinkRow } from '../links.js';
 import { authenticationOptions, finishRegistration, hasPasskey, passkeyConfig, registrationOptions, verifyAssertion } from '../passkeys.js';
 import { approvePayment, payInfo, payOptions, type PayDeps } from '../pay.js';
-import { listCards, saveCardFromSetup, startCardSetup } from '../store/cards.js';
+import { DEMO_CARD_IDS, DEMO_ONLY, DEMO_OTP } from '../demo-cards.js';
+import { listCards, saveCardFromSetup, saveDemoCard, startCardSetup } from '../store/cards.js';
 import { personName } from '../store/people.js';
 import { TravelDetails, deleteTravel, readOwnTravel, realBirthday, saveTravel } from '../store/travel.js';
 import { lastTravelRead, logUnlock, readUnlockLog } from '../store/unlock-log.js';
@@ -36,6 +37,9 @@ const Ceremony = z.object({
   response: z.custom<Record<string, unknown>>((v) => typeof v === 'object' && v !== null && !Array.isArray(v)),
 });
 const CardBody = z.object({ setup_intent_id: z.string().regex(/^seti_[A-Za-z0-9_]{1,200}$/) });
+/** A demo card: which test card, never a number (the page matched it), and its expiry. Anything else is refused. */
+const DemoCardBody = z.strictObject({ card: z.enum(DEMO_CARD_IDS), exp_month: z.int().min(1).max(12), exp_year: z.int().min(2000).max(2100) });
+const ApproveBody = Ceremony.extend({ otp: z.string().max(12).optional() });
 /** The travel section's save: the details, and the tick that lets Go use them (unticked, they are deleted). */
 const TravelBody = TravelDetails.extend({ allow: z.literal(true) });
 const Untick = z.object({ allow: z.literal(false) });
@@ -47,7 +51,11 @@ export const pageRoutes: FastifyPluginAsync<{ deps: VaultDeps; cards: CardsReady
   const db = deps.pool;
   const cfg = passkeyConfig(deps.env);
   const master = masterKeyOf(deps.env.VAULT_MASTER_KEY);
-  const payDeps: PayDeps = { env: deps.env, pool: db, now: deps.now, rails: deps.rails, fetch: deps.fetch, log: app.log };
+  const payDeps: PayDeps = {
+    env: deps.env, pool: db, now: deps.now, rails: deps.rails, fetch: deps.fetch, log: app.log,
+    // No Stripe keys: the demo's bank step after Face ID.
+    ...(cardsOn.demo() ? { otp: DEMO_OTP } : {}),
+  };
 
   app.get('/static/vault.css', async (_req, reply) => reply.type('text/css; charset=utf-8').send(VAULT_CSS));
   app.get('/static/vault.js', async (_req, reply) => reply.type('application/javascript; charset=utf-8').send(VAULT_JS));
@@ -116,8 +124,10 @@ export const pageRoutes: FastifyPluginAsync<{ deps: VaultDeps; cards: CardsReady
       state: 'open',
       start: link.start,
       publishable_key: deps.env.STRIPE_PUBLISHABLE_KEY,
-      // Off while the vault's Stripe keys are placeholders or Stripe refused them: the page says so instead of a form.
-      cards_ready: cardsOn.ready(),
+      // stripe: Stripe's card form. demo: no Stripe keys, the demo's test cards. off: Stripe refused the keys, and the page
+      // says so instead of a form.
+      cards_mode: cardsOn.demo() ? 'demo' : cardsOn.ready() ? 'stripe' : 'off',
+      cards_ready: cardsOn.demo() || cardsOn.ready(),
       cards: cards.map((c) => ({ brand_label: brandLabel(c.brand), last4: c.last4, expires: `${String(c.exp_month).padStart(2, '0')}/${String(c.exp_year).slice(-2)}` })),
       // The person's own details, to them alone once unlocked, and when Go last used them, for what.
       travel: travel ? { ...travel, last_used: used ? lastUsedLabel(used) : null } : null,
@@ -214,6 +224,22 @@ export const pageRoutes: FastifyPluginAsync<{ deps: VaultDeps; cards: CardsReady
     return { brand_label: brandLabel(saved.card.brand), last4: saved.card.last4 };
   });
 
+  // A demo test card (no Stripe keys): the page names which one, never its number. Any other card is refused.
+  app.post<WithToken>('/l/:token/cards/demo', async (req, reply) => {
+    const link = await unlocked(req, reply);
+    if (!link) return reply;
+    if (!cardsOn.demo()) return reply.code(409).send({ message: CARDS_NOT_READY });
+    const body = DemoCardBody.safeParse(req.body);
+    if (!body.success) return reply.code(400).send({ message: DEMO_ONLY });
+    const now = deps.now();
+    const { exp_month: month, exp_year: year } = body.data;
+    if (year < now.getUTCFullYear() || (year === now.getUTCFullYear() && month < now.getUTCMonth() + 1)) {
+      return reply.code(400).send({ message: 'That card has expired. Check the expiry.' });
+    }
+    const card = await saveDemoCard(db, master, now, { personId: link.person_id, card: body.data.card, expMonth: month, expYear: year });
+    return { brand_label: brandLabel(card.brand), last4: card.last4 };
+  });
+
   // Travel details, behind the unlock as cards are. Saved only with the tick that lets Go use them for the person's own
   // tickets; unticked, or deleted, the row itself goes.
   app.post<WithToken>('/l/:token/travel', async (req, reply) => {
@@ -254,7 +280,8 @@ export const pageRoutes: FastifyPluginAsync<{ deps: VaultDeps; cards: CardsReady
     };
     if (info.state === 'no_passkey') return { state: 'no_passkey', title: 'Set up your vault first', message: PAY_MESSAGES.no_card, ...labels };
     if (info.state === 'no_card') return { state: 'no_card', title: 'Add a card first', message: PAY_MESSAGES.no_card, ...labels };
-    return { state: 'ready', ...labels };
+    // demo: no money moves, and the page asks for the demo's bank code after Face ID.
+    return { state: 'ready', ...labels, ...(cardsOn.demo() ? { demo: true } : {}) };
   });
 
   app.post<WithToken>('/p/:token/options', async (req, reply) => {
@@ -264,16 +291,17 @@ export const pageRoutes: FastifyPluginAsync<{ deps: VaultDeps; cards: CardsReady
   });
 
   app.post<WithToken>('/p/:token/approve', async (req, reply) => {
-    const body = Ceremony.safeParse(req.body);
+    const body = ApproveBody.safeParse(req.body);
     if (!body.success) return reply.code(400).send({ state: 'refused', message: PAY_MESSAGES.passkey_failed, retry: true });
     const result = await approvePayment(payDeps, {
       token: req.params.token,
       challengeId: body.data.challenge_id,
       response: body.data.response as unknown as AuthenticationResponseJSON,
+      ...(body.data.otp !== undefined ? { otp: body.data.otp } : {}),
     });
     if (result.state === 'paid') return { state: 'paid', message: PAY_MESSAGES.paid };
     if (result.state === 'confirming') return { state: 'confirming', message: PAY_MESSAGES.confirming, retry: false };
     if (result.state === 'failed') return { state: 'failed', message: PAY_MESSAGES[result.reason], retry: false };
-    return { state: 'refused', message: PAY_MESSAGES[result.reason], retry: result.reason === 'passkey_failed' };
+    return { state: 'refused', message: PAY_MESSAGES[result.reason], retry: result.reason === 'passkey_failed' || result.reason === 'otp_wrong' };
   });
 };

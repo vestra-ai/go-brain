@@ -1,3 +1,4 @@
+import { DEMO_DECLINE_REF } from '../demo-cards.js';
 import type { ChargeInput, ChargeResult, FindQuery, FindResult, Rail, RailFailReason } from './rail.js';
 
 /** A rail that moves no money. Tests use it, and PAY_RAIL=fake uses it on stage when said out loud. */
@@ -26,6 +27,12 @@ export class FakeRail implements Rail {
       this.charges.push(input);
       this.done.set(input.idempotencyKey, { railRef: `fake_${input.idempotencyKey}` });
       return { unknown: 'fake' };
+    }
+    // The demo's decline test card (4000 0000 0000 0002): the bank says no, and nothing moves.
+    if (input.paymentMethodRef === DEMO_DECLINE_REF) {
+      const declined: ChargeResult = { failed: 'card_declined' };
+      this.done.set(input.idempotencyKey, declined);
+      return declined;
     }
     this.charges.push(input);
     const result: ChargeResult =

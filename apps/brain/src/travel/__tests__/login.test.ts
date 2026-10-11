@@ -1309,6 +1309,21 @@ describe("one tap: Go's screen opens with the log in, and Go sees the login land
     ]);
   });
 
+  // Prod, 11 Oct 08:13Z: the trip's cards could not reach its Server, the opening card's failure stopped the hand-off, and
+  // the person's screen stayed on a new tab with no log in on it.
+  it("a card that can't go out never keeps ixigo's page or its taps from the screen the person is on", async () => {
+    let down = false;
+    const w = world({ cookies: (n) => (n < 2 ? [] : at(AT)), statuses: [200], linkFail: (m) => (down && m === 'replace_card' ? new Error('no socket from the Server is open') : null) });
+    await w.setup();
+    down = true;
+    expect(await w.tap('ixigo_login', 'p_rahul')).toMatchObject({ result: 'open' });
+    expect(w.handOffs).toHaveLength(1);
+    expect(w.handOffs[0]!.o).toMatchObject({ device: 'desktop', tab: LOGIN_TAB, crop: { role: 'dialog' } });
+    expect(w.tabStepCalls[0]!.steps[0]).toEqual({ op: 'click', role: 'button', name: 'Log in/Sign up' });
+    expect(await w.state()).toBe('logged_in');
+    expect(w.releases).toEqual([LOGIN_TAB]);
+  });
+
   it('an `at` the browser had counts once its expiry moves or it went and came back; a read Bash could not answer compares nothing', async () => {
     // Its expiry moves on the third read.
     const moved = world({ cookies: (n) => (n < 2 ? at(AT) : at(AT + 3600_000)), statuses: [200] });

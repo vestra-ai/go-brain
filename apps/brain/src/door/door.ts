@@ -24,9 +24,10 @@ export interface DoorOptions {
   idleMs?: number;
   /**
    * A person acting in a trip, as a Server request names it (opening its room after a while: catch_up; a tap: card_tap):
-   * often before any line they type. Never in a request's way: called once its params are read, and never throws.
+   * often before any line they type, and on the socket of the Server that has the trip now (`from`). Never in a request's
+   * way: called once its params are read, and never throws.
    */
-  onTripActive?: (tripId: string) => void;
+  onTripActive?: (tripId: string, from: SocketFrom) => void;
 }
 
 export type DoorImpl = Door & { close(): void; openSockets(): number };
@@ -209,7 +210,7 @@ export function createDoor(o: DoorOptions): DoorImpl {
     const tripId = f.method === 'send_event' ? undefined : (parsed.params as { trip_id?: unknown }).trip_id;
     if (typeof tripId === 'string') {
       try {
-        o.onTripActive?.(tripId);
+        o.onTripActive?.(tripId, from);
       } catch (e) {
         o.log.warn({ err: e instanceof Error ? e.message : 'unknown', method: f.method }, 'a trip-active hook failed');
       }

@@ -14,6 +14,8 @@ export interface PayDeps {
   rails: Rails;
   fetch: typeof fetch;
   log: FastifyBaseLogger;
+  /** The bank code a payment needs after Face ID: the demo's (demo-cards.ts) while the vault has no Stripe keys; none otherwise. */
+  otp?: string;
 }
 
 /** One row of used_approvals: one approval the vault tried to pay with. */
