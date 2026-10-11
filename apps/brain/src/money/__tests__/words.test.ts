@@ -19,6 +19,15 @@ describe('money words', () => {
     expect(shortDate('2026-11-01T18:29:59Z')).toBe('1 Nov');
   });
 
+  // Keshav, 11 Oct: "make it a proper travel agent… why this whining": no offer to phone (calls are off), no "book on
+  // ixigo yourself", no "ask me again".
+  it('never pushes the work back: no phoning, no booking it yourself, no asking again', () => {
+    const say = (code: RefusalCode, extra: { link?: string; kind?: string } = {}) => refusalWords(code, { payer: 'Rahul', what: 'Villa Sol', ...extra }).text;
+    expect(say('not_bookable')).toBe('I found this one on the web, so it can\'t be booked through me. Want the closest ones on ixigo, which I can book?');
+    expect(say('server_down')).toBe("I couldn't reach the trip just now, so nothing was charged. Want me to try again now?");
+    for (const code of CODES) expect(say(code, { link: 'https://www.ixigo.com/x', kind: 'train' })).not.toMatch(/call them|yourself|ask me again/i);
+  });
+
   it('takes em dashes out and cuts long text', () => {
     expect(plain('Villa Sol \u2014 3 nights, 6\u20139 Nov')).toBe('Villa Sol, 3 nights, 6 to 9 Nov');
     expect(clip('a'.repeat(130), 120)).toHaveLength(120);
@@ -47,7 +56,7 @@ describe('money words', () => {
 
   it('points to View on ixigo in the details on the card for group flights, trains and buses, which Go does not book this week (master §9 "Cut now"), never a link', () => {
     expect(refusalWords('not_bookable_yet', { payer: 'Rahul', what: 'IndiGo 6E 2134', kind: 'flight', link: 'https://www.ixigo.com/flights/6e-2134' })).toEqual({
-      text: "I can't book flights for the whole group yet. Each of you can book on ixigo: View on ixigo, in its details on its card, opens it there.",
+      text: "I can't book flights for the whole group yet. View on ixigo, in its details on its card, opens each one set up for you.",
       say: true,
     });
     // No link from the travel layer: just the first sentence.

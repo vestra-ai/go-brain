@@ -19,6 +19,39 @@ export interface PostArgs {
   mentions?: string[];
   /** The trip's people: the ones Go's text names go in mentions, so they get a push. */
   people?: ReadonlyArray<Pick<C.Person, 'person_id' | 'name' | 'go_paused'>>;
+  /** 1.2: only these people see the post (visible_to_person_ids), and only they can be mentioned in it. */
+  visibleTo?: string[];
+}
+
+type Named = Pick<C.Person, 'person_id' | 'name' | 'go_paused'>;
+const firstOf = (name: string): string => name.trim().split(/\s+/)[0] ?? '';
+const keyOf = (s: string): string => s.trim().replace(/\s+/g, ' ').toLowerCase();
+
+/**
+ * Go addresses people as "@FirstName" (Keshav, 11 Oct: "directed messages should send @name"). Each "@name" Go wrote that
+ * is one person in the trip is written as theirs: "@saket" and "@Saket Diwakar" are "@Saket", a first name two people
+ * share is written in full ("@Rahul Kapoor"), and an "@name" that is nobody, or more than one person, stays as written.
+ * mentionsIn then puts them in mentions. Never someone who paused Go.
+ */
+export function atNames(text: string, people: ReadonlyArray<Named>): string {
+  const shared = new Map<string, number>();
+  for (const p of people) shared.set(keyOf(firstOf(p.name)), (shared.get(keyOf(firstOf(p.name))) ?? 0) + 1);
+  // How each person is written after "@", by every way Go may have written them.
+  const forms = new Map<string, string>();
+  for (const p of people) {
+    const full = p.name.trim().replace(/\s+/g, ' ');
+    const first = firstOf(full);
+    if (p.go_paused || first.length < 2 || keyOf(first) === 'go') continue;
+    const alone = shared.get(keyOf(first)) === 1;
+    if (alone) forms.set(keyOf(first), first);
+    if (full.includes(' ')) forms.set(keyOf(full), alone ? first : full);
+  }
+  if (forms.size === 0) return text;
+  const names = [...forms.keys()]
+    .sort((a, b) => b.length - a.length)
+    .map((n) => n.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/ /g, '\\s+'));
+  // Never inside an address ("x@asha.com").
+  return text.replace(new RegExp(`(?<![\\p{L}\\p{N}_.+-])@(${names.join('|')})(?![\\p{L}\\p{N}])`, 'giu'), (_all, said: string) => `@${forms.get(keyOf(said)) ?? said}`);
 }
 
 /**
@@ -113,12 +146,16 @@ export function createSpeak(o: {
     typingOff,
     async post(p) {
       // Go's ids never reach people. Message numbers leave the words only; a card's "House #12" is an address.
-      const words = p.text && p.text.trim() ? sanitize(stripMessageRefs(stripIds(p.text)).text) : '';
+      const cleaned = p.text && p.text.trim() ? sanitize(stripMessageRefs(stripIds(p.text)).text) : '';
+      const words = cleaned && p.people ? atNames(cleaned, p.people) : cleaned;
       const text = words ? clip(words, 2_000) : null;
       const cards = p.cards.map((c) => sanitizeDeep(c));
       const first = cards.shift();
       const ids: string[] = [];
-      const mentions = p.mentions ?? (text && p.people ? mentionsIn(text, p.people) : []);
+      // A private post mentions only people who can see it.
+      const named = p.mentions ?? (text && p.people ? mentionsIn(text, p.people) : []);
+      const mentions = p.visibleTo ? named.filter((id) => p.visibleTo!.includes(id)) : named;
+      const visible = p.visibleTo?.length ? { visible_to_person_ids: p.visibleTo } : {};
       if (text || first) {
         const r = await p.link.request('post_message', {
           request_id: p.requestId('post'),
@@ -128,11 +165,12 @@ export function createSpeak(o: {
           ...(p.replyTo ? { reply_to: p.replyTo } : {}),
           ...(mentions.length ? { mentions } : {}),
           ...(text && p.quickReplies?.length ? { quick_replies: p.quickReplies.map((q) => sanitizeDeep(q)) } : {}),
+          ...visible,
         });
         ids.push(r.message_id);
       }
       for (const card of cards) {
-        const r = await p.link.request('post_message', { request_id: p.requestId('post'), trip_id: p.tripId, card });
+        const r = await p.link.request('post_message', { request_id: p.requestId('post'), trip_id: p.tripId, card, ...visible });
         ids.push(r.message_id);
       }
       if (ids.length) {

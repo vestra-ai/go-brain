@@ -14,7 +14,7 @@ import type pg from 'pg';
 import type { Switches } from '../../admin/switches.js';
 import type { ServerLink } from '../../door/server-link.js';
 import { dayText } from '../answer.js';
-import { buildIxigoLinkCard, buildOptionsCard, clip, formatInr, type OptionsCardT } from '../cards.js';
+import { buildOptionsCard, clip, formatInr, type OptionsCardT } from '../cards.js';
 import { stableId } from '../ids.js';
 import type { IxigoLogin } from '../login.js';
 import { bodiesFor } from '../recipes/recipe.js';
@@ -87,7 +87,7 @@ export interface TicketPay {
   travelLink?(personId: string, fields?: TravelField[]): Promise<{ url: string; expiresAt: string }>;
 }
 
-/** A payment the vault can't take (its rail not ready, or it refused): the one case its traveller is sent to ixigo, with why. */
+/** A payment the vault can't take (its rail not ready, or it refused): said in the vault's words, never sent to ixigo. */
 const VAULT_CANT: ReadonlySet<string> = new Set(['rail_not_ready', 'vault_refused']);
 /** Who sells a ticket Go books: ixigo, and simulated, as a stay is (web-stays.ts): Go stops before ixigo's own pay button. */
 export const TICKET_VENDOR = 'ixigo (simulated)';
@@ -511,10 +511,10 @@ export function createFlightBooking(d: FlightBookingDeps): FlightBooking {
    * submitted. A money without it: their ready card (ready) with Pay, as before.
    */
   async function readyToPay(o: {
-    ask: BookingAsk; runId: string; live: ReturnType<typeof bookingLiveCard>; step: number; title: string; amountMinor: number; purpose: string; ixigoUrl: string;
+    ask: BookingAsk; runId: string; live: ReturnType<typeof bookingLiveCard>; step: number; amountMinor: number; purpose: string;
     ready: (cardId: string) => NoticeCard;
   }): Promise<void> {
-    const { ask, runId, live, step, title, amountMinor } = o;
+    const { ask, runId, live, step, amountMinor } = o;
     const pay = d.pay?.();
     if (pay?.requestTicketCard) {
       hookPaid(pay);
@@ -533,12 +533,15 @@ export function createFlightBooking(d: FlightBookingDeps): FlightBooking {
       await save(runId, { state: 'failed', why: `pay_${got.code}` });
       await live.step(step, 'failed');
       await live.finish(false);
-      // The vault can't take it: ixigo's page for their ticket, set for one, saying why. Any other no: said, theirs alone,
-      // where money doesn't say it.
+      // The vault can't take it (its rail not ready, or it refused the approval): why, in the vault's words, and the next
+      // step inside Go, theirs alone (p2's #481). Never ixigo's pay page (Keshav, 11 Oct: an ixigo page is never the answer;
+      // pay is always through the vault). A person with no card never gets here: the vault's own pay page has them add
+      // one. Any other no: said, theirs alone, where money doesn't say it.
       if (VAULT_CANT.has(got.code)) {
-        const card = { ...buildIxigoLinkCard({ cardId: stableId('c_book_ixigo', runId), title: clip(`Book ${title} on ixigo`, 80), url: o.ixigoUrl }), for_person_ids: [ask.personId] };
+        const their = kindOf(ask) === 'train' ? 'train card' : 'flights card';
         await d.link.request('post_message', {
-          request_id: stableId('go_book_ixigo', runId), trip_id: ask.tripId, text: `${got.refused} You can book it on ixigo yourself: it opens set for you.`, card, visible_to_person_ids: [ask.personId],
+          request_id: stableId('go_book_vault', runId), trip_id: ask.tripId,
+          text: `${got.refused} Your pick is kept: tap I'll take this on your ${their} to pay once it goes through.`, visible_to_person_ids: [ask.personId],
         });
       } else if (!got.say) {
         await d.link.request('post_message', { request_id: stableId('go_book_no', runId), trip_id: ask.tripId, text: got.refused, visible_to_person_ids: [ask.personId] });
@@ -733,7 +736,7 @@ export function createFlightBooking(d: FlightBookingDeps): FlightBooking {
     // 5. Ready to pay.
     const flies = dayOf(ask.offer.sourceUrl);
     await readyToPay({
-      ask, runId, live, step: 4, title, amountMinor, ixigoUrl: results.toString(),
+      ask, runId, live, step: 4, amountMinor,
       purpose: clip(`${title}${flies ? `, ${dayText(flies)}` : ''}, for ${ask.name}`, 200),
       ready: (cardId) => readyCard({ cardId, personId: ask.personId, name: ask.name, title, when: flies ? dayText(flies) : null, choice: ask.choice, amountMinor, coupon }),
     });
@@ -836,7 +839,7 @@ export function createFlightBooking(d: FlightBookingDeps): FlightBooking {
     if (seats) await tell('go_book_seats', `Before you pay for ${title} (${cls}): ${seats}`);
     // 3. Ready to pay.
     await readyToPay({
-      ask, runId, live, step: 3, title, amountMinor, purpose, ixigoUrl: results,
+      ask, runId, live, step: 3, amountMinor, purpose,
       ready: (cardId) => readyCard({ cardId, personId: ask.personId, name: ask.name, title: `${title} (${cls})`, when: day, choice: ask.choice, amountMinor, coupon: null }),
     });
   }

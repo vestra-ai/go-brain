@@ -47,7 +47,7 @@ export function renderSearchWake(item: DeskItem): string | null {
   if (w?.source !== 'travel_search') return null;
   const what = inlineData(w.search ?? 'a travel search', 160);
   if (w.line) return `ixigo didn't load the search ${what}. Say this, in one line, and never send a link for it: ${inlineData(w.line, 300)}`;
-  if (w.error) return `The search ${what} didn't work (${w.error}). Say so in one short line, and offer to try again. Never start_task for it.`;
+  if (w.error) return `The search ${what} didn't work (${w.error}). Say so in one short line, and do the nearest thing you can now (another date, place or kind), never only an offer to try again. Never start_task for it.`;
   if (w.resultsId && !w.count) {
     return (
       `The search ${what} finished and nothing fits all of the ask; its nearest are saved (results_id "${w.resultsId}"). Show them with show_options ` +

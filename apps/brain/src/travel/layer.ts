@@ -72,6 +72,8 @@ const queryFor = (backend: string, q: TravelQuery): TravelQuery =>
         // The rest of the ask: ixigo filters the part one of its own filters means (a gym, as its Fitness Centre).
         ...(q.wants?.length ? { wants: q.wants } : {}),
         ...(q.budgetMinor !== undefined ? { budgetMinor: q.budgetMinor } : {}),
+        // Stays: ixigo's next page too, for "See more" (taps.ts).
+        ...(q.pages ? { pages: q.pages } : {}),
       }
     : backendQuery(q);
 
@@ -152,6 +154,7 @@ export function createTravelLayer(d: TravelLayerDeps): Travel {
         ...(found.page ? { page: found.page } : {}), ...(unapplied.length > 0 ? { unapplied } : {}), ...(found.site ? { site: found.site } : {}),
         ...(found.earlier ? { earlier: true } : {}), ...(found.cut ? { cut: true } : {}), ...(found.notes ? { notes: found.notes } : {}),
         ...(found.dropped?.length ? { dropped: found.dropped } : {}),
+        ...(found.listed !== undefined ? { listed: found.listed } : {}),
       };
     },
     async waitMs(kind, q, o) {
