@@ -155,20 +155,15 @@ async function payBeat(room: RehearsalRoom, timer: BeatTimer, villas: C.Message 
     timer.miss('pay_card', 'not reached: no villa options to vote on');
     return;
   }
-  let vote = room.go().find((m) => m.seq > villas.seq && m.card?.kind === 'vote') ?? null;
-  if (!vote) {
-    // Phone B taps "Put it to a vote" on the options card, as the run sheet says.
-    await room.fake.tap(villas.card.card_id, 'vote', DEMO_FRIEND).catch(() => null);
-    vote = await room.waitGo(villas.seq, kind('vote'), 15_000).catch(() => null);
-  }
-  if (!vote?.card || vote.card.kind !== 'vote') {
-    timer.miss('pay_card', 'not reached: the villas were never put to a vote');
+  // The villas card is the group's vote from the start (rev 5 R5): Vote on each option, no "Put it to a vote".
+  const decisionId = villas.card.kind === 'options' ? (villas.card.decision_id ?? null) : null;
+  if (!decisionId) {
+    timer.miss('pay_card', 'not reached: the villas card went up without its vote');
     return;
   }
-  const decisionId = vote.card.decision_id;
   for (const person of DEMO_PEOPLE) await room.fake.vote(decisionId, person, 0);
   // One person books for all: the I'll book it card goes up with the result, and Rahul says it is him.
-  const claim = await room.waitGo(vote.seq, (m) => m.card?.card_id === `c_claim_${decisionId}`, 30_000).catch(() => null);
+  const claim = await room.waitGo(villas.seq, (m) => m.card?.card_id === `c_claim_${decisionId}`, 30_000).catch(() => null);
   if (!claim) {
     timer.miss('pay_card', "not reached: no I'll book it card after the vote closed");
     return;

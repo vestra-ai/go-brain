@@ -140,9 +140,10 @@ describe('a stays search past its 12 s (staging pass, 8 Oct: a cold box took 13 
     const next = makeTurnCtx({ tripId: 't_goa', turnId: 'turn_w9', link: {} as never, pack, wake: [puts[0]!], signal: new AbortController().signal });
     expect(await searchWakeAnswer({ results, images })({ tripId: 't_goa', wake: [puts[0]!], pack, ctx: next })).toBe(true);
     expect(next.cards).toHaveLength(1);
-    expect((next.cards[0] as { options: Array<{ title: string }> }).options.map((o) => o.title)).toEqual(['Anjuna Beach Villa', 'Casa Anjuna', 'Hilltop Stay']);
-    // One line, the card's, from its own cheapest: never the cheaper stay the card leaves out.
-    expect(next.lines).toEqual(['Stays in Anjuna for 6 to 9 Nov, from ₹4,800 a night.']);
+    // Up to 10 on a card (rev 5 R3): all four, in the engine's order.
+    expect((next.cards[0] as { options: Array<{ title: string }> }).options.map((o) => o.title)).toEqual(['Anjuna Beach Villa', 'Casa Anjuna', 'Hilltop Stay', 'Budget Inn']);
+    // One line, the card's, from its own cheapest: never a stay the card leaves out.
+    expect(next.lines).toEqual(['Stays in Anjuna for 6 to 9 Nov, from ₹1,790 a night.']);
     expect(next.answered).toBe(true);
   });
 
@@ -161,17 +162,17 @@ describe('a stays search past its 12 s (staging pass, 8 Oct: a cold box took 13 
     const pack = goaPack();
     const next = makeTurnCtx({ tripId: 't_goa', turnId: 'turn_w6', link: {} as never, pack, wake: [puts[0]!], signal: new AbortController().signal });
     expect(await searchWakeAnswer({ results, images })({ tripId: 't_goa', wake: [puts[0]!], pack, ctx: next })).toBe(true);
-    expect(next.lines).toEqual([`${left}: stays in Goa for 12 to 14 Oct, sleeping 5, from ₹4,800 a night.`]);
+    expect(next.lines).toEqual([`${left}: stays in Goa for 12 to 14 Oct, sleeping 5, from ₹1,790 a night.`]);
     expect((next.cards[0] as { title: string }).title).toBe('Stays in Goa, 12 to 14 Oct');
     // The search answering its own turn says it the same way.
     const own = makeTurnCtx({ tripId: 't_goa', turnId: 'turn_w4', link: {} as never, pack, wake: [], signal: new AbortController().signal });
     await answerItself('stays', query, { ...STAYS, unapplied: ['pool'] }, own, { results, images });
-    expect(own.lines).toEqual([`${left}: stays in Goa for 12 to 14 Oct, sleeping 5, from ₹4,800 a night.`]);
+    expect(own.lines).toEqual([`${left}: stays in Goa for 12 to 14 Oct, sleeping 5, from ₹1,790 a night.`]);
     // ixigo's own filter left off because with it there was no stay (the exam's re-run, 10 Oct: Private Pool): said first,
     // these the nearest without it, never a fit for it.
     const near = makeTurnCtx({ tripId: 't_goa', turnId: 'turn_drop1', link: {} as never, pack, wake: [], signal: new AbortController().signal });
     await answerItself('stays', query, { ...STAYS, dropped: ['Private Pool'] }, near, { results, images });
-    expect(near.lines).toEqual(['Private Pool alone leaves out every stay, so these leave it out: pool stays in Goa for 12 to 14 Oct, sleeping 5, from ₹4,800 a night.']);
+    expect(near.lines).toEqual(['Private Pool alone leaves out every stay, so these leave it out: pool stays in Goa for 12 to 14 Oct, sleeping 5, from ₹1,790 a night.']);
   });
 
   it("leaves what ixigo didn't filter to the model, which picks it from each stay's amenities: never a card of the engine's first three", async () => {

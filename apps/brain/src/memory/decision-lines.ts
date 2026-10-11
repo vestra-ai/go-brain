@@ -17,16 +17,23 @@ import type { TripPack } from '../trips/pack.js';
 import type { CheckedLine } from './checker.js';
 import { lineRequestId, writeLine } from './record.js';
 
+/** The vote a card is or asks about: a vote card, a mandate, and since rev 5 (R5) a shared thing's options card. */
+const voteOf = (card: C.Card | null | undefined): string | null =>
+  !card ? null : card.kind === 'vote' || card.kind === 'mandate' ? card.decision_id : card.kind === 'options' ? (card.decision_id ?? null) : null;
+
 /** The one vote this open line is about, or null: none, or more than one. */
 export function decisionOf(line: CheckedLine, pack: TripPack, turn?: { cards: readonly C.Card[]; wake: readonly DeskItem[] }): string | null {
   if (line.kind !== 'open' || line.lineId) return null;
   const ids = new Set<string>();
   const byId = new Map(pack.messages.map((m) => [m.message_id, m]));
   for (const p of line.proof) {
-    const card = byId.get(p.message_id)?.card;
-    if (card && (card.kind === 'vote' || card.kind === 'mandate')) ids.add(card.decision_id);
+    const id = voteOf(byId.get(p.message_id)?.card);
+    if (id) ids.add(id);
   }
-  for (const card of turn?.cards ?? []) if (card.kind === 'vote' || card.kind === 'mandate') ids.add(card.decision_id);
+  for (const card of turn?.cards ?? []) {
+    const id = voteOf(card);
+    if (id) ids.add(id);
+  }
   for (const w of turn?.wake ?? []) {
     const id = (w.payload as { decisionId?: unknown } | null)?.decisionId;
     if (typeof id === 'string') ids.add(id);

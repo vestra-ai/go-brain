@@ -201,8 +201,10 @@ describe("each home city's ways to the trip", () => {
       ['From Delhi: Rajdhani 22413', 'Quickest by land, 15 h 30 m', 214_000],
       ['From Mumbai: Konkan Kanya 10111', 'Cheapest and quickest by land, 11 h 40 m', 42_000],
     ]);
-    expect(card.actions?.map((a) => a.action_id)).toEqual(['open', 'flights_home']);
-    // "See on ixigo" on a row opens that train's own page.
+    // Each row carries its own ixigo page (rev 5 R5), so the card's one button is the flights from my city.
+    expect(card.actions?.map((a) => a.action_id)).toEqual(['flights_home']);
+    expect(card.options[1]!.url).toContain('/trains/22413?');
+    // "See on ixigo" on a row of a card from before opens that train's own page.
     const open = await lb.taps.tap('options', 'open', { tap_id: 'tap_w1', trip_id: 't_goa', card_id: card.card_id, action_id: 'open', person_id: 'p_rahul', option_id: card.options[1]!.option_id }, card);
     expect(open).toMatchObject({ result: 'open', url: expect.stringContaining('/trains/22413?') });
     // "Flights from my city": Meher lives in Mumbai, Arjun in Bangalore, which has flights though no train or bus row.
