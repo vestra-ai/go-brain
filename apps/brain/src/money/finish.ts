@@ -205,6 +205,12 @@ async function finishPaid(d: MoneyDeps, row: PaymentRow): Promise<void> {
  * booking that asked for it hears onPaid); on Go's test rails nothing real was paid, and the line says so.
  */
 async function finishTicketPaid(d: MoneyDeps, row: PaymentRow): Promise<void> {
+  // A ticket with a pay card (askForTicketCard): the card shows paid, with no buttons, as a group's does.
+  if (row.card_id && row.card_state !== 'paid') {
+    const card = payCardOf(row, 'paid');
+    if (card) await d.link.request('replace_card', { trip_id: row.trip_id, card });
+    await patchPayment(d.pool, row.payment_id, { card_state: 'paid' }, d.now());
+  }
   if (row.ticket_posted_at) return;
   if (!row.approval_id || row.amount_minor === null || !row.currency) throw new Error('a paid ticket is missing its approval or amount');
   const text = ticketPaidLine({

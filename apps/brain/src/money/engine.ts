@@ -1,7 +1,7 @@
 import type * as C from '@go/contract';
 import type { CardTapParams, CardTapResult, TripEvent } from '../door/methods.js';
 import { newRequestId } from '../door/server-link.js';
-import { askForTicket, askOutsideTurn } from './ask.js';
+import { askForTicket, askForTicketCard, askOutsideTurn } from './ask.js';
 import { Later, type MoneyDeps } from './deps.js';
 import { tripEvent } from './events.js';
 import { markConfirming, markFailed, markPaid, reconcile, sweepPayments, type VaultFailReason } from './finish.js';
@@ -41,6 +41,7 @@ export function createPay(d: MoneyDeps): PayEngine {
       return 'cardId' in r ? { cardId: r.cardId } : { refused: r.refused };
     },
     requestTicketApproval: (tripId, o) => askForTicket(d, tripId, o),
+    requestTicketCard: (tripId, o) => askForTicketCard(d, tripId, o),
     onPaid(fn) {
       listeners.push(fn);
     },
