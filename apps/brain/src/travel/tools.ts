@@ -101,7 +101,7 @@ export const FlightsArgs = z.object({
   site_filters: z.array(z.string().min(1).max(80)).max(8).optional()
     .describe("ixigo's own flight filters the ask means, by their names on ixigo's list for the route (in your context once a search of it ran): an airline, an airport (Mopa for North Goa), a layover city, bags, a free meal, hiding non-refundable fares. Go applies them to the flights and ixigo's page shows them ticked"),
   wants: z.array(z.string().min(1).max(80)).max(8).optional()
-    .describe("Anything else the group asked for that no argument here covers, in their words (a seat): ixigo's page is linked, and the line says to pick it there"),
+    .describe("Anything else the group asked for that no argument here covers, in their words (a seat): you pick from the results' details, and say plainly what they can't show"),
 });
 export const JourneyArgs = z.object({
   from: Where.describe('City or station, e.g. "Jaipur"; for trains, a station with its Indian Railways code works too, e.g. "Udaipur City (UDZ)"'),
@@ -900,7 +900,7 @@ export function travelTools(d: TravelToolDeps): QuickTool<any>[] {
       "ixigo's own filters for the place, once Go has read them, are in your context: the ones the ask means go in site_filters, and the rest of the ask in wants, which you pick from the results. " +
       "Every part of the ask lands somewhere: a kind of stay they named goes in site_filters as ixigo's nearest stay type (a villa is an Entire house on ixigo), with their own word in wants; " +
       'a budget per person goes in max_price_per_person, never worked out by you. ' +
-      'For a deep comparison (reviews, many sites), use start_task instead.',
+      "For a deep comparison on ixigo (its reviews and details of several stays), use start_task instead.",
     input: StaysArgs,
     run: (a, ctx) => runSearch('stays', staysQuery(a), ctx, d),
     summarizeRound: searchRoundSummary,

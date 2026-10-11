@@ -175,7 +175,7 @@ export function buildGoMcpServer(tripId: string, d: GoMcpDeps): McpServer {
     }),
   );
 
-  const OFFER_RULE = 'Each result has an offer_id: copy it into your answer when you return that option, so Go can book it.';
+  const OFFER_RULE = "Copy each result's offer_id into your answer exactly when you return that option, so Go can book it: one read off ixigo.com has offer_id null and its page as source_url, copied too.";
   const STAY_RULE = 'A stay also has total_paise, the whole stay: copy it as the pick\'s total_paise.';
   server.registerTool(
     'search_flights',

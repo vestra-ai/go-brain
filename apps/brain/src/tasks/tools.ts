@@ -50,7 +50,7 @@ export function taskTools(d: { tasks: TasksService; today?: (tripId: string) => 
   const startTask: QuickTool<z.infer<typeof StartArgs>> = {
     name: 'start_task',
     description:
-      "Hands a big job to the trip's computer: anything that needs websites, many steps, long reading or comparing, or more than about 10 seconds. " +
+      "Hands a big job on ixigo.com to the trip's computer, which works on ixigo.com only, never another site: anything that needs many steps, long reading or comparing, or more than about 10 seconds. " +
       'Never for booking or paying, and never for a flights, trains, buses or stays search, even one that failed: the search tools do those. ' +
       'The working card goes out with your message: say one short line, like "On it."',
     input: StartArgs,

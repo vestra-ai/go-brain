@@ -107,8 +107,9 @@ describe('checkLine', () => {
   it('writes "open" instead when only one person said yes', () => {
     expect(checkLine(lineP({ proof: ['m_0124'] }), env())).toMatchObject({ ok: true, value: { kind: 'open', downgraded: true } });
   });
-  it('counts a 👍 on a proof message as a yes, and the organizer alone as enough', () => {
-    expect(checkLine(lineP({ proof: ['m_0122'] }), withThumb())).toMatchObject({ ok: true, value: { kind: 'agreed', personIds: ['p_priya', 'p_rahul'] } });
+  // Keshav's ruling: a bare 👍 is never a decision, so a 👍 on a proof message counts for no one.
+  it('never counts a 👍 on a proof message as a yes, and takes the organizer alone as enough', () => {
+    expect(checkLine(lineP({ proof: ['m_0122'] }), withThumb())).toMatchObject({ ok: true, value: { kind: 'open', downgraded: true } });
     expect(checkLine(lineP({ text: 'Dinner at Thalassa on Saturday', proof: ['m_0150'] }), env())).toMatchObject({ ok: true, value: { kind: 'agreed' } });
   });
   // The lead, 10 Oct: a bare 👍 or ok never records a plan or a decision; a reaction alone is never a decision.

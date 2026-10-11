@@ -147,7 +147,9 @@ describe("Go's rules", () => {
     // offered as the trip's budget, and kept on the group's yes (the organizer's to the offer, or a second person's).
     expect(decided).toContain('One person naming a figure for the group ("under 8k a head", "keep it under 20k each"), the organizer too, is not the trip\'s budget yet');
     expect(decided).toContain('offer once in one short line to make it the trip\'s ("Set ₹8,000 a head as the trip\'s budget?"), with Yes and No as offer_replies');
-    expect(decided).toContain("the organizer's yes to your offer, or a second person agreeing (their words or a 👍)");
+    // Keshav's ruling: a bare 👍 is never a decision.
+    expect(decided).toContain("the organizer's yes to your offer, or a second person agreeing in their own words. A reaction alone, a 👍 too, is never a yes.");
+    expect(decided).not.toContain('their words or a 👍');
     expect(decided).toContain('Two people agreeing on one ("15k a head works") is that yes already: keep it, no offer.');
     // No stray asks: never a person's own limit, and never again after a no.
     expect(decided).toContain('Never offer a person\'s own limit ("I can only do 5k"), and after a no, or no answer, don\'t offer again until someone names a new figure.');
@@ -271,5 +273,13 @@ describe("Go's rules", () => {
 
   it('use no em dashes or en dashes, as they ask of Go', () => {
     expect(GO_RULES).not.toMatch(/[—–]/);
+  });
+});
+
+// Keshav's ruling, with the App team's G1: an ixigo search link card is never the answer.
+describe("ixigo's page is never the answer", () => {
+  it("has Go search, or say plainly it couldn't load and try again, never send ixigo's page instead", () => {
+    expect(GO_RULES).toContain("even when a search can't answer: search it, or say plainly you couldn't load it and try again. Never send ixigo's page instead.");
+    expect(GO_RULES).not.toContain("give ixigo's page for it");
   });
 });
