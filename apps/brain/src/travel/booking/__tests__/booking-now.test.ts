@@ -60,7 +60,7 @@ describe("the trip's flight bookings, right now", () => {
     await booked('t_bn2', 'fb_r1', 'p_rahul', 'failed', 'login_needed', 4);
     const all = [
       "- Arjun: Go is booking IndiGo 6E2150 for them on the trip's computer now; their pay card comes when it's ready.",
-      '- Kabir: IndiGo 6E2150: their pay card is up, ₹7,896 (3 min ago); Pay on it pays.',
+      '- Kabir: IndiGo 6E2150: their pay card is up, ₹7,896 (3 min ago); Pay with ixigo money on it pays.',
       "- Rahul: IndiGo 6E2150 waits for the trip's ixigo login (since 4 min ago): Go carries on by itself once it's in.",
     ];
     // Priya has none: the group's turn knows the others' all the same.

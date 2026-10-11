@@ -29,7 +29,7 @@ export function bookingWords(r: Row, nowMs: number): string {
       ? `Go is booking ${r.title} for them on the trip's computer now; their pay card comes when it's ready.`
       : `Go's booking of ${r.title} was cut off (${when}); ${TAP_AGAIN}.`;
   }
-  if (r.state === 'ready_to_pay') return `${r.title}: their pay card is up${price ? `, ${price}` : ''} (${when}); Pay on it pays.`;
+  if (r.state === 'ready_to_pay') return `${r.title}: their pay card is up${price ? `, ${price}` : ''} (${when}); Pay with ixigo money on it pays.`;
   if (r.state === 'paid') return `${r.title} is paid (${when}).`;
   switch (r.why) {
     case 'login_needed':

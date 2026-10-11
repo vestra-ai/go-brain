@@ -15,7 +15,7 @@ import {
   TRAVEL_DETAILS, TRAVELLER_FIELDS, TRAVELLER_MALE, travellerAsk, TRAVELLERS_RETRY, detailsAsk, hasFields, ticketWhen,
   type FlightBooking, type TicketPay,
 } from '../flight-booking.js';
-import { buildOptionsCard } from '../../cards.js';
+import { buildOptionsCard, type OptionsCardT } from '../../cards.js';
 
 let db: Awaited<ReturnType<typeof withSchema>>;
 let lb: LaneBrain;
@@ -709,6 +709,55 @@ describe("Go books a person's own flight up to ixigo's pay button", () => {
     await c.settled();
     const said = lb.link.requests.slice(from2).filter((r) => r.method === 'post_message' && !r.params['card']);
     expect(said.map((r) => [r.params['text'], r.params['visible_to_person_ids']])).toEqual([['The test rail is not ready.', ['p_meher12']]]);
+    // A no money marks to be said is said too: money never says a ticket's no itself (prod, 11 Oct: Saket heard nothing).
+    const from3 = lb.link.requests.length;
+    const e = booking(fakeRunner().runner, true, refusing('already_booked', true));
+    await e.start({ tapId: 'tap_t4', tripId: 't_goa', personId: 'p_meher14x', name: 'Meher', offer: OFFER, choice: 'basic' });
+    await e.settled();
+    const told = lb.link.requests.slice(from3).filter((r) => r.method === 'post_message' && !r.params['card']);
+    expect(told.map((r) => [r.params['text'], r.params['visible_to_person_ids']])).toEqual([['The test rail is not ready.', ['p_meher14x']]]);
+  });
+
+  // Prod, 11 Oct: Saket typed "book my flight"; Go booked his pick from 14:49 and the Server answered no_pick (its 30-minute
+  // rule), then Go said nothing. A stale pick is never a dead end: "I'll take this" comes back, and one line asks for the tap.
+  it("answers a stale pick (no_pick) with I'll take this back on their card and one line asking for the tap, never a failure", async () => {
+    const results = createResultsStore(db.pool);
+    // The flight the fake ixigo's fare page has (Saket's was Alliance Air 9I547).
+    const flight: ResultOption = { kind: 'flight', title: 'IndiGo 6E2150', priceMinor: 789_600, currency: 'INR', priceNote: 'per person', highlights: [], facts: {}, sourceUrl: OFFER.sourceUrl! };
+    const set = await results.save({ tripId: 't_goa', optionKind: 'flight', source: 'search', query: {}, options: [flight], checkedAt: '2026-10-10T07:00:00.000Z' });
+    const before = buildOptionsCard({
+      cardId: 'c_stale', title: 'Flights for Saket', optionKind: 'flight', checkedAt: '2026-10-10T07:00:00.000Z',
+      picks: [{ optionId: 'opt_stale', option: flight, imageUrl: null }], forPersonIds: ['p_saket'],
+    });
+    await results.saveCard({ cardId: 'c_stale', tripId: 't_goa', resultsId: set.resultsId, title: before.title, optionKind: 'flight', card: before }, [{ optionId: 'opt_stale', n: 1, option: flight }], '2026-10-10T07:00:00.000Z');
+    // What his tap at 14:49 left: his flight alone, no buttons.
+    await results.replaceCard('t_goa', { ...before, actions: [] });
+    const stale: TicketPay = {
+      requestTicketCard: async () => ({ refused: 'Saket, pick Alliance Air 9I547 again on your card: it has been a while, or the price moved. Nothing was charged.', code: 'no_pick', say: true }),
+      onPaid: () => undefined,
+    };
+    const offer = { ...OFFER, optionId: 'opt_stale', cardId: 'c_stale' };
+    // Asked in words (book_flight): no card kept with the booking, so his own card gets the flight with its button back.
+    const from = lb.link.requests.length;
+    const b = booking(fakeRunner().runner, true, stale, { results });
+    // Meher: the name on the trip account's saved travellers, so the run reaches its pay step.
+    await b.start({ tapId: 'words_t1', tripId: 't_goa', personId: 'p_saket', name: 'Meher Varma', offer, choice: 'basic' });
+    await b.settled();
+    const sent = lb.link.requests.slice(from);
+    const back = sent.filter((r) => r.method === 'replace_card' && (r.params['card'] as { card_id?: string }).card_id === 'c_stale').map((r) => r.params['card'] as OptionsCardT);
+    expect(back).toHaveLength(1);
+    expect(back[0]!.options.map((o) => o.option_id)).toEqual(['opt_stale']);
+    expect(back[0]!.actions).toEqual([{ action_id: 'pick', label: "I'll take this", style: 'primary', per_option: true, only_for_person_ids: ['p_saket'] }]);
+    expect((await results.card('t_goa', 'c_stale'))?.card.actions).toEqual(back[0]!.actions);
+    const lines = sent.filter((r) => r.method === 'post_message' && !r.params['card']);
+    expect(lines.map((r) => [r.params['text'], r.params['visible_to_person_ids']])).toEqual([["Meher, tap I'll take this on IndiGo 6E2150 and I'll book it.", ['p_saket']]]);
+    expect((await db.pool.query(`select state, why from flight_bookings where person_id = 'p_saket'`)).rows[0]).toEqual({ state: 'failed', why: 'pay_no_pick' });
+    // From a tap whose booking kept his card as it was: that card comes back, every option and its buttons.
+    const from2 = lb.link.requests.length;
+    const c = booking(fakeRunner().runner, true, stale, { results });
+    await c.start({ tapId: 'tap_stale2', tripId: 't_goa', personId: 'p_saket2', name: 'Meher', offer, choice: 'basic', restore: before });
+    await c.settled();
+    expect(lb.link.requests.slice(from2).filter((r) => r.method === 'replace_card' && (r.params['card'] as { card_id?: string }).card_id === 'c_stale').map((r) => r.params['card'])).toEqual([before]);
   });
 
   it("Pay says it opens soon with no ticket payment yet, says ixigo's refusal, and answers inside the tap when the Server is slow", async () => {

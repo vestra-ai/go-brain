@@ -47,7 +47,7 @@ export function bookingNow(d: Pick<BookFlightDeps, 'booking' | 'pool' | 'nameOf'
       const named = await Promise.all(picks.map(async (p) => `- ${inlineData(await d.nameOf(tripId, p.personId), 40)} (${p.personId}) picked ${inlineData(p.title, 80)}`));
       return [
         '# Booking flights',
-        "You book a person's own flight on this trip: they tap \"I'll take this\" on their own flights card, and you book it on ixigo on the trip's computer up to the pay button; then their Pay goes through the vault, Face ID on their phone. " +
+        "You book a person's own flight on this trip: they tap \"I'll take this\" on their own flights card, and you book it on ixigo on the trip's computer up to the pay button; then they tap Pay with ixigo money on their own pay card. " +
           "So never say you can't book flights, and never tell anyone to book on ixigo themselves. " +
           "Their own train is booked the same way: \"I'll take this\" on their train card, the class on it; a waitlist or RAC is said to them before they pay.",
         'When someone asks you to book their flights ("book my flights", "book my flight to Manali"): with a pick of theirs below, call book_flight for them now. ' +

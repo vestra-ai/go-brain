@@ -25,6 +25,7 @@ import type { TravelDetails, TravelField } from '../../money/vault-client.js';
 import type { ResultsStore } from '../results.js';
 import type { StoredOffer } from '../travel.js';
 import { fareFor, reviewAddress } from './review-address.js';
+import { tapAgain } from './tap-again.js';
 import { FARE_TYPES, ixigoCoupon, reviewFare, type FareChoice } from './review-read.js';
 import { ageOn, classNow, dayLabel, seatWords, TRAIN_AVAILABILITY, trainOf, trainPassengerSteps, trainResultsAddress } from './train-steps.js';
 import { idNameOf, matchTravellers, savedTravellers, spokenFirstName } from './travellers.js';
@@ -132,7 +133,7 @@ export interface FlightBookingDeps {
   now: () => Date;
   log: Log;
   /** Where a fare that moved is put to its traveller again, on a card of its own; absent, the run says it in a line. */
-  results?: Pick<ResultsStore, 'optionOf' | 'saveCard' | 'replaceCard' | 'offer'>;
+  results?: Pick<ResultsStore, 'optionOf' | 'saveCard' | 'replaceCard' | 'offer' | 'card'>;
 }
 
 /**
@@ -561,17 +562,23 @@ export function createFlightBooking(d: FlightBookingDeps): FlightBooking {
       await save(runId, { state: 'failed', why: `pay_${got.code}` });
       await live.step(step, 'failed');
       await live.finish(false);
+      // A stale pick (no_pick: tapped over 30 minutes ago, or asked in words): their "I'll take this" back, and one line
+      // asking for the fresh tap that books it. Never a dead end.
+      if (got.code === 'no_pick') {
+        await tapAgain(d, ask, runId);
+        return;
+      }
       // The vault can't take it (its rail not ready, or it refused the approval): why, in the vault's words, and the next
       // step inside Go, theirs alone (p2's #481). Never ixigo's pay page (Keshav, 11 Oct: an ixigo page is never the answer;
       // pay is always through the vault). A person with no card never gets here: the vault's own pay page has them add
-      // one. Any other no: said, theirs alone, where money doesn't say it.
+      // one. Any other no: said, theirs alone (money never says a ticket's no itself).
       if (VAULT_CANT.has(got.code)) {
         const their = kindOf(ask) === 'train' ? 'train card' : 'flights card';
         await d.link.request('post_message', {
           request_id: stableId('go_book_vault', runId), trip_id: ask.tripId,
           text: `${got.refused} Your pick is kept: tap I'll take this on your ${their} to pay once it goes through.`, visible_to_person_ids: [ask.personId],
         });
-      } else if (!got.say) {
+      } else {
         await d.link.request('post_message', { request_id: stableId('go_book_no', runId), trip_id: ask.tripId, text: got.refused, visible_to_person_ids: [ask.personId] });
       }
       await putBack(ask);

@@ -46,7 +46,7 @@ export function askToPayTool(run: AskRun, o: { waitMs?: number } = {}): QuickToo
   return {
     name: 'ask_to_pay',
     description:
-      "Ask the payer to approve paying for what the group voted for. Works only after the vote closed, the mandate is set and the payer tapped Yes, book it; option_ref is the winning option's ref from the vote, exactly as Payments in right now gives it. It checks the live price, gets the Server's approval and puts a pay card the payer approves with Face ID. When the payer says the pay card didn't show up, or that they declined it by mistake, call it with again: true: the waiting one is cancelled and a fresh one sent. You never pay, never ask for card details and never offer another way to pay. If it refuses, say why in one short line.",
+      "Ask the payer to approve paying for what the group voted for. Works only after the vote closed, the mandate is set and the payer tapped Yes, book it; option_ref is the winning option's ref from the vote, exactly as Payments in right now gives it. It checks the live price, gets the Server's approval and puts up a pay card; the payer taps Pay with ixigo money on it. When the payer says the pay card didn't show up, or that they declined it by mistake, call it with again: true: the waiting one is cancelled and a fresh one sent. You never pay, never ask for card details and never offer another way to pay. If it refuses, say why in one short line.",
     input: AskToPayInput,
     async run(args, ctx) {
       // The vote option's option_ref goes in as is; askToPay resolves it to the travel offer.
