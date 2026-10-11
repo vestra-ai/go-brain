@@ -419,7 +419,7 @@ The home screen's ideas are the server's own, picked for each starting city. To 
 { "name": "Ladakh", "from_city": "Delhi" }
 ```
 
-Go answers from the places it has learned: trips' destinations, places on its cards, and the ideas it learns ahead. It sends the place with its photos (6 to 12 when ixigo's guide has them), where it is, and the best months (1 to 12). `tag` and `travel` (the usual way there from that city) are in the shape for later: Go doesn't send them yet.
+Go answers from the places it has learned: trips' destinations, places on its cards, and the ideas it learns ahead. It sends the place with its photos (6 to 12 when ixigo's guide has them), where it is, and the best months (1 to 12). A region ixigo can't put on the map, such as Kerala or Ladakh, comes with its photos and best months but no `lat` or `lng`. `tag` and `travel` (the usual way there from that city) are in the shape for later: Go doesn't send them yet.
 
 <!-- schema: PlaceInfo -->
 ```json
