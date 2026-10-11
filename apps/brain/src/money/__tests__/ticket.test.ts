@@ -4,11 +4,14 @@ import { markFailed, markPaid, reconcile, sweepPayments } from '../finish.js';
 import { getPayment, paidButNotBooked } from '../store.js';
 import { moneyKit, type MoneyKit } from './kit.js';
 
-// Contract 1.2 (REV4 B7): a traveller's own ticket is never voted on. Go asks the Server for a ticket approval that names
-// them, the vault opens their page, and they pay with their own Face ID: the Server's key and theirs, as for a stay.
+// REV4 B7, contract 1.3 (G3): a traveller's own ticket is never voted on. Go asks the Server for a personal approval that
+// names their pick (Go's card and the option they tapped), the vault opens their page, and they pay with their own Face
+// ID: the Server's key and theirs, as for a stay.
 let k: MoneyKit;
 const MEHER: TicketAsk = {
   personId: 'p_meher',
+  cardId: 'c_flights_meher',
+  optionId: 'opt_flight_2',
   amountMinor: 753600,
   currency: 'INR',
   purpose: 'IndiGo 6E2150, Fri 6 Nov, for Meher',
@@ -30,13 +33,12 @@ afterEach(async () => {
 });
 
 describe("a traveller's own ticket", () => {
-  it('asks the Server with the ticket form, has the vault open the page for that traveller alone, and posts no pay card', async () => {
+  it('asks the Server with the personal form (their pick), has the vault open the page for them alone, and posts no pay card', async () => {
     const r = await ask();
     expect(spendAsks()[0]?.params).toEqual({
       request_id: 'go_spend_ticket_fb_meher_1_tap_1',
       trip_id: 't_goa',
-      kind: 'ticket',
-      for_person_id: 'p_meher',
+      personal: { person_id: 'p_meher', card_id: 'c_flights_meher', option_id: 'opt_flight_2' },
       amount_minor: 753600,
       currency: 'INR',
       merchant: 'ixigo',
@@ -50,6 +52,7 @@ describe("a traveller's own ticket", () => {
     expect(r.url).toBe('https://vault.test/p/pay_1');
     expect(await getPayment(k.pool, r.paymentId)).toMatchObject({
       kind: 'ticket', decision_id: null, state: 'waiting', payer_person_id: 'p_meher', for_person_ids: ['p_meher'], card_id: null,
+      pick_card_id: 'c_flights_meher', pick_option_id: 'opt_flight_2',
     });
     expect(k.server.writesOf('post_message')).toEqual([]);
   });

@@ -1,6 +1,7 @@
 import { createPrivateKey, createPublicKey, sign, verify } from 'node:crypto';
 import { z } from 'zod';
 import { Currency, Id, IsoDateTime, PositiveAmountMinor } from './common.js';
+import { PersonalPick } from './to-server.js';
 
 /**
  * The signed spend approval: the Server's half of the two keys.
@@ -17,20 +18,18 @@ import { Currency, Id, IsoDateTime, PositiveAmountMinor } from './common.js';
 export const MAX_APPROVAL_TTL_SECONDS = 600;
 
 /**
- * Which payment the claims are for: a group's vote (decision_id), or 1.2's ticket (for_person_id, whose traveller is
- * the payer). Null when they say exactly one; else what is wrong.
+ * Which payment the claims are for: a group's vote (decision_id), or 1.3's personal pick (personal: the person, Go's card
+ * and the option they tapped; that person is the payer). Null when they say exactly one; else what is wrong.
  */
 export function spendFormProblem(c: {
   decision_id?: string | null | undefined;
-  for_person_id?: string | null | undefined;
-  kind?: string | null | undefined;
+  personal?: { person_id: string } | null | undefined;
   payer_person_id: string;
 }): string | null {
   const vote = c.decision_id != null;
-  const ticket = c.for_person_id != null;
-  if (vote === ticket) return 'exactly one of decision_id and for_person_id';
-  if (ticket && c.payer_person_id !== c.for_person_id) return "a ticket's payer is the person it is for";
-  if (vote && c.kind != null) return 'a group approval has no kind';
+  const personal = c.personal != null;
+  if (vote === personal) return 'exactly one of decision_id and personal';
+  if (personal && c.payer_person_id !== c.personal!.person_id) return "a personal approval's payer is the person who picked";
   return null;
 }
 const ALLOWED_CLOCK_SKEW_SECONDS = 30;
@@ -42,11 +41,10 @@ export const SpendApprovalClaims = z
     aud: z.literal('go-vault'),
     jti: z.string().min(8).max(64),
     trip_id: Id,
-    /** The group's vote. Exactly one of decision_id and for_person_id. */
+    /** The group's vote. Exactly one of decision_id and personal. */
     decision_id: Id.nullish(),
-    /** 1.2, a ticket: the traveller it is for, who is always the payer. */
-    for_person_id: Id.nullish(),
-    kind: z.literal('ticket').nullish(),
+    /** 1.3, a person's own pick: who, Go's card and the option they tapped. That person is always the payer. */
+    personal: PersonalPick.nullish(),
     payer_person_id: Id,
     /** The most this payment may be. */
     amount_minor: PositiveAmountMinor,
@@ -61,11 +59,11 @@ export const SpendApprovalClaims = z
   .refine((c) => c.exp > c.iat && c.exp - c.iat <= MAX_APPROVAL_TTL_SECONDS, {
     message: `exp must be after iat and at most ${MAX_APPROVAL_TTL_SECONDS} seconds later`,
   })
-  .refine((c) => spendFormProblem(c) === null, { message: 'a group approval names its vote; a ticket names its traveller, who is the payer' })
+  .refine((c) => spendFormProblem(c) === null, { message: "a group approval names its vote; a personal one names the person's pick, and they are the payer" })
   .meta({
     id: 'SpendApprovalClaims',
     description:
-      "What the Server signs. exp is at most 600 seconds after iat. A group approval carries decision_id; 1.2's ticket approval carries for_person_id (and kind \"ticket\") instead, and its payer is that person.",
+      "What the Server signs. exp is at most 600 seconds after iat. A group approval carries decision_id; 1.3's personal approval carries personal (the person, Go's card and the option they picked) instead, and its payer is that person.",
   });
 export type SpendApprovalClaims = z.infer<typeof SpendApprovalClaims>;
 

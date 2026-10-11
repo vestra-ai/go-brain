@@ -10,9 +10,10 @@ export interface Pay {
   /** optionRef is the winning vote option's option_ref (an options card's option_id), never a travel offer id. */
   askToPay(tripId: string, o: { decisionId: string; optionRef: string; purpose: string }): Promise<{ cardId: string } | { refused: string }>;
   /**
-   * A traveller's own ticket (contract 1.2, never voted on): the Server's ticket approval for that person, who is the
-   * payer, then the vault's page for them alone (open it from the caller's own card; no pay card is posted). Paid, it
-   * comes through onPaid like any payment; a failure is said in the room and the approval let go.
+   * A traveller's own ticket (never voted on): the Server's personal approval for their pick (contract 1.3: the person,
+   * Go's card and the option they tapped; they are the payer), then the vault's page for them alone (open it from the
+   * caller's own card; no pay card is posted). Paid, it comes through onPaid like any payment; a failure is said in the
+   * room and the approval let go.
    */
   requestTicketApproval(tripId: string, o: TicketAsk): Promise<TicketLink>;
   /** apps/vault calls POST /internal/vault/paid (signed with VAULT_SHARED_SECRET); P5 finishes the booking. */
