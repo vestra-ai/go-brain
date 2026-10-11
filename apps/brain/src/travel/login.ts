@@ -896,6 +896,10 @@ export function createIxigoLogin(d: LoginDeps): IxigoLogin {
    */
   async function landed(row: LoginRow): Promise<void> {
     await release(row.tripId);
+    // Go's read of ixigo opens a window on the trip's screen, over the person's Watch until its next 3 s check says Logged
+    // in (11 Oct: a black frame between One moment… and Logged in): the read, and all after it, waits until then.
+    const after = d.closeAfterWatchMs ?? CLOSE_AFTER_WATCH_MS;
+    if (after > 0) await new Promise<void>((r) => setTimeout(r, after).unref?.());
     const s = await look(row.tripId);
     const now = await get(row.tripId);
     // Not now (or another try) while ixigo was read: this login is no longer theirs to finish.
