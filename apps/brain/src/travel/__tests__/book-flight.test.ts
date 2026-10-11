@@ -65,6 +65,12 @@ describe('Go books flights where BOOKING is on', () => {
     expect(started[1]!.tapId).toBe(started[0]!.tapId);
   });
 
+  it('says a booking of theirs is already under way when one is, and starts nothing more', async () => {
+    const { d } = deps(true);
+    const out = (await bookFlightTool({ ...d, booking: { ...d.booking, start: async () => 'running' as const } }).run({}, ctx)) as Record<string, unknown>;
+    expect(out).toEqual({ booking: 'IndiGo 6E2150', note: "A flight booking of Rahul's is already under way on the trip's computer; their own live card shows it. Say so in one short line." });
+  });
+
   it('with no pick it says to search their flights now, and with BOOKING off it books nothing', async () => {
     const { d, started } = deps(true);
     expect(await bookFlightTool(d).run({ person_id: 'p_priya' }, ctx)).toMatchObject({ error: 'no_pick', note: expect.stringContaining('Search their flights now') });

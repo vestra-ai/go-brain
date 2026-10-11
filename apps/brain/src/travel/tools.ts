@@ -8,7 +8,7 @@ import { CARD_LINE } from '../composer/rules.js';
 import { CardLineArg, SAY_NOTHING, type QuickTool, type TurnCtx } from '../composer/tools.js';
 import type { Desk } from '../desk/desk.js';
 import { dateAs } from './book/expr.js';
-import { buildOptionsCard, clip, formatInr, ixigoPage, PERSONAL_KINDS, placeKindNotAll, subtitleFor } from './cards.js';
+import { buildOptionsCard, clip, formatInr, ixigoPage, PERSONAL_KINDS, placeKindNotAll, stayNight, stayNote, stayWhole, subtitleFor } from './cards.js';
 import { localDay } from '../proactive/clock.js';
 import { answerLine, answerTitle, directPicks, droppedWords, ledBy, leftOff, loadWhat, plainAsk } from './answer.js';
 import { flightDetails, stayDetails, trainDetails } from './details.js';
@@ -249,6 +249,9 @@ const areaOf = (o: { facts: Record<string, string | number | boolean> }): string
 export function compactOption(n: number, o: ResultOption, details = false): Record<string, unknown> {
   const when = o.journey ? subtitleFor(o) : null;
   const nights = typeof o.facts.nights === 'number' ? o.facts.nights : null;
+  // A stay's price as its card says it: the whole stay and each person's share, the night after (stayWhole).
+  const whole = o.kind === 'stay' ? stayWhole(o) : null;
+  const night = whole ? stayNight(o) : null;
   const said = Object.entries(o.facts).filter(([, v]) => typeof v === 'number' || typeof v === 'boolean' || (typeof v === 'string' && v.length <= 80));
   const has = details
     ? {
@@ -263,8 +266,10 @@ export function compactOption(n: number, o: ResultOption, details = false): Reco
     ...(o.journey ? { route: `${o.journey.origin.name} to ${o.journey.destination.name}` } : {}),
     ...(when ? { when } : {}),
     ...(o.kind === 'stay' ? { area: areaOf(o) } : {}),
-    ...(o.priceMinor !== undefined ? { price: `${formatInr(o.priceMinor)}${o.priceNote ? ` ${o.priceNote}` : ''}` } : {}),
-    ...(o.totalMinor !== undefined && nights ? { total: `${formatInr(o.totalMinor)} for ${nights} nights` } : {}),
+    ...(whole
+      ? { price: whole, ...(night ? { a_night: night } : {}) }
+      : o.priceMinor !== undefined ? { price: `${formatInr(o.priceMinor)}${o.priceNote ? ` ${o.priceNote}` : ''}` } : {}),
+    ...(!whole && o.totalMinor !== undefined && nights ? { total: `${formatInr(o.totalMinor)} for ${nights} nights` } : {}),
     ...(o.rating !== undefined ? { rating: o.rating } : {}),
     highlights: o.highlights,
     ...has,
@@ -304,11 +309,20 @@ const counted = (n: number, one: string, many: string): string => `${n} ${n === 
 function optionLine(o: TravelOption): string {
   const where = o.kind === 'stay' ? ` (${areaOf(o)})` : '';
   const when = o.journey ? `, ${subtitleFor(toResultOption(o))}` : '';
-  return `${o.title}${where}${when}, ${formatInr(o.priceMinor)}${o.priceNote ? ` ${o.priceNote}` : ''}`;
+  // A stay's whole price first, as its card says it, its night in brackets: "₹29,400 for 3 nights (₹9,800 a night)".
+  const whole = o.kind === 'stay' ? stayWhole(o) : null;
+  const night = whole ? stayNight(o) : null;
+  return `${o.title}${where}${when}, ${whole ? `${whole}${night ? ` (${night})` : ''}` : `${formatInr(o.priceMinor)}${o.priceNote ? ` ${o.priceNote}` : ''}`}`;
 }
 
 /** The lowest to the highest price the results show, with what the price covers. */
 function priceRange(options: ResultOption[]): string | null {
+  // Stays as their cards say them: the whole stays, and what they cover (stayWhole), never a night's.
+  const totals = options.flatMap((o) => (o.kind === 'stay' && o.totalMinor !== undefined ? [o.totalMinor] : []));
+  if (totals.length > 0 && totals.length === options.length) {
+    const [low, high] = [Math.min(...totals), Math.max(...totals)];
+    return `${low === high ? formatInr(low) : `${formatInr(low)} to ${formatInr(high)}`} ${stayNote(options[0]!)}`;
+  }
   const prices = options.flatMap((o) => (o.priceMinor === undefined ? [] : [o.priceMinor]));
   if (prices.length === 0) return null;
   const low = Math.min(...prices);

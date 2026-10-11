@@ -12,7 +12,6 @@
 import type * as C from '@go/contract';
 import type { ServerLink } from '../door/server-link.js';
 import { clip, formatInr, ixigoPage, PERSONAL_KINDS, placeKindNotAll, stayLine, type OptionsCardT } from './cards.js';
-import { stableId } from './ids.js';
 import type { OptionFields, OptionKind, ResultOption, ResultsStore } from './results.js';
 import type { StoredOffer } from './travel.js';
 
@@ -91,21 +90,19 @@ async function cardVoteOptions(results: Pick<ResultsStore, 'offersOnCard' | 'opt
 }
 
 /**
- * The lead, 11 Oct (rev 5 Q1): a new card of shared things closes the trip's older vote on a card of the same kind when
- * nobody has voted on it yet, so two open votes never pick two winners. One with a vote stays, and closes by its time.
- * Go closing it wakes no turn (trips/intake.ts: closed_by_go).
+ * The trip's open vote on an earlier card of the same kind (another turn's or tap's), and how many options it has: a new
+ * card of the same thing joins it, never closing it (the Manali room, 11 Oct: every new stays search closed the open vote
+ * and opened another, four in 22 minutes, and votes cast would have gone the same way). Null when none is open. Two cards
+ * in one reply are two votes the group just got: never one this same key opened.
  */
-async function closeIdleVotes(
+async function openVoteOfKind(
   d: { results: Pick<ResultsStore, 'votesOfKind'>; link: Pick<ServerLink, 'request'> }, tripId: string, kind: OptionKind, cardId: string, key: string,
-): Promise<void> {
-  // Never a vote this same key opened: two cards in one reply are two votes the group just got, both new.
+): Promise<{ decisionId: string; count: number } | null> {
   const ids = await d.results.votesOfKind(tripId, kind, cardId, key);
-  if (ids.length === 0) return;
+  if (ids.length === 0) return null;
   const trip = await d.link.request('read_trip', { trip_id: tripId });
-  for (const dec of trip.decisions) {
-    if (!ids.includes(dec.decision_id) || dec.status !== 'open' || dec.voted > 0) continue;
-    await d.link.request('close_vote', { request_id: stableId('go_close_idle', dec.decision_id), trip_id: tripId, decision_id: dec.decision_id });
-  }
+  const vote = trip.decisions.filter((dec) => ids.includes(dec.decision_id) && dec.status === 'open').at(-1);
+  return vote ? { decisionId: vote.decision_id, count: vote.options.length } : null;
 }
 
 function voteCardFor(id: string, decisionId: string, question: string, options: VoteOption[]): VoteCard {
@@ -115,8 +112,10 @@ function voteCardFor(id: string, decisionId: string, question: string, options: 
 
 /**
  * onCard: the card is the vote (rev 5 R5), opened as it goes up, and the caller writes it into the card
- * (results.setCardDecision): a card with one option gets none (a "Keep looking" has no row on the card to vote on), and
- * the trip's idle vote of the same kind closes first (closeIdleVotes).
+ * (results.setCardDecision): a card with one option gets none (a "Keep looking" has no row on the card to vote on). With
+ * the trip's vote of the same kind open (openVoteOfKind), the card joins it instead: its options are added
+ * (add_vote_options, VOTE_MOST in all), and one with more than the vote has room for goes up without a vote, the open one as
+ * it is. No vote is ever closed for a new card.
  */
 export async function openVoteFromCard(
   d: { results: ResultsStore; link: Pick<ServerLink, 'request'>; now: () => Date },
@@ -143,7 +142,18 @@ export async function openVoteFromCard(
   if (!(await d.results.claimVote(o.cardId, o.key))) return { ok: false, reason: 'already_voting' };
   try {
     // Best effort: a trip the Server can't read now still gets the card's vote.
-    if (o.onCard) await closeIdleVotes(d, o.tripId, row.optionKind, o.cardId, o.key).catch(() => undefined);
+    const open = o.onCard ? await openVoteOfKind(d, o.tripId, row.optionKind, o.cardId, o.key).catch(() => null) : null;
+    if (open) {
+      // Every option of the card, each by its own option_ref, so each of its Vote buttons is a vote (a stay an earlier
+      // card shows too is on that card under its own).
+      if (open.count + each.length > VOTE_MOST) {
+        await d.results.releaseVote(o.cardId, o.key);
+        return { ok: false, reason: 'already_voting', decisionId: open.decisionId };
+      }
+      await d.link.request('add_vote_options', { request_id: o.requestId, trip_id: o.tripId, decision_id: open.decisionId, options: each });
+      await d.results.setDecision(o.cardId, open.decisionId);
+      return { ok: true, decisionId: open.decisionId, voteCard: voteCardFor(o.voteCardId, open.decisionId, question, options) };
+    }
     const closesAt = new Date(d.now().getTime() + (o.closesInHours ?? VOTE_HOURS) * 3_600_000).toISOString();
     const opened = await d.link.request('open_vote', {
       trip_id: o.tripId, request_id: o.requestId, question, kind: 'choice', anonymous: o.anonymous ?? false, options, closes_at: closesAt,

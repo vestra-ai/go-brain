@@ -23,7 +23,7 @@ import type { ResultsStore } from '../results.js';
 import type { StoredOffer } from '../travel.js';
 import { fareFor, reviewAddress } from './review-address.js';
 import { FARE_TYPES, ixigoCoupon, reviewFare, type FareChoice } from './review-read.js';
-import { matchTravellers, savedTravellers } from './travellers.js';
+import { matchTravellers, savedTravellers, spokenFirstName } from './travellers.js';
 
 export const FLIGHT_STREAM = '/flights/v2/search/stream';
 export const FLIGHT_FARE = '/flight-booking/flight-fare';
@@ -368,7 +368,9 @@ export function createFlightBooking(d: FlightBookingDeps): FlightBooking {
     await d.link.request('post_message', { request_id: stableId('go_fare', runId), trip_id: ask.tripId, text, card, visible_to_person_ids: [ask.personId] });
   }
 
-  async function book(ask: BookingAsk, runId: string): Promise<void> {
+  async function book(asked: BookingAsk, runId: string): Promise<void> {
+    // Their first name in every word of it, as Go says names (p2's prod audit, 11 Oct: "Booking … for <first last>").
+    const ask = { ...asked, name: spokenFirstName(asked.name) };
     const runner = d.runner();
     const title = ask.offer.title;
     const live = bookingLiveCard(d, ask.tripId, stableId('c_book', runId), `Booking ${title} for ${ask.name}`, [
@@ -438,7 +440,7 @@ export function createFlightBooking(d: FlightBookingDeps): FlightBooking {
     await live.step(3, 'doing');
     const login = d.login ? await d.login.ensure(ask.tripId, `Booking ${title} for ${ask.name}`, { booking: true }).catch(() => null) : { ok: true as const };
     const holder = await d.pool.query<{ person_id: string }>('select person_id from ixigo_logins where trip_id = $1', [ask.tripId]).then((r) => r.rows[0]?.person_id ?? null).catch(() => null);
-    const ownerName = async (): Promise<string | null> => (holder ? await d.nameOf(ask.tripId, holder).catch(() => null) : null);
+    const ownerName = async (): Promise<string | null> => (holder ? await d.nameOf(ask.tripId, holder).then(spokenFirstName, () => null) : null);
     if (!login?.ok) {
       await d.link.request('post_message', {
         request_id: stableId('go_book_login', runId), trip_id: ask.tripId,

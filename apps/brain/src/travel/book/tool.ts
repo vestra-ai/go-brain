@@ -8,7 +8,7 @@
  */
 import { z } from 'zod';
 import type { QuickTool, TurnCtx } from '../../composer/tools.js';
-import { buildIxigoLinkCard, clip, formatInr } from '../cards.js';
+import { buildIxigoLinkCard, clip, formatInr, stayNight, stayWhole } from '../cards.js';
 import { TravelError } from '../mcp-travel.js';
 import type { LiveSearch } from '../live-search.js';
 import { CARD_DELAY_MS, LINK_FALLBACK, SEARCH_RECIPES, shownAfter } from '../recipes/backend.js';
@@ -115,11 +115,18 @@ export const KEPT_FACTS_SAY =
 
 /** An option's kept facts as one row: ixigo's own details, with its price and times as the card says them. */
 function keptRow(o: ResultOption): Record<string, unknown> {
+  // A stay as its card says it: the whole stay and each person's share, the night after (stayWhole).
+  const whole = o.kind === 'stay' ? stayWhole(o) : null;
+  const night = whole ? stayNight(o) : null;
   return withoutPhotos({
     ...o.facts,
     title: o.title,
-    ...(o.priceMinor !== undefined ? { price: `${formatInr(o.priceMinor)}${o.priceNote ? ` ${o.priceNote}` : ''}` } : {}),
-    ...(o.totalMinor !== undefined ? { total: formatInr(o.totalMinor) } : {}),
+    ...(whole
+      ? { price: whole, ...(night ? { a_night: night } : {}) }
+      : {
+          ...(o.priceMinor !== undefined ? { price: `${formatInr(o.priceMinor)}${o.priceNote ? ` ${o.priceNote}` : ''}` } : {}),
+          ...(o.totalMinor !== undefined ? { total: formatInr(o.totalMinor) } : {}),
+        }),
     ...(o.journey ? { leaves: o.journey.depart_at, arrives: o.journey.arrive_at } : {}),
     ...(o.refundableUntil ? { refundable_until: o.refundableUntil } : {}),
     ...(o.rating !== undefined ? { rating: o.rating } : {}),

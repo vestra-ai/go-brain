@@ -7,6 +7,7 @@ import type { RegisterLane } from '../app.js';
 import { loadBook } from './book/book.js';
 import { createEngine } from './book/engine.js';
 import { ixigoTool, runOnStage, toolRecipes } from './book/tool.js';
+import { bookingsNow } from './booking/booking-now.js';
 import { bookingOnFor, createFlightBooking } from './booking/flight-booking.js';
 import { tripToday } from './dates.js';
 import { readTravelEnv } from './env.js';
@@ -331,6 +332,8 @@ export const registerTravel: RegisterLane = async (brain) => {
   for (const t of travelTools({ travel, results, images, now: brain.now, desk: brain.desk, ixigoQuiet, log: brain.log, warmForTravel: warm, today, showPick, showPlaces: showPlacesOf, stayBudget, groupStay })) brain.tools.register(t);
   brain.tools.register(budgetTool({ budgets, pool: brain.pool, now: brain.now, log: brain.log }));
   brain.context.addNow(budgetNow({ budgets, trip: async (tripId) => (await brain.packs.get(tripId)).trip }));
+  // A person's own flight booking, in the turns they speak in (the lead, 11 Oct: Ankur's "?" after his stopped).
+  brain.context.addNow(bookingsNow({ pool: brain.pool, packs: brain.packs, now: brain.now }));
   // A recipe's live card: its runs on the stage, as a search's are, so the room watches every page Go opens. Kept while
   // open, so the turn that answered ends its own done (exam #9, 10 Oct: two cards left failed beside a good answer).
   const recipeCards = openRecipeCards();
