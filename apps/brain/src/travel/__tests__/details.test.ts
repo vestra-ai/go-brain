@@ -91,6 +91,26 @@ describe("a train's details sheet", () => {
 });
 
 describe('the options card', () => {
+  // The Server team's rev 5 (R1): labelled photos on every stay, not the top pick's alone. The card's next two stays go
+  // with the top pick, their own pages read after its page, in the background (register.ts showPick).
+  it("hands the top pick's next two stays with it, each by its own ixigo page; none off ixigo.com, none past the third", async () => {
+    const results = { saveCard: async () => undefined, card: async () => null } as unknown as ResultsStore;
+    const images = { rehostUrl: async () => 'https://go.test/img/x.jpg' } as never;
+    const ctx = makeTurnCtx({ tripId: 't_goa', turnId: 'turn_d5', link: {} as never, pack: goaPack(), wake: [], signal: new AbortController().signal });
+    const villa = (id: number, title: string, sourceUrl = `https://www.ixigo.com/hotels/${id}/details`) => ({ ...RIVA, title, sourceUrl });
+    const set = {
+      resultsId: 'r_d5', tripId: 't_goa', optionKind: 'stay' as const, source: 'search' as const, query: ASK, checkedAt: '2026-10-08T12:00:00.000Z',
+      options: [villa(1, 'One'), villa(2, 'Two'), villa(3, 'Three', 'https://example.com/three'), villa(4, 'Four')],
+    };
+    const calls: Array<{ page: string; more: Array<{ page: string; name: string; kind?: string; cardId: string; optionId: string }> }> = [];
+    await putUpCard(set, [1, 2, 3, 4], { title: 'Stays', line: 'x' }, ctx, { results, images, showPick: (_trip, pick, more) => calls.push({ page: pick.page, more: more ?? [] }) });
+    const card = ctx.cards[0] as OptionsCardT;
+    expect(calls).toEqual([{
+      page: 'https://www.ixigo.com/hotels/1/details',
+      more: [{ page: 'https://www.ixigo.com/hotels/2/details', name: 'Two', kind: 'stay', cardId: card.card_id, optionId: card.options[1]!.option_id }],
+    }]);
+  });
+
   it("carries each stay's sheet, its photos through Go's image cache, and the stay's place with its time zone", async () => {
     const results = { saveCard: async () => undefined, card: async () => null } as unknown as ResultsStore;
     const images = { rehostUrl: async (u: string) => `https://go.test/img/${u.endsWith('s=1024x768') ? (u.includes('/b.jpg') ? 'b' : 'a') : 'card'}.jpg` } as never;
