@@ -87,7 +87,14 @@ export function answers(lineText: string, d: Pick<C.Decision, 'question' | 'kind
   const optionWords = new Set(own.flat());
   const topic = wordsOf(d.question).filter((w) => w.length >= 3 && !SMALL.has(w) && !where.has(w) && !optionWords.has(w) && !/^\d+$/.test(w));
   const shared = new Set(topic.filter((w) => line.some((l) => sameWord(l, w)))).size;
-  return d.kind === 'yesno' ? shared >= 2 : named >= 2 || (named >= 1 && shared >= 1);
+  if (d.kind === 'yesno') return shared >= 2;
+  // One option named in full, every word of its label, numbers too: they are all that tell "1 to 7 Dec" from "7 to 12
+  // Dec". It answers the line when the line shares a word of the question ("Dates 7 to 12 Dec") or is only that option
+  // ("South Goa"). Prod, 11 Oct: both stayed open in everyone's record after their votes closed.
+  const whole = labels.filter((ws) => ws.length > 0 && ws.every((w) => line.includes(w)));
+  const rest = line.filter((l) => !SMALL.has(l) && !where.has(l) && !whole.some((ws) => ws.includes(l)));
+  if (whole.length === 1 && (shared >= 1 || rest.length === 0)) return true;
+  return named >= 2 || (named >= 1 && shared >= 1);
 }
 
 /** Links the open lines a closed vote answers that nothing linked yet: written before it closed, still active. */

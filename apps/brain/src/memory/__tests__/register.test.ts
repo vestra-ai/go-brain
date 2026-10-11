@@ -125,6 +125,17 @@ describe('wireMemory', () => {
     expect(await w.story()!.get('t_r1')).toEqual({ story: null, chatFromSeq: 1, foldedToSeq: 0, tokens: 0 });
   });
 
+  // Prod, 11 Oct: "Go forgot you in this trip" went to the whole room.
+  it('posts the forget notice to the person alone, never to the room', async () => {
+    const w = setup('t_r_forget', [], []);
+    await seedMessages(db.pool, 't_r_forget', [msg(5, 'p_meher', "I'm veg")]);
+    const forget = w.handlers.get('forget_person') as ToGoHandler<'forget_person'>;
+    await forget({ person_id: 'p_meher', trip_id: 't_r_forget' }, { instance: 'test', server: null } as never);
+    const posts = w.link.calls.filter((c) => c.method === 'post_message');
+    expect(posts).toHaveLength(1);
+    expect(posts[0]!.params).toMatchObject({ trip_id: 't_r_forget', visible_to_person_ids: ['p_meher'], card: { kind: 'notice' } });
+  });
+
   it('says so, and carries on, when the context cannot take a story', () => {
     const w = setup('t_r2', [], [], { story: false });
     expect(w.warnings).toContain('context has no setStory: long trips are not folded in the prompt');

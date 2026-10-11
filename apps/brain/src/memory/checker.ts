@@ -205,6 +205,9 @@ export function checkLine(p: LineProposal, env: CheckEnv): Checked<CheckedLine> 
   // everyone's): the trip's one budget is set in the App, or kept with set_budget once the group agrees one. So no line
   // about one is opened, nor left open when its agreement fell short. A line Go opened before can still be closed.
   if (kind === 'open' && !p.line_id && /\bbudgets?\b/i.test(text)) return no("the trip's budget is the group's, set in the App or with set_budget: never an open question");
+  // Nor an agreed one: the App holds the budget the group agreed (set_budget writes it there), and a record line beside it
+  // says it twice (prod, 11 Oct: "Group budget ₹20,000 per person", agreed, next to the App's ₹20,000).
+  if (!p.line_id && /\bbudgets?\b/i.test(text)) return no("the trip's budget is kept in the App, never in the record");
   if (kind === 'doing') {
     // "@Go find flights Friday" is an ask: Go does it, so it is never "Rahul is finding flights". A promise said to Go in
     // the same breath ("@Go I'll sort the cab, you do flights") goes too: code cannot tell it from the ask beside it, and a
