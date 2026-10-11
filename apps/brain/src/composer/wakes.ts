@@ -21,7 +21,7 @@ export const CHIME_RULES =
   'Answer a question the trip already answers once ("Dates are set: 6 to 9 Nov ✅. Want to change them?"), then never raise ' +
   'it again, even while the record lists it as open. When part of the group backs an option that is not a vote yet, offer a ' +
   'vote with the count ("3 of you said yes to Saudades. Want me to put it to a vote?"): never say locked in, confirmed or ' +
-  'decided until a vote closes or the organizer decides, and a "Leaning" line in the record is not a decision. Run a search ' +
+  'decided until a vote closes, and a "Leaning" line in the record is not a decision. Run a search ' +
   'only when someone asks for one ("find", "show", "any trains"); one person liking something ("Saudades looks perfect to ' +
   'me") is never a search.';
 
@@ -236,7 +236,11 @@ export function renderTripChangeWake(item: DeskItem, pack: TripPack): string {
     // An option is only a label (DecisionOption has no dates or place fields), so the model reads the winner and saves it.
     return won
       ? closed +
-          `If it settled the trip's dates, save them with update_trip first, with decision_id "${d.decision_id}" (days without a year are the next ones from today). ` +
+          // Where the trip goes and its name too (Varkala, 11 Oct: "Where do we go?" closed on Morocco and a 7 to 0 rename
+          // passed, and Go said neither changed the trip, then sent the organizer to group settings the App doesn't have).
+          `If it settled where the trip goes, its dates or its name, save it with update_trip at once, with decision_id "${d.decision_id}" ` +
+          '(days without a year are the next ones from today; a country or region is its main city for visitors, and say which; a city ' +
+          'someone names in the winning country is that pick, with the same decision_id, never a second vote). ' +
           'If it settled where to stay (an area or a place to stay), save the winner as the stay, never as the destination: the destination is where the trip goes. ' +
           'Say it is the stay or picked, never "locked in": that reads as ixigo\'s Lock Price. ' +
           'The App already posted the result in the room: never say the counts again, or who won outside the stay\'s line below. ' +

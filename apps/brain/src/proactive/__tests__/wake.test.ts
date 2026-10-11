@@ -120,7 +120,7 @@ describe('the wake text', () => {
     expect(text).toContain('use what the trip and the chat say');
     // The 10 Oct live proof's three misses: answer once, never "locked in" without a vote, no search on one opinion.
     expect(text).toContain('then never raise it again');
-    expect(text).toContain('never say locked in, confirmed or decided until a vote closes or the organizer decides');
+    expect(text).toContain('never say locked in, confirmed or decided until a vote closes, and');
     expect(text).toContain('is never a search');
     expect(text).toContain('Banter, a plan a person is already handling, or something you already said: call stay_silent.');
     expect(text).not.toContain('—');

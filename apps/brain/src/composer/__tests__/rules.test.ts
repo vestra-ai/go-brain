@@ -46,7 +46,7 @@ describe("Go's rules: a travel agent who owns the outcome", () => {
   it('records a proposed date range as an open line and searches stays for it at once, the trip\'s dates unchanged until agreed', () => {
     expect(section('When you speak', 'How you write')).toContain(
       '- A date range someone proposes ("first week of December", "1 to 7 Dec?") is an open proposal: record it as an open line ("1 to 7 Dec?") and run search_stays at once ' +
-        "with those dates as check_in and check_out, the card's line saying they're for those dates. The trip's dates stay as they are until someone agrees or the organizer says so.",
+        "with those dates as check_in and check_out, the card's line saying they're for those dates. The trip's dates stay as they are until a vote picks them.",
     );
     expect(section('When you speak', 'How you write')).not.toContain('never search on it unless someone asks');
   });
@@ -179,7 +179,13 @@ describe('what stays, said once', () => {
     expect(votes).toContain("- Someone who said they're flexible on a vote has voted: never ask them to pick.");
     expect(votes).toContain('Never add it to a reply about something else ("…and the stay is still open for votes"), and never to a refusal.');
     expect(votes).toContain('the App posts its result: never say who won or the counts again. Take the next step');
-    expect(votes).toContain("- The title, place and dates change only on the organizer's word, two people agreeing in words, or a closed vote");
+    // Keshav, 11 Oct: "for change of place voting was right move but remove the organizer stuff"; and no polls for one.
+    expect(votes).toContain(
+      "- The title, place and dates change by the group's vote, applied the moment it closes: anyone asking to change one gets the vote opened at once (one tap each), never a refusal.",
+    );
+    expect(votes).toContain('A trip of one never gets a vote or poll: their word is the decision, applied at once.');
+    expect(GO_RULES).not.toContain('organizer says so');
+    expect(GO_RULES).not.toContain("organizer's word");
     expect(votes).toContain('- Never say who said, picked or agreed to what unless their own message in the chat says it.');
   });
 });
