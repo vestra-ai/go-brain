@@ -130,7 +130,8 @@ export const StaysArgs = z.object({
     .describe("In rupees: each person's share a NIGHT, as in \"8k a head a night\". Go works out the whole stay's share from the nights; never both this and max_price_per_person"),
   must_have: z.array(z.enum(MUST_HAVES)).max(5).optional()
     .describe("pool, beach (10 minutes or less), breakfast, free_cancellation. When ixigo's own filters for the place are in your context, use them in site_filters instead, and must_have only for the beach"),
-  min_rating: z.number().min(0).max(5).optional(),
+  min_rating: z.number().min(0).max(5).optional()
+    .describe("Guests' rating out of 5 (a stay's rating), never stars: \"5 star\" is ixigo's Star Rating 5 in site_filters"),
   site_filters: z.array(z.string().min(1).max(80)).max(8).optional()
     .describe(
       "ixigo's own filters the ask means, by their names on ixigo's list for the place (in your context), the nearest one for what they said: ixigo filters " +
@@ -271,6 +272,8 @@ export function compactOption(n: number, o: ResultOption, details = false): Reco
       : o.priceMinor !== undefined ? { price: `${formatInr(o.priceMinor)}${o.priceNote ? ` ${o.priceNote}` : ''}` } : {}),
     ...(!whole && o.totalMinor !== undefined && nights ? { total: `${formatInr(o.totalMinor)} for ${nights} nights` } : {}),
     ...(o.rating !== undefined ? { rating: o.rating } : {}),
+    // A stay's stars are ixigo's own, never its guests' rating out of 5 (p2's audit, 11 Oct).
+    ...(o.kind === 'stay' && typeof o.facts.stars === 'number' ? { stars: o.facts.stars } : {}),
     highlights: o.highlights,
     ...has,
   };
