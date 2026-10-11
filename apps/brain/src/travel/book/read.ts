@@ -160,8 +160,8 @@ function body(captures: Capture[], match: string, format: BodyFormat, required: 
   return raw.length === 1 ? readBodyAs(raw[0]!, format, what) : raw.map((b) => readBodyAs(b, format, what));
 }
 
-/** The rows a recipe's page holds, and what its answer reads besides them. */
-async function rowsOf(recipe: RecipeFile, captures: Capture[], bindings: Record<string, unknown>): Promise<unknown[]> {
+/** The rows a recipe's page holds, and what its answer reads besides them; said.none when the site answered it has none. */
+async function rowsOf(recipe: RecipeFile, captures: Capture[], bindings: Record<string, unknown>, said?: { none?: true }): Promise<unknown[]> {
   const read = recipe.read!;
   const what = recipe.title.toLowerCase();
   // The site saying it has no rows (read.rows.empty: ixigo's stays answer 424 past the end of the list) is an empty list.
@@ -183,6 +183,12 @@ async function rowsOf(recipe: RecipeFile, captures: Capture[], bindings: Record<
   }
   const listed = await readPath(read.rows.list, rowsBody, bindings);
   let rows: unknown[] = Array.isArray(listed) ? listed : listed === undefined ? [] : [listed];
+  // No rows, and the site's own "none" (read.rows.none: ixigo's 201 "No flights found"): read, and empty, never a page
+  // that didn't load.
+  if (rows.length === 0 && read.rows.none && (await evaluate(read.rows.none, rowsBody, bindings).catch(() => false)) === true) {
+    if (said) said.none = true;
+    return [];
+  }
   if (read.rows.unique) {
     // One row a key, the last copy winning, in the order keys first came: a stream's later snapshot carries a revised fare.
     const byKey = new Map<string, unknown>();
@@ -247,13 +253,14 @@ export async function readOptions(
   extra: Record<string, unknown> = {},
   /** The recipe's notes about the whole list, as they read, go here (answer.notes). */
   notes?: string[],
-  /** How many rows the list held, before the recipe's keep, goes here: a page's worth says the site may have more. */
-  listed?: { rows: number },
+  /** How many rows the list held, before the recipe's keep, goes here: a page's worth says the site may have more; and
+   *  none, when the site answered that it has none (read.rows.none). */
+  listed?: { rows: number; none?: true },
 ): Promise<RecipeOption[]> {
   if (!recipe.read || recipe.answer.as !== 'options') throw new Error(`${recipe.id} has no options to read`);
   const what = recipe.title.toLowerCase();
   const bindings: Record<string, unknown> = { ...extra, inputs, page };
-  const rows = await rowsOf(recipe, captures, bindings);
+  const rows = await rowsOf(recipe, captures, bindings, listed);
   if (listed) listed.rows = rows.length;
   const out: RecipeOption[] = [];
   for (const row of rows) {

@@ -147,6 +147,24 @@ export const dayText = (iso: string): string => {
   const d = dateOf(iso);
   return `${DAYS[d.getUTCDay()]} ${d.getUTCDate()} ${MONTHS[d.getUTCMonth()]}`;
 };
+/** A place as ixigo searched its flights, in the words people use: Manali as "Kullu (Manali's airport)", Delhi as "Delhi". */
+export function airportWords(n: { words: string; city: string }): string {
+  const [w, c] = [norm(n.words), norm(n.city)];
+  return c.includes(w) || w.includes(c) ? n.words : `${n.city} (${n.words}'s airport)`;
+}
+
+/**
+ * ixigo's own "No flights found" (TravelSearch.none), said as what it is, never a page that didn't load (prod, 12 Oct:
+ * Delhi to Kullu on 13 Nov, then 20 minutes of "I couldn't load your flights"), with the next step: a bus, which Go books.
+ */
+export function noFlightsLine(
+  from: string, to: string, date: string,
+  none: { from?: { words: string; city: string }; to?: { words: string; city: string } },
+): string {
+  const ends = `from ${none.from ? airportWords(none.from) : from} to ${none.to ? airportWords(none.to) : to}`;
+  return `ixigo has no flights ${ends} on ${dayText(date)}. I can look for a bus from ${from} to ${to} instead: just say "bus".`;
+}
+
 /** "6 to 9 Nov", or "30 Nov to 2 Dec". */
 const rangeText = (a: string, b: string): string => {
   const [x, y] = [dateOf(a), dateOf(b)];

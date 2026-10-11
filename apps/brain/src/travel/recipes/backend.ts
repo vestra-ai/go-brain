@@ -557,6 +557,7 @@ export function createIxigoWebBackend(d: IxigoWebDeps): IxigoWebBackend {
           ...(run.cut ? { cut: true } : {}),
           ...(run.notes ? { notes: run.notes } : {}),
           ...(run.listed !== undefined ? { listed: run.listed } : {}),
+          ...(run.none ? { none: run.none } : {}),
         };
       },
       async (err: unknown): Promise<never> => {
@@ -699,11 +700,11 @@ export function createIxigoWebBackend(d: IxigoWebDeps): IxigoWebBackend {
       const linkId = LINK_FALLBACK[kind];
       if (!linkId) return searchPage(kind, q, o);
       // Flights: ixigo refuses our boxes' one shared address now and then (403 or 429 under a burst), so its page is paced
-      // (flights.results pace). One held back, refused, or with nothing on it is ixigo's own page, set as they asked:
-      // never "no flights".
+      // (flights.results pace). One held back, refused, or with nothing read on it is ixigo's own page, set as they asked:
+      // never "no flights". ixigo's own "No flights found" is the answer (found.none), never a page that didn't load.
       try {
         const found = await searchPage(kind, q, o, true);
-        if (found.results.length > 0) return found;
+        if (found.results.length > 0 || found.none) return found;
       } catch (err) {
         if (err instanceof TravelError && ASKS_THE_PERSON.has(err.code)) throw err;
         d.log?.warn({ tripId: o?.tripId, kind, code: err instanceof TravelError ? err.code : 'failed' }, "travel: ixigo's page didn't answer; its link answers instead");

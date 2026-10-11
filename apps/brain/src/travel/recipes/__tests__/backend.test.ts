@@ -225,7 +225,7 @@ describe('the ixigo_web backend', () => {
   // shared address under a burst; a page held back, refused, or with nothing on it answers with the link instead.
   describe('flights', () => {
     const FLIGHT: RecipeOption = { ...OPTION, kind: 'flight', title: 'IndiGo 6E357', priceNote: 'per person' };
-    function flightsEngine(o: { results?: 'options' | 'empty' | 'refused' | 'unknown_place'; live?: unknown } = {}) {
+    function flightsEngine(o: { results?: 'options' | 'empty' | 'none' | 'refused' | 'unknown_place'; live?: unknown } = {}) {
       const real = linkEngine(4, []);
       const runs: string[] = [];
       const retried: boolean[] = [];
@@ -237,7 +237,10 @@ describe('the ixigo_web backend', () => {
           if (id === 'flights.search') return real.answer(id, given, r);
           if (state.results === 'refused') throw new TravelError('refused', "ixigo's page did not send flights between two airports on a date.");
           if (state.results === 'unknown_place') throw new TravelError('unknown_place', 'ixigo knows no airport for "Atlantis".');
-          return { as: 'options', options: state.results === 'empty' ? [] : [FLIGHT], page: 'https://www.ixigo.com/x', checkedAt: '2026-10-07T12:00:03.000Z', ms: 4_100 };
+          return {
+            as: 'options', options: state.results === 'empty' || state.results === 'none' ? [] : [FLIGHT], page: 'https://www.ixigo.com/x', checkedAt: '2026-10-07T12:00:03.000Z', ms: 4_100,
+            ...(state.results === 'none' ? { none: { from: { words: 'Delhi', code: 'DEL', city: 'New Delhi' }, to: { words: 'Goa', code: 'GOI', city: 'Goa' } } } : {}),
+          };
         }) as Answer,
         pacedOut: (id: string, retry?: boolean) => id === 'flights.results' && state.paced && !retry,
       };
@@ -279,6 +282,14 @@ describe('the ixigo_web backend', () => {
         // Held back, no page loads: the link alone.
         expect(f.runs, way).toEqual(way === 'paced' ? ['flights.search'] : ['flights.results', 'flights.search']);
       }
+    });
+
+    // Prod, 12 Oct: ixigo's own "No flights found" (Delhi to Kullu on 13 Nov) went to the link and 20 minutes of tries.
+    it('answers with ixigo\'s own "No flights found" as it is: no link, never a page that didn\'t load', async () => {
+      const f = flightsEngine({ results: 'none' });
+      const found = await f.backend.search('flights', FLIGHTS, { tripId: 't_goa' });
+      expect(found).toMatchObject({ results: [], none: { from: { words: 'Delhi', code: 'DEL' }, to: { words: 'Goa', code: 'GOI' } } });
+      expect(f.runs).toEqual(['flights.results']);
     });
 
     // G1, 11 Oct: Go's promised try again asks ixigo through the quiet (the engine still keeps the gap: recipes.test.ts).

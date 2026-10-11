@@ -9,7 +9,8 @@
  * final round, 10 Oct: one card per traveller, theirs alone to act on, no vote), even two from one city. Each city's
  * cards go up as its page lands, the first in about 5 s, behind a live card ticking off the cities. A city whose page
  * doesn't come never gets a link card (G1, 11 Oct): each of its people hears, theirs alone, that Go couldn't load their
- * flights and will try again in a minute, and Go tries that city again (try-again.ts, eachTryAgain). That is the one line a
+ * flights and will try again in a minute, and Go tries that city again (try-again.ts, eachTryAgain); ixigo's own "No flights
+ * found" is no such page: its people hear that ixigo has none that day, and the bus as the next step. That is the one line a
  * person hears for it: never again for an ask again or a later try (p2's re-audit of Keshav's Varkala trip, 11 Oct: 20
  * private lines in four rounds a minute apart, 15 to people who never asked). "My flights" is the asker's alone (asker.ts).
  */
@@ -19,7 +20,7 @@ import { SAY_NOTHING, type QuickTool, type TurnCtx } from '../composer/tools.js'
 import type { Desk } from '../desk/desk.js';
 import type { ServerLink } from '../door/server-link.js';
 import type { TripPack } from '../trips/pack.js';
-import { dayText } from './answer.js';
+import { dayText, noFlightsLine } from './answer.js';
 import type { Engine, EngineAnswer, StepsEvent } from './book/engine.js';
 import { buildOptionsCard, clip, formatInr, type CardPick } from './cards.js';
 import { flightDetails } from './details.js';
@@ -227,6 +228,14 @@ export function eachTryAgain(d: Omit<FlightsEachDeps, 'live'>): (t: TryAgainItem
         }
         return;
       }
+      // ixigo's own "No flights found": the answer, theirs alone, and no try after it.
+      if (got?.as === 'options' && got.none) {
+        for (const g of groups) {
+          const ids = g.people.map((p) => p.personId);
+          await postFor(d, t.tripId, stableId('go_each', t.id, ...ids, 'none'), null, `${namesOf(g)}, ${noFlightsLine(g.home, each.to, each.date, got.none)}`, ids);
+        }
+        return;
+      }
       if (t.payload.n < TRIES && d.desk) {
         await tryAgain({ ...d, desk: d.desk }, t.tripId, 'flights', { ...t.payload, n: t.payload.n + 1 });
         return;
@@ -317,6 +326,17 @@ export function flightsEachTool(d: FlightsEachDeps): QuickTool<z.infer<typeof Ar
                 })
                 .catch((err: unknown) => d.log?.warn({ err: String(err).slice(0, 200), tripId: ctx.tripId }, "travel: a person's flights card could not be made")),
             );
+          }
+          return;
+        }
+        // ixigo's own "No flights found" (prod, 12 Oct: Delhi to Kullu on 13 Nov, read as a page that didn't load, and
+        // tried again for 20 minutes): the answer, theirs alone, with the bus as the next step; never a try again.
+        if (got?.as === 'options' && got.none && !city.posted) {
+          city.posted = true;
+          for (const g of groupsOf(e.entry)) {
+            const only = g.people.map((p) => p.personId);
+            post(`${only.join(',')}|none`, null, `${namesOf(g)}, ${noFlightsLine(g.home, to, date, got.none)}`, only);
+            notUp.set(g.home, 'ixigo has no flights from there that day; their line says so, with a bus as the next step');
           }
           return;
         }

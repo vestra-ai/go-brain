@@ -61,6 +61,8 @@ read:
   rows:
     from: /flights/v2/search/stream
     format: sse
+    # ixigo's own "none" (flights.results): no flights that day is an answer, never a page that didn't load.
+    none: 201 in errors.code
     # The pairs a group would book: the six cheapest each way, crossed, the ten cheapest pairs there and back first.
     list: |
       (

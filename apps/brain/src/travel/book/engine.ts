@@ -210,6 +210,9 @@ export type EngineAnswer =
       as: 'options'; options: RecipeOption[]; page: string; checkedAt: string; ms: number; site?: SiteSaid; cut?: true; notes?: string[]; near?: Near[];
       /** How many rows the page's list held before the recipe's keep: a full page says the site has more (stays' See more). */
       listed?: number;
+      /** The site answered that it has none (read.rows.none: ixigo's "No flights found"): options is [], and that is the
+       *  answer, never a page that didn't load. Its ends as ixigo searched them (Manali as Kullu, KUU). */
+      none?: NoneSaid;
     }
   | { as: 'facts'; title: string; rows: Array<Record<string, unknown>>; page: string; checkedAt: string; ms: number }
   | { as: 'link'; link: string; title: string; who: string | null }
@@ -302,6 +305,23 @@ export interface Near {
   words: string;
   code: string;
   city: string;
+}
+
+/** A search the site said has nothing for: where from and where to, as the words said them and as ixigo searched them. */
+export interface NoneSaid {
+  from?: Near;
+  to?: Near;
+}
+
+/** A run's from and to as ixigo searched them, the words with the place they resolved to (an airport's code and city). */
+function endsOf(inputs: Record<string, unknown>): NoneSaid {
+  const end = (v: unknown): Near | undefined => {
+    const p = v as { words?: unknown; code?: unknown; city?: unknown } | undefined;
+    return p && typeof p.words === 'string' && typeof p.code === 'string' && typeof p.city === 'string' ? { words: p.words, code: p.code, city: p.city } : undefined;
+  };
+  const from = end(inputs['from']);
+  const to = end(inputs['to']);
+  return { ...(from ? { from } : {}), ...(to ? { to } : {}) };
 }
 
 /** The most of the site's list of what it offers that a read keeps (ixigo's stays metadata: about 23 KB). */
@@ -929,7 +949,7 @@ export function createEngine(d: EngineDeps) {
         return { as: 'facts', title: await fill(recipe.answer.title, inputs, { url: false, bindings: b }), rows, page: opened, checkedAt: at.toISOString(), ms: at.getTime() - started };
       }
       const notes: string[] = [];
-      const listed = { rows: 0 };
+      const listed: { rows: number; none?: true } = { rows: 0 };
       const options = await readOptions(recipeRead, caps, inputs, opened, b, notes, listed);
       // A place ixigo has no airport for by its words, searched at its nearest: said once, in plain words.
       const near = nearOf(recipe, inputs);
@@ -942,6 +962,7 @@ export function createEngine(d: EngineDeps) {
       return {
         as: 'options', options, page: opened, checkedAt: at.toISOString(), ms: at.getTime() - started, listed: listed.rows,
         ...(cut ? { cut: true as const } : {}), ...(notes.length > 0 ? { notes } : {}), ...(near.length > 0 ? { near } : {}),
+        ...(listed.none ? { none: endsOf(inputs) } : {}),
       };
     };
     // Fast first: the page's own call from the trip's warm tab, read as its answer. Any failure falls to the page.
