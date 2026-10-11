@@ -375,6 +375,36 @@ const rowsOf = (a: EngineAnswer): { rows?: number } =>
         ? { rows: a.entries.reduce((n, e) => n + e.steps.filter((s) => s.answer).length, 0) }
         : {};
 
+const MONTHS = ['january', 'february', 'march', 'april', 'may', 'june', 'july', 'august', 'september', 'october', 'november', 'december'];
+const pad = (n: number): string => String(n).padStart(2, '0');
+
+/**
+ * A date input as the recipes read it (YYYY-MM-DD): a date as it is, a time after it too; a month ("December", "dec",
+ * "Dec 2026", "in December", "2026-12") as its first day, the next one from today without a year, and today when it is
+ * this month. Null when it is no date Go can read.
+ */
+export function dateOf(v: unknown, now: Date): string | null {
+  if (typeof v !== 'string') return null;
+  const t = v.trim();
+  if (/^\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])([T ].*)?$/.test(t)) return Number.isFinite(Date.parse(t.slice(0, 10))) ? t : null;
+  let year: number | null = null;
+  let month = -1;
+  const ym = /^(\d{4})-(0[1-9]|1[0-2])$/.exec(t);
+  if (ym) {
+    year = Number(ym[1]);
+    month = Number(ym[2]) - 1;
+  } else {
+    const w = /^(?:in\s+|this\s+|next\s+)?([a-z]{3,9})\.?(?:,?\s+(\d{4}))?$/i.exec(t);
+    month = w ? MONTHS.findIndex((m) => m.startsWith(w[1]!.toLowerCase())) : -1;
+    if (month < 0) return null;
+    year = w![2] ? Number(w![2]) : null;
+  }
+  const [thisYear, thisMonth] = [now.getUTCFullYear(), now.getUTCMonth()];
+  const y = year ?? (month >= thisMonth ? thisYear : thisYear + 1);
+  if (y === thisYear && month === thisMonth) return `${y}-${pad(month + 1)}-${pad(now.getUTCDate())}`;
+  return `${y}-${pad(month + 1)}-01`;
+}
+
 export function createEngine(d: EngineDeps) {
   /** A recipe with auth: login runs only on a logged-in trip computer; otherwise the person is asked and it is refused. */
   async function loggedIn(recipe: RecipeFile, tripId: string): Promise<void> {
@@ -606,10 +636,6 @@ export function createEngine(d: EngineDeps) {
     return out;
   }
 
-  /** A date as the recipes read it: YYYY-MM-DD (a time after it too), or a month as YYYY-MM. */
-  const isDate = (v: unknown): boolean =>
-    typeof v === 'string' && /^\d{4}-(0[1-9]|1[0-2])(-(0[1-9]|[12]\d|3[01]))?([T ].*)?$/.test(v.trim()) && Number.isFinite(Date.parse(v.trim().length === 7 ? `${v.trim()}-01` : v.trim()));
-
   /** The recipe's inputs, filled: places, then counts and the rest, then what a count works out from them. */
   async function inputsOf(recipe: RecipeFile, given: Record<string, unknown>, o: RunFor, run: string | null): Promise<Record<string, unknown> | null> {
     const placed = await places(recipe, given, o, run);
@@ -622,10 +648,14 @@ export function createEngine(d: EngineDeps) {
         if (!input.optional) throw new TravelError('needs_more', `${recipe.title} needs ${input.about ?? name.replace(/_/g, ' ')}.`);
         continue;
       }
-      // A date in words ("December") is said back as the date it must be, for the next call: the recipe's own date
-      // reading would throw on it, and the model saw no way to fix that and tried the same again (prod drill, 11 Oct).
-      if (input.kind === 'date' && !isDate(v)) {
-        throw new TravelError('needs_more', `${name} is a date written YYYY-MM-DD${input.about ? `, ${input.about}` : ''}, not "${clip(String(v), 40)}".`);
+      // A month in words or as YYYY-MM ("December", "Dec 2026", "2026-12") is read as its date, so no model round is
+      // spent on it; anything else that isn't a date is said back as the date it must be, for the next call. The recipe's
+      // own date reading threw on "December", and the model saw no way to fix that and tried it again (prod drill, 11 Oct).
+      if (input.kind === 'date') {
+        const day = dateOf(v, d.now());
+        if (!day) throw new TravelError('needs_more', `${name} is a date written YYYY-MM-DD${input.about ? `, ${input.about}` : ''}, not "${clip(String(v), 40)}".`);
+        inputs[name] = day;
+        continue;
       }
       inputs[name] = v;
     }

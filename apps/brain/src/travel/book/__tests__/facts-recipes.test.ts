@@ -6,7 +6,7 @@ import { capture, fixture } from '../../recipes/__tests__/fixtures.js';
 import { readBodyAs } from '../bodies.js';
 import { BOOK_DIR, checkRecipe, loadBook } from '../book.js';
 import type { ResultsStore } from '../../results.js';
-import { CLICK_MS, createEngine } from '../engine.js';
+import { CLICK_MS, createEngine, dateOf } from '../engine.js';
 import { TravelError } from '../../mcp-travel.js';
 import { ixigoTool } from '../tool.js';
 
@@ -381,17 +381,32 @@ describe("ixigo's trip explorer", () => {
   });
 
   // Prod drill, 11 Oct: "where should we go in December" had the model give month "December". The recipe's date reading
-  // threw (D3110) where the model saw no way to fix it, five times, and no place card went up. A date in words is now
-  // said back as the date it must be, before any page opens; a month as YYYY-MM still reads.
-  it('refuses a date in words with the form it must take, opening no page, and reads a month as YYYY-MM', async () => {
+  // threw (D3110) where the model saw no way to fix it, five times, and no place card went up. A month in words or as
+  // YYYY-MM is now read as its date with no model round spent; only what is no date is said back with its form.
+  it('reads a month in words or as YYYY-MM as its date, and says back what is no date, opening no page for it', async () => {
     const { engine, runs } = engineWith(() => [capture('/x', `${IXIGO}/plan?origin=Delhi&travelMonth=december`, sample('plan.explore.html'))]);
-    const err = await engine.answer('plan.explore', { origin: 'Delhi', month: 'December' }, { tripId: 't_goa' }).catch((e: unknown) => e);
+    for (const month of ['December', 'Dec 2026', '2026-12', 'in december']) {
+      expect(await engine.answer('plan.explore', { origin: 'Delhi', month }, { tripId: 't_goa' }), month).toMatchObject({ as: 'facts', title: 'Where to go from Delhi in December' });
+    }
+    expect(runs.map((r) => r.url)).toEqual(Array(4).fill(`${IXIGO}/plan?origin=Delhi&travelMonth=december`));
+    const err = await engine.answer('plan.explore', { origin: 'Delhi', month: 'someday soon' }, { tripId: 't_goa' }).catch((e: unknown) => e);
     expect(err).toBeInstanceOf(TravelError);
-    expect(err).toMatchObject({ code: 'needs_more', message: 'month is a date written YYYY-MM-DD, any day in the month they would travel, not "December".' });
-    expect(runs).toEqual([]);
-    const month = await engine.answer('plan.explore', { origin: 'Delhi', month: '2026-12' }, { tripId: 't_goa' });
-    expect(month).toMatchObject({ as: 'facts', title: 'Where to go from Delhi in December' });
-    expect(runs.map((r) => r.url)).toEqual([`${IXIGO}/plan?origin=Delhi&travelMonth=december`]);
+    expect(err).toMatchObject({ code: 'needs_more', message: 'month is a date written YYYY-MM-DD, any day in the month they would travel, not "someday soon".' });
+    expect(runs).toHaveLength(4);
+  });
+
+  it('a date input as the recipes read it: the date as it is, a month as its first day, the next one, today in this month', () => {
+    const now = new Date('2026-10-11T15:17:00Z');
+    expect(dateOf('December', now)).toBe('2026-12-01');
+    expect(dateOf('dec', now)).toBe('2026-12-01');
+    expect(dateOf('Dec 2026', now)).toBe('2026-12-01');
+    expect(dateOf('December, 2027', now)).toBe('2027-12-01');
+    expect(dateOf('2026-12', now)).toBe('2026-12-01');
+    expect(dateOf('next March', now)).toBe('2027-03-01');
+    expect(dateOf('October', now)).toBe('2026-10-11');
+    expect(dateOf('2026-11-06', now)).toBe('2026-11-06');
+    expect(dateOf('2026-11-06T18:10:00+05:30', now)).toBe('2026-11-06T18:10:00+05:30');
+    for (const no of ['someday', 'ma', '2026-13', '2026-12-32', '', 42, null]) expect(dateOf(no, now), String(no)).toBeNull();
   });
 
   it("plan.top_locations answers the planner's popular places", async () => {

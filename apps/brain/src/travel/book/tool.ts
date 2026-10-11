@@ -142,6 +142,15 @@ export const NAMES_ONLY_FROM_IXIGO =
 export const PLACES_CARD =
   "These places are saved as results_id: put the best up to three for the ask on a card with show_options (this results_id, a short title) and one short line that carries on. Never name them in your words or in offer_replies: the card shows them and is their vote. Each shows ixigo's estimate a person for the trip: say no other price.";
 
+/** What the model is told when a read didn't come back: nothing more comes from it, so no promise of a later answer. */
+export const DIDNT_LOAD =
+  "This didn't load, and nothing more comes from this call by itself: never say you'll post it or let them know later. Say plainly, in one short line, what you do now: try it once more, or the nearest thing you can do.";
+
+/** The same for ixigo's trip planner: a question of what kind of trip, with kinds as buttons, and a tap runs it again. */
+export const EXPLORE_DIDNT_LOAD =
+  "ixigo's trip planner didn't load, and nothing more comes from this call by itself: never say a card or places will come later. " +
+  'Ask in one short line what kind of trip they want, with offer_replies of kinds, never places (Beaches, Mountains, A city break, Surprise us): a tap runs it again.';
+
 /** What the room is told with a link recipe's card (a PNR's: the person checks it on ixigo's page themselves). */
 export const LINK_ON_IXIGO =
   "Say in one short line that the card opens ixigo's page, to check it there on their own phone. Never write a number they gave (a PNR), and never guess what the page will say.";
@@ -304,7 +313,10 @@ export function ixigoTool(d: IxigoToolDeps): QuickTool<{ recipe: string; inputs:
         if (!(err instanceof TravelError)) throw err;
         if (err.code === 'pick_place') return { recipe: a.recipe, choose: err.message };
         // The description says each input's name only: an answer that went wrong says them in full, to call again with.
-        return { recipe: a.recipe, error: err.code, note: clip(err.message, 200), inputs: inputsOf(recipe) };
+        // A read that didn't come back never comes later by itself: what Go says is what it does now (prod drill, 11 Oct:
+        // "I'll post the options card as soon as it comes through", and none came).
+        const said = err.code === 'needs_more' ? {} : { tell_the_room: a.recipe === 'plan.explore' ? EXPLORE_DIDNT_LOAD : DIDNT_LOAD };
+        return { recipe: a.recipe, error: err.code, note: clip(err.message, 200), inputs: inputsOf(recipe), ...said };
       }
     },
   };
