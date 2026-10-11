@@ -270,9 +270,10 @@ export interface Travel {
    * needs the trip's ixigo login: with none, the person is asked on the login card and `resume` waits on the login, so Go
    * carries on with it once the login is in (ok false, and the note for the model). priceMinor is ixigo's price for it
    * now, read as the same number the vote showed (the whole stay from the same search's list), or null when that can't
-   * be read: then nothing is said about the price moving. Absent: nothing is needed first.
+   * be read: then nothing is said about the price moving. Absent: nothing is needed first. line: the login's one plain
+   * line when nothing went up now (its card already up is the ask, or someone is logging in), for a tap to say.
    */
-  prepare?(optionId: string, o: { tripId: string; what: string; resume: Record<string, unknown> }): Promise<{ ok: true; priceMinor: number | null } | { ok: false; note: string }>;
+  prepare?(optionId: string, o: { tripId: string; what: string; resume: Record<string, unknown> }): Promise<{ ok: true; priceMinor: number | null } | { ok: false; note: string; line?: string }>;
   /** Whether Go books each person's own flight on this trip (BOOKING, booking/flight-booking.ts bookingOnFor). */
   booksFlights?(tripId: string): Promise<boolean>;
   /** True while searches come from the fake ixigo (TRAVEL_MODE is fake, or ixigo is not set up): the listings are simulated. */

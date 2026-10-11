@@ -208,6 +208,7 @@ export function renderTripChangeWake(item: DeskItem, pack: TripPack): string {
       ? `the vote ${inlineData(d.question)} closed: ${inlineData(won.label)} won (${tally}). ` +
           `If it settled the trip's dates, save them with update_trip first, with decision_id "${d.decision_id}" (days without a year are the next ones from today). ` +
           'If it settled where to stay (an area or a place to stay), save the winner as the stay, never as the destination: the destination is where the trip goes. ' +
+          'Say it is the stay or picked, never "locked in": that reads as ixigo\'s Lock Price. ' +
           'The App already posted the result in the room: never say who won or the counts again. ' +
           'Then say only the next step, in one short line (booking it, the next thing to settle), or call stay_silent when there is none.'
       : `the vote ${inlineData(d.question)} closed with no clear winner (${tally}). Ask the group how to settle it.`;

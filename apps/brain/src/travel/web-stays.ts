@@ -216,7 +216,7 @@ export function createWebStays(d: WebStaysDeps): WebStays {
       const park: Parked = { what: o.what, resume: o.resume };
       // Money is about to move: ixigo is read now, so a login it no longer has asks again instead of standing.
       const login = await d.login.ensure(o.tripId, o.what, { park, booking: true });
-      if (!login.ok) return { ok: false, note: login.note };
+      if (!login.ok) return { ok: false, note: login.note, ...(login.line ? { line: login.line } : {}) };
       return { ok: true, priceMinor: await livePrice(offer as StoredOffer & { sourceUrl: string }) };
     },
 

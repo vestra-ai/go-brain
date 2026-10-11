@@ -1071,6 +1071,8 @@ describe('a booking ask on a trip with no login (8 Oct demo: "heyy can you try b
     expect(await w.login.ensure(w.tripId, what, { park: { what, resume } })).toEqual({
       ok: false,
       note: `Booking Saudades Homestays waits on the trip's ixigo login, and Go carries on with it once the login is in. ${cardIsTheAsk('Rahul', "I'll re-check Saudades Homestays and book it")}`,
+      // Nothing went up now: a tap with no model to say so posts this (prod drill, 11 Oct: "I'll book it" said nothing).
+      line: "Booking Saudades Homestays waits on the trip's ixigo login: Rahul, tap Log in to ixigo on your card above, and I'll carry on once you're in.",
     });
     expect(w.link.of('post_message')).toHaveLength(1);
     expect(await w.parked()).toMatchObject({ what, resume });
@@ -1149,6 +1151,7 @@ describe('a booking ask on a trip with no login (8 Oct demo: "heyy can you try b
     const before = w.link.of('post_message').length;
     expect(await w.login.ensure(w.tripId, what, { park: { what, resume }, booking: true })).toEqual({
       ok: false, note: `Saudades Homestays needs the trip's ixigo login, and Rahul is logging in on Go's screen now. ${next}`,
+      line: "Rahul is logging in to ixigo on Go's screen now. Once it's in, I'll carry on with Saudades Homestays.",
     });
     // No new card or line for it.
     expect(w.link.of('post_message')).toHaveLength(before);

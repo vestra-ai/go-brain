@@ -163,6 +163,8 @@ export const HELLO_LINE = '{name}, link ixigo once with one tap and I can book f
  * Gunupudi": p2's audit, 11 Oct). The card keeps the whole name.
  */
 const addressOf = (name: string): string => (name === ORGANIZER ? name : name.trim().split(/\s+/)[0] || name);
+/** A line that starts with a name: "the organizer" too starts it capitalised. */
+const startOf = (line: string): string => line.charAt(0).toUpperCase() + line.slice(1);
 const ORGANIZER = 'the organizer';
 
 export type LoginState = 'asked' | 'logging_in' | 'logged_in' | 'skipped' | 'logged_out';
@@ -259,8 +261,11 @@ export interface IxigoLogin {
    * for: who is asked first, when they can be: the person whose booking needs it (the lead, 11 Oct: anyone in the trip
    * can log in on the trip's computer, and Keshav's booking asked Saket, the organizer). Else the one asked before, else
    * the organizer.
+   * line: only when nothing went up just now (the login card that is up is the ask, or someone is logging in): the one
+   * plain line for a caller that answers without the model (the "I'll book it" tap), pointing at that card or saying who
+   * is logging in. Without it, Go's own line and card for the login just went up.
    */
-  ensure(tripId: string, what: string, o?: { park?: Parked; booking?: boolean; for?: string }): Promise<{ ok: true } | { ok: false; note: string }>;
+  ensure(tripId: string, what: string, o?: { park?: Parked; booking?: boolean; for?: string }): Promise<{ ok: true } | { ok: false; note: string; line?: string }>;
   /**
    * Someone in the chat asked to log in to ixigo (again): the card goes up now for whoever logs in for the trip (the one
    * asked before while they can be, else the organizer: the trip's browser is theirs), whatever the wait between asks,
@@ -1157,6 +1162,7 @@ export function createIxigoLogin(d: LoginDeps): IxigoLogin {
           return {
             ok: false,
             note: `${what} needs the trip's ixigo login, and ${name} is logging in on Go's screen now. ${cardIsTheAsk(name, park ? `I'll re-check ${park.what} and book it` : "I'll carry on")}`,
+            line: startOf(`${addressOf(name)} is logging in to ixigo on Go's screen now. Once it's in, I'll carry on${park ? ` with ${park.what}` : ''}.`),
           };
         }
       }
@@ -1176,7 +1182,13 @@ export function createIxigoLogin(d: LoginDeps): IxigoLogin {
         : can(pack.trip.organizer_person_id)
           ? pack.trip.organizer_person_id
           : pack.trip.people.find((p) => can(p.person_id))?.person_id;
-      if (!personId) return { ok: false, note: `${what} needs the trip's ixigo login, and nobody can be asked for it now. Say so in one line.` };
+      if (!personId) {
+        return {
+          ok: false,
+          note: `${what} needs the trip's ixigo login, and nobody can be asked for it now. Say so in one line.`,
+          line: `${park ? `Booking ${park.what}` : what} needs the trip's ixigo login, and nobody in the trip can be asked for it now.`,
+        };
+      }
       const name = await nameOf(tripId, personId);
       // One login card per trip while it is up and unanswered (p2's re-audit, 11 Oct: the same ask twice in two minutes,
       // the first right after the rooms card, then a booking's): a booking parks on the card that is up, and the reply
@@ -1187,11 +1199,24 @@ export function createIxigoLogin(d: LoginDeps): IxigoLogin {
         await ask(tripId, personId, row ? row.attempt + 1 : 0, line, park);
         // Go's line and the card are the ask: the reply adds only what comes once the login is in.
         if (park) return { ok: false, note: `Booking ${park.what} waits on the trip's ixigo login, and Go carries on with it once the login is in. ${cardIsTheAsk(name, `I'll re-check ${park.what} and book it`)}` };
-      } else if (park && row) {
-        await save({ ...row, parked: park });
-        return { ok: false, note: `Booking ${park.what} waits on the trip's ixigo login, and Go carries on with it once the login is in. ${cardIsTheAsk(name, `I'll re-check ${park.what} and book it`)}` };
+        return { ok: false, note: `${what} needs the trip's ixigo login. ${cardIsTheAsk(name, "I'll carry on")}` };
       }
-      return { ok: false, note: `${what} needs the trip's ixigo login. ${cardIsTheAsk(name, "I'll carry on")}` };
+      // The card that is up is the ask, and nothing new goes up: a caller with no model to say so has its line (prod drill,
+      // 11 Oct: "I'll book it" a minute after the hello's card said nothing at all).
+      const first = addressOf(name);
+      if (park && row) {
+        await save({ ...row, parked: park });
+        return {
+          ok: false,
+          note: `Booking ${park.what} waits on the trip's ixigo login, and Go carries on with it once the login is in. ${cardIsTheAsk(name, `I'll re-check ${park.what} and book it`)}`,
+          line: `Booking ${park.what} waits on the trip's ixigo login: ${first}, tap Log in to ixigo on your card above, and I'll carry on once you're in.`,
+        };
+      }
+      return {
+        ok: false,
+        note: `${what} needs the trip's ixigo login. ${cardIsTheAsk(name, "I'll carry on")}`,
+        line: `${what} needs the trip's ixigo login: ${first}, tap Log in to ixigo on your card above.`,
+      };
     },
 
     status,

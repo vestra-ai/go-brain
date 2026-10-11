@@ -354,6 +354,7 @@ describe('why Go woke, and the trip block', () => {
       'the vote <data>Where do we stay?</data> closed: <data>Villa Sol</data> won (<data>Villa Sol</data> 3, <data>Casa Azul</data> 1; 4 of 5 voted). ' +
         'If it settled the trip\'s dates, save them with update_trip first, with decision_id "d_stay" (days without a year are the next ones from today). ' +
         "If it settled where to stay (an area or a place to stay), save the winner as the stay, never as the destination: the destination is where the trip goes. " +
+        'Say it is the stay or picked, never "locked in": that reads as ixigo\'s Lock Price. ' +
         'The App already posted the result in the room: never say who won or the counts again. ' +
         'Then say only the next step, in one short line (booking it, the next thing to settle), or call stay_silent when there is none.',
     );
