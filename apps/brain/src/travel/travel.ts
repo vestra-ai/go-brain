@@ -117,6 +117,11 @@ export interface TravelSearch {
   listed?: number;
   /** The page's own lines about the whole list, for the model (ixigo's Smart Lock for a route). */
   notes?: string[];
+  /**
+   * ixigo answered that it has none (its "No flights found"): results is [], and that is the answer, never a page that
+   * didn't load. Where from and to, as ixigo searched them (Manali as Kullu, KUU).
+   */
+  none?: { from?: { words: string; code: string; city: string }; to?: { words: string; code: string; city: string } };
   /** Buses: the group's stay each bus's nearest drop was measured from, and whose it is ("Casa Anjuna, the stay you voted for"). */
   nearStay?: string;
   /**

@@ -41,7 +41,11 @@ export interface TryAgain {
   query?: TravelQuery;
   /** A home city's flights for the travellers who fly from it (search_flights_each): each one's card is theirs alone. */
   /** asker: who asked for it, who hears the one closing line after the last try when the city is theirs. */
-  each?: { home: string; to: string; date: string; cabin?: string; people?: string[]; asker?: string };
+  each?: {
+    home: string; to: string; date: string; cabin?: string; people?: string[]; asker?: string;
+    /** The place this city's search stands in for (the nearest other airport's), and which end: no nearest after it. */
+    instead?: { of: string; side: 'from' | 'to' };
+  };
 }
 
 export type TryAgainItem = DeskItem & { payload: TryAgain };
