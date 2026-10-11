@@ -103,21 +103,24 @@ export function ageOn(dob: string, day: string): number | null {
 }
 
 /**
- * The seats and the two points picked on the bus's own seat map, as the stage shows it, then the panel's Continue to the
- * passenger form. ixigo's seats show only their price: each is found by its price and its place among the seats that show
- * it, in the order the map draws them (the upper deck first, row by row), after the price filter's own chip.
+ * The seats and the two points picked on the bus's own seat map, as the stage shows it. ixigo's seats show only their
+ * price, and Bash finds an element by the page's accessibility tree: each seat is its price's text, counted in the order
+ * the map draws them (the upper deck first, row by row, after the price filter's own chip, which is that text's first).
+ * The points are the panel's radios in ixigo's order, the boarding list's then the dropping list's; picking the drop
+ * moves the page on to the passenger form (p5's drill, 11 Oct: with no seat picked it said "Please select Seat(s) to
+ * continue").
  */
 export function seatSteps(layout: BusLayout, seats: readonly BusSeat[], board: BusPoint, drop: BusPoint): NonNullable<FetchPlan['steps']> {
   const drawn = [...layout.seats].sort((a, b) => (a.deck === b.deck ? a.row - b.row || a.col - b.col : a.deck === 'upper' ? -1 : 1));
   const price = (s: BusSeat): string => `₹${Math.round(s.fareMinor / 100)}`;
   const clicks = seats.map((s) => {
     const same = drawn.filter((x) => price(x) === price(s));
-    return { op: 'click' as const, text: price(s), nth: same.findIndex((x) => x.no === s.no) + 2 };
+    return { op: 'click' as const, role: 'StaticText', name: price(s), nth: same.findIndex((x) => x.no === s.no) + 2 };
   });
   return [
     ...clicks,
-    { op: 'click', role: 'radio', name: board.name },
-    { op: 'click', role: 'radio', name: drop.name },
+    { op: 'click', role: 'radio', nth: Math.max(1, layout.boarding.findIndex((p) => p.id === board.id) + 1) },
+    { op: 'click', role: 'radio', nth: Math.max(1, layout.dropping.findIndex((p) => p.id === drop.id) + 1) },
   ];
 }
 
