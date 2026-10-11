@@ -52,7 +52,8 @@ export function stayRates(body: unknown): StayRate[] {
     const roomName = text(room['name']);
     return room['roomOptions'].flatMap((o): StayRate[] => {
       if (!isObject(o) || !isObject(o['fareDetail']) || !roomName) return [];
-      const whole = wholeStay(o['fareDetail']);
+      const fare = o['fareDetail'];
+      const whole = wholeStay(fare);
       if (!whole) return [];
       const cancel = isObject(o['cancellationBenefits']) ? o['cancellationBenefits'] : null;
       return [{
