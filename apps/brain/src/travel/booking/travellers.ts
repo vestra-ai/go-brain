@@ -35,6 +35,10 @@ const TITLE = /^(mr|mrs|ms|miss|mstr|master|dr)$/;
 export const firstNameOf = (name: string): string =>
   name.normalize('NFKD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z\s'-]/g, ' ').trim().split(/\s+/).find((w) => !TITLE.test(w)) ?? '';
 
+/** A name as Go says it: its first word, past a title, as written ("Dr. Meher Shah" is Meher). Go says first names. */
+export const spokenFirstName = (name: string): string =>
+  name.trim().split(/\s+/).find((w) => w.replace(/[^a-z]/gi, '') !== '' && !TITLE.test(w.toLowerCase().replace(/[^a-z]/g, ''))) ?? name.trim();
+
 /** Whole years from a YYYY-MM-DD birthday to a YYYY-MM-DD day. */
 function yearsOn(dob: string, day: string): number | null {
   const b = /^(\d{4})-(\d{2})-(\d{2})/.exec(dob);
