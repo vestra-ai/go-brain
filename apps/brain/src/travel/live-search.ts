@@ -1,8 +1,13 @@
 /**
  * The live card for a search on ixigo.com: posted with "On it." the moment the search starts, its steps ticked as the
- * recipe run reports, the most drawn picture of the page in a small browser window with the page's address, and marked
- * done before the options card posts. Pictures are shown only of search, results and details pages (frame-pages.ts),
- * re-hosted in Go's image cache like every other picture on a card. Updates go out in order, folded into the newest.
+ * recipe run reports, and marked done before the options card posts. Updates go out in order, folded into the newest.
+ *
+ * Live (the Server team's R7, 11 Oct): the card carries live_url, a view-only page of Go's screen (Bash's screen page,
+ * WebRTC) the App opens while the card runs, made as the card starts and made again at a step change before its 15
+ * minutes run out; ended, and gone from the card, once the card is done. A person signing in on the same screen is never
+ * in it (Bash pauses a view session through a hand-off). The card changes at step changes only, never for a picture: the
+ * most drawn picture of the page, with its address, rides the next one and stays as the done card's last frame. Pictures
+ * are only of search, results and details pages (frame-pages.ts), re-hosted in Go's image cache like every other.
  */
 import { createHash } from 'node:crypto';
 import type * as C from '@go/contract';
@@ -26,7 +31,18 @@ export interface LiveSearchDeps {
   finishWaitMs?: number;
   /** When each trip's last card said "On it.", shared by every card (register.ts): one ask's second card says nothing. */
   saidOnIt?: Map<string, number>;
+  /** A fresh view-only session on the trip's screen (POST /v1/sessions, screen view): the card's live_url. */
+  liveView?: (tripId: string) => Promise<{ id?: string; url: string; expires_at: string }>;
+  /** Ends a live view's session (DELETE /v1/sessions/{id}) once its card is done or it is made again. */
+  endView?: (sessionId: string) => Promise<void>;
+  /** The longest a post waits for its live view (LIVE_VIEW_WAIT_MS); tests pass their own. */
+  liveViewWaitMs?: number;
 }
+
+/** "On it." waits at most this long for its live view: one that comes later rides the next step change. */
+export const LIVE_VIEW_WAIT_MS = 1_500;
+/** A live view this old is made again at the next step change: Bash's sessions are good for 15 minutes. */
+export const LIVE_VIEW_FRESH_MS = 10 * 60_000;
 
 export interface LiveSearch {
   /** For the recipe runner: never throws, and never needs awaiting. */
@@ -128,6 +144,7 @@ export function startLiveSearch(d: LiveSearchDeps, tripId: string, o: LiveFor): 
     state: 'running',
     steps: ('kind' in o ? liveSteps(o.kind, o.query) : ['Opening ixigo', 'Reading the page', 'Answering']).map((text, i) => ({ text, state: i === 0 ? 'doing' : 'todo' })),
     screenshot_url: null,
+    live_url: null,
     page_url: null,
     updated_at: d.now().toISOString(),
     actions: [],
@@ -140,9 +157,43 @@ export function startLiveSearch(d: LiveSearchDeps, tripId: string, o: LiveFor): 
   let queued = false;
   let chain: Promise<void> = Promise.resolve();
   let frames: Promise<void> = Promise.resolve();
+  /** The card's live view: its session, and when it was made; viewing while one is being made. */
+  let view: { id?: string; at: number } | null = null;
+  let viewing: Promise<void> | null = null;
+
+  /** A live view made (again): on the card while it runs; one made after the card is done ends at once. */
+  function openView(): Promise<void> {
+    if (!d.liveView || viewing) return viewing ?? Promise.resolve();
+    viewing = d.liveView(tripId)
+      .then((s) => {
+        const old = view;
+        view = { ...(s.id ? { id: s.id } : {}), at: d.now().getTime() };
+        if (old?.id) void d.endView?.(old.id).catch(() => undefined);
+        if (ended) closeView();
+        else card.live_url = s.url;
+      })
+      .catch((err: unknown) => d.log.warn({ err, cardId: card.card_id }, 'travel: a live view did not open'))
+      .finally(() => {
+        viewing = null;
+      });
+    return viewing;
+  }
+
+  /** The card is done: its live view ends, and leaves the card. */
+  function closeView(): void {
+    card.live_url = null;
+    const id = view?.id;
+    view = null;
+    if (id) void d.endView?.(id).catch((err: unknown) => d.log.warn({ err, cardId: card.card_id }, 'travel: a live view did not end'));
+  }
 
   async function send(): Promise<void> {
     if (postFailed) return;
+    // The first post, or a view near its 15 minutes: a live view first, briefly (never holding "On it." for long).
+    if (!ended && (!posted || (view && d.now().getTime() - view.at >= LIVE_VIEW_FRESH_MS))) {
+      if (posted) void openView();
+      if (viewing) await within(viewing, d.liveViewWaitMs ?? LIVE_VIEW_WAIT_MS);
+    }
     const c: WorkingCard = { ...card, steps: card.steps.map((s) => ({ ...s })), updated_at: d.now().toISOString() };
     try {
       if (!posted) {
@@ -198,6 +249,7 @@ export function startLiveSearch(d: LiveSearchDeps, tripId: string, o: LiveFor): 
 
   function settle(ok: boolean): void {
     ended = true;
+    closeView();
     card.state = ok || answeredAt ? 'done' : 'failed';
     card.steps = card.steps.map((s) => ({ ...s, state: ok ? 'done' : s.state === 'doing' ? 'failed' : s.state }));
     card.fallback_text = fallbackOf(ok);
@@ -212,7 +264,11 @@ export function startLiveSearch(d: LiveSearchDeps, tripId: string, o: LiveFor): 
       : ok ? `Go searched ${noun} on ixigo.` : `Go couldn't search ${noun} on ixigo.`;
   }
 
-  /** drawn: the page as ixigo drew it after the answer, which replaces the picture even on a card that is done. */
+  /**
+   * drawn: the page as ixigo drew it after the answer, which replaces the picture even on a card that is done. A picture
+   * changes nothing in the room while the card runs (R7: step changes only): the next step change carries it, and the
+   * done card's update its last. Only a card already done is sent again for its picture.
+   */
   async function show(list: LiveFrame[], drawn = false): Promise<void> {
     const frame = frameToShow(list);
     if (!frame || (ended && !drawn)) return;
@@ -220,7 +276,7 @@ export function startLiveSearch(d: LiveSearchDeps, tripId: string, o: LiveFor): 
     if ((ended && !drawn) || card.screenshot_url === url) return;
     card.screenshot_url = url;
     card.page_url = frame.pageUrl;
-    push();
+    if (ended) push();
   }
 
   function on(e: RecipeProgress): void {
@@ -284,12 +340,14 @@ export function startLiveSearch(d: LiveSearchDeps, tripId: string, o: LiveFor): 
         card.state = 'done';
         card.fallback_text = clip(`${e.text}.`, 200);
         ended = true;
+        closeView();
         push();
         return;
       }
     }
   }
 
+  void openView();
   push();
   return {
     progress(e) {
@@ -312,6 +370,8 @@ export function startLiveSearch(d: LiveSearchDeps, tripId: string, o: LiveFor): 
       // A card that already ended failed is done, its failed step the gap; one still running is done now, and its read
       // ends its steps, done or failed, when it ends.
       if (card.state === 'failed' || !ended) {
+        // Done in the room: nothing more to watch, while the read itself may go on.
+        closeView();
         card.state = 'done';
         card.fallback_text = ended ? fallbackOf(false) : recipe ? `Go checked ${recipe} on ixigo.` : `Go searched ${noun} on ixigo.`;
         push();

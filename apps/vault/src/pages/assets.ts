@@ -47,11 +47,22 @@ export const VAULT_JS = `(() => {
   const W = window.SimpleWebAuthnBrowser;
   const apple = /iPhone|iPad|iPod/.test(navigator.userAgent);
   const li = (text) => { const el = document.createElement('li'); el.textContent = text; return el; };
+  // Inside the App (rev 5 R8): the page says when it is done to its parent, at each of the App's origins (only the one
+  // that framed it hears it), and an embedded unlock keeps its session in memory for a header, as no cookie reaches it.
+  const embedded = document.body.dataset.display === 'embedded';
+  const framed = window.parent !== window;
+  const origins = (document.body.dataset.frameOrigins || '').split(' ').filter(Boolean);
+  let session = null;
+  const tellApp = (status) => {
+    if (!framed) return;
+    for (const origin of origins) { try { window.parent.postMessage({ type: 'go-vault', status }, origin); } catch (e) {} }
+  };
 
   async function api(path, body) {
+    const headers = session ? { 'x-vault-session': session } : {};
     const init = body === undefined
-      ? { credentials: 'same-origin' }
-      : { method: 'POST', credentials: 'same-origin', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) };
+      ? { credentials: 'same-origin', headers }
+      : { method: 'POST', credentials: 'same-origin', headers: { ...headers, 'content-type': 'application/json' }, body: JSON.stringify(body) };
     const res = await fetch(base + path, init);
     let data = {};
     try { data = await res.json(); } catch (e) { data = {}; }
@@ -67,16 +78,20 @@ export const VAULT_JS = `(() => {
     const s = r.data.state;
     if (s === 'register') { show('register'); return; }
     if (s === 'unlock') { show('unlock'); return; }
-    if (s !== 'open') { show('expired'); return; }
+    if (s !== 'open') { show('expired'); tellApp('failed'); return; }
     show('open');
     $('cards').replaceChildren(...r.data.cards.map((c) => li(c.brand_label + ' ending ' + c.last4 + ', expires ' + c.expires)));
     show('cards-empty', r.data.cards.length === 0);
     $('log').replaceChildren(...r.data.log.map((e) => li(e.when + ': ' + e.text)));
     // A vault that can't add cards yet says so, in place of a form whose Save could only fail.
     const cardsReady = r.data.cards_ready !== false;
-    show('card-form', cardsReady);
-    show('cards-not-ready', !cardsReady);
-    if (cardsReady && !stripe && window.Stripe) {
+    // Embedded: no card or travel form (card entry stays in the browser sheet), and Done tells the App.
+    show('card-form', cardsReady && !embedded);
+    show('cards-not-ready', !cardsReady && !embedded);
+    show('travel-form', !embedded);
+    show('embedded-note', embedded);
+    show('done-btn', embedded);
+    if (cardsReady && !embedded && !stripe && window.Stripe) {
       stripe = window.Stripe(r.data.publishable_key);
       cardField = stripe.elements().create('card', { hidePostalCode: true });
       cardField.mount('#card-element');
@@ -125,6 +140,7 @@ export const VAULT_JS = `(() => {
     } catch (e) { say(msgId, 'Cancelled. Try again.', 'bad'); return; }
     const v = await api('/' + kind + '/verify', { challenge_id: o.data.challenge_id, response });
     if (!v.ok) { say(msgId, v.data.message || "That didn't work. Try again.", 'bad'); return; }
+    if (v.data.session) session = v.data.session;
     await home();
   }
 
@@ -147,7 +163,7 @@ export const VAULT_JS = `(() => {
     const r = await api('/info');
     show('loading', false);
     const d = r.data;
-    if (d.state !== 'ready') { $('gone-title').textContent = d.title || 'This link has expired'; say('gone-msg', d.message); show('gone'); return; }
+    if (d.state !== 'ready') { $('gone-title').textContent = d.title || 'This link has expired'; say('gone-msg', d.message); show('gone'); tellApp('failed'); return; }
     $('amount').textContent = d.amount_label;
     $('merchant').textContent = d.merchant;
     $('purpose').textContent = d.purpose;
@@ -169,11 +185,14 @@ export const VAULT_JS = `(() => {
     say('pay-msg', 'Paying');
     try {
       const r = await api('/approve', { challenge_id: o.data.challenge_id, response });
-      if (r.data.state === 'paid') { show('pay', false); show('done'); return; }
+      if (r.data.state === 'paid') { show('pay', false); show('done'); tellApp('saved'); return; }
       say('pay-msg', r.data.message || "The payment didn't go through.", r.data.state === 'confirming' ? '' : 'bad');
       if (r.data.retry) btn.disabled = false;
+      // The bank is confirming: approved, and Go says when it is done. Refused for good, or failed: the App hears failed.
+      else tellApp(r.data.state === 'confirming' ? 'saved' : 'failed');
     } catch (e) {
       say('pay-msg', 'Something went wrong. Check the card in Go before trying again.', 'bad');
+      tellApp('failed');
     }
   }
 
@@ -183,9 +202,12 @@ export const VAULT_JS = `(() => {
     $('travel-form').addEventListener('submit', saveTravel);
     $('travel-delete').addEventListener('click', deleteTravel);
     $('card-form').addEventListener('submit', saveCard);
+    $('done-btn').addEventListener('click', () => tellApp('saved'));
     home();
   } else {
     $('approve-btn').addEventListener('click', approve);
+    show('close-btn', framed);
+    $('close-btn').addEventListener('click', () => tellApp('cancelled'));
     pay();
   }
 })();

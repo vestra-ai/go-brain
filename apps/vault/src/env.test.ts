@@ -25,6 +25,13 @@ describe('readVaultEnv', () => {
     expect(env.VAULT_RAILS).toEqual(['fake', 'stripe_test']);
   });
 
+  // Rev 5 R8: the App's origins, the only ones that may frame the unlock and approve pages.
+  it("takes the App's origins that may frame a page, by default the App's, and refuses one with a path", () => {
+    expect(readVaultEnv(good).VAULT_FRAME_ORIGINS).toEqual(['https://go-frontend-three.vercel.app', 'http://localhost:3000', 'http://localhost:3002']);
+    expect(readVaultEnv({ ...good, VAULT_FRAME_ORIGINS: 'https://app.go.example, http://localhost:3000' }).VAULT_FRAME_ORIGINS).toEqual(['https://app.go.example', 'http://localhost:3000']);
+    expect(() => readVaultEnv({ ...good, VAULT_FRAME_ORIGINS: 'https://app.go.example/vault' })).toThrow(/frame origin/);
+  });
+
   it('reads the rails it pays on, and refuses one it does not know', () => {
     expect(readVaultEnv({ ...good, VAULT_RAILS: 'fake, stripe_test' }).VAULT_RAILS).toEqual(['fake', 'stripe_test']);
     expect(() => readVaultEnv({ ...good, VAULT_RAILS: 'paypal' })).toThrow(/VAULT_RAILS/);

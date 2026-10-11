@@ -4,12 +4,15 @@ import type { Db } from './store/people.js';
 export const LINK_TTL_MS = 5 * 60_000;
 /** Where the vault home opens. No add_login: logins are not stored this week (master §9). */
 export type LinkStart = 'home' | 'add_card' | 'add_travel';
+/** Where a home link's page opens: the system browser sheet, or inside the App (unlock only: card entry stays in the sheet). */
+export type LinkDisplay = 'sheet' | 'embedded';
 
 export interface LinkRow {
   link_id: string;
   kind: 'home' | 'pay';
   person_id: string;
   start: LinkStart;
+  display: LinkDisplay;
   approval_id: string | null;
   expires_at: Date;
   used_at: Date | null;
@@ -26,12 +29,12 @@ function mint(): { token: string; hash: Buffer; linkId: string } {
   return { token, hash: hashToken(token), linkId: `lk_${randomBytes(9).toString('base64url')}` };
 }
 
-export async function createHomeLink(db: Db, now: Date, o: { personId: string; start: LinkStart }): Promise<{ token: string; expiresAt: Date }> {
+export async function createHomeLink(db: Db, now: Date, o: { personId: string; start: LinkStart; display?: LinkDisplay }): Promise<{ token: string; expiresAt: Date }> {
   const { token, hash, linkId } = mint();
   const expiresAt = new Date(now.getTime() + LINK_TTL_MS);
   await db.query(
-    "insert into links (link_id, token_hash, kind, person_id, start, expires_at, created_at) values ($1, $2, 'home', $3, $4, $5, $6)",
-    [linkId, hash, o.personId, o.start, expiresAt, now],
+    "insert into links (link_id, token_hash, kind, person_id, start, display, expires_at, created_at) values ($1, $2, 'home', $3, $4, $5, $6, $7)",
+    [linkId, hash, o.personId, o.start, o.display ?? 'sheet', expiresAt, now],
   );
   return { token, expiresAt };
 }
@@ -54,7 +57,7 @@ export async function createPayLink(
 export async function findLink(db: Db, token: string): Promise<LinkRow | null> {
   if (!/^[A-Za-z0-9_-]{43}$/.test(token)) return null;
   const r = await db.query<LinkRow>(
-    'select link_id, kind, person_id, start, approval_id, expires_at, used_at, session_hash, session_until from links where token_hash = $1',
+    'select link_id, kind, person_id, start, display, approval_id, expires_at, used_at, session_hash, session_until from links where token_hash = $1',
     [hashToken(token)],
   );
   return r.rows[0] ?? null;

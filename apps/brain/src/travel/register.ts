@@ -28,7 +28,7 @@ import { createEarlyStart } from './recipes/early.js';
 import { earlyAnswer, earlyReadNow, earlySearchNow, jevPickNow } from './recipes/now.js';
 import { loadLearnedPlaces } from './recipes/places-store.js';
 import { optionOnCard } from './recipes/option-on-card.js';
-import { createPlaceFor } from './place-for.js';
+import { createGuideOf, createPlaceFor } from './place-for.js';
 import { placeInfoHandler, registerPlaceLearn } from './place-info.js';
 import { createGroupStay } from './group-stay.js';
 import { createResultsStore } from './results.js';
@@ -179,12 +179,24 @@ export const registerTravel: RegisterLane = async (brain) => {
   brain.recipeWatches = () => watchesNow(brain.pool);
   // When each trip's live card last said "On it.", across its cards: one ask's second search says nothing (live-search.ts).
   const saidOnIt = new Map<string, number>();
+  // A live card's view of the trip's screen (R7): a view-only session on the browser its search runs in. The tasks lane,
+  // which owns the computers, registers after this one: read when a card starts.
+  const liveViews = {
+    liveView: async (tripId: string) => {
+      const screen = brain.recipeRunners?.screen;
+      if (!screen) throw new Error("no trip computer here for a live view");
+      return screen(tripId, 'view');
+    },
+    endView: async (sessionId: string) => {
+      await brain.recipeRunners?.endScreen?.(sessionId);
+    },
+  };
   const ixigoWeb = createIxigoWebBackend({
     book,
     engine,
     now: brain.now,
     log: brain.log,
-    live: (tripId, o) => startLiveSearch({ link: brain.door.link, images, now: brain.now, log: brain.log, saidOnIt }, tripId, o),
+    live: (tripId, o) => startLiveSearch({ link: brain.door.link, images, now: brain.now, log: brain.log, saidOnIt, ...liveViews }, tripId, o),
     // A computer that met Cloudflare's check moments ago opens no stays page for an ask (backend.ts CHALLENGE_COOL_MS).
     challengedAt: (tripId) => brain.recipeRunners?.browserFetch.lastChallenge?.(tripId) ?? null,
   });
@@ -237,7 +249,10 @@ export const registerTravel: RegisterLane = async (brain) => {
   // The Server team's rev 5 (R6): what a place is like, for the ideas on the home screen, from the places Go has learned;
   // the operator learns one ahead through a trip of their own (place-info.ts).
   brain.door.handle('place_info', placeInfoHandler({ pool: brain.pool }));
-  registerPlaceLearn(brain.http, { adminToken: brain.env.ADMIN_TOKEN, pool: brain.pool, placeFor, live: () => brain.switches.get('TRAVEL_MODE') === 'ixigo_web' });
+  registerPlaceLearn(brain.http, {
+    adminToken: brain.env.ADMIN_TOKEN, pool: brain.pool, placeFor, guideOf: createGuideOf({ engine, images, log: brain.log }),
+    live: () => brain.switches.get('TRAVEL_MODE') === 'ixigo_web',
+  });
   const today = tripToday(brain.pool, brain.now);
   // A stays card's top pick opened on the stage, as a person opens it: its card clicked on the results by its name, its
   // page by its address if the click brings nothing (a watched read: a progress to follow puts it on the stage). Its
@@ -350,6 +365,7 @@ export const registerTravel: RegisterLane = async (brain) => {
     // Money registers after travel: its Pay is read when Pay is tapped.
     pay: () => brain.pay,
     login,
+    results,
   });
   registerTravelTaps(brain.taps, { results, pool: brain.pool, link: brain.door.link, desk: brain.desk, now: brain.now, log: brain.log, booking, nameOf });
   // The Server's REV4 B5: once a vote picks a stay, its rooms card (the ways to take its rooms, who shares, what each pays)
