@@ -44,6 +44,8 @@ export interface LoopInput {
   onFirstToken?: () => void;
   /** Once, when the model starts writing words (its first text, not a tool call or its thinking): Go is replying. */
   onWriting?: () => void;
+  /** As each tool call starts streaming, with its name (before its input): what the round is about to do. */
+  onToolUse?: (name: string) => void;
   toolTimeoutMs?: number;
   /** The daily model budget: each round holds its estimate first, and settles to what it really cost. */
   budget?: Pick<Budget, 'reserve'>;
@@ -324,6 +326,7 @@ export async function runLoop(i: LoopInput): Promise<LoopResult> {
           firstToken = true;
           i.onFirstToken?.();
         }
+        if (ev.type === 'content_block_start' && ev.content_block.type === 'tool_use') i.onToolUse?.(ev.content_block.name);
         if (!writing && ev.type === 'content_block_delta' && ev.delta.type === 'text_delta' && ev.delta.text.trim() !== '') {
           writing = true;
           i.onWriting?.();

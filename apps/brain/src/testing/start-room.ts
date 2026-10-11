@@ -11,7 +11,8 @@ import { LANES } from '../main.js';
 
 export const SECRET = 'e'.repeat(64);
 /** Short waits for tests; everything else runs as in production. */
-export const TEST_TIMINGS: Partial<Timings> = { waitMs: 400, deskPollMs: 50, deskRetryMs: [50, 100] };
+// No hold for typing's minimum (composer TYPING_MIN_MS): a test's post lands as soon as it is ready.
+export const TEST_TIMINGS: Partial<Timings> = { waitMs: 400, deskPollMs: 50, deskRetryMs: [50, 100], typingMinMs: 0 };
 
 const firstUser = (body: any): Array<{ type: string; text?: string }> => {
   const content = body?.messages?.[0]?.content;

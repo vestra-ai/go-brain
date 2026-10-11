@@ -13,7 +13,7 @@ import { chatLine, dataBlock, roomView, type Forgotten } from './fence.js';
 import { addUsage, MAX_ROUNDS, noUsage, runLoop, type LoopResult, type RoundTiming } from './loop.js';
 import { stripMessageRefs } from './sanitize.js';
 import type { Speak } from './speak.js';
-import { makeTurnCtx, scopedLink, type Tools } from './tools.js';
+import { makeTurnCtx, scopedLink, STAY_SILENT, type Tools } from './tools.js';
 
 export interface ComposerDeps {
   pool: pg.Pool;
@@ -33,7 +33,19 @@ export interface ComposerDeps {
   /** The daily model budget; without it, no cap. */
   budget?: Budget;
   turnTimeoutMs?: number;
+  /** The least a turn nobody named Go in shows typing before its post lands (TYPING_MIN_MS). */
+  typingMinMs?: number;
+  sleep?: (ms: number) => Promise<void>;
 }
+
+/** Typing on for less than this before a post never shows in the App (Keshav, 11 Oct): the post waits out the rest. */
+export const TYPING_MIN_MS = 1_200;
+
+/**
+ * Tools that post nothing themselves, or only read: a turn going to one is not Go replying yet, so it shows no typing
+ * (a ✅, a note, a look at memory, then silence). Any other tool (a search, a card, a vote) is Go acting.
+ */
+const QUIET_TOOLS: ReadonlySet<string> = new Set([STAY_SILENT, 'react', 'record', 'record_expense', 'recall', 'person', 'who_owes_what']);
 
 export interface Composer {
   runTurn: TurnRunner;
@@ -162,6 +174,8 @@ export function logTurn(
 
 export function createComposer(d: ComposerDeps): Composer {
   const turnTimeoutMs = d.turnTimeoutMs ?? 20_000;
+  const typingMinMs = d.typingMinMs ?? TYPING_MIN_MS;
+  const sleep = d.sleep ?? ((ms: number) => new Promise<void>((r) => setTimeout(r, ms)));
   /** The messages a running turn pulled in after it started: they are the turn's too when it ends. */
   const pulledBy = new Map<string, DeskItem[]>();
 
@@ -195,9 +209,11 @@ export function createComposer(d: ComposerDeps): Composer {
     // Typing may also be on for a message the turn pulled in, or one intake turned it on for: a turn that posted answered it.
     const pulled: DeskItem[] = [];
     let posted = false;
-    // Typing went on when the model started writing, on a turn nobody named Go in (G4, 11 Oct: a reply to a line that
-    // didn't tag Go showed no "Go is typing…"); it goes off when the turn ends, as for one that named Go.
-    let wrote = false;
+    // On a turn nobody named Go in, typing goes on at the first sign Go will act: its first words, a tool that does
+    // something (a search before its card), or a lane's answer with no model call; it goes off when the turn ends, as
+    // for one that named Go. Only at its last words, it showed under a second before the post, which the App never drew
+    // (G4, then Keshav, 11 Oct: untagged replies never showed "Go is typing…").
+    const typing: { since: Date | null } = { since: null };
     let spoke = false;
     try {
       const trip = await d.pool.query<{ composer_seen_seq: number; tz: string }>('select composer_seen_seq, tz from trips where trip_id = $1', [t.tripId]);
@@ -215,6 +231,10 @@ export function createComposer(d: ComposerDeps): Composer {
       // P6's proactive bar may limit a turn Go woke for on its own: which tools, and whether its text may be posted.
       const limits = d.context.turnRules(t.items);
       const ctx = makeTurnCtx({ tripId: t.tripId, turnId: t.turnId, link: d.link, pack, wake: t.items, signal, limits });
+      const acting = (): void => {
+        if (forGo || typing.since || ctx.mayPostText === false) return;
+        typing.since = d.speak.working(t.tripId);
+      };
       const base = {
         client: d.client,
         model: d.model,
@@ -225,16 +245,16 @@ export function createComposer(d: ComposerDeps): Composer {
         onFirstToken: () => {
           times.firstToken ??= d.now();
         },
-        onWriting: () => {
-          if (forGo || wrote || ctx.mayPostText === false) return;
-          wrote = true;
-          d.speak.working(t.tripId);
+        onWriting: acting,
+        onToolUse: (name: string) => {
+          if (!QUIET_TOOLS.has(name)) acting();
         },
         ...(d.budget ? { budget: d.budget } : {}),
       };
       // A lane may answer with no model call (P4: a plain search ask whose early search found options): its cards and
       // their lines are the turn's answer. A turn under limits always goes to the model.
       const direct = ctx.allowedTools === undefined && ctx.mayPostText !== false && (await d.context.direct({ tripId: t.tripId, wake: t.items, pack, ctx }));
+      if (direct && (ctx.lines.length > 0 || ctx.cards.length > 0)) acting();
       let r: LoopResult = direct
         ? { text: [...new Set(ctx.lines.map((l) => l.trim()).filter((l) => l !== ''))].join('\n'), silent: false, rounds: 0, usage: noUsage(), messages: [], stopReason: 'answered', timings: [] }
         : await runLoop({ ...base, messages: [{ role: 'user', content: prompt.user }] });
@@ -294,6 +314,11 @@ export function createComposer(d: ComposerDeps): Composer {
       const lines = ctx.mayPostText === false ? [] : riders.map((x) => x.line);
       const text = [words, ...lines].filter((x): x is string => !!x).join('\n') || null;
       const replyTo = text ? (replyToFor(t.items, pack) ?? citedMessageId(text, pack)) : null;
+      // Typing that went on for this turn shows at least typingMinMs before the post lands.
+      if (typing.since && (text || ctx.cards.length)) {
+        const left = typingMinMs - (d.now().getTime() - typing.since.getTime());
+        if (left > 0) await sleep(left);
+      }
       const ids =
         text || ctx.cards.length
           ? await d.speak.post({
@@ -341,7 +366,7 @@ export function createComposer(d: ComposerDeps): Composer {
         .catch(() => undefined);
       throw e;
     } finally {
-      if (forGo || wrote || posted || pulled.some(isForGo)) d.speak.typingOff(t.tripId);
+      if (forGo || typing.since || posted || pulled.some(isForGo)) d.speak.typingOff(t.tripId);
     }
     return spoke;
   }

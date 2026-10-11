@@ -139,6 +139,8 @@ export interface Timings {
   /** How often the daily model budget re-reads today's spend from the database. */
   budgetRefreshMs: number;
   turnTimeoutMs: number;
+  /** The least an untagged turn's typing shows before its post (composer TYPING_MIN_MS). */
+  typingMinMs: number;
   linkTimeoutMs: number;
   waitForSocketMs: number;
 }
@@ -156,6 +158,7 @@ export const DEFAULT_TIMINGS: Timings = {
   pruneMs: 60_000,
   budgetRefreshMs: 60_000,
   turnTimeoutMs: 20_000,
+  typingMinMs: 1_200,
   linkTimeoutMs: 2_500,
   waitForSocketMs: 15_000,
 };
@@ -257,6 +260,7 @@ export async function buildBrain(env: Env, o: BuildOptions = {}): Promise<Built>
     claimNew: desk.claimNew,
     release: desk.release,
     turnTimeoutMs: t.turnTimeoutMs,
+    typingMinMs: t.typingMinMs,
   });
   desk.setRunner(o.wrapTurn ? o.wrapTurn(composer.runTurn) : composer.runTurn, composer.giveUp);
 
