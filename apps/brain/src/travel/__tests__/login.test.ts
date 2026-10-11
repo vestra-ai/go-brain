@@ -115,9 +115,12 @@ function world(o: {
   const handOffs: Array<{ url: string; plan: FetchPlan; o: { keepOpenMs: number; tab: string } }> = [];
   const releases: string[] = [];
   const sessions: Array<[string, string]> = [];
+  /** Who each session asked to drive first (driver), by session. */
+  const drivers: Array<string | undefined> = [];
   const timers: Array<{ ms: number; fn: () => void; cancelled: boolean }> = [];
-  const screen = async (trip: string, mode: 'view' | 'control') => {
+  const screen = async (trip: string, mode: 'view' | 'control', so?: { driver?: 'user' }) => {
     sessions.push([trip, mode]);
+    drivers.push(so?.driver);
     return { id: `ses_${sessions.length}`, url: `https://screen.example/${mode}`, expires_at: '2026-10-08T06:15:00.000Z' };
   };
   const endScreen = async (id: string) => {
@@ -189,7 +192,7 @@ function world(o: {
   const parked = async (): Promise<unknown> =>
     (await db.pool.query<{ parked: unknown }>('select parked from ixigo_logins where trip_id = $1', [tripId])).rows[0]?.parked ?? null;
   return {
-    tripId, trip, clock, link, reads, statuses, starts, handoffs, stops, handOffs, releases, sessions, ended, cookieReads, timers, tabStepCalls, wakes, tap, fire, restart, last, cards,
+    tripId, trip, clock, link, reads, statuses, starts, handoffs, stops, handOffs, releases, sessions, drivers, ended, cookieReads, timers, tabStepCalls, wakes, tap, fire, restart, last, cards,
     state, parked, greet, looks, hooks, said, setup: () => login.setupStep.run(tripId),
     get login() {
       return login;
@@ -1288,6 +1291,8 @@ describe("one tap: Go's screen opens with the log in, and Go sees the login land
     await w.setup();
     expect(await w.tap('ixigo_login', 'p_rahul')).toEqual({ result: 'open', url: 'https://screen.example/control', expires_at: '2026-10-08T06:15:00.000Z' });
     expect(w.sessions).toEqual([[w.tripId, 'control']]);
+    // In their hands from the first frame: no Take control, no "Bash is driving" (Keshav, 11 Oct).
+    expect(w.drivers).toEqual(['user']);
     // Read by name on ixigo's site, never a value: once at the tap, then every 2 s once the page is in front, until it came.
     expect(w.cookieReads.map((r) => [r.domain, r.names])).toEqual(Array(4).fill(['ixigo.com', ['at']]));
     expect(w.cookieReads.slice(1).map((r, i) => r.at - w.cookieReads[i]!.at)).toEqual([LOGIN_POLL_MS, LOGIN_POLL_MS, LOGIN_POLL_MS]);

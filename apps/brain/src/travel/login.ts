@@ -200,7 +200,7 @@ export interface LoginDeps {
   /** The jobs lane: a login started as a job before the hand-off had no model (a row with a taskId) is settled there. */
   tasks: () => Pick<Tasks, 'handoff' | 'stop'> | null;
   /** A fresh session on the trip's screen, in control or to view (POST /v1/sessions); null with no trip computer here. */
-  screen: () => ((tripId: string, mode: 'view' | 'control') => Promise<{ id?: string; url: string; expires_at: string }>) | null;
+  screen: () => ((tripId: string, mode: 'view' | 'control', o?: { driver?: 'user' }) => Promise<{ id?: string; url: string; expires_at: string }>) | null;
   /** Ends a session now (DELETE /v1/sessions/{id}): Bash's Watch page then closes itself. Null with no trip computer here. */
   endScreen?: () => ((sessionId: string) => Promise<void>) | null;
   /**
@@ -763,11 +763,14 @@ export function createIxigoLogin(d: LoginDeps): IxigoLogin {
     ]);
   }
 
-  /** A Watch session on the trip's screen, in control, for the person logging in; kept on the row so the login's end ends it. */
+  /**
+   * A Watch session on the trip's screen, in the person's hands from its first frame (driver: user: no Take control, no
+   * "Bash is driving"; Keshav, 11 Oct), for the person logging in; kept on the row so the login's end ends it.
+   */
   async function openWatch(tripId: string): Promise<{ url: string; expires_at: string }> {
     const screen = d.screen();
     if (!screen) throw new Error("no trip computer for the ixigo login's Watch");
-    const s = await screen(tripId, 'control');
+    const s = await screen(tripId, 'control', { driver: 'user' });
     if (s.id) await d.pool.query('update ixigo_logins set watch_sessions = array_append(watch_sessions, $2) where trip_id = $1', [tripId, s.id]);
     return { url: s.url, expires_at: s.expires_at };
   }

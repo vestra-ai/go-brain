@@ -76,7 +76,7 @@ export async function createTasksLane(brain: Brain, o: TasksLaneOptions = {}): P
     // Bash's live view of the fetch's own tabs: a stream that never wakes the computer. No resume: a watch has no history.
     watch: async (tripId, signal) => v1.stream(`/v1/users/${await browsers.userFor(tripId)}/browser/watch?width=${FRAME_WIDTH}&fps=${WATCH_FPS}`, { lastEventId: 0, signal }),
     // The ixigo login's Watch (travel/login.ts): a session on the browser's screen, as the working card's Watch opens one.
-    screen: async (tripId, mode) => openSession(v1, await browsers.userFor(tripId), null, mode),
+    screen: async (tripId, mode, o) => openSession(v1, await browsers.userFor(tripId), null, mode, o),
     // The one-tap login's Watch, ended the moment Go sees the login land (travel/login.ts): Bash's page closes itself.
     endScreen: async (sessionId) => {
       await v1.call('DELETE', `/v1/sessions/${encodeURIComponent(sessionId)}`, { signal: AbortSignal.timeout(2_000) });
