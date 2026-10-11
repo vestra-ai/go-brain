@@ -529,9 +529,9 @@ describe("a shared thing's card is its vote", () => {
 
   // The Manali room, 11 Oct: every new stays search closed the open vote (closed_by_go, 0 votes) and opened another, four
   // in 22 minutes; votes people cast would have gone the same way.
-  it("never closes the trip's open vote on stays for a new card: the card joins it with its stays, or goes up without a vote when it is full", async () => {
+  it("a new stays card joins the open vote of the same search, and always goes up with a working vote of its own otherwise", async () => {
     const found = (await lb.tools.run('search_stays', STAYS, lb.ctx({ turnId: 'turn_iv1' }))) as any;
-    // The Server's trip: the votes listed here, open, with these options.
+    // The Server's trip: the votes listed here, open, with these options and votes.
     let open: Array<{ decision_id: string; voted: number; options: Array<{ label: string }> }> = [];
     const server = {
       request: async (method: string, params: unknown) =>
@@ -545,9 +545,8 @@ describe("a shared thing's card is its vote", () => {
     const first = (await lb.tools.run('show_options', { line: 'Two villas.', results_id: found.results_id, option_numbers: [1, 2], title: 'Two villas' }, turn)) as any;
     open = [{ decision_id: first.decision_id, voted: 1, options: (turn.cards[0] as any).options.map((o: { title: string }) => ({ label: o.title })) }];
     await lb.tools.run('show_options', { line: 'Two more.', results_id: found.results_id, option_numbers: [3, 4], title: 'Two more villas' }, turn);
-    const opened = lb.link.sent('open_vote').length;
-    // A later card of the first four joins the open vote, each of its options added under its own option_ref, so every
-    // Vote on it counts.
+    let opened = lb.link.sent('open_vote').length;
+    // The same search, with room: a later card joins the open vote, each of its options under its own option_ref.
     const later = lb.ctx({ turnId: 'turn_iv3', link: server });
     const joined = (await lb.tools.run('show_options', { line: 'Four villas.', results_id: found.results_id, option_numbers: [1, 2, 3, 4], title: 'Four villas' }, later)) as any;
     expect(joined.decision_id).toBe(first.decision_id);
@@ -557,15 +556,31 @@ describe("a shared thing's card is its vote", () => {
     expect(added).toMatchObject({ trip_id: 't_goa', decision_id: first.decision_id });
     expect((added['options'] as Array<{ option_ref: string }>).map((o) => o.option_ref)).toEqual(card.options.map((o) => o.option_id));
     expect(lb.link.sent('open_vote')).toHaveLength(opened);
-    // A vote with no room for them: the new card goes up without a vote, and the open one stays as it is.
-    open = [{ decision_id: first.decision_id, voted: 1, options: Array.from({ length: 20 }, (_, i) => ({ label: `Stay ${i + 1}` })) }];
+    // The same search, full, with votes in it: it stays open as it is, and the new card opens its own vote.
+    const twenty = Array.from({ length: 20 }, (_, i) => ({ label: `Stay ${i + 1}` }));
+    open = [{ decision_id: first.decision_id, voted: 1, options: twenty }];
     const fullCtx = lb.ctx({ turnId: 'turn_iv4', link: server });
     const full = (await lb.tools.run('show_options', { line: 'Two villas.', results_id: found.results_id, option_numbers: [3, 4], title: 'Two villas' }, fullCtx)) as any;
-    expect(full).not.toHaveProperty('decision_id');
-    expect(C.OptionsCard.parse(fullCtx.cards[0]).decision_id).toBeUndefined();
-    expect(lb.link.sent('open_vote')).toHaveLength(opened);
-    // No vote is ever closed for a new card.
+    expect(full.decision_id).toEqual(expect.any(String));
+    expect(full.decision_id).not.toBe(first.decision_id);
+    expect(C.OptionsCard.parse(fullCtx.cards[0]).decision_id).toBe(full.decision_id);
+    expect(lb.link.sent('open_vote')).toHaveLength(++opened);
     expect(lb.link.sent('close_vote')).toHaveLength(closes);
+    // Full with nobody voted: it closes as replaced, said plainly, and the new card opens its own.
+    open = [{ decision_id: full.decision_id, voted: 0, options: twenty }];
+    const idle = (await lb.tools.run('show_options', { line: 'Two villas.', results_id: found.results_id, option_numbers: [1, 2], title: 'Two villas' }, lb.ctx({ turnId: 'turn_iv5', link: server }))) as any;
+    expect(idle.decision_id).not.toBe(full.decision_id);
+    expect(lb.link.sent('close_vote').slice(closes)).toEqual([{ request_id: stableId('go_close_replaced', full.decision_id), trip_id: 't_goa', decision_id: full.decision_id }]);
+    expect(lb.link.sent('post_message').at(-1)).toMatchObject({ text: 'The earlier stays vote had no room left; this card is the new vote.' });
+    // Keshav's Varkala trip, 11 Oct: the trip's dates changed, and the new dates' card joined the old dates' full vote, with
+    // no vote of its own. Another search's open vote is stale: it closes, said plainly, and the new card is the vote.
+    const moved = (await lb.tools.run('search_stays', { ...STAYS, check_in: '2026-11-07', check_out: '2026-11-10' }, lb.ctx({ turnId: 'turn_iv6' }))) as any;
+    open = [{ decision_id: idle.decision_id, voted: 2, options: [{ label: 'Casa Mareia' }] }];
+    const fresh = (await lb.tools.run('show_options', { line: 'New dates.', results_id: moved.results_id, option_numbers: [1, 2], title: 'Villas' }, lb.ctx({ turnId: 'turn_iv7', link: server }))) as any;
+    expect(fresh.decision_id).toEqual(expect.any(String));
+    expect(fresh.decision_id).not.toBe(idle.decision_id);
+    expect(lb.link.sent('close_vote').at(-1)).toMatchObject({ decision_id: idle.decision_id });
+    expect(lb.link.sent('post_message').at(-1)).toMatchObject({ text: 'The earlier stays vote was for North Goa, 6 to 9 Nov; this card is the vote for North Goa, 7 to 10 Nov.' });
   });
 
   it("never puts a ticket to a group vote: a train's card is each traveller's own pick, and the model is told so", async () => {

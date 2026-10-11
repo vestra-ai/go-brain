@@ -146,6 +146,8 @@ export interface ResultsStore {
   releaseVote(cardId: string, key: string): Promise<void>;
   /** The votes opened on the trip's other cards of this kind of option, by their decision ids, but those this key opened. */
   votesOfKind(tripId: string, kind: OptionKind, exceptCardId: string, exceptKey: string): Promise<string[]>;
+  /** The search a vote's first card showed (its query: place and dates), by the vote; null when no card carries it. */
+  searchOfVote(tripId: string, decisionId: string): Promise<Record<string, unknown> | null>;
   /** A card that never went up ("See more" that failed before its options joined the vote): gone, its options unshown again. */
   dropCard(tripId: string, cardId: string): Promise<void>;
   /** Every option of a search that a card has shown, as the search gave it: what "See more" never shows again. */
@@ -348,6 +350,15 @@ export function createResultsStore(pool: pg.Pool): ResultsStore {
         [tripId, kind, exceptCardId, exceptKey],
       );
       return rows.map((r) => r.decision_id);
+    },
+
+    async searchOfVote(tripId, decisionId) {
+      const { rows } = await pool.query<{ query: Record<string, unknown> }>(
+        `select r.query from options_cards c join travel_results r on r.results_id = c.results_id
+         where c.trip_id = $1 and c.decision_id = $2 order by c.created_at limit 1`,
+        [tripId, decisionId],
+      );
+      return rows[0]?.query ?? null;
     },
 
     async dropCard(tripId, cardId) {
