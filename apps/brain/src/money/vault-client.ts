@@ -38,7 +38,8 @@ export interface TravelDetails {
 }
 
 export interface VaultClient {
-  homeLink(i: { personId: string; start: 'home' | 'add_card' | 'add_login' | 'add_travel' }): Promise<{ url: string; expiresAt: string }>;
+  /** display embedded: the home the App frames (the vault answers 409 for any other start); sheet, the default: the browser sheet. */
+  homeLink(i: { personId: string; start: 'home' | 'add_card' | 'add_login' | 'add_travel'; display?: 'sheet' | 'embedded' }): Promise<{ url: string; expiresAt: string }>;
   /**
    * A person's travel details for a ticket of their own Go is booking (booking.travellerPersonId is them; the vault refuses
    * anyone else; booking.ref is the flight booking's run id), or null when they kept none. The values go only into the booking's own form: never a log line, the
@@ -84,7 +85,7 @@ export function vaultClient(o: { baseUrl: string; secret: string; fetch?: typeof
 
   return {
     async homeLink(i) {
-      const r = await call('POST', '/internal/links', { person_id: i.personId, start: i.start }, o.timeoutMs ?? 1_500);
+      const r = await call('POST', '/internal/links', { person_id: i.personId, start: i.start, display: i.display }, o.timeoutMs ?? 1_500);
       if (r.status !== 200) throw new Error(`the vault answered ${r.status}`);
       const link = LinkAnswer.parse(r.data);
       return { url: link.url, expiresAt: link.expires_at };

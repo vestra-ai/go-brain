@@ -39,6 +39,12 @@ const input: PayLinkInput = {
 };
 
 describe('vaultClient', () => {
+  it('asks for the home the App frames when the Server asked for display embedded', async () => {
+    answer = { status: 200, body: { url: 'https://vault.test/l/abc', expires_at: '2026-10-05T09:06:00.000Z' } };
+    await client.homeLink({ personId: 'p_rahul', start: 'home', display: 'embedded' });
+    expect(JSON.parse(calls.at(-1)?.body ?? '{}')).toMatchObject({ person_id: 'p_rahul', start: 'home', display: 'embedded' });
+  });
+
   it('signs each call over its exact target and body, with a fresh nonce', async () => {
     answer = { status: 200, body: { url: 'https://vault.test/l/abc', expires_at: '2026-10-05T09:06:00.000Z' } };
     expect(await client.homeLink({ personId: 'p_rahul', start: 'add_card' })).toEqual({

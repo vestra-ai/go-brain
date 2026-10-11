@@ -19,6 +19,14 @@ const ed25519Pem = z.string().refine(
 
 const httpUrl = z.url({ protocol: /^https?$/ }).transform((v) => v.replace(/\/+$/, ''));
 
+/** The App's origins, the only ones that may frame an embedded vault page (rev 5 R8). */
+export const APP_FRAME_ORIGINS = 'https://go-frontend-three.vercel.app http://localhost:3000 http://localhost:3002';
+const frameOrigins = z
+  .string()
+  .default(APP_FRAME_ORIGINS)
+  .transform((v) => v.split(/[\s,]+/).filter(Boolean))
+  .pipe(z.array(z.string().regex(/^https?:\/\/[a-z0-9.-]+(:\d{1,5})?$/i, 'each frame origin is a scheme and a host, with no path')).min(1));
+
 const RAILS = ['fake', 'stripe_test', 'ixigo'] as const;
 const rails = z
   .string()
@@ -41,6 +49,8 @@ export const VaultEnv = z.object({
   GO_CALLBACK_URL: httpUrl,
   /** The rails this vault pays on. With the contract's test spend key, fake only. */
   VAULT_RAILS: rails,
+  /** Space- or comma-separated: the App's origins, which may frame the unlock and approve pages. */
+  VAULT_FRAME_ORIGINS: frameOrigins,
 });
 export type VaultEnv = z.infer<typeof VaultEnv>;
 

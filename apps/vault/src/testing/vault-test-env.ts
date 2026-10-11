@@ -39,6 +39,7 @@ export function testVaultEnv(over: Partial<VaultEnv> = {}): VaultEnv {
     GO_CALLBACK_URL: 'https://brain.test',
     // Tests sign with the contract's test key, so readVaultEnv would allow the fake rail only; tests build the env directly.
     VAULT_RAILS: ['fake', 'stripe_test'],
+    VAULT_FRAME_ORIGINS: ['https://app.test', 'http://localhost:3000'],
     ...over,
   };
 }

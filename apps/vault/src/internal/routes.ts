@@ -17,6 +17,8 @@ const LinkBody = z.object({
   // add_travel opens it at the person's travel details.
   start: z.enum(['home', 'add_card', 'add_login', 'add_travel']).nullish(),
   display_name: z.string().min(1).max(80).nullish(),
+  /** 1.3 (rev 5 R8): embedded, inside the App, for the unlock only; card and travel entry stay in the browser sheet. */
+  display: z.enum(['sheet', 'embedded']).nullish(),
 });
 
 const VoidBody = z.object({ approval_id: Id });
@@ -48,7 +50,11 @@ export const internalRoutes: FastifyPluginAsync<{ deps: VaultDeps }> = async (ap
     const now = deps.now();
     await ensurePerson(deps.pool, body.data.person_id, now, body.data.display_name ?? undefined);
     const start = body.data.start === 'add_card' || body.data.start === 'add_travel' ? body.data.start : 'home';
-    const link = await createHomeLink(deps.pool, now, { personId: body.data.person_id, start });
+    const display = body.data.display === 'embedded' ? 'embedded' : 'sheet';
+    if (display === 'embedded' && start !== 'home') {
+      return reply.code(409).send({ error: { code: 'conflict', message: 'adding a card or travel details opens in the browser sheet, never embedded' } });
+    }
+    const link = await createHomeLink(deps.pool, now, { personId: body.data.person_id, start, display });
     return { url: `${deps.env.VAULT_PUBLIC_URL}/l/${link.token}`, expires_at: link.expiresAt.toISOString() };
   });
 
