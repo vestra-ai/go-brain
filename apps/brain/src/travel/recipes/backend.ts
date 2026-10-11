@@ -120,11 +120,18 @@ export function shownAfter(delayMs: number, make: () => LiveSearch): LiveSearch 
   };
 }
 
+/** How a search's live card ends when ixigo didn't load its page: calm, as Go's own line says the same and tries again. */
+export const NOT_LOADED = "ixigo didn't load it just now";
 /** Each kind of search's recipe in the book. */
 export const SEARCH_RECIPES: Record<TravelKind, string> = { flights: 'flights.results', trains: 'trains.between', buses: 'buses.between', stays: 'hotels.search' };
 /** A flights search with a day back: both ways on one ixigo page, as pairs priced there and back. */
 export const ROUND_TRIP_RECIPE = 'flights.round_trip';
-/** The link that answers in a search's place when ixigo won't show Go its page (flights: refused, paced, or empty). */
+/** The recipe a search runs: its kind's, or a round trip's. */
+export const searchRecipeOf = (kind: TravelKind, q: TravelQuery): string => (kind === 'flights' && q.returnDate ? ROUND_TRIP_RECIPE : SEARCH_RECIPES[kind]);
+/**
+ * The link that stands for a search when ixigo won't show Go its page (flights: refused, paced, or empty): link_only, never
+ * the room's answer (G1, 11 Oct: Go says it couldn't load them and tries again, try-again.ts).
+ */
 export const LINK_FALLBACK: Partial<Record<TravelKind, string>> = { flights: 'flights.search' };
 /** A search's failures that ask the person something (which place, which date, what more): said, never a link. */
 const ASKS_THE_PERSON: ReadonlySet<string> = new Set(['pick_place', 'unknown_place', 'past_date', 'needs_more']);
@@ -388,7 +395,7 @@ export function createIxigoWebBackend(d: IxigoWebDeps): IxigoWebBackend {
   /** The recipe, its inputs and the search's key, or a plain refusal before anything runs. */
   async function plan(kind: TravelKind, q: TravelQuery, tripId: string | undefined) {
     if (!tripId) throw new TravelError('refused', "An ixigo.com search runs on a trip's computer, so it needs the trip.");
-    const id = kind === 'flights' && q.returnDate ? ROUND_TRIP_RECIPE : SEARCH_RECIPES[kind];
+    const id = searchRecipeOf(kind, q);
     const recipe = d.book.get(id);
     if (!recipe) throw new TravelError('refused', `Go's recipe book has no ${id}.`);
     const { given, conditions, site } = recipeInputs(kind, q);
@@ -470,7 +477,7 @@ export function createIxigoWebBackend(d: IxigoWebDeps): IxigoWebBackend {
       return hit.search.then((found) => forAsk(found, site));
     }
     // A paced page (flights) held back: no card and no run, and search answers with its link.
-    if (d.engine.pacedOut?.(id)) throw new TravelError('unreachable', `ixigo is given a moment between ${kind} pages.`);
+    if (d.engine.pacedOut?.(id, o?.retry)) throw new TravelError('unreachable', `ixigo is given a moment between ${kind} pages.`);
     const runId = `${key}|${nowMs}`;
     // A failed early start's card, still open in its turn, carries on with this search, and so does a card waiting on a
     // pick of this kind of search, whatever this search's words ("Udaipur City (UDZ)" after "Udaipur"); otherwise the
@@ -500,6 +507,7 @@ export function createIxigoWebBackend(d: IxigoWebDeps): IxigoWebBackend {
     let unapplied: string[] | null = null;
     const asked = d.engine.answer(id, given, {
       tripId, conditions, ...siteRun(site), ...(filtered.length > 0 ? { fallsBack: true } : {}), ...(live ? { onProgress: live.progress } : {}),
+      ...(o?.retry ? { retry: true } : {}),
     });
     const read = filtered.length > 0
       ? asked.catch((err: unknown) => {
@@ -609,7 +617,7 @@ export function createIxigoWebBackend(d: IxigoWebDeps): IxigoWebBackend {
     }
     const link = await d.engine.pageOf?.(p.id, p.given, { tripId: p.tripId, conditions: p.conditions, ...siteRun(p.site) });
     if (link) {
-      await answered('stays', q, o, "Here's ixigo's page, set as you asked");
+      await answered('stays', q, o, NOT_LOADED);
       throw new TravelError('link_only', "ixigo won't show its stays to Go's computer right now.", link);
     }
     throw failed;
@@ -680,7 +688,7 @@ export function createIxigoWebBackend(d: IxigoWebDeps): IxigoWebBackend {
         throw e;
       });
       if (a.as === 'link') {
-        await answered(kind, q, o, `Here's ixigo's page${a.who ? `, set ${a.who}` : ', set as you asked'}`);
+        await answered(kind, q, o, NOT_LOADED);
         throw new TravelError('link_only', "ixigo won't show its results to Go's computer right now.", a.link);
       }
       await answeredNot(kind, q, o);

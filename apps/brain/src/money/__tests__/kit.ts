@@ -475,7 +475,7 @@ export class FakeTravel implements Travel {
 /** The vault for unit tests: records pay links and answers what the test says. */
 export class FakeVaultClient implements VaultClient {
   readonly payLinks: PayLinkInput[] = [];
-  readonly homeLinks: Array<{ personId: string; start: string }> = [];
+  readonly homeLinks: Array<{ personId: string; start: string; display?: string }> = [];
   refuse: PayLinkRefusal | null = null;
   /** Why the vault refused, as its 409 says in `detail`. */
   refuseDetail: string | null = null;
@@ -497,7 +497,7 @@ export class FakeVaultClient implements VaultClient {
     return this.travel.get(i.personId) ?? null;
   }
 
-  async homeLink(i: { personId: string; start: 'home' | 'add_card' | 'add_login' | 'add_travel' }): Promise<{ url: string; expiresAt: string }> {
+  async homeLink(i: { personId: string; start: 'home' | 'add_card' | 'add_login' | 'add_travel'; display?: 'sheet' | 'embedded' }): Promise<{ url: string; expiresAt: string }> {
     this.homeLinks.push(i);
     return { url: `https://vault.test/l/home_${this.homeLinks.length}`, expiresAt: new Date(this.now().getTime() + 300_000).toISOString() };
   }

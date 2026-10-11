@@ -118,6 +118,10 @@ export interface ResultsStore {
   offersOnCard(cardId: string): Promise<StoredOffer[]>;
   /** Each option on a card as its search gave it (its facts, its night and its whole stay), by its option id. */
   optionsOnCard(cardId: string): Promise<Map<string, ResultOption>>;
+  /** An option as its search gave it (its journey, facts and page), by its option id. */
+  optionOf(optionId: string): Promise<ResultOption | null>;
+  /** A card as it shows now (a person's own card after their pick: their option alone), kept as replace_card sends it. */
+  replaceCard(tripId: string, card: OptionsCardT): Promise<void>;
   /** The option's own name, place and area (a stay's), as the search gave them: what Go saves when a vote picked it. */
   placeOf(optionId: string): Promise<OptionPlace | null>;
   /** The top pick on the trip's latest card of this kind of option (a stay), as placeOf gives it; null with no such card. */
@@ -331,6 +335,15 @@ export function createResultsStore(pool: pg.Pool): ResultsStore {
     async optionsOnCard(cardId) {
       const { rows } = await pool.query<{ option_id: string; option: ResultOption }>('select option_id, option from travel_offers where card_id = $1', [cardId]);
       return new Map(rows.map((r) => [r.option_id, r.option]));
+    },
+
+    async optionOf(optionId) {
+      const { rows } = await pool.query<{ option: ResultOption }>('select option from travel_offers where option_id = $1', [optionId]);
+      return rows[0]?.option ?? null;
+    },
+
+    async replaceCard(tripId, card) {
+      await pool.query('update options_cards set card = $3 where trip_id = $1 and card_id = $2', [tripId, card.card_id, JSON.stringify(card)]);
     },
 
     async offersOnCard(cardId) {

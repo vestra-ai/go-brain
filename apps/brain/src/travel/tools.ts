@@ -8,9 +8,9 @@ import { CARD_LINE } from '../composer/rules.js';
 import { CardLineArg, SAY_NOTHING, type QuickTool, type TurnCtx } from '../composer/tools.js';
 import type { Desk } from '../desk/desk.js';
 import { dateAs } from './book/expr.js';
-import { buildFlightsLinkCard, buildIxigoPageCard, buildOptionsCard, clip, formatInr, IXIGO_SEARCH_PAGES, ixigoPage, PERSONAL_KINDS, placeKindNotAll, subtitleFor } from './cards.js';
+import { buildIxigoPageCard, buildOptionsCard, clip, formatInr, IXIGO_SEARCH_PAGES, ixigoPage, PERSONAL_KINDS, placeKindNotAll, subtitleFor } from './cards.js';
 import { localDay } from '../proactive/clock.js';
-import { answerLine, answerTitle, directPicks, droppedWords, ledBy, leftOff, linkLine, plainAsk } from './answer.js';
+import { answerLine, answerTitle, directPicks, droppedWords, ledBy, leftOff, loadWhat, plainAsk } from './answer.js';
 import { flightDetails, stayDetails, trainDetails } from './details.js';
 import { DEFAULT_TRIP_TZ } from './dates.js';
 import { asked } from './filters.js';
@@ -19,13 +19,13 @@ import { nearStay, type GroupStay } from './group-stay.js';
 import type { Images } from './images.js';
 import { guestsIn } from './recipes/ask.js';
 import { TRAVEL_WAIT_MS } from './recipes/backend.js';
-import { airportCity } from './recipes/places.js';
 import { TravelError } from './mcp-travel.js';
 import { photosOf } from './photos.js';
 import type { TopPick } from './pick-photos.js';
 import { toResultOption, unseenNumbers, type OptionKind, type ResultOption, type ResultSet, type ResultsStore } from './results.js';
 import type { SearchWake } from './search-wake.js';
 import { Clock, MUST_HAVES, type Travel, type TravelKind, type TravelOption, type TravelQuery, type TravelSearch } from './travel.js';
+import { notLoadedLine, stillNotLoadedLine, TRIES, tryAgain, waitFor } from './try-again.js';
 import { openVoteFromCard } from './votes.js';
 
 export interface TravelToolDeps {
@@ -40,6 +40,8 @@ export interface TravelToolDeps {
   now: () => Date;
   /** Where a search that outlives its turn wakes Go with its options; without it, every search is waited for. */
   desk?: Pick<Desk, 'put'>;
+  /** When ixigo's own quiet on a search's page ends (it refused one), or null: Go's try again waits past it (try-again.ts). */
+  ixigoQuiet?: (kind: TravelKind, q: TravelQuery) => number | null;
   log?: { warn(obj: object, msg: string): void };
   /** Wakes the trip's computer for a search of this kind (travel/warm.ts); absent in tests that don't look at it. */
   warmForTravel?: (tripId: string, kind: TravelKind) => void;
@@ -352,7 +354,7 @@ async function runSearch(kind: TravelKind, given: TravelQuery, ctx: TurnCtx, d: 
     found = first;
   } catch (err) {
     const search = searchName(kind, q);
-    if (err instanceof TravelError && err.code === 'link_only' && err.link) return linkAnswer(kind, q, err.link, ctx, plainAsk(kind, q, { wake: ctx.wake, pack: ctx.pack, ...(ctx.roundTools ? { roundTools: ctx.roundTools } : {}), today: await todayOf(d, ctx.tripId) }).ok);
+    if (err instanceof TravelError && err.code === 'link_only') return notLoadedAnswer(kind, q, ctx, d, plainAsk(kind, q, { wake: ctx.wake, pack: ctx.pack, ...(ctx.roundTools ? { roundTools: ctx.roundTools } : {}), today: await todayOf(d, ctx.tripId) }).ok);
     if (err instanceof TravelError && err.code === 'unknown_place') return pageAnswer(kind, q, ctx);
     // A date in the past is the model's slip (usually the year), not news for the room: search again with the date it names.
     if (err instanceof TravelError && err.code === 'past_date') return { search, count: 0, refused: err.message, tell_the_room: SAY_NOTHING };
@@ -548,13 +550,14 @@ function noteRun(resultsId: string, tripId: string, runId: string | undefined): 
  * at the run: every search that outlives its turn comes here (the early start's, from the right-now block or the early
  * answer, and the search tool's), whatever the model did in that turn, and the ones that shared one run wake Go once. A
  * run whose options a card in the room already showed wakes nothing. Without a desk (tests that don't look) it does nothing.
+ * A try again Go promised (try-again.ts) comes here too, as try `tryNo` of the search keyed fallbackId.
  */
 export function handOver(
   kind: TravelKind,
   q: TravelQuery,
   pending: Promise<TravelSearch>,
-  o: { tripId: string; fallbackId: string },
-  d: Pick<TravelToolDeps, 'desk' | 'now' | 'log'> & { results: Pick<ResultsStore, 'save'> },
+  o: { tripId: string; fallbackId: string; tryNo?: number },
+  d: Pick<TravelToolDeps, 'desk' | 'now' | 'log' | 'ixigoQuiet'> & { results: Pick<ResultsStore, 'save'> },
 ): void {
   const desk = d.desk;
   if (!desk) return;
@@ -579,11 +582,18 @@ export function handOver(
       },
       async (err: unknown) => {
         const code = err instanceof TravelError ? err.code : 'failed';
-        // ixigo's own page instead of a list (flights held back or refused): the wake puts its link card up.
-        const link = err instanceof TravelError && err.code === 'link_only' && err.link ? linkOf(kind, q, err.link) : null;
-        await wake(`search:${o.tripId}:${o.fallbackId}:failed`, {
-          source: 'travel_search', search: searchName(kind, q), count: 0, resultsId: null, summary: '', error: code, ...(link ? { link } : {}),
-        });
+        const failed = { source: 'travel_search', search: searchName(kind, q), count: 0, resultsId: null, summary: '', error: code } as const;
+        if (code !== 'link_only') return wake(`search:${o.tripId}:${o.fallbackId}:failed`, failed);
+        // ixigo didn't load it (flights held back or refused, stays with no earlier read): never its link card. The next
+        // try goes on the desk; the room hears it now when this was the first, with no turn of its own to say it, and Go's
+        // last word when this was the last try.
+        const n = o.tryNo ?? 0;
+        const what = loadWhat(kind, q);
+        if (n === 0) {
+          const wait = await tryAgain({ ...d, desk }, o.tripId, kind, { key: o.fallbackId, what, n: 1, query: q });
+          await wake(`search:${o.tripId}:${o.fallbackId}:not_loaded`, { ...failed, line: notLoadedLine(what, wait) });
+        } else if (n < TRIES) await tryAgain({ ...d, desk }, o.tripId, kind, { key: o.fallbackId, what, n: n + 1, query: q });
+        else await wake(`search:${o.tripId}:${o.fallbackId}:gave_up`, { ...failed, line: stillNotLoadedLine(what) });
       },
     )
     .catch((err: unknown) => d.log?.warn({ err, tripId: o.tripId, kind }, 'travel: a search that outlived its turn could not wake Go'));
@@ -601,55 +611,25 @@ function goOnWithout(kind: TravelKind, q: TravelQuery, pending: Promise<TravelSe
   };
 }
 
-/** Who a flights results page is set for, read off its own link: "for 3 from Delhi". */
-export function flyingFor(url: string): string | null {
-  const page = new URL(url);
-  const adults = Number(page.searchParams.get('adults'));
-  const city = airportCity(page.searchParams.get('from') ?? '');
-  return adults > 0 && city ? `for ${adults} from ${city}` : null;
-}
-
-/** A link card's title, who it is set for, and its line: the same in the search's own turn and in a late search's wake. */
-function linkOf(kind: TravelKind, q: TravelQuery, url: string): NonNullable<SearchWake['link']> {
-  const who = kind === 'flights' ? flyingFor(url) : null;
-  return { url, title: suggestTitle(kind, q), who, line: linkLine(kind, q, who) };
-}
-
 /**
- * ixigo won't show Go's computer these results: the card links the group to them on ixigo, with their conditions set
- * (the recipe's own link: ixigo's results page with what people asked for already on it).
- * Go books no flights, so the line it adds sends people to ixigo to book, and offers only to note their pick.
+ * ixigo didn't load this search for Go (link_only: flights held back or refused, stays with no earlier read): never its
+ * link card (G1, 11 Oct). Go says so plainly and tries again in a minute (try-again.ts), and the card goes up by itself
+ * when a try lands. A plain ask's line is the turn's answer, as a card's would be.
  */
-function linkAnswer(kind: TravelKind, q: TravelQuery, url: string, ctx: TurnCtx, plain = false): unknown {
-  const link = linkOf(kind, q, url);
-  const who = link.who;
-  ctx.cards.push(buildFlightsLinkCard({ cardId: ctx.stableId('c_link'), title: link.title, url, who, ...(kind === 'stays' ? { kind: 'stays' as const } : {}) }));
-  // The turn's one plain ask: the card's line is built here too, and the turn ends on it.
+async function notLoadedAnswer(kind: TravelKind, q: TravelQuery, ctx: TurnCtx, d: TravelToolDeps, plain: boolean): Promise<unknown> {
+  const what = loadWhat(kind, q);
+  const try1 = { key: stableId('search', ctx.turnId, searchName(kind, q)), what, n: 1, query: q };
+  const line = notLoadedLine(what, d.desk ? await tryAgain({ ...d, desk: d.desk }, ctx.tripId, kind, try1) : waitFor(d, kind, q));
   if (plain) {
-    ctx.lines.push(link.line);
+    ctx.lines.push(line);
     ctx.answered = true;
   }
   return {
     search: searchName(kind, q),
     count: 0,
-    link: url,
-    ...(who ? { set_for: who } : {}),
-    ...(kind === 'stays'
-      ? {
-          note: "ixigo won't show its stays to Go's computer right now, and Go has no read of them from the last few hours. The card with the link to them on ixigo, with these conditions and ixigo's filters set, goes out with your message.",
-          tell_the_room:
-            "Say in one short line that ixigo wouldn't load its stays for Go just now, so the card opens them on ixigo with what they asked already set, " +
-            `${q.wants?.length ? `that they pick for ${listOf(q.wants)} on ixigo's page, ` : ''}and that if they tell you which one, you'll note it for the group. ` +
-            'Never say there are no stays, never ask them to try again later, and quote no prices.',
-        }
-      : {
-          note: "ixigo won't show its flights to Go's computer right now. The card with the link to them on ixigo, with these conditions set, goes out with your message.",
-          tell_the_room:
-            `Say in one short line that the flights are on the card${who ? `, set ${who}` : ''}, to book on ixigo, ` +
-            `${q.wants?.length ? `that the link can't set ${listOf(q.wants)}, so they pick for that on ixigo's page, ` : ''}and that if they tell you ` +
-            "which one, you'll note it for the group. You can't book flights: never offer to book one or to take it from there. " +
-            'Never say there are no flights, and quote no prices or times.',
-        }),
+    not_loaded: true,
+    note: `ixigo didn't load this search for Go just now. Go tries it again in the background, up to ${TRIES} times (as the line says when), and its card goes up by itself when a try lands.`,
+    tell_the_room: `Say only this, in one line: "${line}" Never send or offer a link, never name another site, never say there are none, and quote no prices or times.`,
   };
 }
 

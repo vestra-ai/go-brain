@@ -5,7 +5,7 @@ import { statsRegistry } from '../../stats/sources.js';
 import { createPay, type PayEngine } from '../engine.js';
 import { paymentsNow } from '../now.js';
 import { registerMoneyWith } from '../register.js';
-import { EMBEDDED_NOT_YET, NOT_AVAILABLE_YET } from '../vault-link.js';
+import { EMBEDDED_HOME_ONLY, NOT_AVAILABLE_YET } from '../vault-link.js';
 import { fakeBrain } from './fake-brain.js';
 import { goaTrip, moneyKit, type MoneyKit } from './kit.js';
 
@@ -84,14 +84,22 @@ describe('registerMoney', () => {
     expect(err).toMatchObject({ code: 409, dataCode: 'conflict', message: NOT_AVAILABLE_YET });
   });
 
-  it('answers 1.3\'s display "embedded" "not available yet" (409 conflict) and asks the vault nothing; sheet is as before', async () => {
+  it('opens 1.3\'s display "embedded" for the vault home only: any other start is 409 conflict, the vault never asked; sheet is as before', async () => {
     const { brain, seen } = fakeBrain({ pool: k.pool, link: k.server });
     await registerMoneyWith({ fetch: vaultFetch, sweepEveryMs: 0 })(brain);
-    const embedded = C.CreateLink.parse({ kind: 'vault', person_id: 'p_rahul', start: 'add_card', display: 'embedded' });
-    const err = await seen.handlers.get('vault_link')?.(embedded, { instance: 'sim', frameId: 'gs_3' }).then(() => null, (e: unknown) => e);
-    expect(err).toMatchObject({ code: 409, dataCode: 'conflict', message: EMBEDDED_NOT_YET });
+    const home = C.CreateLink.parse({ kind: 'vault', person_id: 'p_rahul', start: 'home', display: 'embedded' });
+    expect(C.Link.safeParse(await seen.handlers.get('vault_link')?.(home, { instance: 'sim', frameId: 'gs_3' })).success).toBe(true);
+    expect(vaultBodies.at(-1)).toMatchObject({ person_id: 'p_rahul', start: 'home', display: 'embedded' });
+    for (const start of ['add_card', 'add_login'] as const) {
+      const embedded = C.CreateLink.parse({ kind: 'vault', person_id: 'p_rahul', start, display: 'embedded' });
+      const err = await seen.handlers.get('vault_link')?.(embedded, { instance: 'sim', frameId: `gs_${start}` }).then(() => null, (e: unknown) => e);
+      expect(err).toMatchObject({ code: 409, dataCode: 'conflict', message: EMBEDDED_HOME_ONLY });
+    }
+    // Card and login entry never reach the vault embedded.
+    expect(vaultBodies.filter((b) => b.display === 'embedded' && b.start !== 'home')).toEqual([]);
     const sheet = C.CreateLink.parse({ kind: 'vault', person_id: 'p_rahul', start: 'add_card', display: 'sheet' });
     expect(C.Link.safeParse(await seen.handlers.get('vault_link')?.(sheet, { instance: 'sim', frameId: 'gs_4' })).success).toBe(true);
+    expect(vaultBodies.at(-1)).toMatchObject({ person_id: 'p_rahul', start: 'add_card', display: 'sheet' });
   });
 
   it('stays off without the vault settings', async () => {

@@ -7,7 +7,7 @@ import type { FastifyPluginAsync, FastifyReply, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import type { VaultDeps } from '../app.js';
 import { masterKeyOf } from '../crypto/envelope.js';
-import { readCookie, sessionCookie } from '../http/security.js';
+import { allowFraming, readCookie, sessionCookie } from '../http/security.js';
 import { findLink, hashToken, linkProblem, type LinkRow } from '../links.js';
 import { authenticationOptions, finishRegistration, hasPasskey, passkeyConfig, registrationOptions, verifyAssertion } from '../passkeys.js';
 import { approvePayment, payInfo, payOptions, type PayDeps } from '../pay.js';
@@ -27,6 +27,8 @@ const WEBAUTHN_JS = readFileSync(
 );
 
 const SESSION = 'vs';
+/** The embedded page's session header (lower case, as Node reads headers). */
+const SESSION_HEADER = 'x-vault-session';
 const SESSION_SECONDS = 600;
 
 const Ceremony = z.object({
@@ -50,8 +52,20 @@ export const pageRoutes: FastifyPluginAsync<{ deps: VaultDeps; cards: CardsReady
   app.get('/static/vault.css', async (_req, reply) => reply.type('text/css; charset=utf-8').send(VAULT_CSS));
   app.get('/static/vault.js', async (_req, reply) => reply.type('application/javascript; charset=utf-8').send(VAULT_JS));
   app.get('/static/webauthn.js', async (_req, reply) => reply.type('application/javascript; charset=utf-8').send(WEBAUTHN_JS));
-  app.get('/l/:token', async (_req, reply) => reply.type('text/html; charset=utf-8').send(homePage()));
-  app.get('/p/:token', async (_req, reply) => reply.type('text/html; charset=utf-8').send(payPage()));
+  // An embedded home link's page (unlock, inside the App: rev 5 R8) may be framed by the App's origins; any other may not.
+  // Card entry is never embedded: an embedded page shows no card form, and Go makes no embedded add_card link.
+  app.get<WithToken>('/l/:token', async (req, reply) => {
+    const link = await findLink(db, req.params.token);
+    const embedded = link?.kind === 'home' && link.display === 'embedded';
+    if (embedded) allowFraming(reply, deps.env.VAULT_FRAME_ORIGINS);
+    return reply.type('text/html; charset=utf-8').send(homePage(embedded ? { origins: deps.env.VAULT_FRAME_ORIGINS } : null));
+  });
+  // An approve page may be framed by the App's origins: the App opens it in its sheet or frames it, and the page tells it
+  // when it is done either way.
+  app.get('/p/:token', async (_req, reply) => {
+    allowFraming(reply, deps.env.VAULT_FRAME_ORIGINS);
+    return reply.type('text/html; charset=utf-8').send(payPage({ origins: deps.env.VAULT_FRAME_ORIGINS }));
+  });
 
   // ── home ──
 
@@ -62,12 +76,16 @@ export const pageRoutes: FastifyPluginAsync<{ deps: VaultDeps; cards: CardsReady
   }
 
   function hasSession(req: FastifyRequest, link: LinkRow): boolean {
-    const value = readCookie(req, SESSION);
+    // An embedded page is a third party in the App's frame, where its cookie is not sent (Safari blocks it): it holds its
+    // session in memory and sends it as a header, which no other site can make a browser send.
+    const header = req.headers[SESSION_HEADER];
+    const value = typeof header === 'string' && header !== '' ? header : readCookie(req, SESSION);
     if (!value || !link.session_hash || !link.session_until) return false;
     return hashToken(value).equals(link.session_hash) && link.session_until.getTime() > deps.now().getTime();
   }
 
-  async function openSession(reply: FastifyReply, link: LinkRow, token: string): Promise<void> {
+  /** The session's value goes in the cookie, and back to an embedded page, which keeps it for its header. */
+  async function openSession(reply: FastifyReply, link: LinkRow, token: string): Promise<string> {
     const value = randomBytes(32).toString('base64url');
     await db.query('update links set session_hash = $2, session_until = $3 where link_id = $1', [
       link.link_id,
@@ -75,6 +93,7 @@ export const pageRoutes: FastifyPluginAsync<{ deps: VaultDeps; cards: CardsReady
       new Date(deps.now().getTime() + SESSION_SECONDS * 1000),
     ]);
     reply.header('set-cookie', sessionCookie(SESSION, value, `/l/${token}`, SESSION_SECONDS));
+    return value;
   }
 
   async function unlocked(req: TokenRequest, reply: FastifyReply): Promise<LinkRow | null> {
@@ -131,8 +150,8 @@ export const pageRoutes: FastifyPluginAsync<{ deps: VaultDeps; cards: CardsReady
     });
     if (!done.ok) return reply.code(400).send({ message: "That didn't work. Try again." });
     await logUnlock(db, deps.now(), { personId: link.person_id, kind: 'passkey_added' });
-    await openSession(reply, link, req.params.token);
-    return { ok: true };
+    const session = await openSession(reply, link, req.params.token);
+    return { ok: true, ...(link.display === 'embedded' ? { session } : {}) };
   });
 
   app.post<WithToken>('/l/:token/unlock/options', async (req, reply) => {
@@ -156,8 +175,8 @@ export const pageRoutes: FastifyPluginAsync<{ deps: VaultDeps; cards: CardsReady
     if (!check.ok) return reply.code(400).send({ message: "That didn't work. Try again." });
     if (check.personId !== link.person_id) return reply.code(403).send({ message: 'Only the owner can open this vault.' });
     await logUnlock(db, deps.now(), { personId: link.person_id, kind: 'unlock' });
-    await openSession(reply, link, req.params.token);
-    return { ok: true };
+    const session = await openSession(reply, link, req.params.token);
+    return { ok: true, ...(link.display === 'embedded' ? { session } : {}) };
   });
 
   /** A card call's Stripe failure, in words the page shows: off for good when Stripe refused the keys. */

@@ -1,6 +1,6 @@
 import * as C from '@go/contract';
 import { describe, expect, it } from 'vitest';
-import { liveSteps, ON_IT_QUIET_MS, openRecipeCards, startLiveSearch, type LiveSearch, type LiveSearchDeps } from '../live-search.js';
+import { LIVE_VIEW_FRESH_MS, liveSteps, ON_IT_QUIET_MS, openRecipeCards, startLiveSearch, type LiveSearch, type LiveSearchDeps } from '../live-search.js';
 import { shownAfter } from '../recipes/backend.js';
 import type { LiveFrame } from '../recipes/progress.js';
 
@@ -333,6 +333,100 @@ describe('the live search card', () => {
     };
     expect(await idOf('same')).toBe(await idOf('same'));
     expect(await idOf('other')).not.toBe(await idOf('same'));
+  });
+});
+
+// The Server team's R7 (11 Oct): "your working card's steps arrive [...] Nothing is streamed today." The card carries a
+// view-only page of Go's screen while it runs, and changes in the room at step changes only, never for a picture.
+describe("the card's live view", () => {
+  const viewing = (r: ReturnType<typeof room>, o: { slow?: Promise<void>; fail?: boolean; now?: () => Date } = {}) => {
+    const made: string[] = [];
+    const ended: string[] = [];
+    const deps: LiveSearchDeps = {
+      ...r.deps,
+      ...(o.now ? { now: o.now } : {}),
+      liveViewWaitMs: 50,
+      liveView: async (tripId) => {
+        made.push(tripId);
+        const n = made.length;
+        await o.slow;
+        if (o.fail) throw new Error('Bash said no');
+        return { id: `ses_${n}`, url: `https://bash.test/embed/browser?s=ses_${n}#token=t${n}`, expires_at: '2026-10-07T09:15:00.000Z' };
+      },
+      endView: async (id) => void ended.push(id),
+    };
+    return { deps, made, ended };
+  };
+
+  it('carries a view-only live_url from its first post, made as it starts; once done, the view ends and leaves the card', async () => {
+    const r = room();
+    const v = viewing(r);
+    const live = startLiveSearch(v.deps, 't_goa', { runKey: 'k_live', ...FLIGHTS });
+    // The first post goes once its view is in (it waits for it, briefly): an update that comes sooner folds into it.
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    live.progress({ type: 'captured', ms: 900 });
+    await live.finish(true);
+    expect(r.sent[0]!.method).toBe('post_message');
+    expect(r.cards()[0]).toMatchObject({ state: 'running', live_url: 'https://bash.test/embed/browser?s=ses_1#token=t1' });
+    expect(r.cards().at(-1)).toMatchObject({ state: 'done', live_url: null });
+    expect(v.made).toEqual(['t_goa']);
+    expect(v.ended).toEqual(['ses_1']);
+  });
+
+  it('never holds "On it." for a slow live view: it rides the next step change; one that never opens leaves no live_url', async () => {
+    const r = room();
+    let open: () => void = () => undefined;
+    const v = viewing(r, { slow: new Promise<void>((resolve) => { open = resolve; }) });
+    const live = startLiveSearch(v.deps, 't_goa', { runKey: 'k_slow', ...FLIGHTS });
+    await new Promise((resolve) => setTimeout(resolve, 80));
+    expect(r.cards()[0]).toMatchObject({ live_url: null });
+    open();
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    live.progress({ type: 'captured', ms: 900 });
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    expect(r.cards().at(-1)).toMatchObject({ state: 'running', live_url: 'https://bash.test/embed/browser?s=ses_1#token=t1' });
+    await live.finish(true);
+
+    const f = room();
+    const nope = viewing(f, { fail: true });
+    const failed = startLiveSearch(nope.deps, 't_goa', { runKey: 'k_noview', ...FLIGHTS });
+    failed.progress({ type: 'captured', ms: 900 });
+    await failed.finish(true);
+    expect(f.cards().every((c) => (c as { live_url?: string | null }).live_url == null)).toBe(true);
+    expect(f.warnings).toContain('travel: a live view did not open');
+    expect(f.cards().at(-1)).toMatchObject({ state: 'done' });
+  });
+
+  it('is made again at the first step change once 10 minutes old (Bash gives 15), and the old one ends', async () => {
+    const r = room();
+    let now = Date.parse('2026-10-07T09:00:00Z');
+    const v = viewing(r, { now: () => new Date(now) });
+    const live = startLiveSearch(v.deps, 't_goa', { runKey: 'k_fresh', ...FLIGHTS });
+    live.progress({ type: 'opening', recipeId: 'ixigo.flights', url: RESULTS });
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    now += LIVE_VIEW_FRESH_MS;
+    live.progress({ type: 'captured', ms: 900 });
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(r.cards().at(-1)).toMatchObject({ state: 'running', live_url: 'https://bash.test/embed/browser?s=ses_2#token=t2' });
+    expect(v.ended).toEqual(['ses_1']);
+    await live.finish(true);
+    expect(v.ended).toEqual(['ses_1', 'ses_2']);
+  });
+
+  it('a picture while the card runs changes nothing in the room: the next step change carries it, and the done card keeps the last', async () => {
+    const r = room();
+    const live = startLiveSearch(r.deps, 't_goa', { runKey: 'k_quiet', ...FLIGHTS });
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    const before = r.sent.length;
+    live.progress({ type: 'frames', frames: [frame(1700, RESULTS)] });
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(r.stored).toHaveLength(1);
+    expect(r.sent.length).toBe(before);
+    live.progress({ type: 'captured', ms: 900 });
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    expect(r.cards().at(-1)).toMatchObject({ state: 'running', screenshot_url: 'https://go.test/img/frame-1.jpg', page_url: RESULTS });
+    await live.finish(true);
+    expect(r.cards().at(-1)).toMatchObject({ state: 'done', screenshot_url: 'https://go.test/img/frame-1.jpg' });
   });
 });
 

@@ -223,7 +223,7 @@ GO_URL=https://brain-staging-e92c.up.railway.app \
   railway run --service brain --environment staging -- sh -c 'GO_ADMIN_TOKEN="$ADMIN_TOKEN" pnpm --filter @go/sim learn-places'
 ```
 
-It makes one new trip of its own (its own computer, no dates, so no stays search), waits a minute for the computer, then learns each place through that trip with `POST /admin/places/learn`: ixigo's place box once and its guide once or twice a place, one place every few seconds. It prints what `place_info` will answer for each and stops at the first refusal. Name places after the command to learn only those. A place already learned with its months loads nothing.
+It makes one new trip of its own (its own computer, no dates, so no stays search), waits a minute for the computer, then learns each place through that trip with `POST /admin/places/learn`: ixigo's place box once and its guide once or twice a place, one place every few seconds. It prints what `place_info` will answer for each and stops at the first refusal. A place ixigo's place box can't settle on (Kerala, Ladakh: many of its entries fit the word) is learned from ixigo's guide for the word alone, with photos and best months but no map position, and never becomes a trip's destination. A place neither knows is skipped. Name places after the command to learn only those. A place already learned loads nothing.
 
 ## Roll back
 

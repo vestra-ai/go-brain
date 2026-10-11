@@ -5,7 +5,7 @@ import { withSchema } from '../../db/test-db.js';
 import type { EngineAnswer } from '../book/engine.js';
 import type { Suggestion } from '../book/lookup.js';
 import { TravelError } from '../mcp-travel.js';
-import { createPlaceFor } from '../place-for.js';
+import { createGuideOf, createPlaceFor } from '../place-for.js';
 import { placeInfo, placeInfoHandler, registerPlaceLearn } from '../place-info.js';
 
 const TOKEN = 'admin-test-token-16';
@@ -15,6 +15,12 @@ const guide = (best_months: number[]): EngineAnswer => ({
   rows: [{ destination: 'Ladakh, India', photo: 'https://imagedelivery.net/x/ladakh/public', photos: [{ url: 'https://imagedelivery.net/x/pangong/public', label: 'Pangong Lake' }], best_months }],
 });
 const images = { rehostUrl: async (u: string) => `https://go.test/img/${u.split('/').at(-2)!}.jpg` };
+/** Kerala on ixigo: its place box has many entries that fit the word (every town in Kerala), its guide has the state. */
+const KERALA: EngineAnswer = {
+  as: 'facts', title: 'Kerala', page: 'https://www.ixigo.com/plan/kerala', checkedAt: '2026-10-11T06:00:00.000Z', ms: 400,
+  rows: [{ destination: 'Kerala, India', photo: 'https://imagedelivery.net/x/kerala/public', photos: [{ url: 'https://imagedelivery.net/x/alleppey/public', label: 'Alleppey Backwaters' }], best_months: [1, 2, 3, 9, 10, 11, 12] }],
+};
+const NO_GUIDE: EngineAnswer = { as: 'facts', title: 'x', page: 'https://www.ixigo.com/plan/x', checkedAt: '2026-10-11T06:00:00.000Z', ms: 400, rows: [] };
 
 let db: Awaited<ReturnType<typeof withSchema>>;
 beforeAll(async () => {
@@ -56,8 +62,14 @@ describe('POST /admin/places/learn: a place learned ahead, through a trip of the
   const auth = { authorization: `Bearer ${TOKEN}` };
   const appWith = async (o: { token?: string; live?: boolean; engine?: object }) => {
     const app = Fastify();
-    const engine = o.engine ?? { suggest: async (_id: string, words: string) => (words === 'Gokarna' ? { ...LADAKH, name: 'Gokarna', place: { locationId: 5, locationType: 'C' } } : null), answer: async () => guide([1, 2, 3, 10, 11, 12]) };
-    registerPlaceLearn(app, { adminToken: o.token, pool: db.pool, placeFor: createPlaceFor({ pool: db.pool, engine: engine as never, images }), live: () => o.live ?? true });
+    const engine = o.engine ?? {
+      suggest: async (_id: string, words: string) => (words === 'Gokarna' ? { ...LADAKH, name: 'Gokarna', place: { locationId: 5, locationType: 'C' } } : null),
+      answer: async (_id: string, given: Record<string, unknown>) => (given['place'] === 'Gokarna' ? guide([1, 2, 3, 10, 11, 12]) : given['place'] === 'Kerala' ? KERALA : NO_GUIDE),
+    };
+    registerPlaceLearn(app, {
+      adminToken: o.token, pool: db.pool, placeFor: createPlaceFor({ pool: db.pool, engine: engine as never, images }),
+      guideOf: createGuideOf({ engine: engine as never, images }), live: () => o.live ?? true,
+    });
     await app.ready();
     return app;
   };
@@ -82,11 +94,55 @@ describe('POST /admin/places/learn: a place learned ahead, through a trip of the
     expect((await learn({ trip_id: 't_drill' })).statusCode).toBe(422);
     expect((await learn({ trip_id: 't_nowhere', name: 'Goa' })).statusCode).toBe(404);
     expect((await learn({ trip_id: 't_gone', name: 'Goa' })).statusCode).toBe(404);
-    expect((await learn({ trip_id: 't_drill', name: 'Nowhere at all' })).json()).toEqual({ error: { code: 'not_found', message: 'ixigo does not know that place' } });
+    const unknown = await learn({ trip_id: 't_drill', name: 'Nowhere at all' });
+    expect(unknown.statusCode).toBe(404);
+    expect(unknown.json().error.code).toBe('unknown_place');
     await app.close();
     const fake = await appWith({ token: TOKEN, live: false });
     expect((await fake.inject({ method: 'POST', url: '/admin/places/learn', headers: auth, payload: { trip_id: 't_drill', name: 'Goa' } })).statusCode).toBe(409);
     await fake.close();
+  });
+
+  it("learns a place the box can't settle on by ixigo's guide for the words alone: photos and months, no map, never a trip's destination", async () => {
+    const asked: string[] = [];
+    const engine = {
+      suggest: async (_id: string, words: string) => {
+        asked.push(`box:${words}`);
+        return null;
+      },
+      answer: async (_id: string, given: Record<string, unknown>) => {
+        asked.push(`guide:${String(given['place'])}`);
+        return KERALA;
+      },
+    };
+    const app = await appWith({ token: TOKEN, engine });
+    const res = await app.inject({ method: 'POST', url: '/admin/places/learn', headers: auth, payload: { trip_id: 't_drill', name: 'Kerala' } });
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toEqual({
+      place: { name: 'Kerala', photo_url: 'https://go.test/img/kerala.jpg', photos: [{ url: 'https://go.test/img/alleppey.jpg', label: 'Alleppey Backwaters' }] },
+      best_months: [1, 2, 3, 9, 10, 11, 12],
+    });
+    expect(C.PlaceInfo.parse(res.json())).toEqual(res.json());
+    expect(await placeInfo(db.pool, 'kerala')).toEqual(res.json());
+    expect(asked).toEqual(['box:Kerala', 'guide:Kerala']);
+    // Learned: asked again, nothing loads.
+    expect((await app.inject({ method: 'POST', url: '/admin/places/learn', headers: auth, payload: { trip_id: 't_drill', name: 'Kerala' } })).json()).toEqual(res.json());
+    expect(asked).toHaveLength(2);
+    // A trip whose destination is Kerala still gets no place from it: the guide alone has no id and no map position.
+    expect(await createPlaceFor({ pool: db.pool, engine: engine as never, images })('Kerala', { tripId: 't_drill' })).toBeNull();
+    // Once the place itself is learned (a trip resolved it), place_info answers that.
+    await db.pool.query("insert into place_details (words, place, kind, best_months) values ('kerala', $1, 'state', '{1,2}')", [{ name: 'Kerala', place_id: 'ixigo:9', lat: 10.5, lng: 76.2 }]);
+    expect(await placeInfo(db.pool, 'Kerala')).toEqual({ place: { name: 'Kerala', place_id: 'ixigo:9', lat: 10.5, lng: 76.2 }, best_months: [1, 2] });
+    await app.close();
+  });
+
+  it("says a guide that didn't load as a 502, and keeps nothing", async () => {
+    const engine = { suggest: async () => null, answer: async () => { throw new TravelError('refused', 'ixigo asked for a check.'); } };
+    const app = await appWith({ token: TOKEN, engine });
+    const res = await app.inject({ method: 'POST', url: '/admin/places/learn', headers: auth, payload: { trip_id: 't_drill', name: 'Coorg' } });
+    expect(res.statusCode).toBe(502);
+    expect(await placeInfo(db.pool, 'Coorg')).toEqual({ place: { name: 'Coorg' }, complete: false });
+    await app.close();
   });
 
   it("says ixigo's refusal as a 502, and keeps nothing", async () => {
