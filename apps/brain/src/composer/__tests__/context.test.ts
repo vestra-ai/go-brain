@@ -40,11 +40,12 @@ describe('the prompt, in order and cache-first', () => {
     const b = await context().build(input(packOf(chatOf(3), goaSnapshot({ trip_id: 't_coorg', title: 'Coorg' })), 0));
     expect(a.system).toEqual([{ type: 'text', text: GO_RULES, cache_control: { type: 'ephemeral', ttl: '1h' } }]);
     expect(b.system).toEqual(a.system);
-    // The rules about preferences and tools ride in that one cached block, not after the cache point.
-    expect(a.system[0]?.text).toContain('is their preference: note it with a ✅ and make at most one short offer');
+    // Who Go is, and the rules about preferences, tools and budgets, ride in that one cached block, not after the cache point.
+    expect(a.system[0]?.text.startsWith("You are Go, this group's travel agent.")).toBe(true);
+    expect(a.system[0]?.text).toContain('is their preference: note it with a ✅ and use it in what you look up');
     expect(a.system[0]?.text).toContain('Never mention your tools');
-    expect(a.system[0]?.text).toContain("are their preference, not the plan");
-    expect(a.system[0]?.text).toContain("Never repeat a person's budget to the room");
+    expect(a.system[0]?.text).toContain('Until the group agrees or votes, it is not the plan');
+    expect(a.system[0]?.text).toContain("never say anyone's to the room or tie one to a name");
     expect(all(a.user)).not.toContain('Never mention your tools');
   });
 
