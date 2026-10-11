@@ -206,7 +206,8 @@ export async function askToPay(
   // one fare for the whole group. Nothing is held.
   const link = ixigoPage(offer?.link);
   if (offer && GROUP_FARES.has(offer.kind)) {
-    return refuse(d, 'not_bookable_yet', { ...words, kind: offer.kind, ...(link ? { link } : {}) });
+    const own = offer.kind === 'flight' && ((await travel.booksFlights?.(tripId).catch(() => false)) ?? false);
+    return refuse(d, 'not_bookable_yet', { ...words, kind: offer.kind, ...(link ? { link } : {}), ...(own ? { own } : {}) });
   }
   const offerId = offer?.offerId ?? null;
   if (!offerId) return refuse(d, 'not_bookable', { ...words, ...(link ? { link } : {}) });

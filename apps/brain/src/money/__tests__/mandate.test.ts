@@ -160,6 +160,22 @@ describe('set_mandate refuses, in code, what Go cannot book', () => {
     expect(k.server.writesOf('set_mandate')).toEqual([]);
   });
 
+  it('a flight where Go books each person\'s own (BOOKING): says how theirs is booked, never "book on ixigo", and sets nothing', async () => {
+    winnerIs('ixigo:flight:6e-2134', { ...flight, link: 'https://www.ixigo.com/flights/6e-2134' });
+    const asked: string[] = [];
+    Object.assign(k.travel, { booksFlights: async (tripId: string) => (asked.push(tripId), true) });
+    try {
+      expect(await setMandate(k.deps, ctxWith(), mandate)).toEqual({
+        refused: "Flights are each person's own, so there's no one payment for the group: each of you taps I'll take this on your own flights card, and I book it.",
+        unbookable: true,
+      });
+      expect(asked).toEqual(['t_goa']);
+    } finally {
+      delete (k.travel as { booksFlights?: unknown }).booksFlights;
+    }
+    expect(k.server.writesOf('set_mandate')).toEqual([]);
+  });
+
   it('a train or a bus: the same, for trains and buses', async () => {
     winnerIs('ixigo:train:12432', { ...flight, title: 'Rajdhani 12432', kind: 'train' });
     expect(await setMandate(k.deps, ctxWith(), mandate)).toMatchObject({ refused: "I can't book trains for the whole group yet.", unbookable: true });

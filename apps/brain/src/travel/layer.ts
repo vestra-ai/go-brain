@@ -36,6 +36,8 @@ export interface TravelLayerDeps {
   cacheMs?: number;
   /** Stays from ixigo.com, booked on Go's test rail once the trip's ixigo login is in (travel/web-stays.ts). */
   webStays?: WebStays | null;
+  /** Whether Go books each person's own flight on a trip (BOOKING): money says how a group flight is booked. */
+  booksFlights?: (tripId: string) => Promise<boolean>;
   /** A place by its words as ixigo knows it (travel/place-for.ts): only under ixigo_web, where Go reads ixigo.com. */
   placeFor?: PlaceFor | null;
 }
@@ -204,6 +206,7 @@ export function createTravelLayer(d: TravelLayerDeps): Travel {
       return stay ? stayPayWords(stay) : null;
     },
     ...(d.webStays ? { prepare: d.webStays.prepare } : {}),
+    ...(d.booksFlights ? { booksFlights: d.booksFlights } : {}),
     ...(d.simulate ? { simulate: d.simulate } : {}),
   };
 }
