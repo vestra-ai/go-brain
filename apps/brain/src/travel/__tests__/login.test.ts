@@ -11,7 +11,7 @@ import { BOOK_DIR, checkRecipe, loadBook, type Book } from '../book/book.js';
 import { createEngine } from '../book/engine.js';
 import type { DeskItem } from '../../desk/desk.js';
 import {
-  cardIsTheAsk, createIxigoLogin, HANDOFF_MS, HANDOFF_PAGE_MS, HELLO_WAIT_MS, IDENTITY, ixigoLoginTool, LOGIN_CALLS, LOGIN_POLL_FAST_FOR_MS, LOGIN_POLL_MS, LOGIN_POLL_SLOW_MS, LOGIN_TAB, LOGIN_URL, loginFrom, RECHECK_MS, renderLoginResume,
+  cardIsTheAsk, CLOSE_AFTER_WATCH_MS, createIxigoLogin, HANDOFF_MS, HANDOFF_PAGE_MS, HELLO_WAIT_MS, IDENTITY, ixigoLoginTool, LOGIN_CALLS, LOGIN_POLL_FAST_FOR_MS, LOGIN_POLL_MS, LOGIN_POLL_SLOW_MS, LOGIN_TAB, LOGIN_URL, loginFrom, RECHECK_MS, renderLoginResume,
   SELF_CHECK_MS, USERINFO, WALLET,
 } from '../login.js';
 import { TravelError } from '../mcp-travel.js';
@@ -57,6 +57,8 @@ function world(o: {
    * null for a read Bash couldn't answer. Without it the runner has no cookie read, as a Bash from before it.
    */
   cookies?: (n: number) => Array<{ name: string; expiresAt: number | null }> | null;
+  /** How long the login's tab stays after its Watch ends; 0 (closed at once) unless a test says. */
+  closeAfterWatchMs?: number;
 } = {}) {
   trips += 1;
   const tripId = `t_login_${trips}`;
@@ -94,6 +96,7 @@ function world(o: {
     },
     release: async (_trip: string, tab: string) => {
       releases.push(tab);
+      timeline.push({ what: `close:${tab}`, at: Date.now() });
     },
     // The taps on the page once it is in front: what the card says then is kept, to see it said so first.
     tabSteps: async (_trip: string, tab: string, steps: unknown[], to: { keepOpenMs: number; timeoutMs: number }) => {
@@ -118,6 +121,8 @@ function world(o: {
   /** Who each session asked to drive first (driver), by session. */
   const drivers: Array<string | undefined> = [];
   const timers: Array<{ ms: number; fn: () => void; cancelled: boolean }> = [];
+  /** The tab's close and the Watch sessions' ends, in the order they came, at real times. */
+  const timeline: Array<{ what: string; at: number }> = [];
   const screen = async (trip: string, mode: 'view' | 'control', so?: { driver?: 'user' }) => {
     sessions.push([trip, mode]);
     drivers.push(so?.driver);
@@ -125,6 +130,7 @@ function world(o: {
   };
   const endScreen = async (id: string) => {
     ended.push(id);
+    timeline.push({ what: `end:${id}`, at: Date.now() });
   };
   const starts: TaskBrief[] = [];
   const handoffs: Array<[string, string]> = [];
@@ -153,6 +159,7 @@ function world(o: {
       looks.push(ms);
       hooks.onSleep?.(looks.length);
     },
+    closeAfterWatchMs: o.closeAfterWatchMs ?? 0,
     later: (ms, fn) => {
       const t = { ms, fn, cancelled: false };
       timers.push(t);
@@ -192,7 +199,7 @@ function world(o: {
   const parked = async (): Promise<unknown> =>
     (await db.pool.query<{ parked: unknown }>('select parked from ixigo_logins where trip_id = $1', [tripId])).rows[0]?.parked ?? null;
   return {
-    tripId, trip, clock, link, reads, statuses, starts, handoffs, stops, handOffs, releases, sessions, drivers, ended, cookieReads, timers, tabStepCalls, wakes, tap, fire, restart, last, cards,
+    tripId, trip, clock, link, reads, statuses, starts, handoffs, stops, handOffs, releases, sessions, drivers, ended, cookieReads, timers, timeline, tabStepCalls, wakes, tap, fire, restart, last, cards,
     state, parked, greet, looks, hooks, said, setup: () => login.setupStep.run(tripId),
     get login() {
       return login;
@@ -1403,6 +1410,32 @@ describe("one tap: Go's screen opens with the log in, and Go sees the login land
     const gaps = reads.slice(1).map((t, i) => t - reads[i]!);
     gaps.forEach((g, i) => expect(g).toBe(reads[i]! - reads[0]! < LOGIN_POLL_FAST_FOR_MS ? LOGIN_POLL_MS : LOGIN_POLL_SLOW_MS));
     expect(gaps).toContain(LOGIN_POLL_SLOW_MS);
+  });
+
+  // 11 Oct: Go closed the login's tab at once, and the person's Watch showed the computer's screen behind it until its
+  // own 3 s check said the session had ended.
+  it('a landed login ends its Watch first and closes its tab CLOSE_AFTER_WATCH_MS later, in the background: logged in never waits on it', async () => {
+    expect(CLOSE_AFTER_WATCH_MS).toBe(4_000);
+    const w = world({ cookies: (n) => (n < 2 ? [] : at(AT)), statuses: [200], closeAfterWatchMs: 300 });
+    await w.setup();
+    await w.fire('ixigo_login', 'p_rahul');
+    await vi.waitFor(async () => expect(await w.state()).toBe('logged_in'));
+    expect(w.ended).toEqual(['ses_1']);
+    expect(w.releases).toEqual([]);
+    await w.login.settled();
+    expect(w.timeline.map((e) => e.what)).toEqual(['end:ses_1', `close:${LOGIN_TAB}`]);
+    expect(w.timeline[1]!.at - w.timeline[0]!.at).toBeGreaterThanOrEqual(250);
+  });
+
+  it('a login opened again before the old tab closes keeps its tab: the old close does nothing', async () => {
+    const w = world({ cookies: (n) => (n < 2 ? [] : at(AT)), statuses: [200], closeAfterWatchMs: 300 });
+    await w.setup();
+    await w.fire('ixigo_login', 'p_rahul');
+    await vi.waitFor(() => expect(w.ended).toEqual(['ses_1']));
+    // A new attempt opened the login again (the same tab) before the old one's close came.
+    await db.pool.query(`update ixigo_logins set state = 'logging_in', attempt = attempt + 1 where trip_id = $1`, [w.tripId]);
+    await w.login.settled();
+    expect(w.releases).toEqual([]);
   });
 
   // 11 Oct, Saket: ixigo's desktop home showed in the App's view until Go read the login landed.

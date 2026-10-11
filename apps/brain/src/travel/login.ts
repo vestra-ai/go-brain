@@ -105,6 +105,12 @@ const HELLO_POLL_MS = 1_000;
 /** The hand-off's tab on the trip's computer, kept in front of the person's window for them (Bash's front). */
 export const LOGIN_TAB = 'ixigo_login';
 /**
+ * A login's tab closes this long after its Watch sessions end. Bash's Watch page checks its session every 3 s, so it says
+ * Logged in while the tab is still there under Bash's cover ("One moment…"); a tab closed first left the screen behind
+ * it in the person's view until then (11 Oct: the computer's dark desktop for about 1.5 s).
+ */
+export const CLOSE_AFTER_WATCH_MS = 4_000;
+/**
  * ixigo's login cookie: its page's code sets `at` when a login lands, its expiry fixed from that moment, and clears it when
  * ixigo refuses it. Go reads its name and expiry alone, never its value (Bash's cookie read answers with no values).
  */
@@ -236,6 +242,8 @@ export interface LoginDeps {
   sleep?: (ms: number) => Promise<void>;
   /** Runs `fn` after `ms` (the hand-off's end at HANDOFF_MS) and returns how to cancel it; tests pass their own. */
   later?: (ms: number, fn: () => void) => () => void;
+  /** How long a login's tab stays after its Watch ends (CLOSE_AFTER_WATCH_MS); tests pass 0 to close it at once. */
+  closeAfterWatchMs?: number;
 }
 
 export interface IxigoLogin {
@@ -773,21 +781,32 @@ export function createIxigoLogin(d: LoginDeps): IxigoLogin {
   /**
    * The hand-off's tab closes, so the person's own window is on top again; one already gone is nothing to close. Every end
    * of a login closes it: logged in, Not now, a hand-off that failed or ran its time, the person gone. Its Watch sessions
-   * end with it (Bash's Watch page then closes itself, and its control ends), and its one-tap wait with them.
+   * end first (Bash's Watch page then says so and closes itself, and its control ends), and its one-tap wait with them;
+   * the tab CLOSE_AFTER_WATCH_MS later, in the background: nothing after a login waits on it, and a login opened again
+   * meanwhile (a new attempt) keeps its tab. A Go that stops before then leaves the tab to Bash's keep (HANDOFF_MS).
    */
   async function release(tripId: string): Promise<void> {
     ending.get(tripId)?.();
     ending.delete(tripId);
-    const { rows } = await d.pool.query<{ sessions: string[] }>(
+    const { rows } = await d.pool.query<{ sessions: string[]; attempt: number }>(
       `with was as (select watch_sessions from ixigo_logins where trip_id = $1)
-       update ixigo_logins set watch_sessions = '{}', one_tap = null where trip_id = $1 returning (select watch_sessions from was) as sessions`,
+       update ixigo_logins set watch_sessions = '{}', one_tap = null where trip_id = $1 returning (select watch_sessions from was) as sessions, attempt`,
       [tripId],
     );
     const end = d.endScreen?.();
-    await Promise.all([
-      d.runner()?.release?.(tripId, LOGIN_TAB).catch((err: unknown) => d.log.warn({ err, tripId }, "travel: the ixigo login's tab did not close")),
-      ...(rows[0]?.sessions ?? []).map((id) => end?.(id).catch((err: unknown) => d.log.warn({ err, tripId }, "travel: the ixigo login's Watch did not end"))),
-    ]);
+    await Promise.all((rows[0]?.sessions ?? []).map((id) => end?.(id).catch((err: unknown) => d.log.warn({ err, tripId }, "travel: the ixigo login's Watch did not end"))));
+    const close = async (): Promise<void> => {
+      await d.runner()?.release?.(tripId, LOGIN_TAB).catch((err: unknown) => d.log.warn({ err, tripId }, "travel: the ixigo login's tab did not close"));
+    };
+    const after = d.closeAfterWatchMs ?? CLOSE_AFTER_WATCH_MS;
+    if (after <= 0) return close();
+    const attempt = rows[0]?.attempt;
+    track('tab close', tripId, (async () => {
+      await new Promise<void>((r) => setTimeout(r, after).unref?.());
+      const now = await get(tripId);
+      if (now?.state === 'logging_in' && now.attempt !== attempt) return;
+      await close();
+    })());
   }
 
   /**
