@@ -4,7 +4,7 @@ import type { AddressInfo } from 'node:net';
 import Fastify from 'fastify';
 import { fetch as undiciFetch } from 'undici';
 import { withSchema } from '../../db/test-db.js';
-import { createImages, createPinnedAgent, isFetchableImageUrl, isPublicAddress, registerImageRoute, type Lookup } from '../images.js';
+import { createImages, createPinnedAgent, isFetchableImageUrl, isPublicAddress, isWikiHost, registerImageRoute, type Lookup } from '../images.js';
 
 let db: Awaited<ReturnType<typeof withSchema>>;
 beforeAll(async () => {
@@ -85,12 +85,32 @@ describe("Go's image cache", () => {
     expect(res.statusCode).toBe(200);
     expect(res.headers['content-type']).toBe('image/jpeg');
     expect(asked).toEqual(['image/webp,image/jpeg,image/png']);
-    // Wikimedia refuses an image fetch with no descriptive User-Agent (the lead, from the prod brain, 11 Oct).
-    expect(agents).toEqual(['GoTravel/1.0 (https://vestra.ai)']);
+    // ixigo's CDN gets the headers it always got: no name of Go's (the lead, 11 Oct: a bot's name may be treated otherwise).
+    expect(agents).toEqual([undefined]);
     const webp = Fastify();
     registerImageRoute(webp, { pool: db.pool, fetch: (async () => new Response(PNG, { status: 200, headers: { 'content-type': 'image/webp' } })) as unknown as typeof fetch, lookup: publicDns });
     const shot = await images().rehostUrl('https://plan-cf.ixigo.com/v2/images/goa?refresh=true');
     expect((await webp.inject({ method: 'GET', url: new URL(shot!).pathname })).headers['content-type']).toBe('image/webp');
+  });
+
+  // Wikimedia refuses an image fetch with no descriptive User-Agent (the lead, from the prod brain, 11 Oct): Go names
+  // itself there, and only there.
+  it('names itself to Wikipedia and Wikimedia only', async () => {
+    const agents: Array<[string, string | undefined]> = [];
+    const fetchStub = vi.fn(async (url: string, init: { headers?: { 'user-agent'?: string } }) => {
+      agents.push([new URL(url).hostname, init.headers?.['user-agent']]);
+      return new Response(JPEG, { status: 200, headers: { 'content-type': 'image/jpeg' } });
+    });
+    const app = Fastify();
+    registerImageRoute(app, { pool: db.pool, fetch: fetchStub as unknown as typeof fetch, lookup: publicDns });
+    for (const source of ['https://upload.wikimedia.org/wikipedia/commons/thumb/a/ab/Manali.jpg/1280px-Manali.jpg', 'https://imagedelivery.net/abc/goa/public']) {
+      const url = await images().rehostUrl(source);
+      expect((await app.inject({ method: 'GET', url: new URL(url!).pathname })).statusCode).toBe(200);
+    }
+    expect(agents).toEqual([['upload.wikimedia.org', 'GoTravel/1.0 (https://vestra.ai)'], ['imagedelivery.net', undefined]]);
+    expect(isWikiHost('en.wikipedia.org')).toBe(true);
+    expect(isWikiHost('notwikipedia.org')).toBe(false);
+    expect(isWikiHost('wikimedia.org.evil.test')).toBe(false);
   });
 
   // A kept place's photo is Go's own image already: it goes on a card as it is, never a copy that fetches Go from Go.

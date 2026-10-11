@@ -74,17 +74,20 @@ interface ImageResponse {
   body: { cancel(): Promise<void> } | null;
 }
 /** What fetching one hop needs; tests pass their own. */
-export type ImageFetch = (url: string, init: { signal: AbortSignal; redirect: 'manual'; headers: { accept: string; 'user-agent': string } }) => Promise<ImageResponse>;
+export type ImageFetch = (url: string, init: { signal: AbortSignal; redirect: 'manual'; headers: { accept: string; 'user-agent'?: string } }) => Promise<ImageResponse>;
 
 const EXT: Record<string, string> = { 'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp' };
 /** Asked of every source: a CDN that picks the format by it (ixigo's f_auto) sends one Go keeps, never AVIF. */
 const ACCEPT = 'image/webp,image/jpeg,image/png';
 /**
- * Who asks, on every image fetch and Wikipedia read: Wikimedia refuses a fetch with no descriptive User-Agent ("Please
- * set a user-agent and respect our robot policy", the lead from the prod brain, 11 Oct), so a picked place's cover
- * would never come. A name and a site, never an email.
+ * Who asks, to Wikipedia and Wikimedia only: they refuse a fetch with no descriptive User-Agent ("Please set a
+ * user-agent and respect our robot policy", the lead from the prod brain, 11 Oct), so a picked place's cover would
+ * never come. A name and a site, never an email. Every other host (ixigo's CDNs) gets the headers it always got: a
+ * bot's name may be treated otherwise there, and stay and flight photos come from them.
  */
 export const GO_USER_AGENT = 'GoTravel/1.0 (https://vestra.ai)';
+/** Wikipedia's and Wikimedia's own hosts (en.wikipedia.org, upload.wikimedia.org). */
+export const isWikiHost = (host: string): boolean => /(^|\.)(wikipedia|wikimedia)\.org$/i.test(host);
 /** A type some hosts send for a JPEG (ixigo's images host, 10 Oct atlas), as the standard one. */
 const ALIASES: Record<string, string> = { 'image/jpg': 'image/jpeg', 'image/pjpeg': 'image/jpeg' };
 export type ImageMime = 'image/jpeg' | 'image/png' | 'image/webp';
@@ -143,7 +146,8 @@ async function fetchImage(doFetch: ImageFetch, lookup: Lookup, first: string): P
     // to the addresses its own lookup checked (pinnedLookup).
     for (let hop = 0; hop <= MAX_REDIRECTS; hop += 1) {
       if (!isFetchableImageUrl(url) || !(await resolvesPublic(lookup, new URL(url).hostname))) return null;
-      const res = await doFetch(url, { signal: AbortSignal.timeout(FETCH_TIMEOUT_MS), redirect: 'manual', headers: { accept: ACCEPT, 'user-agent': GO_USER_AGENT } });
+      const headers = isWikiHost(new URL(url).hostname) ? { accept: ACCEPT, 'user-agent': GO_USER_AGENT } : { accept: ACCEPT };
+      const res = await doFetch(url, { signal: AbortSignal.timeout(FETCH_TIMEOUT_MS), redirect: 'manual', headers });
       if (res.status >= 300 && res.status < 400) {
         const next = res.headers.get('location');
         await res.body?.cancel().catch(() => undefined);
