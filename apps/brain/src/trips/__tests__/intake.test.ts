@@ -4,11 +4,11 @@ import { ev, goaSnapshot, msg, vote } from '../../__tests__/fixtures/goa.js';
 import type { Speak } from '../../composer/speak.js';
 import { withSchema } from '../../db/test-db.js';
 import { createDesk, type Desk } from '../../desk/desk.js';
-import type { TripEvent } from '../../door/methods.js';
+import type { Trip, TripEvent } from '../../door/methods.js';
 import { silentLog } from '../../log.js';
 import { UNSURE_READ, type Reflex, type ReflexRead } from '../../reflex/reflex.js';
 import { createMessageHooks } from '../hooks.js';
-import { createIntake } from '../intake.js';
+import { createIntake, stayBookedBefore } from '../intake.js';
 import { createTripLog } from '../log.js';
 import { createPacks } from '../pack.js';
 import { createSetup } from '../setup.js';
@@ -532,6 +532,50 @@ describe('intake', () => {
     const changes = (await open(T)).filter((r) => r.kind === 'trip_change');
     expect(changes.map((r) => r.ref)).toEqual(['decision:d_stay']);
     expect(changes[0]?.payload).toEqual({ type: 'decision.closed', decisionId: 'd_stay', reason: 'everyone_voted' });
+  });
+
+  // Keshav, 12 Oct ("people joining later issues"): someone who joins after the group's stay was booked wakes Go once, to
+  // split the stay with them and find their flights (composer/wakes.ts, person.joined).
+  it('a person who joins after the group\'s stay was booked wakes Go, once; a join with nothing booked does not', async () => {
+    const h = harness();
+    const base = goaSnapshot();
+    const dev = { ...base.people[1]!, person_id: 'p_dev', name: 'Dev', from_city: 'Pune' };
+    const villa: Trip['bookings'][number] = {
+      booking_id: 'b_villa', kind: 'stay', status: 'confirmed', title: 'Villa Sol', vendor: 'ixigo', ref: 'IX123', amount_minor: 4_000_000,
+      currency: 'INR', payer_person_id: 'p_rahul', for_person_ids: base.people.map((x) => x.person_id), created_at: '2026-10-11T10:00:00Z',
+    };
+    const T = 't_in_join';
+    await h.send(ev(1, 'trip.created', { trip: goaSnapshot({ trip_id: T, bookings: [villa] }) }, T));
+    await h.send(ev(2, 'person.joined', { person: dev }, T));
+    await h.send(ev(3, 'person.left', { person_id: 'p_dev' }, T));
+    await h.send(ev(4, 'person.joined', { person: dev }, T));
+    // Nothing booked: a join is only a join.
+    const N = 't_in_join_none';
+    await h.send(created(N));
+    await h.send(ev(2, 'person.joined', { person: dev }, N));
+    await h.intake.idle();
+    const changes = (await open(T)).filter((r) => r.kind === 'trip_change');
+    expect(changes.map((r) => [r.id, r.ref])).toEqual([[`joined:${T}:p_dev`, 'person:p_dev']]);
+    expect(changes[0]?.payload).toEqual({ type: 'person.joined', personId: 'p_dev', bookingId: 'b_villa' });
+    expect((await open(N)).filter((r) => r.kind === 'trip_change')).toEqual([]);
+  });
+
+  it('the stay booked before someone joined is theirs to be offered, never for a trip of one or a stay already theirs', () => {
+    const base = goaSnapshot();
+    const five = base.people.map((x) => x.person_id);
+    const villa: Trip['bookings'][number] = {
+      booking_id: 'b_villa', kind: 'stay', status: 'confirmed', title: 'Villa Sol', vendor: 'ixigo', ref: 'IX123', amount_minor: 4_000_000,
+      currency: 'INR', payer_person_id: 'p_rahul', for_person_ids: five, created_at: '2026-10-11T10:00:00Z',
+    };
+    const withDev = [...base.people, { ...base.people[1]!, person_id: 'p_dev', name: 'Dev' }];
+    expect(stayBookedBefore(goaSnapshot({ people: withDev, bookings: [villa] }), 'p_dev')?.booking_id).toBe('b_villa');
+    expect(stayBookedBefore(goaSnapshot({ people: withDev, bookings: [] }), 'p_dev')).toBeNull();
+    expect(stayBookedBefore(goaSnapshot({ people: withDev, bookings: [{ ...villa, for_person_ids: [...five, 'p_dev'] }] }), 'p_dev')).toBeNull();
+    expect(stayBookedBefore(goaSnapshot({ people: withDev, bookings: [{ ...villa, status: 'cancelled' }] }), 'p_dev')).toBeNull();
+    expect(stayBookedBefore(goaSnapshot({ people: withDev, bookings: [{ ...villa, kind: 'flight' }] }), 'p_dev')).toBeNull();
+    // A stay booked for one person, and a trip of one.
+    expect(stayBookedBefore(goaSnapshot({ people: withDev, bookings: [{ ...villa, for_person_ids: ['p_rahul'] }] }), 'p_dev')).toBeNull();
+    expect(stayBookedBefore(goaSnapshot({ people: base.people.slice(0, 1), bookings: [villa] }), 'p_dev')).toBeNull();
   });
 
   it('recover handles events that were written but never processed before a crash', async () => {

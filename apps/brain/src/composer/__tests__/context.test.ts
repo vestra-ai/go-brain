@@ -389,6 +389,56 @@ describe('why Go woke, and the trip block', () => {
     expect(theirs).not.toMatch(/for everyone|group's stay/);
   });
 
+  // Someone joined after the group's stay was booked (Keshav, 12 Oct: "people joining later issues"): the split on one tap,
+  // then their own flights, in one turn.
+  it('a person who joined after the stay was booked: the split on one tap, then their own flights', () => {
+    const c = context();
+    const base = goaSnapshot();
+    const five = base.people.map((x) => x.person_id);
+    const dev = { ...base.people[1]!, person_id: 'p_dev', name: 'Dev Rao', from_city: 'Pune' };
+    const villa: Trip['bookings'][number] = {
+      booking_id: 'b_villa', kind: 'stay', status: 'confirmed', title: 'Villa Sol', vendor: 'ixigo', ref: 'IX123', amount_minor: 4_000_000,
+      currency: 'INR', payer_person_id: 'p_rahul', for_person_ids: five, created_at: '2026-10-11T10:00:00Z',
+    };
+    const cost: Trip['expenses'][number] = {
+      expense_id: 'e_villa', paid_by_person_id: 'p_rahul', amount_minor: 4_000_000, currency: 'INR', note: 'Villa Sol', category: 'stay',
+      split_person_ids: five, booking_id: 'b_villa', created_at: '2026-10-11T10:00:00Z',
+    };
+    const trip = (over: Partial<Trip> = {}) => goaSnapshot({ people: [...base.people, dev], bookings: [villa], expenses: [cost], ...over });
+    const joined = wake({ kind: 'trip_change', ref: 'person:p_dev', payload: { type: 'person.joined', personId: 'p_dev', bookingId: 'b_villa' } });
+    const text = c.renderWake(joined, packOf([], trip()));
+    expect(text).toBe(
+      'Dev joined after the group\'s stay <data>Villa Sol</data> was booked, so it is not theirs yet: they see neither it nor its voucher, ' +
+        'and pay no share of it. Say "Dev joined after <the stay> was booked. Split it with Dev too?" and call offer_replies with two replies: ' +
+        'label "Yes, split with Dev", text "Yes, split <the stay> evenly with everyone, Dev too"; and label "No". ' +
+        "A Yes comes back as that person's message: then split_expense changes that one expense, never record_expense. " +
+        'Their own flights: call search_flights_each with person_ids ["p_dev"], for Dev alone (the same card everyone else got), ' +
+        'unless they have a flight picked already. One message from you, its split question with the buttons last.',
+    );
+    // Nobody knows where they fly from: they are asked, in the same message, before the split question.
+    const noHome = c.renderWake(joined, packOf([], trip({ people: [...base.people, { ...dev, from_city: null }] })));
+    expect(noHome).toContain('Dev hasn\'t said where they fly from, so ask it in one short line first ("Dev, where do you fly from?")');
+    expect(noHome).not.toContain('search_flights_each with person_ids');
+    // Split among some of them: those people, and Dev.
+    const some = c.renderWake(joined, packOf([], trip({ expenses: [{ ...cost, split_person_ids: ['p_rahul', 'p_priya'] }] })));
+    expect(some).toContain('text "Yes, split <the stay> with Rahul, Priya and Dev"');
+    // One expense a room: which room is theirs.
+    const rooms = c.renderWake(joined, packOf([], trip({
+      expenses: [
+        { ...cost, expense_id: 'e_r1', note: 'Villa Sol, Room 1', split_person_ids: ['p_rahul', 'p_priya'] },
+        { ...cost, expense_id: 'e_r2', note: 'Villa Sol, Room 2', split_person_ids: ['p_arjun', 'p_meher', 'p_kabir'] },
+      ],
+    })));
+    expect(rooms).toContain('Which room is Dev in?');
+    expect(rooms).toContain('<data>Villa Sol, Room 1</data> with Rahul, Priya and Dev; <data>Villa Sol, Room 2</data> with Arjun, Meher, Kabir and Dev');
+    // Already on the booking (the Server added them) and flying: nothing to say.
+    const flight: Trip['bookings'][number] = { ...villa, booking_id: 'b_fl', kind: 'flight', title: 'PNQ to GOI', for_person_ids: ['p_dev'] };
+    const done = c.renderWake(joined, packOf([], trip({ bookings: [{ ...villa, for_person_ids: [...five, 'p_dev'] }, flight] })));
+    expect(done).toContain('call stay_silent');
+    // They left again, or the stay was cancelled, before Go woke.
+    expect(c.renderWake(joined, packOf([], trip({ bookings: [{ ...villa, status: 'cancelled' }] })))).toContain('call stay_silent');
+  });
+
   // The lines from goa-300 (bench run 37488230324) after which Go posted with nobody asking: none names Go, and the reflex
   // was unsure about each, so each woke a turn that decided to speak.
   const UNASKED: Array<[string, string]> = [

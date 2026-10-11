@@ -196,8 +196,64 @@ function pointsAt(m: Message, pack: TripPack): string | null {
 /** A ticket's kinds: each traveller's own pick, never a group's vote (travel/cards.ts PERSONAL_KINDS). */
 const PERSONAL_OPTION_KINDS: ReadonlySet<string> = new Set(['flight', 'train', 'bus']);
 
+const listOf = (words: string[]): string => (words.length < 2 ? (words[0] ?? '') : `${words.slice(0, -1).join(', ')} and ${words.at(-1)}`);
+const firstName = (name: string): string => personName(name).split(' ')[0] || personName(name);
+
+/**
+ * Someone joined after the group's stay was booked (trips/intake.ts): it is not theirs yet, and each person's flights went
+ * out before they came (Keshav, 12 Oct: "people joining later issues"). One turn, at most two messages: Go's line asks to
+ * split the stay with them, and a Yes tap comes back as the tapper's own words, which split_expense reads (the Server then
+ * adds them to the booking, voucher and all); then their own flights card, or the ask for where they fly from.
+ */
+function joinedAfterStay(p: { personId?: string; bookingId?: string }, pack: TripPack): string {
+  const trip = pack.trip;
+  const person = trip.people.find((x) => x.person_id === p.personId);
+  const stay = trip.bookings.find((b) => b.booking_id === p.bookingId && b.status === 'confirmed');
+  if (!person || !stay) return 'someone joined after the stay was booked, and has left since, or the stay is gone: call stay_silent';
+  const name = firstName(person.name);
+  const nameOf = (id: string) => firstName(trip.people.find((x) => x.person_id === id)?.name ?? 'someone');
+  const sharers = (split: string[]) => {
+    const rest = split.filter((id) => id !== person.person_id);
+    // Shared by everyone else: leaving split_with out shares it with everyone, them too.
+    return rest.length === trip.people.length - 1 ? `evenly with everyone, ${name} too` : `with ${listOf([...rest.map(nameOf), name])}`;
+  };
+  const costs = stay.for_person_ids.includes(person.person_id) ? [] : trip.expenses.filter((e) => e.booking_id === stay.booking_id);
+  const said: string[] = [];
+  if (costs.length === 1) {
+    said.push(
+      `Say "${name} joined after <the stay> was booked. Split it with ${name} too?" and call offer_replies with two replies: ` +
+        `label "Yes, split with ${name}", text "Yes, split <the stay> ${sharers(costs[0]!.split_person_ids)}"; and label "No". ` +
+        'A Yes comes back as that person\'s message: then split_expense changes that one expense, never record_expense.',
+    );
+  } else if (costs.length > 1) {
+    // One expense a room (REV4 B6): the room they share is theirs to say.
+    const rooms = costs.map((c) => `${inlineData(c.note)} ${sharers(c.split_person_ids)}`).join('; ');
+    said.push(
+      `Say "${name} joined after <the stay> was booked. Which room is ${name} in?" and call offer_replies with one reply a room, ` +
+        `label the room, text "Yes, split <that room's expense> <its people>", from these: ${rooms}; and label "No". ` +
+        'A tap comes back as that person\'s message: then split_expense changes that one expense, never record_expense.',
+    );
+  }
+  const flies = trip.bookings.some((b) => b.kind === 'flight' && b.status === 'confirmed' && b.for_person_ids.includes(person.person_id));
+  const home = person.from_city?.trim();
+  if (!flies && home) {
+    said.push(
+      `Their own flights: call search_flights_each with person_ids ${JSON.stringify([person.person_id])}, for ${name} alone ` +
+        "(the same card everyone else got), unless they have a flight picked already.",
+    );
+  } else if (!flies) {
+    said.push(`Their own flights: ${name} hasn't said where they fly from, so ask it in one short line first ("${name}, where do you fly from?").`);
+  }
+  if (said.length === 0) return `${name} joined after the stay was booked, and has it and their flights already: call stay_silent`;
+  return (
+    `${name} joined after the group's stay ${inlineData(stay.title)} was booked, so it is not theirs yet: they see neither it nor ` +
+    `its voucher, and pay no share of it. ${said.join(' ')}${costs.length > 0 ? ' One message from you, its split question with the buttons last.' : ''}`
+  );
+}
+
 export function renderTripChangeWake(item: DeskItem, pack: TripPack): string {
-  const p = (item.payload ?? {}) as { type?: string; decisionId?: string; title?: string };
+  const p = (item.payload ?? {}) as { type?: string; decisionId?: string; title?: string; personId?: string; bookingId?: string };
+  if (p.type === 'person.joined') return joinedAfterStay(p, pack);
   // The group's stay is booked (money/finish.ts): each person's flights are next, never before it (Saket's test, 11 Oct).
   // A trip of one's: their own flights, never "everyone's" (Keshav, 12 Oct).
   if (p.type === 'stay.booked' && tripOfOne(pack.trip)) {
