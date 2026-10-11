@@ -136,6 +136,29 @@ describe('the places a trip could go, as a card', () => {
     expect(await rider('Marrakech', [])({ tripId: 't_goa', turnId: 'turn_3', wake: wake as never, pack: pack as never })).toBeNull();
   });
 
+  // Prod, 12 Oct: "Manali, Himachal Pradesh" and "Jaipur, Rajasthan" won their place votes, ixigo pinned neither label, the
+  // stay_in town was the same city, and the trips never got a place while Go said they had.
+  it('sets the city alone when ixigo pins no place by the card\'s "City, State" label, with no extra line', async () => {
+    const changes: Array<Record<string, unknown>> = [];
+    const decision = { decision_id: 'd_where', kind: 'choice', result_index: 0, options: [{ label: 'Manali, Himachal Pradesh', option_ref: 'opt_man' }] };
+    const pack = { trip: { trip_id: 't_hp', title: '', destination: null, decisions: [decision] } };
+    const wake = [{ id: 'w', tripId: 't_hp', kind: 'trip_change', ref: 'd_where', dueAt: new Date(), payload: { type: 'decision.closed', decisionId: 'd_where' } }];
+    const rider = placeOnClose({
+      results: {
+        offer: async () => ({ kind: 'place', title: 'Manali, Himachal Pradesh', resultsId: 'r_sug', n: 1 }),
+        get: async () => ({ options: [{ kind: 'place', title: 'Manali, Himachal Pradesh', facts: { stay_in: 'Manali' } }] }),
+      } as never,
+      save: async (_pack, change, requestId) => {
+        changes.push({ ...change, request: requestId() });
+        return change.destination === 'Manali' ? { ok: true, changed: ['destination'] } : { ok: false, error: 'unknown_place' } as never;
+      },
+    });
+    expect(await rider({ tripId: 't_hp', turnId: 'turn_1', wake: wake as never, pack: pack as never })).toBeNull();
+    expect(changes.map((c) => c['destination'])).toEqual(['Manali, Himachal Pradesh', 'Manali']);
+    expect(changes[1]).toMatchObject({ title: 'Manali trip' });
+    expect(changes[0]!['request']).not.toEqual(changes[1]!['request']);
+  });
+
   it("follows a place a vote picked: the trip's destination, and its title when it named the old place, never the group's own", async () => {
     expect(retitled('Manali trip', 'Manali', 'Goa, India')).toBe('Goa trip');
     expect(retitled('Manali with the gang', 'Manali, Himachal Pradesh', 'Ladakh')).toBe('Ladakh with the gang');
