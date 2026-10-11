@@ -93,9 +93,10 @@ export function wireMemory(brain: Brain, d: WireDeps): {
     pool: brain.pool, packs: brain.packs, fold, now: brain.now, log: brain.log,
     // Travel registers after memory, so the login is read when a forget runs.
     loginGone: async (tripId, personId) => brain.ixigoLogin?.personGone(tripId, personId, 'forgot'),
-    // The person is told on a card pinned to them; the room hears nothing.
-    tellPerson: async (tripId, _personId, card) => {
-      await brain.door.link.request('post_message', { request_id: `go_${card.card_id}`, trip_id: tripId, card });
+    // The person is told on a card only they see (1.2 visible_to_person_ids); the room hears nothing. Prod, 11 Oct: the
+    // card went to the whole room, "Go forgot you in this trip", twice in one trip.
+    tellPerson: async (tripId, personId, card) => {
+      await brain.door.link.request('post_message', { request_id: `go_${card.card_id}`, trip_id: tripId, card, visible_to_person_ids: [personId] });
     },
   });
   brain.door.handle('get_person', people.get_person);

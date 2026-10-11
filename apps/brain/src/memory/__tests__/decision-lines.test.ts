@@ -113,6 +113,17 @@ describe('an open line people raised before the vote: the vote that answers it s
     expect(answers('Scooters or a cab from the airport?', scooters)).toBe(false);
   });
 
+  // Prod, 11 Oct (Varkala): "South Goa" and "Dates 7 to 12 Dec" stayed open in everyone's record after their votes closed.
+  it('answers: one option named in full, numbers too, alone or with a word of the question', () => {
+    const where = { question: 'Which quieter beach place should we go to?', kind: 'choice' as const, options: [{ label: 'South Goa' }, { label: 'Pondicherry' }, { label: 'Varkala' }] };
+    expect(answers('South Goa', where)).toBe(true);
+    const dates = { question: 'Which dates for Varkala?', kind: 'choice' as const, options: [{ label: '1 to 7 Dec' }, { label: '7 to 12 Dec' }] };
+    expect(answers('Dates 7 to 12 Dec', dates, 'Varkala')).toBe(true);
+    // An option inside something else is not its question.
+    expect(answers('Dinner on 7 to 12 Dec?', dates, 'Varkala')).toBe(false);
+    expect(answers('Dinner in South Goa?', where)).toBe(false);
+  });
+
   it('settles the lines a vote with a winner answers, written before it closed; not another question, not a tie', async () => {
     const T = 't_dl9';
     const line = (id: string, text: string, at: string): C.RecordLine => ({
