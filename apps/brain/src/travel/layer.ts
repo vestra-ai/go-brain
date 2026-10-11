@@ -147,6 +147,7 @@ export function createTravelLayer(d: TravelLayerDeps): Travel {
         ...(found.runId ? { runId: found.runId } : {}),
         ...(found.page ? { page: found.page } : {}), ...(unapplied.length > 0 ? { unapplied } : {}), ...(found.site ? { site: found.site } : {}),
         ...(found.earlier ? { earlier: true } : {}), ...(found.cut ? { cut: true } : {}), ...(found.notes ? { notes: found.notes } : {}),
+        ...(found.dropped?.length ? { dropped: found.dropped } : {}),
       };
     },
     async waitMs(kind, q, o) {

@@ -43,7 +43,7 @@ const layout = (drops: unknown): EngineAnswer => ({
 describe("the top bus's own drops on its card", () => {
   it("say its first and last drop with their times in place of ixigo's one arrival, and change nothing else", async () => {
     const before = await busCard('t_drops', 'c_drops');
-    expect(before.options[0]!.subtitle).toBe('8:00 pm to 7:20 am next day, VE AC Seater/Sleeper (2 + 1)');
+    expect(before.options[0]!.subtitle).toBe('8:00 pm, first stop in Goa 7:20 am next day, VE AC Seater/Sleeper (2 + 1)');
     const link = new FakeLink();
     // The replace is for a card already in the room, as Go's own post put it there.
     await link.request('post_message', { request_id: 'go_post_drops', trip_id: 't_drops', card: before });

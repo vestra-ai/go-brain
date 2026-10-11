@@ -173,12 +173,16 @@ export function createComposer(d: ComposerDeps): Composer {
     return (r.rowCount ?? 0) > 0;
   }
 
-  async function runTurn(t: TurnInput): Promise<void> {
+  /** Runs the turn; true when it answered: its words went out, now or on an earlier attempt. */
+  async function runTurn(t: TurnInput): Promise<boolean> {
     // A rerun of a turn whose message already went out: the room has its answer.
-    if (await alreadyPosted(t.turnId)) return;
+    if (await alreadyPosted(t.turnId)) return true;
     const pack = await d.packs.get(t.tripId);
     const forGo = t.items.some(isForGo);
-    if (d.budget && !d.budget.allows()) return overBudget(t, forGo);
+    if (d.budget && !d.budget.allows()) {
+      await overBudget(t, forGo);
+      return false;
+    }
     // Typing stays honest while the turn works: on now (if it was not), off when the turn ends.
     const typingAt = forGo ? d.speak.working(t.tripId) : null;
     const times: { firstToken: Date | null } = { firstToken: null };
@@ -191,6 +195,7 @@ export function createComposer(d: ComposerDeps): Composer {
     // Typing may also be on for a message the turn pulled in, or one intake turned it on for: a turn that posted answered it.
     const pulled: DeskItem[] = [];
     let posted = false;
+    let spoke = false;
     try {
       const trip = await d.pool.query<{ composer_seen_seq: number; tz: string }>('select composer_seen_seq, tz from trips where trip_id = $1', [t.tripId]);
       const seenSeq = trip.rows[0]?.composer_seen_seq ?? 0;
@@ -299,6 +304,7 @@ export function createComposer(d: ComposerDeps): Composer {
       posted = ids.length > 0;
       ctx.outcome.posts.push(...ids);
       ctx.outcome.spoke = text !== null && ids.length > 0;
+      spoke = ctx.outcome.spoke;
       // Someone named Go in a line the budget left unread: they hear the day's limit, once per trip.
       if (unanswered) await limitLine(t);
       // Go asked instead of noting (a question back to the person, or a tool that chose to ask): no ✅ on those messages,
@@ -329,6 +335,7 @@ export function createComposer(d: ComposerDeps): Composer {
     } finally {
       if (forGo || posted || pulled.some(isForGo)) d.speak.typingOff(t.tripId);
     }
+    return spoke;
   }
 
   /**
@@ -375,22 +382,21 @@ export function createComposer(d: ComposerDeps): Composer {
    * A turn is over when it ran, or gave up after its last attempt (a failed attempt runs again under the same turn id):
    * the lanes end what it left open, such as a live search card (context.turnEnded).
    */
-  function ended(t: TurnInput): void {
+  function ended(t: TurnInput, answered: boolean): void {
     const items = [...t.items, ...(pulledBy.get(t.turnId) ?? [])];
     pulledBy.delete(t.turnId);
-    d.context.turnEnded({ tripId: t.tripId, turnId: t.turnId, messageIds: items.filter((i) => i.kind === 'message').map(messageIdOf) });
+    d.context.turnEnded({ tripId: t.tripId, turnId: t.turnId, messageIds: items.filter((i) => i.kind === 'message').map(messageIdOf), answered });
   }
 
   return {
     async runTurn(t) {
-      await runTurn(t);
-      ended(t);
+      ended(t, await runTurn(t));
     },
     async giveUp(t) {
       try {
         await giveUp(t);
       } finally {
-        ended(t);
+        ended(t, false);
       }
     },
   };

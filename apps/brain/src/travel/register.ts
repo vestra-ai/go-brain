@@ -14,11 +14,11 @@ import { FakeIxigoStore } from './fake-ixigo/data.js';
 import { flightsEachTool } from './flights-each.js';
 import { showHeadStartStays } from './head-start-wake.js';
 import { createImages, registerImageRoute } from './images.js';
-import { createIxigoLogin, ixigoLoginTool, renderLoginResume } from './login.js';
+import { createIxigoLogin, ixigoLoginTool, LOGIN_SWEEP_MS, renderLoginResume } from './login.js';
 import { createLoginKeepAlive } from './login-keepalive.js';
 import { createTravelLayer } from './layer.js';
 import { registerLive } from './live.js';
-import { startLiveSearch } from './live-search.js';
+import { openRecipeCards, startLiveSearch } from './live-search.js';
 import { createHttpMcpCaller } from './mcp-caller.js';
 import { createFakeTravel, createIxigoTravel } from './mcp-travel.js';
 import { createIxigoWebBackend, LINK_ONLY_KINDS, searchKindOf } from './recipes/backend.js';
@@ -84,6 +84,7 @@ export const registerTravel: RegisterLane = async (brain) => {
     runner: () => brain.recipeRunners?.browserFetch ?? null,
     tasks: () => brain.tasks ?? null,
     screen: () => brain.recipeRunners?.screen ?? null,
+    endScreen: () => brain.recipeRunners?.endScreen ?? null,
     browser: () => brain.recipeRunners?.login ?? null,
     desk: brain.desk,
     live: () => brain.switches.get('TRAVEL_MODE') === 'ixigo_web',
@@ -103,6 +104,14 @@ export const registerTravel: RegisterLane = async (brain) => {
   keepAlive.start();
   brain.onStop(function stopLoginKeepAlive() {
     keepAlive.stop();
+  });
+  // One-tap logins, looked over every minute from their rows: a wait a restart of Go lost is picked up, one past its time ends.
+  const loginSweep = setInterval(() => {
+    login.sweep().catch((err: unknown) => brain.log.warn({ err }, 'travel: the one-tap login sweep failed'));
+  }, LOGIN_SWEEP_MS);
+  loginSweep.unref();
+  brain.onStop(function stopLoginSweep() {
+    clearInterval(loginSweep);
   });
   // Go's hello carries the login card and its line: one message to open a new trip, never two in a row.
   brain.context.addTurnCard((i) => login.helloCard(i));
@@ -230,7 +239,15 @@ export const registerTravel: RegisterLane = async (brain) => {
   // its stops and cancellation kept for "where do we board and when". Never on a Bash that can't click one card's own
   // button (before bash #4637): no other card's is clicked instead. A stay's: its page's own photos, labelled, then
   // replace the search's on its card (pick-photos.ts, 10 Oct B3).
-  const showPick = (tripId: string, pick: TopPick): void => {
+  /** A stay's own page read, its labelled photos and its rooms for the trip's people onto its card option (pick-photos.ts). */
+  const stayPage = (tripId: string, pick: TopPick, o: { onProgress?: () => undefined; clickFrom?: string; background?: true }): Promise<void> =>
+    engine.answer('hotels.details', { hotel: pick.page }, { tripId, ...o }).then(async (got) => {
+      // The rooms' prices for the trip's people, for the stay's nights (REV4 B4).
+      const stay = stayOf(pick.page);
+      const personIds = (await brain.packs.get(tripId)).trip.people.map((p) => p.person_id);
+      await showPickPhotos({ results, images, link: brain.door.link, ...(brain.cardPosted ? { posted: brain.cardPosted } : {}) }, tripId, pick, got, stay ? { personIds, nights: stay.nights } : undefined);
+    });
+  const showPick = (tripId: string, pick: TopPick, more: TopPick[] = []): void => {
     if (brain.switches.get('TRAVEL_MODE') !== 'ixigo_web') return;
     if (pick.kind === 'bus' && brain.recipeRunners?.browserFetch?.canPickOne?.() === false) return;
     const run = pick.kind === 'bus'
@@ -240,17 +257,20 @@ export const registerTravel: RegisterLane = async (brain) => {
             brain.log.warn({ tripId, err: String(err).slice(0, 200) }, "travel: the top bus's drops didn't reach its card");
           }),
         )
-      : engine.answer('hotels.details', { hotel: pick.page }, { tripId, onProgress: () => undefined, clickFrom: pick.name }).then(async (got) => {
-          // The rooms' prices for the trip's people, for the stay's nights (REV4 B4).
-          const stay = stayOf(pick.page);
-          const personIds = (await brain.packs.get(tripId)).trip.people.map((p) => p.person_id);
-          await showPickPhotos({ results, images, link: brain.door.link, ...(brain.cardPosted ? { posted: brain.cardPosted } : {}) }, tripId, pick, got, stay ? { personIds, nights: stay.nights } : undefined).catch((err: unknown) => {
-            brain.log.warn({ tripId, err: String(err).slice(0, 200) }, "travel: the top pick's photos and rooms didn't reach its card");
+      : stayPage(tripId, pick, { onProgress: () => undefined, clickFrom: pick.name });
+    void run
+      .catch((err: unknown) => {
+        brain.log.warn({ tripId, err: String(err).slice(0, 200) }, "travel: the top pick's page didn't open on the stage, or its photos didn't reach its card");
+      })
+      .then(async () => {
+        // The card's next stays, after the top pick's and one at a time, in the background: queued behind any page a person
+        // waits on (the computer's slots take a background read last), never on the stage (rev 5 R1).
+        for (const next of more) {
+          await stayPage(tripId, next, { background: true }).catch((err: unknown) => {
+            brain.log.warn({ tripId, err: String(err).slice(0, 200) }, "travel: a stay's own page didn't reach its card");
           });
-        });
-    void run.catch((err: unknown) => {
-      brain.log.warn({ tripId, err: String(err).slice(0, 200) }, "travel: the top pick's page didn't open on the stage");
-    });
+        }
+      });
   };
   // Where the group stays (booked, else the vote's winner, else the latest stays card's top pick): each bus's nearest drop.
   const groupStay = createGroupStay({ trip: async (tripId) => (await brain.packs.get(tripId)).trip, results });
@@ -262,9 +282,12 @@ export const registerTravel: RegisterLane = async (brain) => {
   for (const t of travelTools({ travel, results, images, now: brain.now, desk: brain.desk, log: brain.log, warmForTravel: warm, today, showPick, stayBudget, groupStay })) brain.tools.register(t);
   brain.tools.register(budgetTool({ budgets, pool: brain.pool, now: brain.now, log: brain.log }));
   brain.context.addNow(budgetNow({ budgets, trip: async (tripId) => (await brain.packs.get(tripId)).trip }));
-  // A recipe's live card: its runs on the stage, as a search's are, so the room watches every page Go opens.
+  // A recipe's live card: its runs on the stage, as a search's are, so the room watches every page Go opens. Kept while
+  // open, so the turn that answered ends its own done (exam #9, 10 Oct: two cards left failed beside a good answer).
+  const recipeCards = openRecipeCards();
   const recipeCard = (tripId: string, o: { runKey: string; recipe: string }) =>
-    startLiveSearch({ link: brain.door.link, images, now: brain.now, log: brain.log, saidOnIt }, tripId, o);
+    recipeCards.card(tripId, o.runKey, () => startLiveSearch({ link: brain.door.link, images, now: brain.now, log: brain.log, saidOnIt }, tripId, o));
+  brain.context.addTurnEnd((t) => recipeCards.turnEnded(t));
   // Any other recipe in the book, by its id: ixigo's own facts for the model to say (the destination guide, and more).
   const recipesTool = ixigoTool({
     book, engine, results, live: () => brain.switches.get('TRAVEL_MODE') === 'ixigo_web',

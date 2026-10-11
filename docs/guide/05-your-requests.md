@@ -76,7 +76,7 @@ Go answers within 3 seconds with one of three results. The app handles each one 
 | `result` | What the app does |
 |---|---|
 | `done` | Shows `toast`, if there is one. Go follows up in the room, or replaces the card in place. |
-| `open` | Opens `url` in the system browser sheet straight away. The link stops working at `expires_at`. |
+| `open` | Opens `url` in the system browser sheet straight away. The link stops working at `expires_at`. Some of these pages close by themselves when Go is done with them, such as the ixigo login's (see [Closing a page Go opened](06-cards.md#closing-a-page-go-opened)). |
 | `refused` | Shows `toast`. Nothing changed, because the tap is not allowed or no longer possible. |
 
 Priya's pick is done, and Go will follow up in the room:

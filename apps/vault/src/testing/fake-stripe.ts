@@ -13,6 +13,8 @@ export class FakeStripe implements StripeLike {
   throwOnce: { type: string; code?: string; afterCharging?: boolean } | null = null;
   /** Listing fails, the way Stripe's API can. */
   listThrows = false;
+  /** Card setups fail with this Stripe error, the way Stripe refuses a vault's placeholder keys (a 401 that names the key). */
+  setupThrows: { type: string; statusCode: number; message: string } | null = null;
   private readonly customerByKey = new Map<string, string>();
 
   async createCustomer(): Promise<{ id: string }> {
@@ -22,6 +24,7 @@ export class FakeStripe implements StripeLike {
   }
 
   async createSetupIntent(customerId: string): Promise<{ id: string; clientSecret: string }> {
+    if (this.setupThrows) throw Object.assign(new Error(this.setupThrows.message), { type: this.setupThrows.type, statusCode: this.setupThrows.statusCode });
     const id = `seti_${this.setupIntents.size + 1}`;
     this.setupIntents.set(id, { customerId, card: null, status: 'requires_payment_method' });
     return { id, clientSecret: `${id}_secret_test` };
