@@ -851,7 +851,7 @@ export async function searchAnswer(kind: TravelKind, ask: TravelQuery, found: Tr
       `${found.cut ? `Say in the line that you picked these from the first ${before} ixigo sent, and offer to look at more. ` : ''}` +
       `${found.notes?.length ? "What ixigo itself offers for this list is in the summary: say it in one short line when it helps the ask (holding a fare while the group decides, a budget), as ixigo's to set, never Go's. " : ''}` +
       (pick.length
-        ? `Pick the options whose amenities or details fit ${listOf(pick)}, best first (the card shows the rest after them, 10 in all), and say which part ixigo filtered, which you picked, and that the ones after them don't say it; ` +
+        ? `Show the options whose amenities or details fit ${listOf(pick)} first, best first (the card shows the rest of the results after them, 10 in all), and say which part ixigo filtered, which you picked, and that the ones after them don't say it; ` +
           "a want the data can't show (quiet) is no reason to show fewer: pick on what it does show and say plainly what ixigo doesn't tell, never that they should check it. " +
           'If none clearly fits, say so and show the closest. ' +
           (list ? "If one of ixigo's own filters is what was asked, you may search again with it in site_filters. " : '')
