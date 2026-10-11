@@ -26,6 +26,14 @@ export function homePage(embedded: { origins: readonly string[] } | null = null)
 <form id="card-form"><label for="card-element">Add a card</label><div id="card-element" class="field"></div>
 <button class="primary" type="submit">Save card</button><p id="card-msg" class="msg" role="status"></p>
 <p class="fine">Test cards only for now. Your card goes straight to the payment processor; the vault keeps only a token.</p></form>
+<form id="demo-card-form" hidden><p class="demo-note">Demo build: no money moves. Use the test card 4242 4242 4242 4242.</p>
+<button id="demo-fill" type="button" class="secondary">Fill test card</button>
+<label for="dc-number">Card number</label><input id="dc-number" class="field" inputmode="numeric" autocomplete="off" maxlength="23" placeholder="4242 4242 4242 4242">
+<div class="pair"><div><label for="dc-exp">Expiry</label><input id="dc-exp" class="field" inputmode="numeric" autocomplete="off" maxlength="5" placeholder="MM/YY"></div>
+<div><label for="dc-cvv">CVV</label><input id="dc-cvv" class="field" inputmode="numeric" autocomplete="off" maxlength="4" placeholder="123"></div></div>
+<label for="dc-name">Name on card</label><input id="dc-name" class="field" autocomplete="off" maxlength="60">
+<button class="primary" type="submit">Save card</button><p id="dc-msg" class="msg" role="status"></p>
+<p class="fine">Test cards only: 4242 4242 4242 4242 pays, 4000 0000 0000 0002 is declined. The number and CVV never leave this phone; the vault keeps the brand and the last four digits.</p></form>
 <p id="cards-not-ready" class="msg" data-tone="bad" hidden>Cards can't be added yet on this vault.</p></section>
 <section id="travel" class="card"><h2>Your travel details</h2>
 <p class="muted">For a ticket Go books for you when the trip's ixigo account has none of yours. Only Go's booking reads them, never the chat.</p>
@@ -52,12 +60,17 @@ export function payPage(framed: { origins: readonly string[] } | null = null): s
 <section id="loading" class="card"><p class="muted">Loading the payment</p></section>
 <section id="gone" class="card" hidden><h2 id="gone-title">This link has expired</h2><p id="gone-msg" class="muted"></p></section>
 <section id="pay" class="card" hidden>
+<p id="pay-demo" class="demo-note" hidden>Demo build: no money moves.</p>
 <p class="amount" id="amount"></p><p class="merchant" id="merchant"></p><p class="muted" id="purpose"></p>
 <p class="refund" id="refund" hidden></p>
 <div class="row"><span class="muted">Card</span><span id="card"></span></div>
 <button id="approve-btn" class="primary big">Approve with Face ID</button><p id="pay-msg" class="msg" role="status"></p>
 <button id="close-btn" type="button" hidden>Cancel</button>
 <p class="fine">The group agreed to this first. It works once, for this amount only.</p></section>
+<section id="otp" class="card" hidden><h2>Enter the code from your bank</h2>
+<p class="demo-note">Demo OTP: 123456</p>
+<label for="otp-code">One-time code</label><input id="otp-code" class="field" inputmode="numeric" autocomplete="one-time-code" maxlength="6">
+<button id="otp-btn" class="primary big">Pay</button><p id="otp-msg" class="msg" role="status"></p></section>
 <section id="done" class="card done" hidden><div class="tick" aria-hidden="true">&#10003;</div><h2>Paid</h2>
 <p class="muted">Go is booking it now. You can close this page.</p></section>
 </main><script src="/static/webauthn.js"></script><script src="/static/vault.js"></script></body></html>`;

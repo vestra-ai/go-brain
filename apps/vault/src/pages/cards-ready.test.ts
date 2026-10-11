@@ -31,27 +31,28 @@ async function opened(vault: TestVault, personId: string, who: TestAuthenticator
 }
 
 const state = async (vault: TestVault, o: { path: string; cookie: string }) =>
-  (await vault.app.inject({ method: 'GET', url: `${o.path}/state`, headers: { cookie: o.cookie } })).json() as { cards_ready: boolean };
+  (await vault.app.inject({ method: 'GET', url: `${o.path}/state`, headers: { cookie: o.cookie } })).json() as { cards_ready: boolean; cards_mode: string };
 const setup = (vault: TestVault, o: { path: string; cookie: string }) =>
   vault.app.inject({ method: 'POST', url: `${o.path}/cards/setup`, headers: { cookie: o.cookie }, payload: {} });
 
 describe("adding a card when the vault's Stripe keys can't add one", () => {
-  it('with placeholder keys: the page says it is not ready yet, and no card setup reaches Stripe', async () => {
+  // Keshav, 11 Oct: "we dont have access to stripe in India". With no Stripe keys, cards are the demo's test cards.
+  it("with placeholder keys: the demo's test cards, and no card setup reaches Stripe", async () => {
     v = await startTestVault({ goFetch, now: () => now, env: PLACEHOLDERS });
     const page = await opened(v, 'p_meher', await v.passkeyFor('p_meher'));
-    expect(await state(v, page)).toMatchObject({ cards_ready: false });
+    expect(await state(v, page)).toMatchObject({ cards_mode: 'demo', cards_ready: true });
     const res = await setup(v, page);
     expect(res.statusCode).toBe(503);
     expect(res.json()).toEqual({ message: CARDS_NOT_READY });
     expect(v.stripe.customers).toEqual([]);
-    expect((await v.app.inject({ method: 'GET', url: page.path })).body).toContain("Cards can't be added yet on this vault.");
-    expect((await v.app.inject({ method: 'GET', url: '/health' })).json()).toEqual({ ok: true, cards: 'not_configured' });
+    expect((await v.app.inject({ method: 'GET', url: page.path })).body).toContain('Demo build: no money moves. Use the test card 4242 4242 4242 4242.');
+    expect((await v.app.inject({ method: 'GET', url: '/health' })).json()).toEqual({ ok: true, cards: 'demo' });
   });
 
   it("when Stripe refuses the keys: plain words, never Stripe's, and cards are off from then on", async () => {
     v = await startTestVault({ goFetch, now: () => now });
     const page = await opened(v, 'p_meher', await v.passkeyFor('p_meher'));
-    expect(await state(v, page)).toMatchObject({ cards_ready: true });
+    expect(await state(v, page)).toMatchObject({ cards_mode: 'stripe', cards_ready: true });
     v.stripe.setupThrows = REFUSED;
     const res = await setup(v, page);
     expect(res.statusCode).toBe(503);
