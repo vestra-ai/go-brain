@@ -251,7 +251,7 @@ describe('the room\'s tools', () => {
     const travel = {
       placeOf: async (id: string) => options[id] ?? null,
       placeFor: async (words: string) => {
-        if (words === 'Unreachable') throw new TravelError('unreachable', 'ixigo took too long to answer. Try again in a moment.');
+        if (words === 'Unreachable') throw new TravelError('unreachable', 'ixigo took too long to answer.');
         const place = places[words.toLowerCase()];
         return place ? { place, ...(sorts[words.toLowerCase()] ?? { kind: 'state', within: [] }) } : null;
       },
