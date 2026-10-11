@@ -8,12 +8,13 @@
  * A booking is a row (flight_bookings) a tap starts once, whatever its repeats, and a live card in the room that ticks
  * its steps. No traveller's details are kept, logged or said: the room hears the trip's own name and the outcome.
  */
+import { createHash } from 'node:crypto';
 import type * as C from '@go/contract';
 import type pg from 'pg';
 import type { Switches } from '../../admin/switches.js';
 import type { ServerLink } from '../../door/server-link.js';
 import { dayText } from '../answer.js';
-import { buildOptionsCard, clip, formatInr } from '../cards.js';
+import { buildIxigoLinkCard, buildOptionsCard, clip, formatInr } from '../cards.js';
 import { stableId } from '../ids.js';
 import type { IxigoLogin } from '../login.js';
 import { bodiesFor } from '../recipes/recipe.js';
@@ -56,8 +57,21 @@ export interface TicketPay {
     tripId: string,
     o: { personId: string; cardId: string; optionId: string; amountMinor: number; currency: string; purpose: string; key: string; trigger: string },
   ): Promise<{ url: string; expiresAt: string; approvalId: string; paymentId: string } | { refused: string; code: string }>;
+  /**
+   * p1-b's #440: the Server's personal approval for the pick, then ONE pay card for its traveller alone, money's: Approve
+   * opens the vault (Face ID), and money keeps the card (paid, declined, expired). The same key again gives the same card.
+   */
+  requestTicketCard?(
+    tripId: string,
+    o: { personId: string; cardId: string; optionId: string; amountMinor: number; currency: string; purpose: string; key: string; trigger: string },
+  ): Promise<{ cardId: string; paymentId: string } | { refused: string; code: string; say: boolean }>;
   onPaid(fn: (p: { tripId: string; approvalId: string; railRef: string }) => Promise<void>): void;
 }
+
+/** A payment the vault can't take (its rail not ready, or it refused): the one case its traveller is sent to ixigo, with why. */
+const VAULT_CANT: ReadonlySet<string> = new Set(['rail_not_ready', 'vault_refused']);
+/** Who sells a ticket Go books: ixigo, and simulated, as a stay is (web-stays.ts): Go stops before ixigo's own pay button. */
+export const TICKET_VENDOR = 'ixigo (simulated)';
 
 export type PayTap = { result: 'open'; url: string; expires_at: string } | { result: 'refused'; toast: string } | { result: 'done'; toast: string };
 
@@ -232,7 +246,39 @@ export function createFlightBooking(d: FlightBookingDeps): FlightBooking {
     if (hooked) return;
     hooked = true;
     pay.onPaid(async ({ tripId, approvalId }) => {
-      await d.pool.query(`update flight_bookings set state = 'paid', updated_at = $3 where trip_id = $1 and approval_id = $2`, [tripId, approvalId, d.now()]);
+      // The booking that approval paid for: its pay card's payment (money's) keeps this run as its key (hold_id); a ready
+      // card's Pay from before kept the approval on the booking itself.
+      const r = await d.pool.query<{ run_id: string; person_id: string; option_id: string; title: string; total_minor: string | null }>(
+        `update flight_bookings f set state = 'paid', approval_id = $2, updated_at = $3
+         where f.trip_id = $1 and f.state <> 'paid'
+           and (f.approval_id = $2 or f.run_id in (select p.hold_id from payments p where p.trip_id = $1 and p.approval_id = $2 and p.kind = 'ticket'))
+         returning f.run_id, f.person_id, f.option_id, f.title, f.total_minor`,
+        [tripId, approvalId, d.now()],
+      );
+      for (const b of r.rows) await addTicket(tripId, approvalId, b);
+    });
+  };
+
+  /**
+   * A paid ticket on the trip, as that person's own (the App team's G2): Go's own reference, simulated, as a stay's is,
+   * since Go stops before ixigo's pay button; the flight's journey when its search kept it.
+   */
+  const addTicket = async (tripId: string, approvalId: string, b: { run_id: string; person_id: string; option_id: string; title: string; total_minor: string | null }): Promise<void> => {
+    if (b.total_minor === null) return;
+    const journey = d.results ? ((await d.results.optionOf(b.option_id).catch(() => null))?.journey ?? null) : null;
+    await d.link.request('add_booking', {
+      request_id: stableId('go_ticket_booking', b.run_id),
+      trip_id: tripId,
+      kind: 'flight',
+      title: clip(b.title, 120),
+      vendor: TICKET_VENDOR,
+      ref: `SIM-${createHash('sha256').update(b.run_id).digest('hex').slice(0, 8).toUpperCase()}`,
+      amount_minor: Number(b.total_minor),
+      currency: 'INR',
+      payer_person_id: b.person_id,
+      for_person_ids: [b.person_id],
+      approval_id: approvalId,
+      ...(journey ? { journey, starts_at: journey.depart_at } : {}),
     });
   };
 
@@ -377,10 +423,43 @@ export function createFlightBooking(d: FlightBookingDeps): FlightBooking {
     if (!ticked) return fail('traveller_not_ticked', 3);
     await live.step(3, 'done');
 
-    // 5. Ready: their card, for them alone. Nothing on ixigo is submitted.
+    // 5. Ready to pay (the App team's G2, 11 Oct): ONE pay card for them alone, money's, with the Server's personal approval
+    // for the card and option they tapped in it: Approve opens the vault, Face ID, and it is paid. Nothing on ixigo is
+    // submitted. A money without it: their ready card with Pay, as before.
+    const flies = dayOf(ask.offer.sourceUrl);
+    const pay = d.pay?.();
+    if (pay?.requestTicketCard) {
+      hookPaid(pay);
+      const purpose = clip(`${title}${flies ? `, ${dayText(flies)}` : ''}, for ${ask.name}`, 200);
+      const got = await pay
+        .requestTicketCard(ask.tripId, {
+          personId: ask.personId, cardId: ask.offer.cardId, optionId: ask.offer.optionId, amountMinor, currency: 'INR', purpose, key: runId, trigger: ask.tapId,
+        })
+        .catch((err: unknown) => ({ refused: "Go couldn't get the payment ready just now.", code: 'server_down', say: false, err }));
+      if ('cardId' in got) {
+        await save(runId, { state: 'ready_to_pay', card_id: got.cardId });
+        await live.step(4, 'done');
+        await live.finish(true);
+        return;
+      }
+      d.log.warn({ runId, code: got.code }, 'travel: a ticket pay card was refused');
+      await save(runId, { state: 'failed', why: `pay_${got.code}` });
+      await live.step(4, 'failed');
+      await live.finish(false);
+      // The vault can't take it: ixigo's page for their flight, set for one, saying why. Any other no: said, theirs alone,
+      // where money doesn't say it.
+      if (VAULT_CANT.has(got.code)) {
+        const card = { ...buildIxigoLinkCard({ cardId: stableId('c_book_ixigo', runId), title: clip(`Book ${title} on ixigo`, 80), url: results.toString() }), for_person_ids: [ask.personId] };
+        await d.link.request('post_message', {
+          request_id: stableId('go_book_ixigo', runId), trip_id: ask.tripId, text: `${got.refused} You can book it on ixigo yourself: it opens set for you.`, card, visible_to_person_ids: [ask.personId],
+        });
+      } else if (!got.say) {
+        await d.link.request('post_message', { request_id: stableId('go_book_no', runId), trip_id: ask.tripId, text: got.refused, visible_to_person_ids: [ask.personId] });
+      }
+      return;
+    }
     await live.step(4, 'done');
     const cardId = stableId('c_ready', runId);
-    const flies = dayOf(ask.offer.sourceUrl);
     const card = readyCard({ cardId, personId: ask.personId, name: ask.name, title, when: flies ? dayText(flies) : null, choice: ask.choice, amountMinor, coupon });
     await d.link.request('post_message', { request_id: stableId('go_book_ready', runId), trip_id: ask.tripId, card, visible_to_person_ids: [ask.personId] });
     await save(runId, { state: 'ready_to_pay', card_id: cardId });

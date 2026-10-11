@@ -294,6 +294,73 @@ describe("Go books a person's own flight up to ixigo's pay button", () => {
     expect(await b.pay({ tripId: 't_goa', cardId, personId: 'p_meher4', tapId: 'tap_p4' })).toEqual({ result: 'refused', toast: 'Already paid' });
   });
 
+  // The App team's G2 (11 Oct): ready, ONE pay card, money's, with the Server's personal approval for the pick in it.
+  it("ends on money's one pay card for them, no ready card; paid, the ticket goes on the trip as theirs", async () => {
+    const asked: Array<Record<string, unknown>> = [];
+    const hook: { paid?: (p: { tripId: string; approvalId: string; railRef: string }) => Promise<void> } = {};
+    const pay: TicketPay = {
+      async requestTicketCard(_trip, o) {
+        asked.push(o);
+        return { cardId: 'c_pay_t1', paymentId: 'pay_t1' };
+      },
+      onPaid(fn) {
+        hook.paid = fn;
+      },
+    };
+    const results = createResultsStore(db.pool);
+    const b = booking(fakeRunner().runner, true, pay, { results });
+    const from = lb.link.requests.length;
+    await b.start({ tapId: 'tap_t1', tripId: 't_goa', personId: 'p_meher10', name: 'Meher', offer: OFFER, choice: 'basic' });
+    await b.settled();
+    expect(asked).toEqual([{
+      personId: 'p_meher10', cardId: 'c_fl', optionId: 'opt_fl1', amountMinor: 753_600, currency: 'INR', purpose: 'IndiGo 6E2150, Fri 6 Nov, for Meher',
+      key: expect.stringMatching(/^fb_/), trigger: 'tap_t1',
+    }]);
+    // Money's pay card is the one card: no ready card with Pay, and the live card ends done.
+    const sent = lb.link.requests.slice(from);
+    expect(sent.some((r) => (r.params['card'] as { kind?: string } | undefined)?.kind === 'notice')).toBe(false);
+    expect((sent.filter((r) => (r.params['card'] as { kind?: string } | undefined)?.kind === 'working').at(-1)!.params['card'] as { state: string }).state).toBe('done');
+    const row = (await db.pool.query(`select run_id, state, card_id from flight_bookings where person_id = 'p_meher10'`)).rows[0];
+    expect(row).toMatchObject({ state: 'ready_to_pay', card_id: 'c_pay_t1' });
+    // Paid: money's ticket payment keeps the run as its key. The ticket goes on the trip as Meher's, Go's own reference.
+    const at = new Date('2026-10-10T08:00:00Z');
+    await db.pool.query(
+      `insert into payments (payment_id, trip_id, decision_id, option_ref, purpose, label, payer_person_id, payer_name, for_person_ids, state, created_at, updated_at, kind, hold_id, approval_id)
+       values ('pay_t1', 't_goa', null, $1, 'IndiGo 6E2150', 'IndiGo 6E2150', 'p_meher10', 'Meher', '{p_meher10}', 'paid', $2, $2, 'ticket', $1, 'appr_t1')`,
+      [row.run_id, at],
+    );
+    const paidFrom = lb.link.requests.length;
+    await hook.paid!({ tripId: 't_goa', approvalId: 'appr_t1', railRef: 'fake_t1' });
+    expect((await db.pool.query(`select state, approval_id from flight_bookings where person_id = 'p_meher10'`)).rows[0]).toEqual({ state: 'paid', approval_id: 'appr_t1' });
+    const booked = lb.link.requests.slice(paidFrom).filter((r) => r.method === 'add_booking');
+    expect(booked).toHaveLength(1);
+    expect(booked[0]!.params).toMatchObject({
+      trip_id: 't_goa', kind: 'flight', title: 'IndiGo 6E2150', vendor: 'ixigo (simulated)', ref: expect.stringMatching(/^SIM-[0-9A-F]{8}$/),
+      amount_minor: 753_600, currency: 'INR', payer_person_id: 'p_meher10', for_person_ids: ['p_meher10'], approval_id: 'appr_t1',
+    });
+    // Heard again, nothing is booked twice.
+    await hook.paid!({ tripId: 't_goa', approvalId: 'appr_t1', railRef: 'fake_t1' });
+    expect(lb.link.requests.slice(paidFrom).filter((r) => r.method === 'add_booking')).toHaveLength(1);
+  });
+
+  it("sends them to ixigo only when the vault can't take it, saying why; any other no is said, theirs alone", async () => {
+    const refusing = (code: string, say = false): TicketPay => ({ requestTicketCard: async () => ({ refused: 'The test rail is not ready.', code, say }), onPaid: () => undefined });
+    const from = lb.link.requests.length;
+    const b = booking(fakeRunner().runner, true, refusing('rail_not_ready'));
+    await b.start({ tapId: 'tap_t2', tripId: 't_goa', personId: 'p_meher11', name: 'Meher', offer: OFFER, choice: 'basic' });
+    await b.settled();
+    const ixigo = lb.link.requests.slice(from).find((r) => (r.params['card'] as { kind?: string } | undefined)?.kind === 'notice')!;
+    expect(ixigo.params).toMatchObject({ text: 'The test rail is not ready. You can book it on ixigo yourself: it opens set for you.', visible_to_person_ids: ['p_meher11'] });
+    expect(C.NoticeCard.parse(ixigo.params['card'])).toMatchObject({ for_person_ids: ['p_meher11'], source: { url: expect.stringContaining('adults=1') } });
+    expect((await db.pool.query(`select state, why from flight_bookings where person_id = 'p_meher11'`)).rows[0]).toEqual({ state: 'failed', why: 'pay_rail_not_ready' });
+    const from2 = lb.link.requests.length;
+    const c = booking(fakeRunner().runner, true, refusing('not_in_trip'));
+    await c.start({ tapId: 'tap_t3', tripId: 't_goa', personId: 'p_meher12', name: 'Meher', offer: OFFER, choice: 'basic' });
+    await c.settled();
+    const said = lb.link.requests.slice(from2).filter((r) => r.method === 'post_message' && !r.params['card']);
+    expect(said.map((r) => [r.params['text'], r.params['visible_to_person_ids']])).toEqual([['The test rail is not ready.', ['p_meher12']]]);
+  });
+
   it("Pay says it opens soon with no ticket payment yet, says ixigo's refusal, and answers inside the tap when the Server is slow", async () => {
     // A saved traveller's booking (Meher's name on the account), so it ends on its ready card and Pay finds it.
     const b0 = booking(fakeRunner().runner);
