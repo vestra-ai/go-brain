@@ -22,9 +22,9 @@ export type Params<S extends z.ZodType> = z.infer<S>;
 
 export interface Approval {
   approval_id: string;
-  /** The vote; null for 1.2's ticket, which names its traveller (for_person_id) instead. */
+  /** The vote; null for 1.3's personal approval, which names the person's own pick instead. */
   decision_id: string | null;
-  for_person_id: string | null;
+  personal: { person_id: string; card_id: string; option_id: string } | null;
   payer_person_id: string;
   amount_minor: number;
   currency: string;
@@ -74,6 +74,8 @@ export class TripState {
   readonly approvals = new Map<string, Approval>();
   /** decision_id to person_id to option index, for every vote, anonymous ones included. */
   readonly ballots = new Map<string, Map<string, number>>();
+  /** Every tap on Go's cards, as the Server records them: "person|card|option" to when (a personal approval's pick). */
+  readonly taps = new Map<string, Date>();
   private typingUntil = 0;
 
   constructor(snapshot: TripSnapshot, private readonly deps: TripDeps) {
@@ -152,6 +154,11 @@ export class TripState {
 
   cardMessage(cardId: string): Message | undefined {
     return this.messages.find((m) => m.card?.card_id === cardId);
+  }
+
+  /** The Server records a tap on one of Go's cards, with the option when the button was on one. */
+  recordTap(personId: string, cardId: string, optionId: string | undefined): void {
+    if (optionId) this.taps.set(`${personId}|${cardId}|${optionId}`, this.now());
   }
 
   // ── reads ──
