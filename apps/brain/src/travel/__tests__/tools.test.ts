@@ -529,7 +529,7 @@ describe("a shared thing's card is its vote", () => {
 
   // The Manali room, 11 Oct: every new stays search closed the open vote (closed_by_go, 0 votes) and opened another, four
   // in 22 minutes; votes people cast would have gone the same way.
-  it("never closes the trip's open vote on stays for a new card: the card joins it with its new stays, or goes up without a vote when it is full", async () => {
+  it("never closes the trip's open vote on stays for a new card: the card joins it with its stays, or goes up without a vote when it is full", async () => {
     const found = (await lb.tools.run('search_stays', STAYS, lb.ctx({ turnId: 'turn_iv1' }))) as any;
     // The Server's trip: the votes listed here, open, with these options.
     let open: Array<{ decision_id: string; voted: number; options: Array<{ label: string }> }> = [];
@@ -546,19 +546,23 @@ describe("a shared thing's card is its vote", () => {
     open = [{ decision_id: first.decision_id, voted: 1, options: (turn.cards[0] as any).options.map((o: { title: string }) => ({ label: o.title })) }];
     await lb.tools.run('show_options', { line: 'Two more.', results_id: found.results_id, option_numbers: [3, 4], title: 'Two more villas' }, turn);
     const opened = lb.link.sent('open_vote').length;
-    // A later card of the first four joins the open vote: the two it hasn't got are added, the two it has never twice.
+    // A later card of the first four joins the open vote, each of its options added under its own option_ref, so every
+    // Vote on it counts.
     const later = lb.ctx({ turnId: 'turn_iv3', link: server });
     const joined = (await lb.tools.run('show_options', { line: 'Four villas.', results_id: found.results_id, option_numbers: [1, 2, 3, 4], title: 'Four villas' }, later)) as any;
     expect(joined.decision_id).toBe(first.decision_id);
-    expect(C.OptionsCard.parse(later.cards[0]).decision_id).toBe(first.decision_id);
+    const card = C.OptionsCard.parse(later.cards[0]);
+    expect(card.decision_id).toBe(first.decision_id);
     const added = lb.link.sent('add_vote_options').at(-1)!;
     expect(added).toMatchObject({ trip_id: 't_goa', decision_id: first.decision_id });
-    expect((added['options'] as Array<{ label: string }>).map((o) => o.label)).toEqual(found.results.slice(2, 4).map((r: { title: string }) => r.title));
+    expect((added['options'] as Array<{ option_ref: string }>).map((o) => o.option_ref)).toEqual(card.options.map((o) => o.option_id));
     expect(lb.link.sent('open_vote')).toHaveLength(opened);
     // A vote with no room for them: the new card goes up without a vote, and the open one stays as it is.
     open = [{ decision_id: first.decision_id, voted: 1, options: Array.from({ length: 20 }, (_, i) => ({ label: `Stay ${i + 1}` })) }];
-    const full = (await lb.tools.run('show_options', { line: 'Two villas.', results_id: found.results_id, option_numbers: [3, 4], title: 'Two villas' }, lb.ctx({ turnId: 'turn_iv4', link: server }))) as any;
-    expect(full.decision_id).toBeNull();
+    const fullCtx = lb.ctx({ turnId: 'turn_iv4', link: server });
+    const full = (await lb.tools.run('show_options', { line: 'Two villas.', results_id: found.results_id, option_numbers: [3, 4], title: 'Two villas' }, fullCtx)) as any;
+    expect(full).not.toHaveProperty('decision_id');
+    expect(C.OptionsCard.parse(fullCtx.cards[0]).decision_id).toBeUndefined();
     expect(lb.link.sent('open_vote')).toHaveLength(opened);
     // No vote is ever closed for a new card.
     expect(lb.link.sent('close_vote')).toHaveLength(closes);
