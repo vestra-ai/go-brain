@@ -193,6 +193,9 @@ function pointsAt(m: Message, pack: TripPack): string | null {
   );
 }
 
+/** A ticket's kinds: each traveller's own pick, never a group's vote (travel/cards.ts PERSONAL_KINDS). */
+const PERSONAL_OPTION_KINDS: ReadonlySet<string> = new Set(['flight', 'train', 'bus']);
+
 export function renderTripChangeWake(item: DeskItem, pack: TripPack): string {
   const p = (item.payload ?? {}) as { type?: string; decisionId?: string; title?: string };
   // The group's stay is booked (money/finish.ts): each person's flights are next, never before it (Saket's test, 11 Oct).
@@ -210,9 +213,29 @@ export function renderTripChangeWake(item: DeskItem, pack: TripPack): string {
     // 3 votes"), so Go never says it again (the Server team's GO-TEAM-FINAL §8).
     const flexible = flexibleOf(d);
     const tally = `${d.options.map((op, k) => `${inlineData(op.label)} ${d.tally[k] ?? 0}`).join(', ')}; ${d.voted} of ${d.of} voted${flexible ? `, ${flexible} flexible` : ''}`;
+    // The card the vote is on says what it picked (Ankur, 12 Oct 00:14 IST: a place won, and Go said it couldn't be booked).
+    const card = pack.messages.find((m) => m.card?.kind === 'options' && m.card.decision_id === d.decision_id)?.card;
+    const kind = card?.kind === 'options' ? card.option_kind : null;
+    const closed = won ? `the vote ${inlineData(d.question)} closed: ${inlineData(won.label)} won (${tally}). ` : '';
+    const noMoney = 'never set_mandate or ask_to_pay, and never a word about booking or paying it';
+    if (won && kind === 'place') {
+      return (
+        closed +
+        `It picked where the trip goes, and Go saves it as the trip's place itself: never save it yourself, ${noMoney}. ` +
+        'The App already posted the result in the room: never say who won or the counts again. Take the next step yourself in one short line: ' +
+        "with the trip's dates set, put up its stays (search_stays); without them, ask for the dates in one question with offer_replies date buttons."
+      );
+    }
+    if (won && kind && kind !== 'stay' && !PERSONAL_OPTION_KINDS.has(kind)) {
+      return (
+        closed +
+        `It picked something nobody pays for: ${noMoney}. The App already posted the result in the room: never say who won or the counts again. ` +
+        'Say only the next step in one short line, or call stay_silent when there is none.'
+      );
+    }
     // An option is only a label (DecisionOption has no dates or place fields), so the model reads the winner and saves it.
     return won
-      ? `the vote ${inlineData(d.question)} closed: ${inlineData(won.label)} won (${tally}). ` +
+      ? closed +
           `If it settled the trip's dates, save them with update_trip first, with decision_id "${d.decision_id}" (days without a year are the next ones from today). ` +
           'If it settled where to stay (an area or a place to stay), save the winner as the stay, never as the destination: the destination is where the trip goes. ' +
           'Say it is the stay or picked, never "locked in": that reads as ixigo\'s Lock Price. ' +
