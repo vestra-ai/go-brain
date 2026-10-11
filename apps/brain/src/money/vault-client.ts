@@ -35,6 +35,8 @@ export interface TravelDetails {
   gender: 'male' | 'female';
   /** YYYY-MM-DD. */
   dob: string;
+  /** Their IRCTC user ID, for a train ticket's own form on ixigo (never its password); absent until they add it. */
+  irctcUserId?: string;
 }
 
 export interface VaultClient {
@@ -59,7 +61,10 @@ export interface VaultClient {
 const LinkAnswer = z.object({ url: z.url({ protocol: /^https?$/ }), expires_at: z.iso.datetime({ offset: true }) });
 const Refusal = z.object({ error: z.object({ reason: z.string(), detail: z.string().max(300).optional() }) });
 const BothKeys = z.object({ charged_approval_ids: z.array(z.string()), without_both_keys: z.int().nonnegative() });
-const TravelAnswer = z.object({ first_name: z.string().min(1), last_name: z.string().min(1), gender: z.enum(['male', 'female']), dob: z.string().regex(/^\d{4}-\d{2}-\d{2}$/) });
+const TravelAnswer = z.object({
+  first_name: z.string().min(1), last_name: z.string().min(1), gender: z.enum(['male', 'female']), dob: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  irctc_user_id: z.string().min(1).max(60).nullish(),
+});
 
 export function vaultClient(o: { baseUrl: string; secret: string; fetch?: typeof fetch; now?: () => Date; timeoutMs?: number }): VaultClient {
   const send = o.fetch ?? fetch;
@@ -144,7 +149,7 @@ export function vaultClient(o: { baseUrl: string; secret: string; fetch?: typeof
       if (r.status !== 200) throw new Error(`the vault answered ${r.status}`);
       const t = TravelAnswer.safeParse(r.data);
       if (!t.success) throw new Error('the vault answered travel details in a shape Go does not read');
-      return { firstName: t.data.first_name, lastName: t.data.last_name, gender: t.data.gender, dob: t.data.dob };
+      return { firstName: t.data.first_name, lastName: t.data.last_name, gender: t.data.gender, dob: t.data.dob, ...(t.data.irctc_user_id ? { irctcUserId: t.data.irctc_user_id } : {}) };
     },
     async bothKeys() {
       const r = await call('GET', '/internal/both-keys', null, o.timeoutMs ?? 2_000);

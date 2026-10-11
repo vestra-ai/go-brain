@@ -43,6 +43,7 @@ export function createPay(d: MoneyDeps): PayEngine {
     requestTicketApproval: (tripId, o) => askForTicket(d, tripId, o),
     requestTicketCard: (tripId, o) => askForTicketCard(d, tripId, o),
     travelDetails: (i) => d.vault.travelDetails(i),
+    travelLink: (personId) => d.vault.homeLink({ personId, start: 'add_travel', display: 'sheet' }),
     onPaid(fn) {
       listeners.push(fn);
     },

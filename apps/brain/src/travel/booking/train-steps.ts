@@ -7,6 +7,9 @@
  * and a date chosen from a strip of the next few days (p0's T1, 11 Oct): a booking starts from the day's search results.
  */
 
+import type { FetchPlan } from '../recipes/recipe.js';
+import type { TitleShape } from './flight-booking.js';
+
 /** ixigo's own call for the seats on a day's train results: each train's classes and quotas, their status and fare. */
 export const TRAIN_AVAILABILITY = '/api/v3/trains/availability';
 
@@ -84,4 +87,35 @@ export function ageOn(dob: string, day: string): number | null {
   const [ty, tm, td] = [Number(t[1]), Number(t[2]), Number(t[3])];
   const age = ty - by - (tm < bm || (tm === bm && td < bd) ? 1 : 0);
   return age >= 0 && age < 130 ? age : null;
+}
+
+/** A day (YYYY-MM-DD) as the results page's list of dates under a class writes it: "Fri, 06 Nov" (p0's T1). */
+export function dayLabel(day: string): string | null {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(day);
+  if (!m) return null;
+  const at = new Date(Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3])));
+  const weekday = at.toLocaleDateString('en-GB', { weekday: 'short', timeZone: 'UTC' });
+  const month = at.toLocaleDateString('en-GB', { month: 'short', timeZone: 'UTC' });
+  return `${weekday}, ${m[3]} ${month}`;
+}
+
+/** One passenger as ixigo's train form takes them: their name as on their ID, age on the day, gender, IRCTC user ID. */
+export interface TrainPassenger { name: string; age: number; gender: 'male' | 'female'; irctc: string }
+
+/**
+ * ixigo's train passenger form, typed for one passenger, its Gender as one shape (a select, which takes its option typed
+ * in; chips or buttons; radios), by the usual labels. Nobody has mapped the page behind the login (p0's T1 stopped at ixigo's
+ * login, logged out): a box not found ends the fetch before anything is submitted, and the next shape is tried.
+ */
+export function trainPassengerSteps(p: TrainPassenger, shape: TitleShape): NonNullable<FetchPlan['steps']> {
+  const gender = p.gender === 'male' ? 'Male' : 'Female';
+  const genderStep: NonNullable<FetchPlan['steps']>[number] = shape === 'select'
+    ? { op: 'type', role: 'combobox', name: 'Gender', text: gender }
+    : { op: 'click', role: shape === 'chips' ? 'button' : 'radio', name: gender };
+  return [
+    { op: 'type', role: 'textbox', name: 'Name', text: p.name },
+    { op: 'type', role: 'textbox', name: 'Age', text: String(p.age) },
+    genderStep,
+    { op: 'type', role: 'textbox', name: 'IRCTC Username', text: p.irctc },
+  ];
 }

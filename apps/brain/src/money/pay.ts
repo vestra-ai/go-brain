@@ -28,6 +28,8 @@ export interface Pay {
    * only into that booking's own form on ixigo, never a log, the model, memory or a card. Null when they kept none.
    */
   travelDetails?(i: { tripId: string; personId: string; booking: { ref: string; travellerPersonId: string; purpose: string } }): Promise<TravelDetails | null>;
+  /** The vault's own travel details form for a person, for a booking's one ask: a link for them alone, a few minutes long. */
+  travelLink?(personId: string): Promise<{ url: string; expiresAt: string }>;
   /** apps/vault calls POST /internal/vault/paid (signed with VAULT_SHARED_SECRET); P5 finishes the booking. */
   onPaid(fn: (p: { tripId: string; approvalId: string; railRef: string }) => Promise<void>): void;
   /** Payments that went through without both keys, counted from the vault's unlock log and Go's payments. Always 0. */
