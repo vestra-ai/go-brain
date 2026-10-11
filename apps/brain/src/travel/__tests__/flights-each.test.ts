@@ -190,6 +190,53 @@ describe("each person's own flights, from their home city", () => {
     expect(puts).toHaveLength(before + 1);
   });
 
+  // Keshav's Varkala trip, 11 Oct: every city stopped on which airport, the model said "your Delhi flights card is up",
+  // and each try said "Keshav Musunuri, I couldn't load your flights" on the same question.
+  it("asks which airport by first name, never \"couldn't load\" and never a try on it; says exactly which cards went up, and the nearest airport plainly", async () => {
+    const VARKALA: EngineAnswer = {
+      as: 'options', options: DELHI, page: 'https://www.ixigo.com/search/result/flight?from=DEL&to=TRV', checkedAt: '2026-10-10T09:00:00.000Z', ms: 4_100,
+      near: [{ words: 'Varkala', code: 'TRV', city: 'Thiruvananthapuram' }],
+    };
+    const which = 'pick_place: ixigo knows more than one place for "Mysore": MYQ Mysore, BLR Bengaluru.';
+    const told = (run: RunFor): void => {
+      run.onSteps?.({ type: 'entries', entries: ['Delhi', 'Bangalore', 'Mumbai'] });
+      run.onSteps?.({ type: 'step', entry: 'Delhi', recipe: 'flights.results', ok: true, answer: VARKALA });
+      run.onSteps?.({ type: 'step', entry: 'Delhi', recipe: 'flights.search', ok: true, answer: link('DEL') });
+      run.onSteps?.({ type: 'step', entry: 'Bangalore', recipe: 'flights.results', ok: false, why: which });
+      run.onSteps?.({ type: 'step', entry: 'Bangalore', recipe: 'flights.search', ok: false, why: which });
+      run.onSteps?.({ type: 'step', entry: 'Mumbai', recipe: 'flights.results', ok: true, answer: options(MUMBAI) });
+      run.onSteps?.({ type: 'step', entry: 'Mumbai', recipe: 'flights.search', ok: true, answer: link('BOM') });
+    };
+    const from = lb.link.requests.length;
+    const before = puts.length;
+    const out = (await toolWith(async (run) => (told(run), COMPARE)).run({}, lb.ctx({ turnId: 'turn_each_near' }))) as any;
+    const posted = postedSince(from);
+    // The nearest airport, said once in each card's own line.
+    expect(posted.find((p) => p.visibleTo?.[0] === 'p_rahul')!.text).toContain('Varkala has no airport, so these are flights to Thiruvananthapuram (TRV).');
+    // Arjun is asked which airport, by his first name and his alone; never "couldn't load", and nothing tried again.
+    const arjun = posted.find((p) => p.visibleTo?.[0] === 'p_arjun')!;
+    expect(arjun.text).toMatch(/^Arjun, .*Which one\?$/);
+    expect(arjun.text).not.toContain("couldn't load");
+    expect(puts).toHaveLength(before);
+    // The model hears exactly which cards went up, and which didn't and why.
+    expect(out.cards_up.map((c: { home: string }) => c.home).sort()).toEqual(['Delhi', 'Delhi', 'Delhi', 'Mumbai']);
+    expect(out.not_up).toEqual([expect.objectContaining({ home: 'Bangalore', why: expect.stringContaining('which airport') })]);
+    expect(out.note).toContain('Never say a card is up that is not in cards_up.');
+    // A try that meets the same question asks it once, and tries no more.
+    const tryItem: TryAgainItem = {
+      id: 'try_again:t_goa:each_mys:1', tripId: 't_goa', kind: 'search', ref: 'flights', dueAt: lb.brain.now(),
+      payload: { source: 'travel_try_again', key: 'each_mys', what: 'flights from Bangalore', n: 1, each: { home: 'Bangalore', to: 'North Goa', date: '2026-11-06' } },
+    };
+    const again = lb.link.requests.length;
+    eachTryAgain({
+      engine: { answer: async () => { throw new TravelError('pick_place', 'ixigo knows more than one place.', null, ['MYQ Mysore', 'BLR Bengaluru']); } },
+      results, link: lb.link, now: lb.brain.now, desk,
+    })(tryItem, goaPack());
+    await eventually(() => postedSince(again).length === 1);
+    expect(postedSince(again)[0]!.text).toBe('Arjun, which airport do you mean? ixigo has MYQ Mysore and BLR Bengaluru.');
+    expect(puts).toHaveLength(before);
+  });
+
   it('four travellers from four cities get four cards, each theirs alone to act on, none with a vote (the Server team, 10 Oct)', async () => {
     const pack = goaPack();
     const homes: Record<string, string> = { Rahul: 'Delhi', Priya: 'Pune', Arjun: 'Bengaluru', Meher: 'Mumbai' };
