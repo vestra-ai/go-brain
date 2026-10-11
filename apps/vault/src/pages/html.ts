@@ -6,13 +6,13 @@ const head = (title: string): string =>
 
 const mark = '<div class="mark" aria-label="Go">Go</div>';
 
-/** The App's origins on the body, for an embedded page's word to its parent when it is done (go-vault). */
+/** The App's origins on the body, for a framed page's word to its parent when it is done (go-vault). */
 const framing = (o: { origins: readonly string[] } | null, embedded: boolean): string =>
   o ? ` data-frame-origins="${o.origins.join(' ')}"${embedded ? ' data-display="embedded"' : ''}` : '';
 
-/** embedded (rev 5 R8): inside the App, unlock only. No card or travel form: those stay in the browser sheet. */
-export function homePage(embedded: { origins: readonly string[] } | null = null): string {
-  return `${head('Your Go vault')}<body data-page="home"${framing(embedded, true)}><main>
+/** framing: the App's origins, which may frame the page. embedded (rev 5 R8): opened inside the App on purpose. */
+export function homePage(framed: { origins: readonly string[]; embedded?: boolean } | null = null): string {
+  return `${head('Your Go vault')}<body data-page="home"${framing(framed, framed?.embedded === true)}><main>
 <header class="top">${mark}<h1>Your vault</h1><p class="muted">Your cards, under your Face ID. The AI in your chat never sees them.</p></header>
 <section id="loading" class="card"><p class="muted">Opening your vault</p></section>
 <section id="expired" class="card" hidden><h2>This link has expired</h2><p class="muted">Open your vault again from Go: You, then My vault.</p></section>
@@ -47,7 +47,6 @@ export function homePage(embedded: { origins: readonly string[] } | null = null)
 <label class="tick-row"><input id="t-allow" type="checkbox"> Go can use these to book tickets for me</label>
 <button class="primary" type="submit">Save</button> <button id="travel-delete" type="button" hidden>Delete</button>
 <p id="travel-msg" class="msg" role="status"></p></form></section>
-<p id="embedded-note" class="fine" hidden>To add a card or your travel details, open your vault from Go in the browser.</p>
 <button id="done-btn" type="button" hidden>Done</button>
 <section class="card"><h2>Who opened your vault</h2><ul id="log" class="list small"></ul></section>
 </div>

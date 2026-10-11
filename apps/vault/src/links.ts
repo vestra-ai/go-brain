@@ -5,7 +5,7 @@ import type { TravelField } from './store/travel.js';
 export const LINK_TTL_MS = 5 * 60_000;
 /** Where the vault home opens. No add_login: logins are not stored this week (master §9). */
 export type LinkStart = 'home' | 'add_card' | 'add_travel';
-/** Where a home link's page opens: the system browser sheet, or inside the App (unlock only: card entry stays in the sheet). */
+/** Where a home link's page opens: the system browser sheet, or inside the App (any start; only the App may frame it). */
 export type LinkDisplay = 'sheet' | 'embedded';
 
 export interface LinkRow {
