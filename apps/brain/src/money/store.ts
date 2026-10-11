@@ -234,6 +234,10 @@ export async function interruptStale(db: Db, now: Date, ageMs = 60_000): Promise
 }
 
 export async function paidApprovalIds(db: Db): Promise<string[]> {
-  const r = await db.query<{ approval_id: string }>("select approval_id from payments where state = 'paid' and approval_id is not null");
+  // A payment the payer paid in one tap with ixigo money (Go's fake rail, the demo) never reached the vault: it is no
+  // vault payment without its keys.
+  const r = await db.query<{ approval_id: string }>(
+    "select approval_id from payments where state = 'paid' and approval_id is not null and coalesce(rail_ref, '') not like 'ixigo_money_%'",
+  );
   return r.rows.map((x) => x.approval_id);
 }

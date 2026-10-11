@@ -60,6 +60,8 @@ describe('askToPay, when everything is in place', () => {
     const later = new Later();
     const taps: CardTapResult[] = [];
     const server = k.server;
+    // The vault's page, a real rail's path: the demo's one tap with ixigo money is ixigo-money.test's.
+    k.deps.payWithVault = true;
     const link: ServerLink = {
       isOpen: () => server.isOpen(),
       notify: () => undefined,

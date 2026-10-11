@@ -127,7 +127,11 @@ function purposeFor(label: string, asked: string): string {
 }
 
 /** The pay card for a payments row in a given state, or null when the row has no card yet. */
-export function payCardOf(row: PaymentRow, state: PayCardLook): PayCard | null {
+/** Payment mocked for the demo (Keshav, 11 Oct): a payment on Go's fake rail is paid in one tap, with ixigo money. */
+export const onIxigoMoney = (d: Pick<MoneyDeps, 'payWithVault'>, row: Pick<PaymentRow, 'payment_kind'>): boolean =>
+  !d.payWithVault && (row.payment_kind ?? 'fake') === 'fake';
+
+export function payCardOf(d: Pick<MoneyDeps, 'payWithVault'>, row: PaymentRow, state: PayCardLook): PayCard | null {
   if (!row.card_id || !row.approval_id || !row.approval_expires_at || row.amount_minor === null || !row.currency || !row.merchant) return null;
   return payCard(
     {
@@ -141,6 +145,7 @@ export function payCardOf(row: PaymentRow, state: PayCardLook): PayCard | null {
       purpose: row.purpose,
       refundableUntil: row.refundable_until,
       expiresAt: row.approval_expires_at.toISOString(),
+      ixigoMoney: onIxigoMoney(d, row),
     },
     state,
   );
@@ -286,7 +291,7 @@ async function advance(d: MoneyDeps, row: PaymentRow, ids: AskIds, deliver: Deli
     case 'failed':
       return refuse(d, 'closed', words);
     case 'waiting': {
-      const card = payCardOf(row, 'waiting');
+      const card = payCardOf(d, row, 'waiting');
       if (!card || !row.card_id) return refuse(d, 'closed', words);
       await deliver(card);
       return { cardId: row.card_id, paymentId: row.payment_id };
@@ -376,6 +381,7 @@ async function advance(d: MoneyDeps, row: PaymentRow, ids: AskIds, deliver: Deli
       purpose: row.purpose,
       refundableUntil: row.refundable_until,
       expiresAt: expiresAt.toISOString(),
+      ixigoMoney: onIxigoMoney(d, row),
     },
     'waiting',
   );
@@ -579,7 +585,7 @@ async function ticketCardOf(d: MoneyDeps, row: PaymentRow, spend: string | null)
  */
 async function postTicketCard(d: MoneyDeps, row: PaymentRow, words: Words): Promise<TicketCard> {
   const cardId = row.card_id ?? rid('c_pay_ticket', row.payment_id);
-  const card = payCardOf({ ...row, card_id: cardId }, 'waiting');
+  const card = payCardOf(d, { ...row, card_id: cardId }, 'waiting');
   if (!card) return refuse(d, 'server_down', words);
   await patchPayment(d.pool, row.payment_id, { card_id: cardId, card_state: 'waiting' }, d.now());
   if (row.state === 'asking') await transition(d.pool, row.payment_id, ['asking'], 'waiting', {}, d.now());

@@ -19,7 +19,7 @@ import { vaultLinkHandler } from './vault-link.js';
 const railOf = (value: string): PaymentKind => (value === 'ixigo' || value === 'stripe_test' || value === 'fake' ? value : 'fake');
 
 /** Lane D. Tests pass a fetch that reaches an in-process vault, and 0 to leave the sweep off. */
-export function registerMoneyWith(o: { fetch?: typeof fetch; sweepEveryMs?: number } = {}): RegisterLane {
+export function registerMoneyWith(o: { fetch?: typeof fetch; sweepEveryMs?: number; payWithVault?: boolean } = {}): RegisterLane {
   return async (brain) => {
     // What people say they paid needs no vault: Go records it and reads who owes whom whether or not paying is on.
     brain.tools.register(recordExpenseTool({ pool: brain.pool }));
@@ -42,6 +42,7 @@ export function registerMoneyWith(o: { fetch?: typeof fetch; sweepEveryMs?: numb
       now: brain.now,
       log: brain.log,
       tapVaultMs: 1_500,
+      ...(o.payWithVault ? { payWithVault: true } : {}),
       claims,
       // The rooms the group picked on a stay's rooms card (REV4 B5, travel/rooms-card.ts), for one expense a room (B6):
       // asking for the payment closes the card (its final state, taps refused) and gives the pick it closed with.

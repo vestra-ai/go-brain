@@ -27,7 +27,6 @@ export interface PayEngine extends Pay {
 
 export function createPay(d: MoneyDeps): PayEngine {
   const later = new Later();
-  const t: TapDeps = { d, ask: (tripId, o, trigger) => askOutsideTurn(d, tripId, o, trigger), later, reconcile: (id) => reconcile(d, id) };
   // The first listener finishes the booking. Other lanes may add their own.
   const listeners: Array<(p: Paid) => Promise<void>> = [
     async (p) => {
@@ -35,6 +34,13 @@ export function createPay(d: MoneyDeps): PayEngine {
       if (row) await reconcile(d, row.payment_id);
     },
   ];
+  // Paid: the vault's callback, or the payer's one tap on ixigo money (Go's fake rail). Each listener runs after the answer.
+  const paid = async (p: Paid): Promise<'ok' | 'unknown'> => {
+    if (!(await markPaid(d, p))) return 'unknown';
+    for (const fn of listeners) later.run(d.log, 'a paid listener', () => fn(p));
+    return 'ok';
+  };
+  const t: TapDeps = { d, ask: (tripId, o, trigger) => askOutsideTurn(d, tripId, o, trigger), later, reconcile: (id) => reconcile(d, id), paid };
   return {
     async askToPay(tripId, o) {
       const r = await askOutsideTurn(d, tripId, o, newRequestId());
@@ -54,11 +60,7 @@ export function createPay(d: MoneyDeps): PayEngine {
       const missing = paid.filter((id) => !charged.has(id)).length;
       return { count: vault.withoutBothKeys + missing, paid: paid.length, charged: charged.size };
     },
-    async paid(p) {
-      if (!(await markPaid(d, p))) return 'unknown';
-      for (const fn of listeners) later.run(d.log, 'a paid listener', () => fn(p));
-      return 'ok';
-    },
+    paid,
     async failed(p) {
       const row = await markFailed(d, p);
       if (!row) return 'unknown';

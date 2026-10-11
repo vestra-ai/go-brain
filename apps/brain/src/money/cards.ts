@@ -18,6 +18,11 @@ export interface PayCardInput {
   purpose: string;
   refundableUntil: string | null;
   expiresAt: string;
+  /**
+   * Payment is mocked for the demo (Keshav, 11 Oct): on Go's fake rail the payer pays in one tap, with ixigo money, on
+   * the card itself. No page, card form, Face ID or code. A real rail keeps Approve, which opens the vault.
+   */
+  ixigoMoney?: boolean;
 }
 
 /**
@@ -33,8 +38,8 @@ export function payCard(i: PayCardInput, look: PayCardLook): PayCard {
   const purpose = clip(plain(i.purpose), 200);
   const refund = i.refundableUntil ? ` Free cancellation until ${shortDate(i.refundableUntil)}.` : '';
   const fallback: Record<PayCardLook, string> = {
-    waiting: `${i.payerName}, approve ${amount} to ${merchant} for ${purpose}.${refund}`,
-    paid: `Paid ${amount} to ${merchant} for ${purpose}.${refund}`,
+    waiting: i.ixigoMoney ? `${i.payerName}, pay ${amount} with ixigo money for ${purpose}.${refund}` : `${i.payerName}, approve ${amount} to ${merchant} for ${purpose}.${refund}`,
+    paid: i.ixigoMoney ? `Paid ${amount} with ixigo money for ${purpose}.${refund}` : `Paid ${amount} to ${merchant} for ${purpose}.${refund}`,
     declined: `${i.payerName} declined ${amount} to ${merchant}.`,
     expired: `The payment of ${amount} to ${merchant} timed out.`,
     failed: `The payment of ${amount} to ${merchant} didn't go through. Nothing was charged.`,
@@ -46,7 +51,7 @@ export function payCard(i: PayCardInput, look: PayCardLook): PayCard {
   const actions =
     look === 'waiting'
       ? [
-          { action_id: 'approve', label: 'Approve', style: 'primary' as const, only_for_person_ids: only },
+          { action_id: 'approve', label: i.ixigoMoney ? 'Pay with ixigo money' : 'Approve', style: 'primary' as const, only_for_person_ids: only },
           { action_id: 'decline', label: 'Decline', style: 'secondary' as const, only_for_person_ids: only },
         ]
       : look === 'expired'
@@ -88,12 +93,17 @@ export function mandateCard(o: {
   return C.MandateCard.parse({ card_id: o.cardId, kind: 'mandate', decision_id: o.decisionId, fallback_text: clip(plain(text), 300) });
 }
 
-export function ticketCard(o: { cardId: string; bookingId: string; title: string; ref: string; refundableUntil: string | null; simulated?: boolean }): TicketCard {
+/**
+ * The ticket: the Server draws it from its booking (route or stay, dates and times, the travellers). detail: who it is
+ * for, when, and the seat or rooms where known, in its words for anyone who sees only the text.
+ */
+export function ticketCard(o: { cardId: string; bookingId: string; title: string; ref: string; refundableUntil: string | null; simulated?: boolean; detail?: string | null }): TicketCard {
   const refund = o.refundableUntil ? ` Free cancellation until ${shortDate(o.refundableUntil)}.` : '';
+  const detail = o.detail ? `, ${o.detail}` : '';
   return C.TicketCard.parse({
     card_id: o.cardId,
     kind: 'ticket',
     booking_id: o.bookingId,
-    fallback_text: clip(plain(`${o.simulated ? 'Booked (simulated)' : 'Booked'}: ${o.title}. Ref ${o.ref}.${refund}`), 300),
+    fallback_text: clip(plain(`${o.simulated ? 'Booked (simulated)' : 'Booked'}: ${o.title}${detail}. Ref ${o.ref}.${refund}`), 300),
   });
 }

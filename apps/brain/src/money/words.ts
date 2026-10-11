@@ -155,14 +155,17 @@ export function failReasonWords(reason: string | null): string {
  * The line on a booking's ticket. Who paid, how much and how it is split is never in it: the Server posts its own money
  * line for each expense Go adds (rev 4 A4; the Server team's GO-TEAM-FINAL §8: "the room shows both").
  */
-export function bookedLine(o: { title: string; simulated?: boolean }): string {
+export function bookedLine(o: { title: string; simulated?: boolean; ixigoMoney?: boolean }): string {
+  // Paid in one tap with ixigo money (the demo's mocked payment): said as paid, and as a demo, since nothing real moved.
+  if (o.ixigoMoney) return `Booked ${o.title}, paid with ixigo money. A demo booking: nothing real was paid or booked on ixigo.`;
   // A booking on Go's test rail only (a stay from ixigo.com) says so: nothing was booked on ixigo, nothing real was paid.
   if (o.simulated) return `Booked (simulated): ${o.title}. A test payment only; nothing was booked on ixigo.`;
   return `Booked ${o.title}!`;
 }
 
 /** A traveller's own ticket, paid through the vault (contract 1.2). On Go's test rails nothing real was paid or booked. */
-export function ticketPaidLine(o: { what: string; payer: string; amount: string; simulated: boolean }): string {
+export function ticketPaidLine(o: { what: string; payer: string; amount: string; simulated: boolean; ixigoMoney?: boolean }): string {
+  if (o.ixigoMoney) return `${o.payer} paid ${o.amount} with ixigo money for ${o.what}. A demo booking: nothing real was paid or booked on ixigo.`;
   if (o.simulated) return `Paid (simulated): ${o.what}. ${o.payer}'s test payment of ${o.amount}; nothing was booked on ixigo.`;
   return `${o.payer} paid ${o.amount} for ${o.what}.`;
 }
@@ -189,6 +192,7 @@ export const TOASTS = {
   ticketRunOut: 'That payment ran out. Tap Book it again for a fresh one.',
   noPage: "Couldn't open the payment page. Try again.",
   declinedDone: 'Declined. Nothing was charged.',
+  paidWithIxigoMoney: 'Paid with ixigo money.',
   confirming: "We're confirming this payment with the bank. Don't pay again.",
   checking: "We couldn't confirm this payment. Don't pay again; we're checking.",
 } as const;

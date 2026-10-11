@@ -1,11 +1,9 @@
 import * as C from '@go/contract';
-import type { TestAuthenticator } from '@go/vault/testing';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { Reply } from '../../__tests__/fixtures/fake-anthropic.js';
 import { afterTools, goaWithStayVote, startMoneyRoom } from './money-room.js';
 
 let room: Awaited<ReturnType<typeof startMoneyRoom>>;
-let rahul: TestAuthenticator;
 
 /**
  * The model stays quiet: who books the stay is the group's to say, never Go's (contract 1.1 A10). The closed vote's turn
@@ -18,14 +16,15 @@ function script(body: any): Reply {
 
 beforeAll(async () => {
   room = await startMoneyRoom({ script });
-  rahul = await room.vault.passkeyFor('p_rahul', { withCard: true });
 }, 30_000);
 afterAll(async () => {
   await room.stop();
 });
 
-describe('G4: Go books with two keys', () => {
-  it('vote, mandate, Yes book it, pay card, Approve, Face ID, booked, expense, cards', async () => {
+// Keshav, 11 Oct: payment is mocked for the demo. The payer's one tap on Pay with ixigo money pays (Go's fake rail): no
+// vault page, no Face ID. The Server's approval still stands behind it, and the booking moves on as after the vault's paid.
+describe('G4: Go books, the payer paying in one tap with ixigo money', () => {
+  it('vote, mandate, Yes book it, pay card, Pay with ixigo money, booked, expense, cards', async () => {
     const s = room.server;
     await s.createTrip(goaWithStayVote('open'));
     for (const [person, option] of [['p_rahul', 0], ['p_priya', 0], ['p_arjun', 1], ['p_meher', 0], ['p_kabir', 0]] as const) {
@@ -54,14 +53,10 @@ describe('G4: Go books with two keys', () => {
     expect([...new Set(room.travel.looked)]).toEqual(['opt_villa_sol']);
     expect(room.travel.holds.map((h) => h.offerId)).toEqual(['ixigo:stay:villa-sol-anjuna']);
 
-    // Only the payer may approve; the payer gets the vault page.
+    // Only the payer may pay; their one tap on the card pays, with ixigo money. No page opens.
+    expect(card.actions?.[0]).toMatchObject({ action_id: 'approve', label: 'Pay with ixigo money' });
     expect(await s.tap(card.card_id, 'approve', 'p_priya')).toEqual({ result: 'refused', toast: 'Only Rahul can approve this payment.' });
-    const open = await s.tap(card.card_id, 'approve', 'p_rahul');
-    if (open.result !== 'open') throw new Error(JSON.stringify(open));
-    expect(open.url).toMatch(/^https:\/\/vault\.test\/p\//);
-
-    // Face ID on the vault page, then the FakeRail, then the signed callback.
-    expect(await room.vault.approve(open.url, rahul)).toMatchObject({ state: 'paid' });
+    expect(await s.tap(card.card_id, 'approve', 'p_rahul')).toEqual({ result: 'done', toast: 'Paid with ixigo money.' });
     const booking = await s.waitFor(() => s.trip().bookings[0], 10_000);
     expect(booking).toMatchObject({ approval_id: card.approval_id, decision_id: 'd_villa', amount_minor: 5420000, kind: 'stay', ref: 'IXG-7Q2K9' });
     const expense = await s.waitFor(() => s.trip().expenses[0], 10_000);
@@ -71,8 +66,11 @@ describe('G4: Go books with two keys', () => {
     await s.waitFor(() => s.messages().find((m) => m.card?.card_id === card.card_id && m.card.kind === 'pay' && m.card.state === 'paid'), 10_000);
 
     expect(s.countWrites(`go_paid_${card.approval_id}_booking`)).toBe(1);
-    expect(room.vault.rail.charges).toHaveLength(1);
-    expect(await room.pay.withoutBothKeys()).toEqual({ count: 0, paid: 1, charged: 1 });
+    // The vault charged nothing: the payment was the demo's, and never counts as one without its keys.
+    expect(room.vault.rail.charges).toHaveLength(0);
+    expect(await room.pay.withoutBothKeys()).toEqual({ count: 0, paid: 0, charged: 0 });
+    const paid = s.messages().find((m) => m.card?.card_id === card.card_id)?.card;
+    expect(paid?.fallback_text).toMatch(/^Paid ₹54,200 with ixigo money for /);
     expect(JSON.stringify(s.writes)).not.toMatch(/\u2014/);
   }, 60_000);
 });

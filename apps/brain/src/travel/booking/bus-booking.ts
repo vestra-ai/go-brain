@@ -24,7 +24,8 @@ import type { ResultsStore } from '../results.js';
 import type { StoredOffer } from '../travel.js';
 import { busLayout, choosePoint, chooseSeats, seatWords, type BusLayout, type BusPoint, type BusSeat, type SeatAsk } from './bus-seats.js';
 import type { TravelField } from '../../money/vault-client.js';
-import { bookingLiveCard, bookingOnFor, detailsAsk, FARE_MOVE_OK, hasFields, LOGIN_WAIT_MS, RUNNING_MS, travellerAsk, type TicketPay } from './flight-booking.js';
+import { ticketCard } from '../../money/cards.js';
+import { bookingLiveCard, bookingOnFor, detailsAsk, FARE_MOVE_OK, hasFields, LOGIN_WAIT_MS, RUNNING_MS, ticketWhen, travellerAsk, type TicketPay } from './flight-booking.js';
 import { spokenFirstName } from './travellers.js';
 
 /** The list's own call, and the seat layout "Select Seats" opens. */
@@ -69,7 +70,7 @@ export interface BusBookingDeps {
   switches: Pick<Switches, 'get'>;
   now: () => Date;
   log: Log;
-  results?: Pick<ResultsStore, 'replaceCard' | 'offer'>;
+  results?: Pick<ResultsStore, 'replaceCard' | 'offer' | 'optionOf'>;
 }
 
 /** What a booking that waited on the trip's login carries on with. */
@@ -166,20 +167,29 @@ export function createBusBooking(d: BusBookingDeps): BusBooking {
     if (hooked) return;
     hooked = true;
     pay.onPaid(async ({ tripId, approvalId }) => {
-      const r = await d.pool.query<{ run_id: string; person_id: string; title: string; total_minor: string | null }>(
+      const r = await d.pool.query<{ run_id: string; person_id: string; option_id: string; title: string; seats: string[]; total_minor: string | null }>(
         `update bus_bookings b set state = 'paid', approval_id = $2, updated_at = $3
          where b.trip_id = $1 and b.state <> 'paid'
            and (b.approval_id = $2 or b.run_id in (select p.hold_id from payments p where p.trip_id = $1 and p.approval_id = $2 and p.kind = 'ticket'))
-         returning b.run_id, b.person_id, b.title, b.total_minor`,
+         returning b.run_id, b.person_id, b.option_id, b.title, b.seats, b.total_minor`,
         [tripId, approvalId, d.now()],
       );
       for (const b of r.rows) {
         if (b.total_minor === null) continue;
-        // Their ticket on the trip, theirs alone: Go's own reference, simulated, as Go stops before ixigo's pay button.
-        await d.link.request('add_booking', {
-          request_id: stableId('go_bus_ticket', b.run_id), trip_id: tripId, kind: 'bus', title: clip(b.title, 120), vendor: BUS_VENDOR,
-          ref: `SIM-${createHash('sha256').update(b.run_id).digest('hex').slice(0, 8).toUpperCase()}`,
+        // Their ticket on the trip, theirs alone: Go's own reference, simulated, as Go stops before ixigo's pay button; its
+        // seat in its title, its route and times the bus's journey when its search kept one.
+        const journey = d.results ? ((await d.results.optionOf(b.option_id).catch(() => null))?.journey ?? null) : null;
+        const title = clip(`${b.title}${b.seats.length ? `, seat ${b.seats.join(', ')}` : ''}`, 120);
+        const ref = `SIM-${createHash('sha256').update(b.run_id).digest('hex').slice(0, 8).toUpperCase()}`;
+        const booked = await d.link.request('add_booking', {
+          request_id: stableId('go_bus_ticket', b.run_id), trip_id: tripId, kind: 'bus', title, vendor: BUS_VENDOR, ref,
           amount_minor: Number(b.total_minor), currency: 'INR', payer_person_id: b.person_id, for_person_ids: [b.person_id], approval_id: approvalId,
+          ...(journey ? { journey, starts_at: journey.depart_at } : {}),
+        });
+        const name = await d.nameOf(tripId, b.person_id).then(spokenFirstName, () => null);
+        await d.link.request('post_message', {
+          request_id: stableId('go_bus_ticket_card', b.run_id), trip_id: tripId, visible_to_person_ids: [b.person_id],
+          card: ticketCard({ cardId: stableId('c_bus_ticket', b.run_id), bookingId: booked.booking_id, title, ref, refundableUntil: null, simulated: true, detail: ticketWhen(name, journey) }),
         });
       }
     });

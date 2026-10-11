@@ -1,6 +1,6 @@
 import type * as C from '@go/contract';
 import type { CardTapParams, CardTapResult } from '../door/methods.js';
-import type { AskResult } from './ask.js';
+import { onIxigoMoney, type AskResult } from './ask.js';
 import { payerOf, postLine, type Later, type MoneyDeps } from './deps.js';
 import { rid } from './ids.js';
 import { byApproval, EXPIRY_GRACE_MS, patchPayment, transition, type PaymentRow } from './store.js';
@@ -13,6 +13,8 @@ export interface TapDeps {
   ask: (tripId: string, o: { decisionId: string; optionRef: string; purpose: string }, trigger: string) => Promise<AskResult>;
   later: Later;
   reconcile: (paymentId: string) => Promise<void>;
+  /** The payment is paid, as the vault's callback says it (markPaid, then the booking moves on). */
+  paid: (p: { tripId: string; approvalId: string; railRef: string }) => Promise<'ok' | 'unknown'>;
 }
 
 const refused = (toast: string): CardTapResult => ({ result: 'refused', toast });
@@ -54,7 +56,7 @@ export function payLinkInput(row: PaymentRow): PayLinkInput | null {
 
 /**
  * After the answer: release the old approval, then ask again with ids from the tap, so the same tap never asks twice.
- * A fresh ask runs the Server's spend check again and needs Face ID again.
+ * A fresh ask runs the Server's spend check again, and the payer's tap again.
  */
 function startAgain(t: TapDeps, row: PaymentRow, tapId: string): void {
   // A traveller's ticket has no pay card, so no Approve can start one again: its own card asks afresh.
@@ -97,6 +99,14 @@ export async function approveTap(t: TapDeps, tap: CardTapParams, card: C.Card): 
     return done(TOASTS.fresh);
   }
 
+  // Payment mocked for the demo (Keshav, 11 Oct: "feel like paying with the ixigo wallet"): on Go's fake rail the payer's
+  // one tap pays, with ixigo money. No page, card form, Face ID or code. Go marks it paid as the vault's callback does,
+  // and the booking moves on the same way. A real rail keeps the vault's page below.
+  if (onIxigoMoney(t.d, row)) {
+    if (!row.approval_id) return refused(TOASTS.notReady);
+    const r = await t.paid({ tripId: row.trip_id, approvalId: row.approval_id, railRef: `ixigo_money_${row.approval_id}` });
+    return r === 'ok' ? done(TOASTS.paidWithIxigoMoney) : refused(TOASTS.notReady);
+  }
   if (row.pay_link_url && row.pay_link_expires_at && row.pay_link_expires_at.getTime() > now.getTime() + 30_000) {
     return { result: 'open', url: row.pay_link_url, expires_at: row.pay_link_expires_at.toISOString() };
   }

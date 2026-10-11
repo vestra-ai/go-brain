@@ -198,6 +198,11 @@ describe("Go books a person's own bus up to ixigo's pay button", () => {
     const tickets = lb.link.requests.slice(from).filter((r) => r.method === 'add_booking');
     expect(tickets).toHaveLength(1);
     expect(tickets[0]!.params).toMatchObject({ kind: 'bus', vendor: 'ixigo (simulated)', amount_minor: 385_800, payer_person_id: 'p_rahul', for_person_ids: ['p_rahul'], approval_id: `ap_${key}` });
+    // Its seat in its title, and the ticket card, theirs alone.
+    expect(String(tickets[0]!.params['title'])).toMatch(/^IntrCity SmartBus 22:35, seat \w+$/);
+    const cards = lb.link.requests.slice(from).filter((r) => r.method === 'post_message' && (r.params['card'] as { kind?: string } | undefined)?.kind === 'ticket');
+    expect(cards).toHaveLength(1);
+    expect(cards[0]!.params).toMatchObject({ visible_to_person_ids: ['p_rahul'], card: { kind: 'ticket', booking_id: expect.any(String) } });
   });
 
   it('is off without BOOKING', async () => {

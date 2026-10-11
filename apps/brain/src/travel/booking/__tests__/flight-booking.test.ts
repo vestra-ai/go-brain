@@ -528,6 +528,11 @@ describe("Go books a person's own flight up to ixigo's pay button", () => {
       trip_id: 't_goa', kind: 'flight', title: 'IndiGo 6E2150', vendor: 'ixigo (simulated)', ref: expect.stringMatching(/^SIM-[0-9A-F]{8}$/),
       amount_minor: 753_600, currency: 'INR', payer_person_id: 'p_meher10', for_person_ids: ['p_meher10'], approval_id: 'appr_t1',
     });
+    // Her ticket, hers alone: the booking drawn as a ticket card, named in its words.
+    const tickets = lb.link.requests.slice(paidFrom).filter((r) => r.method === 'post_message' && (r.params['card'] as { kind?: string } | undefined)?.kind === 'ticket');
+    expect(tickets).toHaveLength(1);
+    expect(tickets[0]!.params).toMatchObject({ visible_to_person_ids: ['p_meher10'], card: { kind: 'ticket', booking_id: expect.any(String) } });
+    expect((tickets[0]!.params['card'] as { fallback_text: string }).fallback_text).toMatch(/^Booked \(simulated\): IndiGo 6E2150, for \w+\. Ref SIM-[0-9A-F]{8}\.$/);
     // Heard again, nothing is booked twice.
     await hook.paid!({ tripId: 't_goa', approvalId: 'appr_t1', railRef: 'fake_t1' });
     expect(lb.link.requests.slice(paidFrom).filter((r) => r.method === 'add_booking')).toHaveLength(1);

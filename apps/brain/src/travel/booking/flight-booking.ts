@@ -9,6 +9,7 @@
  * its steps. No traveller's details are kept, logged or said: the room hears the trip's own name and the outcome.
  */
 import { createHash } from 'node:crypto';
+import { ticketCard } from '../../money/cards.js';
 import type * as C from '@go/contract';
 import type pg from 'pg';
 import type { Switches } from '../../admin/switches.js';
@@ -355,6 +356,21 @@ export interface FlightBooking {
 }
 
 /**
+ * Who a ticket is for and when, for its words: "for Meher, Fri 6 Nov, 06:05 to 08:35" (India time), from its journey
+ * when its search kept one.
+ */
+export function ticketWhen(name: string | null, journey: { depart_at: string; arrive_at: string } | null): string | null {
+  const parts: string[] = [];
+  if (name) parts.push(`for ${name}`);
+  if (journey) {
+    const ist = (iso: string) => new Date(Date.parse(iso) + 330 * 60_000).toISOString();
+    const hm = (iso: string) => ist(iso).slice(11, 16);
+    parts.push(`${dayText(ist(journey.depart_at).slice(0, 10))}, ${hm(journey.depart_at)} to ${hm(journey.arrive_at)}`);
+  }
+  return parts.length ? parts.join(', ') : null;
+}
+
+/**
  * Whether Go books this trip's flights and stays itself: Go reads ixigo.com in the trip's browser, and BOOKING is on, or
  * names the trip's Server instance ("instances:drill-p0").
  */
@@ -398,19 +414,27 @@ export function createFlightBooking(d: FlightBookingDeps): FlightBooking {
   const addTicket = async (tripId: string, approvalId: string, b: { run_id: string; person_id: string; option_id: string; title: string; total_minor: string | null }): Promise<void> => {
     if (b.total_minor === null) return;
     const journey = d.results ? ((await d.results.optionOf(b.option_id).catch(() => null))?.journey ?? null) : null;
-    await d.link.request('add_booking', {
+    const ref = `SIM-${createHash('sha256').update(b.run_id).digest('hex').slice(0, 8).toUpperCase()}`;
+    const booked = await d.link.request('add_booking', {
       request_id: stableId('go_ticket_booking', b.run_id),
       trip_id: tripId,
       kind: 'flight',
       title: clip(b.title, 120),
       vendor: TICKET_VENDOR,
-      ref: `SIM-${createHash('sha256').update(b.run_id).digest('hex').slice(0, 8).toUpperCase()}`,
+      ref,
       amount_minor: Number(b.total_minor),
       currency: 'INR',
       payer_person_id: b.person_id,
       for_person_ids: [b.person_id],
       approval_id: approvalId,
       ...(journey ? { journey, starts_at: journey.depart_at } : {}),
+    });
+    // Their ticket, theirs alone: the booking drawn as a ticket (its route and times are the booking's journey), a demo
+    // one, since Go stops before ixigo's own pay button and nothing real is booked.
+    const name = await d.nameOf(tripId, b.person_id).then(spokenFirstName, () => null);
+    await d.link.request('post_message', {
+      request_id: stableId('go_ticket_card', b.run_id), trip_id: tripId, visible_to_person_ids: [b.person_id],
+      card: ticketCard({ cardId: stableId('c_ticket', b.run_id), bookingId: booked.booking_id, title: b.title, ref, refundableUntil: null, simulated: true, detail: ticketWhen(name, journey) }),
     });
   };
 

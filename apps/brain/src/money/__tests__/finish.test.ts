@@ -11,6 +11,8 @@ let approvalId: string;
 
 beforeEach(async () => {
   k = await moneyKit();
+  // The vault's paid callback, a real rail's path: the demo's one tap with ixigo money is ixigo-money.test's.
+  k.deps.payWithVault = true;
   const r = await k.ask();
   if (!('cardId' in r)) throw new Error(r.refused);
   paymentId = r.paymentId;
@@ -34,6 +36,7 @@ describe("the rooms a stay's expenses split by (REV4 B6)", () => {
 
   it('are the ones picked when the payment was asked: the rooms card closes at payment, and a later pick changes nothing', async () => {
     const r2 = await moneyKit();
+    r2.deps.payWithVault = true;
     try {
       let picked: typeof PICKED | null = PICKED;
       r2.deps.rooms = async (row) => (row.decision_id === 'd_villa' && row.option_ref ? picked : null);
@@ -62,6 +65,7 @@ describe("the rooms a stay's expenses split by (REV4 B6)", () => {
       }, null],
     ] as const) {
       const r2 = await moneyKit();
+      r2.deps.payWithVault = true;
       try {
         r2.deps.rooms = rooms;
         const asked = await r2.ask();

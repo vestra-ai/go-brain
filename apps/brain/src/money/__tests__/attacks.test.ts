@@ -31,7 +31,8 @@ async function setUp(stage: Parameters<typeof goaTrip>[0] = 'confirmed', o: { sp
   vault = await startTestVault({ goFetch, now: k.now });
   ({ brain, seen } = fakeBrain({ pool: k.pool, link: k.server, travel: k.travel, trips: k.server.trips, now: k.now }));
   goHttp = brain.http;
-  await registerMoneyWith({ fetch: vault.fetch, sweepEveryMs: 0 })(brain);
+  // The vault's two keys, a real rail's path: the demo's one tap with ixigo money (Go's fake rail) never reaches the vault.
+  await registerMoneyWith({ fetch: vault.fetch, sweepEveryMs: 0, payWithVault: true })(brain);
   pay = brain.pay as PayEngine;
   rahul = await vault.passkeyFor('p_rahul', { withCard: true });
   priya = await vault.passkeyFor('p_priya', { withCard: true });

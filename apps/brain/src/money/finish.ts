@@ -1,5 +1,5 @@
 import type { Confirmed } from '../travel/travel.js';
-import { payCardOf } from './ask.js';
+import { onIxigoMoney, payCardOf } from './ask.js';
 import { ticketCard } from './cards.js';
 import { payerOf, postLine, type MoneyDeps } from './deps.js';
 import { rid } from './ids.js';
@@ -182,19 +182,21 @@ async function finishPaid(d: MoneyDeps, row: PaymentRow): Promise<void> {
 
   // 4. The pay card shows paid, with no buttons and no pin.
   if (row.card_state !== 'paid') {
-    const card = payCardOf(row, 'paid');
+    const card = payCardOf(d, row, 'paid');
     if (card) await d.link.request('replace_card', { trip_id: row.trip_id, card });
     await patchPayment(d.pool, row.payment_id, { card_state: 'paid' }, d.now());
   }
 
   // 5. The ticket, with one line in Go's voice: what was booked, never the money, which the Server's own line says.
   if (!row.ticket_posted_at) {
-    const text = bookedLine({ title: confirmed.title, simulated: confirmed.simulated === true });
+    const text = bookedLine({ title: confirmed.title, simulated: confirmed.simulated === true, ixigoMoney: onIxigoMoney(d, row) });
+    // The rooms the group picked, where it did: the ticket says them.
+    const detail = row.rooms?.length ? row.rooms.map((r) => r.label).join(', ') : null;
     await d.link.request('post_message', {
       request_id: id('ticket'),
       trip_id: row.trip_id,
       text,
-      card: ticketCard({ cardId: rid('c_ticket', approvalId), bookingId, title: confirmed.title, ref: confirmed.ref, refundableUntil, simulated: confirmed.simulated === true }),
+      card: ticketCard({ cardId: rid('c_ticket', approvalId), bookingId, title: confirmed.title, ref: confirmed.ref, refundableUntil, simulated: confirmed.simulated === true, detail }),
     });
     await patchPayment(d.pool, row.payment_id, { ticket_posted_at: d.now() }, d.now());
   }
@@ -207,14 +209,14 @@ async function finishPaid(d: MoneyDeps, row: PaymentRow): Promise<void> {
 async function finishTicketPaid(d: MoneyDeps, row: PaymentRow): Promise<void> {
   // A ticket with a pay card (askForTicketCard): the card shows paid, with no buttons, as a group's does.
   if (row.card_id && row.card_state !== 'paid') {
-    const card = payCardOf(row, 'paid');
+    const card = payCardOf(d, row, 'paid');
     if (card) await d.link.request('replace_card', { trip_id: row.trip_id, card });
     await patchPayment(d.pool, row.payment_id, { card_state: 'paid' }, d.now());
   }
   if (row.ticket_posted_at) return;
   if (!row.approval_id || row.amount_minor === null || !row.currency) throw new Error('a paid ticket is missing its approval or amount');
   const text = ticketPaidLine({
-    what: row.label, payer: row.payer_name, amount: money(row.amount_minor, row.currency), simulated: row.payment_kind !== 'ixigo',
+    what: row.label, payer: row.payer_name, amount: money(row.amount_minor, row.currency), simulated: row.payment_kind !== 'ixigo', ixigoMoney: onIxigoMoney(d, row),
   });
   await postLine(d, row.trip_id, text, rid('go_paid', row.approval_id, 'ticket'), payerOf(row));
   await patchPayment(d.pool, row.payment_id, { ticket_posted_at: d.now() }, d.now());
@@ -227,7 +229,7 @@ async function finishTicketPaid(d: MoneyDeps, row: PaymentRow): Promise<void> {
 async function showConfirming(d: MoneyDeps, row: PaymentRow): Promise<void> {
   const look = row.checking_at ? 'checking' : 'confirming';
   if (!row.card_id || row.card_state === look) return;
-  const card = payCardOf(row, look);
+  const card = payCardOf(d, row, look);
   if (card) await d.link.request('replace_card', { trip_id: row.trip_id, card });
   await patchPayment(d.pool, row.payment_id, { card_state: look }, d.now());
 }
@@ -240,7 +242,7 @@ async function finishClosed(d: MoneyDeps, row: PaymentRow, state: 'declined' | '
   //    GO-TEAM-FINAL §6: a declined card kept live Approve and Decline for 46 s, while a vault call failed below and the
   //    sweep came back). Nothing can be paid from it either way: the payer's own Decline closed the row.
   if (state !== 'refused' && row.card_id && row.card_state !== state) {
-    const card = payCardOf(row, state);
+    const card = payCardOf(d, row, state);
     try {
       if (card) await d.link.request('replace_card', { trip_id: row.trip_id, card });
     } catch (e) {

@@ -345,24 +345,25 @@ describe.skipIf(DATABASE_URL === undefined)('the demo, end to end, with every la
     expect(payCard.amount_minor).toBeLessThanOrEqual(DEMO_CAP_MINOR);
   }, 30_000);
 
-  it('3:00 Approve, Face ID on the vault page, the test card charged once: booked, a ticket and the split', async () => {
-    chapter('3:00 Approve and pay');
+  // Keshav, 11 Oct: payment is mocked for the demo, as paying with the ixigo wallet: one tap on the pay card itself.
+  it('3:00 Pay with ixigo money, one tap on the card: booked, a ticket and the split', async () => {
+    chapter('3:00 Pay with ixigo money');
     const card = payCard;
     if (!card) throw new Error('no pay card');
     const from = lastSeq();
-    // Only the payer may approve: Priya's tap is refused for that, not because Go does not know the card.
+    expect(card.actions?.[0]).toMatchObject({ action_id: 'approve', label: 'Pay with ixigo money' });
+    // Only the payer may pay: Priya's tap is refused for that, not because Go does not know the card.
     expect(await tap(card.card_id, 'approve', DEMO_FRIEND)).toMatchObject({ result: 'refused' });
-    const open = await tap(card.card_id, 'approve', DEMO_PAYER);
-    if (open.result !== 'open') throw new Error(`Approve did not open the vault: ${JSON.stringify(open)}`);
-    act(Date.now(), nameOf(DEMO_PAYER), 'approves on the vault page with his passkey (a software passkey in the test), and the 4242 test card is charged on the fake rail');
-    expect(await d().vault.approve(open.url, d().payer)).toMatchObject({ state: 'paid' });
+    act(Date.now(), nameOf(DEMO_PAYER), 'taps Pay with ixigo money on his pay card: one tap, no page, nothing real moves');
+    expect(await tap(card.card_id, 'approve', DEMO_PAYER)).toMatchObject({ result: 'done' });
     const booking = await fake().waitFor(() => fake().trip().bookings[0] ?? null, 10_000);
     expect(booking).toMatchObject({ approval_id: card.approval_id, decision_id: decisionId, kind: 'stay' });
     const expense = await fake().waitFor(() => fake().trip().expenses[0] ?? null, 10_000);
     expect(expense).toMatchObject({ paid_by_person_id: DEMO_PAYER, booking_id: booking.booking_id });
     mark('ticket', await goAfter(from, kindIs('ticket')));
     await fake().waitFor(() => ((cardNow(card.card_id) as Card<'pay'> | null)?.state === 'paid' ? true : null), 10_000);
-    expect(d().vault.rail.charges).toHaveLength(1);
+    // The vault charged nothing: the demo's payment is Go's own, on its fake rail.
+    expect(d().vault.rail.charges).toHaveLength(0);
   }, 30_000);
 
   it('3:40 the operator fires a watch from the admin page: one notice, pinned to Arjun, labelled as simulated', async () => {
@@ -394,7 +395,7 @@ describe.skipIf(DATABASE_URL === undefined)('the demo, end to end, with every la
       mark(beat, reply, sentAt);
       expect(go().filter((m) => m.seq > message.seq && m.card?.kind === 'pay')).toEqual([]);
       expect(fake().writes.filter((w) => w.method === 'request_spend_approval')).toHaveLength(spendBefore);
-      expect(d().vault.rail.charges).toHaveLength(1);
+      expect(d().vault.rail.charges).toHaveLength(0);
       const tried = director.results.filter((r) => r.name === 'ask_to_pay').slice(triedBefore);
       expect(tried).toHaveLength(1);
       // Refused for the reason that holds here (nobody voted on scuba), not because something was down.

@@ -22,6 +22,11 @@ export interface MoneyDeps {
   log: FastifyBaseLogger;
   /** The vault call inside an Approve tap. P1's tap router answers within 2.5 s. */
   tapVaultMs?: number;
+  /**
+   * Payment is mocked for the demo (Keshav, 11 Oct): on Go's fake rail the payer pays in one tap, with ixigo money, and
+   * the vault's page never opens. true keeps the vault's page (Face ID) on every rail, as before: the vault's two-key tests.
+   */
+  payWithVault?: boolean;
   /** Who books a stay for the group (claims.ts): the payer is whoever claimed it, never Go's pick. Absent: no claims. */
   claims?: Claims;
   /**

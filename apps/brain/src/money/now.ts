@@ -109,7 +109,7 @@ export function paymentsNow(d: { pool: pg.Pool; packs: Pick<Packs, 'get'>; now: 
 
       if (lines.length === 0) return null;
       return [
-        "Payments. Each one needs the Server's approval and the payer's own Face ID. Only ask_to_pay starts one; never ask anyone for card details.",
+        "Payments. Each one needs the Server's approval and the payer's own tap on Pay with ixigo money, on their pay card. Only ask_to_pay starts one; never ask anyone for card details.",
         ...lines.slice(0, 10),
       ].join('\n');
     },

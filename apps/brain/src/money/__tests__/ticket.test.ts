@@ -31,6 +31,8 @@ const ask = async (o: Partial<TicketAsk> = {}) => {
 
 beforeEach(async () => {
   k = await moneyKit();
+  // These walk the vault's page (Face ID), a real rail's path; the demo's one tap with ixigo money is ixigo-money.test's.
+  k.deps.payWithVault = true;
 });
 afterEach(async () => {
   await k.drop();

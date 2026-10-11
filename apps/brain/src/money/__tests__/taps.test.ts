@@ -18,6 +18,8 @@ const tap = (personId: string, actionId = 'approve') => ({ tap_id: `tap_${++n}`,
 
 beforeEach(async () => {
   k = await moneyKit();
+  // These walk the vault's page (Face ID), a real rail's path; the demo's one tap with ixigo money is ixigo-money.test's.
+  k.deps.payWithVault = true;
   reconciled = [];
   t = { d: k.deps, ask: (tripId, o, trigger) => askOutsideTurn(k.deps, tripId, o, trigger), later: new Later(), reconcile: async (id) => void reconciled.push(id) };
   const r = await k.ask();
