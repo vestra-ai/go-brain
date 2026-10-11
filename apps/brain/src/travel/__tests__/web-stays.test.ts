@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { loadBook } from '../book/book.js';
 import { createEngine } from '../book/engine.js';
 import type { Parked } from '../login.js';
@@ -53,7 +53,11 @@ const review = (room: string, bookingRupees: number, couponRupees: number): stri
 const REVIEW = review('1 Bedroom Apartment', 5586.66, 111);
 const REVIEW_URL = 'https://www.ixigo.com/accommodation-search/api/v1/accommodations/booking/review';
 
-function world(o: { login?: 'in' | 'out'; body?: string | null; stored?: StoredOffer | null; page?: string | null; booking?: boolean; rooms?: string | null; review?: string | null } = {}) {
+function world(o: {
+  login?: 'in' | 'out'; body?: string | null; stored?: StoredOffer | null; page?: string | null; booking?: boolean; rooms?: string | null; review?: string | null;
+  /** ixigo's answer on the login comes once this settles. */
+  loginGate?: Promise<void>;
+} = {}) {
   const stored = o.stored === undefined ? offer() : o.stored;
   const reads: Array<{ url: string; plan: FetchPlan; stage?: boolean; private?: boolean }> = [];
   const posted: Array<{ method: string; params: Record<string, unknown> }> = [];
@@ -85,6 +89,7 @@ function world(o: { login?: 'in' | 'out'; body?: string | null; stored?: StoredO
     login: {
       ensure: async (tripId, what, x) => {
         ensured.push({ tripId, what, ...(x?.park ? { park: x.park } : {}), ...(x?.booking ? { booking: x.booking } : {}) });
+        await o.loginGate;
         return o.login === 'out' ? { ok: false as const, note: `Go asked Rahul to link ixigo for ${what}.` } : { ok: true as const };
       },
     },
@@ -183,6 +188,25 @@ describe('the hold and the booking, on the test rail', () => {
   it('with no price read this time, holds at the price the card and the vote showed; with none at all, nothing', async () => {
     expect(await world({ body: null }).stays.hold(`${WEB_STAY}opt_saudades`, { name: 'Rahul', personIds: [] })).toMatchObject({ amountMinor: SAUDADES_WHOLE_STAY });
     await expect(world({ body: null, stored: offer({ totalMinor: null }) }).stays.hold(`${WEB_STAY}opt_saudades`, { name: 'Rahul', personIds: [] })).rejects.toMatchObject({ code: 'unreachable' });
+  });
+
+  // Prod, 10 Oct 21:05Z: the login's page and then the price's took a payment past the composer's 8 s. Both are still read.
+  it("reads ixigo's login and its price together, never one after the other; a login out still holds nothing", async () => {
+    let open: () => void = () => undefined;
+    const w = world({ loginGate: new Promise<void>((r) => (open = r)) });
+    const holding = w.stays.hold(`${WEB_STAY}opt_saudades`, { name: 'Rahul', personIds: ['p_rahul'] });
+    // The price's page is read while ixigo has not answered on the login yet.
+    await vi.waitFor(() => expect(w.reads.map((r) => r.url)).toEqual([SEARCH_PAGE]));
+    expect(w.ensured).toEqual([{ tripId: 't_goa', what: 'Booking Saudades Homestays', booking: true }]);
+    open();
+    expect(await holding).toMatchObject({ amountMinor: SAUDADES_WHOLE_STAY });
+    // Out: refused, whatever the price said.
+    let shut: () => void = () => undefined;
+    const out = world({ login: 'out', loginGate: new Promise<void>((r) => (shut = r)) });
+    const refused = out.stays.hold(`${WEB_STAY}opt_saudades`, { name: 'Rahul', personIds: [] });
+    await vi.waitFor(() => expect(out.reads).toHaveLength(1));
+    shut();
+    await expect(refused).rejects.toMatchObject({ code: 'refused' });
   });
 
   it('holds nothing with the login out, or for an option Go no longer has', async () => {
