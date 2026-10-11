@@ -164,8 +164,9 @@ export const HELLO_LINE = '{name}, link ixigo once with one tap and I can book f
  * How a line in the chat names the person it asks: their first name, as a friend would ("Nishanth", never "Nishanth
  * Gunupudi": p2's audit, 11 Oct). The card keeps the whole name.
  */
+const firstOf = (name: string): string => (name === ORGANIZER ? name : name.trim().split(/\s+/)[0] || name);
 /** Who a login line addresses: "@FirstName" (Keshav, 11 Oct: "directed messages should send @name"), or the organizer. */
-const addressOf = (name: string): string => (name === ORGANIZER ? name : `@${name.trim().split(/\s+/)[0] || name}`);
+const addressOf = (name: string): string => (name === ORGANIZER ? name : `@${firstOf(name)}`);
 const ORGANIZER = 'the organizer';
 
 export type LoginState = 'asked' | 'logging_in' | 'logged_in' | 'skipped' | 'logged_out';
@@ -478,7 +479,7 @@ export function createIxigoLogin(d: LoginDeps): IxigoLogin {
     await save(row);
     const name = await nameOf(tripId, personId);
     await d.link.request('post_message', {
-      request_id: `go_login_${tripId}_${attempt}`, trip_id: tripId, text: line.replaceAll('{name}', addressOf(name)), mentions: [personId], card: loginCard(row, name),
+      request_id: `go_login_${tripId}_${attempt}`, trip_id: tripId, text: line.replaceAll("{name}'s", `${firstOf(name)}'s`).replaceAll('{name}', addressOf(name)), mentions: [personId], card: loginCard(row, name),
     });
   }
 

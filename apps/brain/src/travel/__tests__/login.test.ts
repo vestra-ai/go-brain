@@ -860,7 +860,7 @@ describe("one login for all of a person's trips: their browser (tasks/browsers.t
     expect(await w.state()).toBe('asked');
     const posts = w.link.of('post_message');
     expect(posts).toHaveLength(1);
-    expect(posts[0]).toMatchObject({ text: "To book Saudades Homestays I need ixigo linked once, Rahul: one login on the trip's computer, about a minute." });
+    expect(posts[0]).toMatchObject({ text: "To book Saudades Homestays I need ixigo linked once, @Rahul: one login on the trip's computer, about a minute." });
     // The same booking asked again a moment later: no second card, no second read.
     w.clock.now = new Date(w.clock.now.getTime() + 30_000);
     const again = await w.login.ensure(w.tripId, what, { park: { what, resume: { decision_id: 'd_villa' } }, booking: true });
@@ -882,7 +882,7 @@ describe("one login for all of a person's trips: their browser (tasks/browsers.t
     const r = await w.login.ensure(w.tripId, 'Price lock');
     expect(r.ok).toBe(false);
     expect(await w.state()).toBe('asked');
-    expect(w.link.of('post_message').at(-1)).toMatchObject({ text: "Rahul, this needs ixigo linked for the trip: one login on the trip's computer, about a minute." });
+    expect(w.link.of('post_message').at(-1)).toMatchObject({ text: "@Rahul, this needs ixigo linked for the trip: one login on the trip's computer, about a minute." });
     expect(w.reads).toHaveLength(reads);
   });
 });
@@ -899,7 +899,7 @@ describe('a recipe that needs the login', () => {
     expect(no).toEqual({ ok: false, note: `Price lock needs the trip's ixigo login. ${cardIsTheAsk('Rahul', "I'll carry on")}` });
     const posts = w.link.of('post_message');
     expect(posts).toHaveLength(2);
-    expect(posts[1]).toMatchObject({ text: "Rahul, this needs ixigo linked for the trip: one login on the trip's computer, about a minute.", card: { card_id: `c_login_${w.tripId}_1` } });
+    expect(posts[1]).toMatchObject({ text: "@Rahul, this needs ixigo linked for the trip: one login on the trip's computer, about a minute.", card: { card_id: `c_login_${w.tripId}_1` } });
     await w.login.ensure(w.tripId, 'Price lock');
     expect(w.link.of('post_message')).toHaveLength(2);
     w.clock.now = new Date(NOW.getTime() + 31 * 60_000);
@@ -943,7 +943,7 @@ describe('a recipe that needs the login', () => {
     // ixigo says it's gone: Rahul is asked again.
     const gone = await w.login.ensure(w.tripId, 'Price lock');
     expect(gone.ok).toBe(false);
-    expect(w.link.of('post_message').at(-1)).toMatchObject({ text: "Rahul, this needs ixigo linked for the trip: one login on the trip's computer, about a minute." });
+    expect(w.link.of('post_message').at(-1)).toMatchObject({ text: "@Rahul, this needs ixigo linked for the trip: one login on the trip's computer, about a minute." });
     expect(await w.state()).toBe('asked');
   });
 
@@ -1056,7 +1056,7 @@ describe('a booking ask on a trip with no login (8 Oct demo: "heyy can you try b
     const posts = w.link.of('post_message');
     expect(posts).toHaveLength(2);
     expect(posts[1]).toMatchObject({
-      text: "To book Saudades Homestays I need ixigo linked once, Rahul: one login on the trip's computer, about a minute.",
+      text: "To book Saudades Homestays I need ixigo linked once, @Rahul: one login on the trip's computer, about a minute.",
       mentions: ['p_rahul'],
       card: { card_id: `c_login_${w.tripId}_1`, actions: [{ action_id: 'ixigo_login' }, { action_id: 'ixigo_not_now' }] },
     });
@@ -1150,14 +1150,14 @@ describe('a login someone asks for in the chat', () => {
     const posts = w.link.of('post_message');
     expect(posts).toHaveLength(2);
     expect(posts[1]).toMatchObject({
-      text: "The trip's ixigo login is on Rahul's browser. Rahul, tap Log in to ixigo on the card, about a minute on the trip's computer.",
+      text: "The trip's ixigo login is on Rahul's browser. @Rahul, tap Log in to ixigo on the card, about a minute on the trip's computer.",
       mentions: ['p_rahul'],
       card: { card_id: `c_login_${w.tripId}_1`, for_person_ids: ['p_rahul'] },
     });
     expect(await w.state()).toBe('asked');
     // The organizer asking: the line is theirs.
     await w.login.askNow(w.tripId, 'p_rahul');
-    expect(w.link.of('post_message')[2]).toMatchObject({ text: "Rahul, here's the ixigo login: tap Log in to ixigo on the card, about a minute on the trip's computer." });
+    expect(w.link.of('post_message')[2]).toMatchObject({ text: "@Rahul, here's the ixigo login: tap Log in to ixigo on the card, about a minute on the trip's computer." });
   });
 
   it('reads ixigo first when Go holds a login: logged in, nothing goes up; logged out since, the card goes up', async () => {
