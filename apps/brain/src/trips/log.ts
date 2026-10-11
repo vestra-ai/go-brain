@@ -20,9 +20,11 @@ export type TripLogImpl = TripLog & {
   /**
    * The trip's home moves to the socket a Server request that names it came on (a tap, a catch_up), as append moves it
    * for an event: only the Server that has a trip speaks for it. A trip that only gets taps after its Server's redeploy
-   * is never left waiting for the old instance (prod, 11 Oct 08:13Z: a login tap's card never went out). No trip, no move.
+   * is never left waiting for the old instance (prod, 11 Oct 08:13Z: a login tap's card never went out). Never across
+   * named Servers: a trip at home with a Server that gives its name moves only to another socket of that name. Its new
+   * home when it moved; null when it was there already, may not move, or there is no such trip.
    */
-  rehome(tripId: string, from: { instance: string; server?: string | null }): Promise<void>;
+  rehome(tripId: string, from: { instance: string; server?: string | null }): Promise<{ instance: string; server: string | null } | null>;
 };
 
 export function createTripLog(o: {
@@ -77,11 +79,15 @@ export function createTripLog(o: {
       return rows[0]?.last_seq ?? 0;
     },
     async rehome(tripId, from) {
-      await (o.appendPool ?? o.pool).query(
+      const { rows } = await (o.appendPool ?? o.pool).query<{ server_instance: string; server_name: string | null }>(
         `update trips set server_instance = $2, server_name = $3
-         where trip_id = $1 and (server_instance is distinct from $2 or server_name is distinct from $3)`,
+         where trip_id = $1 and (server_name is null or server_name = $3)
+           and (server_instance is distinct from $2 or server_name is distinct from $3)
+         returning server_instance, server_name`,
         [tripId, from.instance, from.server ?? null],
       );
+      const r = rows[0];
+      return r ? { instance: r.server_instance, server: r.server_name } : null;
     },
     onEvent(fn) {
       listeners.push(fn);

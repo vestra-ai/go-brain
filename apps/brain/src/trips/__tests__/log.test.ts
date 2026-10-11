@@ -53,16 +53,23 @@ describe('TripLog', () => {
 
   // Prod, 11 Oct 08:13Z: a trip that only got taps after its Server's redeploy kept its old instance, and a login tap's
   // card never went out. A request that names the trip moves its home as an event does.
-  it("moves the trip's home to the socket a request naming it came on, its name too; no trip, no move", async () => {
+  it("moves the trip's home to the socket a request naming it came on, never across named Servers; no trip, no move", async () => {
     const log = createTripLog({ pool: db.pool, log: silentLog, now: () => new Date() });
     const T = 't_rehome_tap';
     const home = async () => (await db.pool.query('select server_instance, server_name from trips where trip_id = $1', [T])).rows[0];
     await log.append(ev(1, 'trip.created', { trip: goaSnapshot({ trip_id: T }) }, T), { instance: 'ca6989a06930-80' });
-    await log.rehome(T, { instance: 'fb0da31b49f7-80' });
+    expect(await log.rehome(T, { instance: 'fb0da31b49f7-80' })).toEqual({ instance: 'fb0da31b49f7-80', server: null });
     expect(await home()).toEqual({ server_instance: 'fb0da31b49f7-80', server_name: null });
-    await log.rehome(T, { instance: 'fb0da31b49f7-80', server: 'prod' });
+    // Already there: nothing moves, nothing for the link to follow.
+    expect(await log.rehome(T, { instance: 'fb0da31b49f7-80' })).toBeNull();
+    // The Server starts giving its name: the trip takes it.
+    expect(await log.rehome(T, { instance: 'fb0da31b49f7-80', server: 'prod' })).toEqual({ instance: 'fb0da31b49f7-80', server: 'prod' });
+    // Another named Server, or a socket with no name, never takes a named Server's trip; another replica of it does.
+    expect(await log.rehome(T, { instance: 'drill-1', server: 'drill' })).toBeNull();
+    expect(await log.rehome(T, { instance: 'rahul-mac-rev4' })).toBeNull();
     expect(await home()).toEqual({ server_instance: 'fb0da31b49f7-80', server_name: 'prod' });
-    await log.rehome('t_rehome_none', { instance: 'fb0da31b49f7-80' });
+    expect(await log.rehome(T, { instance: 'c0ffee000000-80', server: 'prod' })).toEqual({ instance: 'c0ffee000000-80', server: 'prod' });
+    expect(await log.rehome('t_rehome_none', { instance: 'fb0da31b49f7-80' })).toBeNull();
     expect((await db.pool.query('select 1 from trips where trip_id = $1', ['t_rehome_none'])).rowCount).toBe(0);
   });
 
