@@ -189,6 +189,8 @@ describe('when a journey arrives, on its card', () => {
     // 6E 5341 DEL to GOI, and 6E 329 + 6E 5106 through Mumbai landing after midnight.
     expect(subtitleFor(journey('flight', '2026-11-06T05:00:00+05:30', '2026-11-06T07:35:00+05:30', {}, 0))).toBe('5:00 am to 7:35 am, non-stop');
     expect(subtitleFor(journey('flight', '2026-11-06T18:30:00+05:30', '2026-11-07T00:40:00+05:30', {}, 1))).toBe('6:30 pm to 12:40 am next day, 1 stop');
+    // The airport it lands at, when ixigo named it (Goa has two).
+    expect(subtitleFor(journey('flight', '2026-11-06T18:30:00+05:30', '2026-11-07T00:40:00+05:30', { arrival_airport: 'Dabolim (GOI)' }, 1))).toBe('6:30 pm to 12:40 am next day at Dabolim (GOI), 1 stop');
     // Naik Tours, Mumbai to Goa overnight: a bus's arrival is its first stop in the city it goes to, never every drop's
     // (the exam's re-run, 10 Oct: "reach Goa between 6 and 7:20 am, all dropping at Mapusa").
     expect(subtitleFor(journey('bus', '2026-11-06T15:30:00+05:30', '2026-11-07T06:30:00+05:30', { bus_type: 'NON-AC Sleeper (2 + 1)' }))).toBe('3:30 pm, first stop in B 6:30 am next day, NON-AC Sleeper (2 + 1)');

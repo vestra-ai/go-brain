@@ -173,6 +173,9 @@ describe('G3: Go does real work', () => {
 
   it('a job stopped from its card says Stopped, and never posts results when /v1 finishes it anyway', async () => {
     const { cardId, v1TaskId } = await newJob('p_kabir', 'Go, find a villa in Morjim with a pool for us');
+    // Go has heard /v1 name the job, so this tests the stop, not the race with its start (tasks.test covers that one).
+    const taskId = String((cardOf(cardId) as { task_id?: string } | undefined)?.task_id);
+    await eventually(async () => (await lane.store.get(taskId))?.v1TaskId === v1TaskId, 10_000);
     expect(await server.tap(cardId, 'stop', 'p_kabir')).toMatchObject({ result: 'done' });
     await server.waitFor(() => (String(cardOf(cardId)?.fallback_text ?? '').startsWith('Stopped') ? true : null), 10_000);
     // The tap may land before Go has heard /v1 name the job; Go stops it on /v1 the moment it does (mapStarts).
