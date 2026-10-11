@@ -106,6 +106,14 @@ export function applyEvent(pack: TripPack, ev: TripEvent): 'ok' | 'reread' {
       d.status = 'cancelled';
       break;
     }
+    case 'decision.options_added': {
+      // 1.3 ("see more"): the new options take the next indexes, with no votes yet; votes already cast stay.
+      const d = decision(ev.data.decision_id);
+      if (!d) return 'reread';
+      d.options = [...d.options, ...ev.data.options];
+      d.tally = [...d.tally, ...ev.data.options.map(() => 0)];
+      break;
+    }
     case 'mandate.set': {
       const d = decision(ev.data.decision_id);
       if (!d) return 'reread';

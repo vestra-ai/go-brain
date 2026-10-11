@@ -25,6 +25,8 @@ export const IsoDate = z.iso.date();
 
 /** Links are http or https only, so nothing like javascript: can reach the App. */
 export const HttpUrl = z.url({ protocol: /^https?$/ });
+/** 1.3: a link that must be https: a page the App opens or frames (an option's ixigo page, Go's live view). */
+export const HttpsUrl = z.url({ protocol: /^https$/ });
 /** 1.1: a link the App opens: http or https, or go:// for one of the App's own screens (the guide's route table). */
 export const AppUrl = z.url({ protocol: /^(https?|go)$/ });
 

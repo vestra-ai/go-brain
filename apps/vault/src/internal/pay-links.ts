@@ -56,8 +56,8 @@ export async function openPayLink(
   if (c.jti !== body.approval_id) return refuse('bad_approval', "the approval's jti is not the approval_id Go sent");
   if (c.trip_id !== body.trip_id) return refuse('wrong_trip');
   if (c.payer_person_id !== body.payer_person_id) return refuse('wrong_payer');
-  // A ticket (1.2) is its traveller's own: its pay link is theirs alone.
-  if (c.for_person_id != null && c.for_person_id !== body.payer_person_id) return refuse('wrong_payer');
+  // A personal approval (1.3) is its person's own pick: its pay link is theirs alone.
+  if (c.personal != null && c.personal.person_id !== body.payer_person_id) return refuse('wrong_payer');
   if (body.hold.currency !== c.currency) return refuse('currency_mismatch');
   if (body.hold.amount_minor > c.amount_minor) return refuse('over_amount');
   if (Date.parse(body.hold.expires_at) <= now.getTime() + 60_000) return refuse('hold_expiring');

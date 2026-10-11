@@ -140,7 +140,7 @@ describe('health and pages', () => {
     await start();
     const res = await fake!.app.inject({ method: 'GET', url: '/v1/health' });
     expect(res.statusCode).toBe(200);
-    expect(Health.parse(res.json())).toEqual({ ok: true, contract: '1.2.0' });
+    expect(Health.parse(res.json())).toEqual({ ok: true, contract: '1.3.0' });
   });
 
   it('shows the last frames only with the admin token', async () => {
@@ -213,8 +213,8 @@ describe('send_event', () => {
     expect(seen).toEqual(['ev_0057']);
   });
 
-  it('knows all 21 event types of the contract, 1.1\'s settlement.recorded too', () => {
-    expect(KNOWN_EVENT_TYPES.size).toBe(21);
+  it('knows all 22 event types of the contract, 1.1\'s settlement.recorded and 1.3\'s decision.options_added too', () => {
+    expect(KNOWN_EVENT_TYPES.size).toBe(22);
     expect(KNOWN_EVENT_TYPES.has('message.created')).toBe(true);
     expect(KNOWN_EVENT_TYPES.has('expense.changed')).toBe(true);
     expect(KNOWN_EVENT_TYPES.has('settlement.recorded')).toBe(true);

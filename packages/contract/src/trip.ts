@@ -14,7 +14,10 @@ export const DecisionOption = z
     image_url: HttpUrl.nullish(),
     price_minor: AmountMinor.nullish(),
     currency: Currency.nullish(),
-    /** Go's own reference for this option (e.g. an ixigo offer), so it can book the winner. */
+    /**
+     * Go's own reference for this option (e.g. an ixigo offer), so it can book the winner. 1.3 (rev 5 R5): for a vote on an
+     * options card, the card option's option_id.
+     */
     option_ref: z.string().max(200).nullish(),
     note: z.string().max(120).nullish(),
     /** 1.1: what the App shows when the option is opened, as on an options card's option. */
@@ -54,12 +57,13 @@ export const Decision = z
     status: z.enum(['open', 'closed', 'cancelled']),
     /** Null when Go opened it. */
     opened_by_person_id: Id.nullish(),
-    options: z.array(DecisionOption).min(2).max(10),
+    /** open_vote opens up to 10; 1.3's add_vote_options ("see more") takes a vote to at most 20. */
+    options: z.array(DecisionOption).min(2).max(20),
     closes_at: IsoDateTime.nullish(),
     voted: z.int().nonnegative(),
     of: z.int().nonnegative(),
     /** Votes per option, in option order. */
-    tally: z.array(z.int().nonnegative()).max(10),
+    tally: z.array(z.int().nonnegative()).max(20),
     /** 1.1: how many said "I'm flexible": counted in `voted`, never in the tally. */
     flexible_count: z.int().nonnegative().nullish(),
     /** Who voted for what. Left out when the vote is anonymous. */

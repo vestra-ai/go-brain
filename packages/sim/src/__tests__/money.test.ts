@@ -129,34 +129,57 @@ describe('the spend check', () => {
   });
 });
 
-// Contract 1.2: a traveller's own ticket is never voted on. The FakeServer grants it when that person is in the trip, the
-// payer is that person, and the amount is what Go asked; it signs for_person_id in place of decision_id.
-describe("a traveller's own ticket", () => {
-  const ticketAsk = (for_person_id: string) => ({
-    request_id: 'rq_t', trip_id: 't_goa', kind: 'ticket', for_person_id, amount_minor: 753600, currency: 'INR', merchant: 'ixigo',
-    purpose: 'IndiGo 6E2150, Fri 6 Nov, for Meher',
+// Contract 1.3 (G3): a person's own pick is never voted on. The FakeServer grants it on the Server's rules: that person
+// tapped that option on their own card of Go's in the last 30 minutes, the amount is at most its price plus 5%, and nothing
+// else is approved or booked for the pick. It signs `personal` in place of decision_id, and that person is the payer.
+describe("a person's own pick", () => {
+  const pick = { person_id: 'p_meher', card_id: 'c_flights_meher', option_id: 'opt_flight_2' };
+  const personalAsk = (over: Record<string, unknown> = {}) => ({
+    request_id: 'rq_t', trip_id: 't_goa', personal: pick, amount_minor: 753600, currency: 'INR', merchant: 'ixigo',
+    purpose: 'IndiGo 6E2150, Fri 6 Nov, for Meher', ...over,
   }) as never;
+  /** Go's flights card for Meher alone, and her tap on its second flight. */
+  function picked(o: { tap?: boolean; forPerson?: string } = {}) {
+    const { s, clock } = setUp();
+    const option = (n: number, price: number) => ({ option_id: `opt_flight_${n}`, title: `Flight ${n}`, price_minor: price, currency: 'INR', highlights: [] });
+    // The room keeps the card as Go sent it (the raw request), as the Server does.
+    const post = {
+      request_id: 'rq_card', trip_id: 't_goa', text: 'Meher, your flights from Mumbai',
+      card: { card_id: 'c_flights_meher', kind: 'options', fallback_text: 'Flights', title: 'Your flights', option_kind: 'flight', checked_at: new Date(start).toISOString(), for_person_ids: [o.forPerson ?? 'p_meher'], options: [option(1, 690000), option(2, 717800)] },
+    };
+    s.postMessage(post as never, post);
+    if (o.tap !== false) s.recordTap('p_meher', 'c_flights_meher', 'opt_flight_2');
+    return { s, clock };
+  }
 
-  it('is granted for a person in the trip with no vote, signed for them as its payer, and the vault can read it', () => {
-    const { s } = setUp();
-    const r = requestSpendApproval(s, ticketAsk('p_meher'), TEST_SPEND_PRIVATE_KEY_PEM).result;
+  it('is granted for the option its person tapped on their own card, signed for them as its payer, and the vault can read it', () => {
+    const { s } = picked();
+    const r = requestSpendApproval(s, personalAsk(), TEST_SPEND_PRIVATE_KEY_PEM).result;
     if (r.status !== 'approved') throw new Error(`denied: ${r.reason}`);
     const read = verifySpendApproval(r.approval, TEST_SPEND_PUBLIC_KEY_PEM, Math.floor(start / 1000) + 1);
     if (!read.ok) throw new Error(read.reason);
-    expect(read.claims).toMatchObject({ for_person_id: 'p_meher', kind: 'ticket', payer_person_id: 'p_meher', amount_minor: 753600 });
+    expect(read.claims).toMatchObject({ personal: pick, payer_person_id: 'p_meher', amount_minor: 753600 });
     expect(read.claims.decision_id ?? null).toBeNull();
-    expect(s.approvals.get(r.approval_id)).toMatchObject({ decision_id: null, for_person_id: 'p_meher', payer_person_id: 'p_meher' });
+    expect(s.approvals.get(r.approval_id)).toMatchObject({ decision_id: null, personal: pick, payer_person_id: 'p_meher' });
   });
 
-  it('is denied for someone not in the trip', () => {
-    const { s } = setUp();
-    expect(requestSpendApproval(s, ticketAsk('p_stranger'), TEST_SPEND_PRIVATE_KEY_PEM).result).toMatchObject({ status: 'denied', reason: 'not_in_trip' });
+  it('is denied no_pick with no tap, a tap over 30 minutes old, a card that is not theirs, or more than the price plus 5%', () => {
+    const denied = (s: TripState, over: Record<string, unknown> = {}) => requestSpendApproval(s, personalAsk(over), TEST_SPEND_PRIVATE_KEY_PEM).result;
+    expect(denied(picked({ tap: false }).s)).toMatchObject({ status: 'denied', reason: 'no_pick' });
+    const late = picked();
+    late.clock.advance(31 * 60_000);
+    expect(denied(late.s)).toMatchObject({ status: 'denied', reason: 'no_pick' });
+    expect(denied(picked({ forPerson: 'p_rahul' }).s)).toMatchObject({ status: 'denied', reason: 'no_pick' });
+    // 717,800 plus 5% is 753,690: a paisa more is too much.
+    expect(denied(picked().s, { amount_minor: 753691 })).toMatchObject({ status: 'denied', reason: 'no_pick' });
+    expect(denied(picked().s, { personal: { ...pick, person_id: 'p_stranger' } })).toMatchObject({ status: 'denied', reason: 'not_in_trip' });
   });
 
-  it("books with no vote, paid by its traveller; never by another payer or as a vote's", () => {
-    const { s } = setUp();
-    const r = requestSpendApproval(s, ticketAsk('p_meher'), TEST_SPEND_PRIVATE_KEY_PEM).result;
+  it("allows one approval a pick at a time, books with no vote paid by its person, and never twice", () => {
+    const { s } = picked();
+    const r = requestSpendApproval(s, personalAsk(), TEST_SPEND_PRIVATE_KEY_PEM).result;
     if (r.status !== 'approved') throw new Error(`denied: ${r.reason}`);
+    expect(requestSpendApproval(s, personalAsk({ request_id: 'rq_t2' }), TEST_SPEND_PRIVATE_KEY_PEM).result).toMatchObject({ reason: 'approval_outstanding' });
     const flight = (extra: Record<string, unknown>) => booking(undefined as never, r.approval_id, {
       kind: 'flight', title: 'IndiGo 6E2150', amount_minor: 753600, payer_person_id: 'p_meher', for_person_ids: ['p_meher'], decision_id: undefined, ...extra,
     });
@@ -165,6 +188,7 @@ describe("a traveller's own ticket", () => {
     expect(s.approvals.get(r.approval_id)!.used).toBe(false);
     addBooking(s, flight({}));
     expect(s.approvals.get(r.approval_id)!.used).toBe(true);
+    expect(requestSpendApproval(s, personalAsk({ request_id: 'rq_t3' }), TEST_SPEND_PRIVATE_KEY_PEM).result).toMatchObject({ reason: 'already_booked' });
   });
 });
 

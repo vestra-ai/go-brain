@@ -53,6 +53,14 @@ export const OpenDecision = z
     closes_at: IsoDateTime.nullish(),
   })
   .meta({ id: 'OpenDecision', description: 'Opens a vote. Go then posts a message with a vote card to show it in the room.' });
+
+/**
+ * 1.3 (rev 5 R5): "see more" adds options to the same open vote. Only an open vote, at most 20 options in all; votes
+ * already cast stay. The Server answers with the change's seq and sends decision.options_added.
+ */
+export const AddVoteOptions = z
+  .object({ request_id, trip_id, decision_id: Id, options: z.array(DecisionOption).min(1).max(10) })
+  .meta({ id: 'AddVoteOptions', description: '1.3: adds options to an open vote, for the options a "See more" tap brought.' });
 export const OpenDecisionResult = z.object({ decision_id: Id, seq: Seq }).meta({ id: 'OpenDecisionResult' });
 
 export const CloseDecision = z.object({ request_id, trip_id, decision_id: Id }).meta({ id: 'CloseDecision' });
@@ -187,20 +195,26 @@ const spendAsk = {
 /** The group's payment: a closed vote whose payer tapped "Yes, book it". */
 export const RequestGroupSpendApproval = z.object({ ...spendAsk, decision_id: Id }).meta({ id: 'RequestGroupSpendApproval' });
 
+/** 1.3 (G3): the one option a person picked for themselves on Go's card: who, the card, and the option they tapped. */
+export const PersonalPick = z.object({ person_id: Id, card_id: Id, option_id: Id }).meta({ id: 'PersonalPick' });
+
 /**
- * 1.2: a traveller's own ticket, which is never voted on (B7). No `decision_id`: the person it is for is the payer. The
- * Server grants it when that person is in the trip, signing `for_person_id` in place of `decision_id`.
+ * 1.3 (G3): a person's own payment, never voted on: their flight, train or bus ticket (B7), or a seat or a bag at check-in
+ * (B8, the check-in pick being the option). No decision_id: `personal` names the person, Go's card and the option they
+ * tapped on it. The Server grants it only when that person tapped that option on Go's card within the last 30 minutes,
+ * the card is theirs, the amount is at most the option's price plus 5%, and nothing else is approved or booked for that
+ * pick. It signs `personal` in place of decision_id, and the payer is always that person. Replaces 1.2's ticket form.
  */
-export const RequestTicketSpendApproval = z
-  .object({ ...spendAsk, kind: z.literal('ticket'), for_person_id: Id })
-  .meta({ id: 'RequestTicketSpendApproval' });
+export const RequestPersonalSpendApproval = z
+  .object({ ...spendAsk, personal: PersonalPick })
+  .meta({ id: 'RequestPersonalSpendApproval' });
 
 /**
  * Go asks the Server whether a payment may happen. The Server runs the spend check. The group's form names its vote;
- * 1.2's ticket form (`kind: "ticket"`) names the traveller instead.
+ * 1.3's personal form names the person's own pick instead.
  */
 export const RequestSpendApproval = z
-  .union([RequestTicketSpendApproval, RequestGroupSpendApproval])
+  .union([RequestPersonalSpendApproval, RequestGroupSpendApproval])
   .meta({ id: 'RequestSpendApproval' });
 
 /** Go releases an approval it will not use, so the next one is not refused as outstanding. */
@@ -224,8 +238,13 @@ export const SpendDenialReason = z
     'currency_mismatch',
     'not_refundable',
     'approval_outstanding',
-    /** 1.2, the ticket form: the person it is for is not in the trip. */
+    /** The personal form: the person it is for is not in the trip. */
     'not_in_trip',
+    /**
+     * 1.3, the personal form: that person has not tapped that option on their own card of Go's in the last 30 minutes, or
+     * the amount is more than the option's price plus 5%.
+     */
+    'no_pick',
     /** 1.2: the vote is booked already (a confirmed booking exists), so a second payment would charge twice. */
     'already_booked',
   ])

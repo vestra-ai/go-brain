@@ -2,7 +2,7 @@ import { z } from 'zod';
 import { Actor, Id, IsoDateTime, Seq } from './common.js';
 import { Person } from './people.js';
 import { Message, Reaction } from './room.js';
-import { Booking, Decision, Expense, Mandate, RecordLine, Settlement, TripSnapshot } from './trip.js';
+import { Booking, Decision, DecisionOption, Expense, Mandate, RecordLine, Settlement, TripSnapshot } from './trip.js';
 
 /**
  * Events: the Server tells Go what happened in a trip, one send_event request per event on the socket.
@@ -60,7 +60,7 @@ export const DecisionVoted = ev('decision.voted',
     option_index: z.int().nonnegative().nullish(),
     voted: z.int().nonnegative(),
     of: z.int().nonnegative(),
-    tally: z.array(z.int().nonnegative()).max(10),
+    tally: z.array(z.int().nonnegative()).max(20),
     /** 1.1: they said "I'm flexible" instead of picking: no option_index, counted in voted, never in the tally. */
     flexible: z.literal(true).nullish(),
     /** 1.1: they took their vote back: no option_index, and voted and tally count without them. */
@@ -70,6 +70,10 @@ export const DecisionVoted = ev('decision.voted',
 export const DecisionClosed = ev('decision.closed',
   z.object({ decision: Decision, reason: z.enum(['time', 'everyone_voted', 'closed_by_person', 'closed_by_go']) }),
   'DecisionClosed', 'A vote closed, with the result.');
+export const DecisionOptionsAdded = ev('decision.options_added',
+  z.object({ decision_id: Id, options: z.array(DecisionOption).min(1).max(10), by: Actor }),
+  'DecisionOptionsAdded',
+  '1.3 (rev 5 R5): options were added to an open vote ("see more", add_vote_options). Their indexes continue from the last option; votes already cast stay.');
 export const DecisionCancelled = ev('decision.cancelled', z.object({ decision_id: Id, by: Actor }), 'DecisionCancelled',
   'A vote was called off.');
 export const MandateSet = ev('mandate.set', z.object({ decision_id: Id, mandate: Mandate }), 'MandateSet',
@@ -116,6 +120,7 @@ export const Event = z
     DecisionVoted,
     DecisionClosed,
     DecisionCancelled,
+    DecisionOptionsAdded,
     MandateSet,
     MandateConfirmed,
     MandateDeclined,
