@@ -3,7 +3,7 @@
  * offers on those cards. An option_id on a card, and a vote option's option_ref, both name a row here.
  */
 import type pg from 'pg';
-import type { Journey, Place } from '@go/contract';
+import { MORE_OPTIONS, type Journey, type Place } from '@go/contract';
 import type { OptionsCardT } from './cards.js';
 import { mintId } from './ids.js';
 import type { StoredOffer, TravelOption } from './travel.js';
@@ -62,6 +62,15 @@ export interface OptionsCardRow {
   voteKey: string | null;
 }
 
+/** An option as "See more" tells it from the others: its own page, else its name and when it leaves. */
+const optionKey = (o: ResultOption): string => o.sourceUrl ?? `${o.title}|${o.journey?.depart_at ?? ''}`;
+
+/** A search's options that no card has shown yet (shown: results.shownFrom), by their numbers in the search. */
+export function unseenNumbers(set: Pick<ResultSet, 'options'>, shown: ResultOption[]): number[] {
+  const seen = new Set(shown.map(optionKey));
+  return set.options.flatMap((o, i) => (seen.has(optionKey(o)) ? [] : [i + 1]));
+}
+
 export interface ResultsStore {
   save(s: Omit<ResultSet, 'resultsId'> & { resultsId?: string }): Promise<ResultSet>;
   get(tripId: string, resultsId: string): Promise<ResultSet | null>;
@@ -87,8 +96,11 @@ export interface ResultsStore {
   /** True when the card had no vote, or this same key had already claimed it. */
   claimVote(cardId: string, key: string): Promise<boolean>;
   setDecision(cardId: string, decisionId: string): Promise<void>;
-  /** A card that is its vote (rev 5 R5): its vote set on its row and in the card itself, which a replace_card resends. */
-  setCardDecision(tripId: string, cardId: string, decisionId: string): Promise<OptionsCardT | null>;
+  /**
+   * A card that is its vote (rev 5 R5): its vote set on its row and in the card itself, which a replace_card resends, with
+   * "See more" as its one button while its search has more to show (more), else none. The card as kept now.
+   */
+  setCardDecision(tripId: string, cardId: string, decisionId: string, more: boolean): Promise<OptionsCardT | null>;
   releaseVote(cardId: string, key: string): Promise<void>;
   /** The votes opened on the trip's other cards of this kind of option, by their decision ids. */
   votesOfKind(tripId: string, kind: OptionKind, exceptCardId: string): Promise<string[]>;
@@ -256,11 +268,11 @@ export function createResultsStore(pool: pg.Pool): ResultsStore {
       await pool.query('update options_cards set decision_id = $2 where card_id = $1', [cardId, decisionId]);
     },
 
-    async setCardDecision(tripId, cardId, decisionId) {
+    async setCardDecision(tripId, cardId, decisionId, more) {
       const { rows } = await pool.query<{ card: OptionsCardT }>(
-        `update options_cards set decision_id = $3, card = card || jsonb_build_object('decision_id', $3::text)
+        `update options_cards set decision_id = $3, card = card || jsonb_build_object('decision_id', $3::text, 'actions', $4::jsonb)
          where trip_id = $1 and card_id = $2 returning card`,
-        [tripId, cardId, decisionId],
+        [tripId, cardId, decisionId, JSON.stringify(more ? [MORE_OPTIONS] : [])],
       );
       return rows[0]?.card ?? null;
     },

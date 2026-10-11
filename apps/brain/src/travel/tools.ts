@@ -8,7 +8,7 @@ import { CARD_LINE } from '../composer/rules.js';
 import { CardLineArg, SAY_NOTHING, type QuickTool, type TurnCtx } from '../composer/tools.js';
 import type { Desk } from '../desk/desk.js';
 import { dateAs } from './book/expr.js';
-import { buildFlightsLinkCard, buildIxigoPageCard, buildOptionsCard, clip, formatInr, IXIGO_SEARCH_PAGES, ixigoPage, placeKindNotAll, subtitleFor } from './cards.js';
+import { buildFlightsLinkCard, buildIxigoPageCard, buildOptionsCard, clip, formatInr, IXIGO_SEARCH_PAGES, ixigoPage, PERSONAL_KINDS, placeKindNotAll, subtitleFor } from './cards.js';
 import { localDay } from '../proactive/clock.js';
 import { answerLine, answerTitle, directPicks, droppedWords, ledBy, leftOff, linkLine, plainAsk } from './answer.js';
 import { flightDetails, stayDetails, trainDetails } from './details.js';
@@ -23,7 +23,7 @@ import { airportCity } from './recipes/places.js';
 import { TravelError } from './mcp-travel.js';
 import { photosOf } from './photos.js';
 import type { TopPick } from './pick-photos.js';
-import { toResultOption, type OptionKind, type ResultOption, type ResultSet, type ResultsStore } from './results.js';
+import { toResultOption, unseenNumbers, type OptionKind, type ResultOption, type ResultSet, type ResultsStore } from './results.js';
 import type { SearchWake } from './search-wake.js';
 import { Clock, MUST_HAVES, type Travel, type TravelKind, type TravelOption, type TravelQuery, type TravelSearch } from './travel.js';
 import { openVoteFromCard } from './votes.js';
@@ -377,20 +377,13 @@ async function runSearch(kind: TravelKind, given: TravelQuery, ctx: TurnCtx, d: 
  * Puts an options card up from a saved set, with its line: the picks by their numbers, saved before the card is shown
  * so a tap always finds its offers. show_options and a search that answers itself both come here.
  */
-export async function putUpCard(
-  set: ResultSet,
-  numbers: number[],
-  given: { title: string; line: string },
-  ctx: TurnCtx,
-  d: Pick<TravelToolDeps, 'results' | 'images' | 'showPick'>,
-): Promise<{ cardId: string; shown: number }> {
-  const cardId = ctx.stableId('c_opt');
-  const run = runOfSet.get(set.resultsId);
-  if (run) remember(shownRuns, run);
-  // Each option's sheet (contract 1.1 details), from what the search read: a stay's photos through Go's image cache.
+/**
+ * A saved set's picked options as a card shows them, numbered on the card: each option's sheet (contract 1.1 details)
+ * from what the search read, a stay's photos through Go's image cache. people: who the trip is for, for a sheet's prices.
+ */
+export async function cardPicks(set: ResultSet, numbers: number[], cardId: string, people: number, d: Pick<TravelToolDeps, 'images'>) {
   const query = set.query as TravelQuery;
-  const people = query.guests ?? ctx.pack?.trip?.people?.length ?? 0;
-  const picks = await Promise.all(
+  return Promise.all(
     numbers.map(async (n, i) => {
       const option = set.options[n - 1]!;
       // A stay's photos from the search, with no labels (ixigo's list gives none): the top pick's labelled ones replace
@@ -407,13 +400,49 @@ export async function putUpCard(
       };
     }),
   );
+}
+
+/**
+ * How many of a search's options its set keeps: a stays list all it read up to 30, so a card's "See more" has more to
+ * show (rev 5 R4: more of the same search, never a new read); a journey's 10, its card being its traveller's own.
+ */
+const keptOf = (kind: TravelKind): number => (kind === 'stays' ? 30 : 10);
+
+/** The vote a shared thing's card opens with, as show_options asks for it: each left out takes the vote's own default. */
+export type CardVote = { question?: string; closesInHours?: number; anonymous?: boolean };
+
+export async function putUpCard(
+  set: ResultSet,
+  numbers: number[],
+  given: { title: string; line: string; vote?: CardVote },
+  ctx: TurnCtx,
+  d: Pick<TravelToolDeps, 'results' | 'images' | 'showPick' | 'log'> & { now?: () => Date },
+): Promise<{ cardId: string; shown: number; decisionId: string | null }> {
+  const cardId = ctx.stableId('c_opt');
+  const run = runOfSet.get(set.resultsId);
+  if (run) remember(shownRuns, run);
+  const picks = await cardPicks(set, numbers, cardId, (set.query as TravelQuery).guests ?? ctx.pack?.trip?.people?.length ?? 0, d);
   const title = stayCardTitle(given.title, set.query, picks.map((p) => p.option));
-  // Stays from ixigo.com: the card shows a few, so its button opens the whole list the search read (the lead's call).
-  const seeAll = set.optionKind === 'stay' && ixigoPage(set.page ?? null) !== null;
-  const card = buildOptionsCard({ cardId, title, optionKind: set.optionKind, checkedAt: set.checkedAt, picks, seeAll });
+  const card = buildOptionsCard({ cardId, title, optionKind: set.optionKind, checkedAt: set.checkedAt, picks });
   await d.results.saveCard({ cardId, tripId: ctx.tripId, resultsId: set.resultsId, title: card.title, optionKind: set.optionKind, card }, picks, set.checkedAt);
   // A rerun of the same turn finds this card id saved already: it shows the card saved first, which its stored offers match.
-  const shown = (await d.results.card(ctx.tripId, cardId))?.card ?? card;
+  let shown = (await d.results.card(ctx.tripId, cardId))?.card ?? card;
+  // A shared thing's card is its vote (rev 5 R5): the vote opens before the card goes up, so the App draws Vote on each
+  // option from the start, and the card has "See more" while its search has more to show (R4). A rerun keeps its vote.
+  // A vote that can't open leaves the card without one, for put_to_vote after.
+  if (!PERSONAL_KINDS.has(set.optionKind) && picks.length >= 2 && !shown.decision_id) {
+    const voted = await openVoteFromCard(
+      { results: d.results, link: ctx.link, now: d.now ?? (() => new Date()) },
+      { tripId: ctx.tripId, cardId, key: ctx.turnId, requestId: ctx.stableId('go_vote'), voteCardId: ctx.stableId('c_vote'), onCard: true, ...given.vote },
+    ).catch((err: unknown) => {
+      d.log?.warn({ err: String(err).slice(0, 200), cardId }, 'travel: a card went up without its vote');
+      return null;
+    });
+    if (voted?.ok) {
+      const more = unseenNumbers(set, await d.results.shownFrom(ctx.tripId, set.resultsId)).length > 0;
+      shown = (await d.results.setCardDecision(ctx.tripId, cardId, voted.decisionId, more)) ?? shown;
+    }
+  }
   ctx.cards.push(shown);
   ctx.lines.push(given.line);
   // The top pick on the stage once its card is up, the room watching Go open it: a stay's own page, a bus's seat layout
@@ -429,13 +458,13 @@ export async function putUpCard(
       : [];
     d.showPick?.(ctx.tripId, { page: top, name: picks[0]!.option.title, kind: set.optionKind === 'bus' ? 'bus' : 'stay', cardId, optionId: picks[0]!.optionId }, more);
   }
-  return { cardId, shown: shown.options.length };
+  return { cardId, shown: shown.options.length, decisionId: shown.decision_id ?? null };
 }
 
 /**
  * A finished search that answers the turn's plain ask itself: its list saved, its picks on a card (the engine's order:
- * the first three stays, the three cheapest journeys), and a line built from its data. The turn ends on them, with no
- * model round after the search. "See on ixigo" on the card opens each option's own page, as on any card. lead goes
+ * the first 10 stays, the three cheapest journeys), and a line built from its data. The turn ends on them, with no
+ * model round after the search. Each option carries its own ixigo page, as on any card; stays go up as their vote. lead goes
  * before the line ("Already on ixigo: pool stays in…", a watch that is already so). Options read without filters ixigo
  * left off (unapplied) are saved and titled as searched without them, and the line says so first.
  */
@@ -444,11 +473,11 @@ export async function answerItself(
   q: TravelQuery,
   found: TravelSearch,
   ctx: TurnCtx,
-  d: Pick<TravelToolDeps, 'results' | 'images'>,
+  d: Pick<TravelToolDeps, 'results' | 'images' | 'log'> & { now?: () => Date },
   lead?: string,
 ): Promise<unknown> {
   const searched = answeredAs(q, found);
-  const options = found.results.slice(0, 10).map(toResultOption);
+  const options = found.results.slice(0, keptOf(kind)).map(toResultOption);
   const set = await d.results.save({ tripId: ctx.tripId, optionKind: OPTION_KIND[kind], source: 'search', query: searched, options, checkedAt: found.checkedAt, ...(found.page ? { page: found.page } : {}) });
   noteRun(set.resultsId, ctx.tripId, found.runId);
   const numbers = directPicks(kind, options);
@@ -720,9 +749,10 @@ export async function searchAnswer(kind: TravelKind, ask: TravelQuery, found: Tr
       note: 'Nothing to show. Say what the summary says in one line, keeping every condition in it, and suggest loosening one thing.',
     };
   }
-  // Fewer than three stays fit: the nearest of the rest are saved after them, numbered on, for the same card.
+  // Fewer than three stays fit: the nearest of the rest are saved after them, numbered on, for the same card. The rest of
+  // a stays list after the first 10 are saved after those, for "See more" (keptOf); the model's list is the first 10.
   const besides = kind === 'stays' ? (found.nearest ?? []) : [];
-  const saved = [...options, ...besides.map((b) => toResultOption(b.option))];
+  const saved = [...options, ...besides.map((b) => toResultOption(b.option)), ...found.results.slice(10, keptOf(kind)).map(toResultOption)];
   const set = await d.results.save({ tripId, optionKind: OPTION_KIND[kind], source: 'search', query: q, options: saved, checkedAt: found.checkedAt, ...(found.page ? { page: found.page } : {}) });
   noteRun(set.resultsId, tripId, found.runId);
   const fit = found.results.length;
@@ -760,7 +790,7 @@ export async function searchAnswer(kind: TravelKind, ask: TravelQuery, found: Tr
     count: options.length,
     summary,
     results: options.map((o, i) => compactOption(i + 1, o, pick.length > 0)),
-    card: { results_id: set.resultsId, option_numbers: saved.slice(0, 3).map((_, i) => i + 1), title: suggestTitle(kind, q) },
+    card: { results_id: set.resultsId, option_numbers: saved.slice(0, kind === 'stays' ? 10 : 3).map((_, i) => i + 1), title: suggestTitle(kind, q) },
     note:
       wasNote +
       (found.nearStay
@@ -825,9 +855,13 @@ const NO_HOMEWORK =
 
 const ShowArgs = z.object({
   results_id: z.string().min(3).max(64),
-  option_numbers: z.array(z.int().min(1).max(10)).min(1).max(5).optional().describe('From the results, best first. Default: the first three.'),
+  option_numbers: z.array(z.int().min(1).max(10)).min(1).max(10).optional().describe('From the results, best first. Default: the first 10 stays, else the first three.'),
   title: z.string().min(1).max(80),
   line: CardLineArg,
+  // A shared thing's card is its vote (rev 5 R5): how that vote runs, only when someone asked.
+  question: z.string().min(3).max(200).optional().describe("The vote's question, when a card of shared things should ask something other than the usual (\"Where do we stay?\")."),
+  closes_in_hours: z.number().min(0.5).max(72).optional().describe('When the vote closes, only when someone asked for a time. Default: a day.'),
+  anonymous: z.boolean().optional().describe('true for a secret ballot, only when someone asks for a secret or anonymous vote. Leave it out otherwise.'),
 });
 
 const VoteArgs = z.object({
@@ -886,25 +920,38 @@ export function travelTools(d: TravelToolDeps): QuickTool<any>[] {
   const showOptions: QuickTool<z.infer<typeof ShowArgs>> = {
     name: 'show_options',
     description:
-      'Shows an options card from a results_id (a search, or a finished job), with up to 5 option_numbers, best first, and a short title. ' +
-      `The card goes out with your line and shows the checked prices, so never type prices yourself. ${CARD_LINE}`,
+      'Shows an options card from a results_id (a search, or a finished job), with up to 10 option_numbers, best first, and a short title. ' +
+      `The card goes out with your line and shows the checked prices, so never type prices yourself. ${CARD_LINE} ` +
+      'A card of shared things (stays, places, things to do) is the group\'s vote: each option has Vote on it from the start, and See more adds more of the same search. ' +
+      'So never put_to_vote or open_vote for it; give question, anonymous or closes_in_hours here when someone asks. ' +
+      "A ticket's card (flights, trains, buses) is each traveller's own pick, never a vote.",
     input: ShowArgs,
     endsTurn: true,
     async run(a, ctx) {
       const set = await d.results.get(ctx.tripId, a.results_id);
       if (!set || set.options.length === 0) return { error: 'unknown_results', note: 'Search again, then show the new results.' };
-      const numbers = [...new Set(a.option_numbers ?? set.options.slice(0, 3).map((_, i) => i + 1))].filter((n) => n <= set.options.length).slice(0, 5);
+      const first = set.optionKind === 'stay' ? 10 : 3;
+      const numbers = [...new Set(a.option_numbers ?? set.options.slice(0, first).map((_, i) => i + 1))].filter((n) => n <= set.options.length).slice(0, 10);
       if (numbers.length === 0) return { error: 'no_such_options', note: `Pick numbers from 1 to ${set.options.length}.` };
-      const { cardId, shown } = await putUpCard(set, numbers, { title: a.title, line: a.line }, ctx, d);
-      return { card_id: cardId, shown, checked: ageText(set.checkedAt, d.now()), note: 'The card goes out with your line.' };
+      const vote: CardVote = {
+        ...(a.question ? { question: a.question } : {}),
+        ...(a.closes_in_hours ? { closesInHours: a.closes_in_hours } : {}),
+        ...(a.anonymous ? { anonymous: true } : {}),
+      };
+      const { cardId, shown, decisionId } = await putUpCard(set, numbers, { title: a.title, line: a.line, vote }, ctx, d);
+      return {
+        card_id: cardId, shown, checked: ageText(set.checkedAt, d.now()),
+        ...(decisionId ? { decision_id: decisionId } : {}),
+        note: decisionId ? "The card goes out with your line, as the group's vote: each option has Vote on it." : 'The card goes out with your line.',
+      };
     },
   };
   const putToVote: QuickTool<z.infer<typeof VoteArgs>> = {
     name: 'put_to_vote',
     description:
       'Opens a vote on the options of an options card Go showed (card_id), even a card with one option (that option or keep looking). ' +
-      'Only this vote can be booked: never open_vote for options on a card. To show options and put them to a vote at once, ' +
-      'call show_options and then this with no card_id, in the same reply. The vote card goes out with the line you give it. ' +
+      'Only this vote can be booked: never open_vote for options on a card. A card of shared things that show_options put up is its own vote ' +
+      'already (Vote on each option): this only says so. For a card from before, or one option, the vote card goes out with the line you give it. ' +
       `${CARD_LINE} Use it when the group should decide together on a shared thing (a stay, a cab, an activity), never on a ticket: a flight, train or bus is each traveller's own pick. ` +
       'Set anonymous when someone asks for a secret or anonymous vote.',
     input: VoteArgs,
@@ -921,6 +968,9 @@ export function travelTools(d: TravelToolDeps): QuickTool<any>[] {
         }
         cardId = shown[0]!.card_id;
       }
+      // A card that is its vote already (rev 5 R5): nothing to open, and no vote card beside it.
+      const onCard = (await d.results.card(ctx.tripId, cardId))?.card.decision_id;
+      if (onCard) return { decision_id: onCard, note: "This card is the group's vote already: each option has Vote on it. Say so in one short line only if someone asked for a vote." };
       const r = await openVoteFromCard(
         { results: d.results, link: ctx.link, now: d.now },
         {

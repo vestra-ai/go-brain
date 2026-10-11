@@ -335,7 +335,7 @@ export const registerTravel: RegisterLane = async (brain) => {
     pay: () => brain.pay,
     login,
   });
-  registerTravelTaps(brain.taps, { results, pool: brain.pool, link: brain.door.link, desk: brain.desk, now: brain.now, log: brain.log, booking, nameOf });
+  registerTravelTaps(brain.taps, { results, pool: brain.pool, link: brain.door.link, desk: brain.desk, now: brain.now, log: brain.log, booking, nameOf, images });
   // The Server's REV4 B5: once a vote picks a stay, its rooms card (the ways to take its rooms, who shares, what each pays)
   // on the turn that says so; a tap keeps the way picked, for the expense per room (B6, chosenArrangement).
   const roomsCards = createRoomsCards(brain.pool);
@@ -371,7 +371,7 @@ export const registerTravel: RegisterLane = async (brain) => {
   // One still running is handed over, and the turn says nothing more: the live card covers the wait.
   brain.context.addDirect(earlyAnswer({ early, results, images, travel, today, now: brain.now, desk: brain.desk, log: brain.log }));
   // A search that outlived its turn wakes Go with its options, and that wake puts them up itself: card and line.
-  brain.context.addDirect(searchWakeAnswer({ results, images, showPick }));
+  brain.context.addDirect(searchWakeAnswer({ results, images, showPick, now: brain.now, log: brain.log }));
   brain.context.addWake('search', renderSearchWake);
   // A turn that ends ends the live search cards it left open.
   brain.context.addTurnEnd((t) => ixigoWeb.turnEnded(t));

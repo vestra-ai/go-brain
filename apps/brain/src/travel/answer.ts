@@ -182,7 +182,7 @@ export function answerTitle(kind: TravelKind, q: TravelQuery): string {
 /**
  * The card's line, built from the options the card shows: the search's scope and conditions and the cheapest price on
  * the card, said to whoever asked (CARD_LINE: no ids, no "I'll", no count of the card's options). Never a price the card
- * does not show (a stays card shows the engine's first three, not the cheapest: staging pass, 8 Oct). "Pool stays in
+ * does not show (a stays card shows the engine's first ones, not the cheapest: staging pass, 8 Oct). "Pool stays in
  * North Goa for 6 to 9 Nov, from ₹38,400 for 3 nights, about ₹7,700 each." (a night's, "from ₹4,334 a night", only for
  * stays with no total) "Flights Delhi to Goa on Fri 6 Nov, leaving after 7:00 pm, from ₹3,890 per person."
  */
@@ -249,12 +249,12 @@ export function linkLine(kind: TravelKind, q: TravelQuery, who: string | null): 
 }
 
 /**
- * The card's picks, by their numbers in the saved list (1-based), in the order shown. Stays: the engine's first three
- * (its order already holds the conditions, the rating and the region's spread). Journeys: the three cheapest that fit,
- * one fare a train, shown by departure.
+ * The card's picks, by their numbers in the saved list (1-based), in the order shown. Stays: the engine's first 10, a
+ * card's most (rev 5 R3; its order already holds the conditions, the rating and the region's spread). Journeys: the
+ * three cheapest that fit, one fare a train, shown by departure.
  */
 export function directPicks(kind: TravelKind, options: ResultOption[]): number[] {
-  if (kind === 'stays') return options.slice(0, 3).map((_, i) => i + 1);
+  if (kind === 'stays') return options.slice(0, 10).map((_, i) => i + 1);
   const seen = new Set<string>();
   const cheapest = options
     .map((o, i) => ({ o, n: i + 1 }))

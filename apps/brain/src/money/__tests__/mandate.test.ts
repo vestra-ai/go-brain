@@ -154,7 +154,7 @@ describe('set_mandate refuses, in code, what Go cannot book', () => {
   it('a flight: group fares are not booked, so it says so and points to its card, never the link, and sets nothing', async () => {
     winnerIs('ixigo:flight:6e-2134', { ...flight, link: 'https://www.ixigo.com/flights/6e-2134' });
     expect(await setMandate(k.deps, ctxWith(), mandate)).toEqual({
-      refused: "I can't book flights for the whole group yet. Each of you can book on ixigo: See on ixigo on its card opens it there.",
+      refused: "I can't book flights for the whole group yet. Each of you can book on ixigo: View on ixigo, in its details on its card, opens it there.",
       unbookable: true,
     });
     expect(k.server.writesOf('set_mandate')).toEqual([]);
@@ -180,7 +180,7 @@ describe('set_mandate refuses, in code, what Go cannot book', () => {
     winnerIs(null);
     k.travel.pages.set('opt_villa_sol', 'https://www.ixigo.com/hotels/1384544/details?locationId=1366415&checkinDate=06112026&checkoutDate=09112026&adultCount=5&roomCount=3&hotelInfoToken=true%7C3001%7C1');
     expect(await setMandate(k.deps, ctxWith(), mandate)).toEqual({
-      refused: "Villa Sol is booked on ixigo, not here: See on ixigo on its card opens it there.",
+      refused: "Villa Sol is booked on ixigo, not here: View on ixigo, in its details on its card, opens it there.",
       unbookable: true,
     });
     expect(k.server.writesOf('set_mandate')).toEqual([]);

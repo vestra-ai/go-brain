@@ -1,5 +1,7 @@
 /**
- * Taps on Go's options cards. "Put it to a vote" opens the vote in code (fast and once); "I'll take this" goes on the
+ * Taps on Go's options cards. A shared thing's card is its vote since rev 5 (votes.ts): the App's Vote goes to the Server,
+ * and "See more" puts more of the same search on a new card in the same vote. On cards from before, "Put it to a vote"
+ * opens the vote in code (fast and once). "I'll take this" goes on the
  * desk, so the composer answers the person in the room, except on a ticket (a flight, train or bus fare: PERSONAL_KINDS),
  * which is the picker's own: Go posts their own confirm at once, "Book it" or "Change", for them alone, never a vote, and
  * keeps it as their pick (picks.ts), which a flight's heads-up watches.
@@ -14,12 +16,14 @@ import type { CardTapParams } from '../door/methods.js';
 import type { DeskItem } from '../desk/desk.js';
 import type { TripPack } from '../trips/pack.js';
 import { PAY_FLIGHT, type FlightBooking } from './booking/flight-booking.js';
-import { BOOK_MINE, budgetSheet, buildConfirmMineCard, CHANGE_MINE, clip, ixigoPage, PERSONAL_KINDS } from './cards.js';
+import { BOOK_MINE, budgetSheet, buildConfirmMineCard, buildOptionsCard, CHANGE_MINE, clip, ixigoPage, PERSONAL_KINDS } from './cards.js';
 import { stableId } from './ids.js';
+import type { Images } from './images.js';
 import { recordPick, wayOf } from './picks.js';
-import type { ResultsStore } from './results.js';
+import { unseenNumbers, type ResultsStore } from './results.js';
+import { cardPicks } from './tools.js';
 import type { StoredOffer } from './travel.js';
-import { openVoteFromCard } from './votes.js';
+import { addToVote, openVoteFromCard, VOTE_MOST } from './votes.js';
 
 export interface TravelTapDeps {
   results: ResultsStore;
@@ -32,6 +36,8 @@ export interface TravelTapDeps {
   desk: Brain['desk'];
   now: () => Date;
   log: Brain['log'];
+  /** Go's image cache, for the photos on a "See more" card; absent, See more is refused. */
+  images?: Images;
 }
 
 /** How long the App may hold an ixigo page it was told to open: the time its prices count as fresh. */
@@ -142,7 +148,39 @@ export function registerTravelTaps(taps: Brain['taps'], d: TravelTapDeps): void 
     return { result: 'open', url, expires_at: new Date(d.now().getTime() + OPEN_FOR_MS).toISOString() };
   });
 
-  // A card of stays shows a few: this opens the whole list the search read on ixigo.com.
+  // "See more" (rev 5 R4): up to 10 more of the same search that no card has shown, on a new card in the same vote. The
+  // tap answers at once and the card follows; with nothing new left, the vote closed or full, a toast says so instead.
+  taps.on('options', 'more_options', async (tap) => {
+    const row = await d.results.card(tap.trip_id, tap.card_id);
+    const set = row ? await d.results.get(tap.trip_id, row.resultsId) : null;
+    const decisionId = row?.card.decision_id ?? null;
+    const images = d.images;
+    if (!row || !set || !decisionId || !images) return { result: 'refused', toast: 'Those options are no longer here' };
+    const unseen = unseenNumbers(set, await d.results.shownFrom(tap.trip_id, set.resultsId));
+    if (unseen.length === 0) return { result: 'done', toast: "That's everything ixigo listed for this search" };
+    const trip = await d.link.request('read_trip', { trip_id: tap.trip_id });
+    const vote = trip.decisions.find((x) => x.decision_id === decisionId);
+    if (vote?.status !== 'open') return { result: 'done', toast: 'The vote has closed' };
+    if (vote.options.length >= VOTE_MOST) return { result: 'done', toast: `This vote has ${VOTE_MOST} options, the most one vote takes` };
+    const numbers = unseen.slice(0, Math.min(10, VOTE_MOST - vote.options.length));
+    const people = typeof set.query['guests'] === 'number' ? set.query['guests'] : trip.people.length;
+    // Outside a turn, ids come from the tap, so a repeat does each write once.
+    const more = async (): Promise<void> => {
+      const cardId = stableId('c_more', tap.tap_id);
+      const picks = await cardPicks(set, numbers, cardId, people, { images });
+      const card = buildOptionsCard({ cardId, title: `More: ${row.title}`, optionKind: row.optionKind, checkedAt: set.checkedAt, picks });
+      await d.results.saveCard({ cardId, tripId: tap.trip_id, resultsId: set.resultsId, title: card.title, optionKind: row.optionKind, card }, picks, set.checkedAt);
+      // Its own "See more" while the search has more and the vote has room after these.
+      const left = unseen.length > numbers.length && vote.options.length + numbers.length < VOTE_MOST;
+      const voting = await addToVote({ results: d.results, link: d.link }, { tripId: tap.trip_id, cardId, decisionId, requestId: stableId('go_more', tap.tap_id), more: left });
+      if (voting) await d.link.request('post_message', { trip_id: tap.trip_id, request_id: stableId('go_more_card', tap.tap_id), card: voting });
+    };
+    // The card goes up after the answer: a page of photos and two requests to the Server must not hold the 3 s tap answer.
+    void more().catch((err: unknown) => d.log.error({ err, cardId: tap.card_id }, 'travel: See more failed'));
+    return { result: 'done' };
+  });
+
+  // A card of stays from before rev 5 shows a few: this opens the whole list the search read on ixigo.com.
   taps.on('options', 'see_all', async (tap) => {
     const row = await d.results.card(tap.trip_id, tap.card_id);
     const set = row ? await d.results.get(tap.trip_id, row.resultsId) : null;

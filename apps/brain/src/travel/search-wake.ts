@@ -67,7 +67,7 @@ const KINDS: readonly string[] = ['flights', 'trains', 'buses', 'stays'];
  * answers its turn makes) and the card's line, one line. Any other wake, a search that found nothing or failed, or a set
  * no longer saved, goes to the model as before.
  */
-export function searchWakeAnswer(d: Pick<TravelToolDeps, 'results' | 'images' | 'showPick'>): DirectAnswer {
+export function searchWakeAnswer(d: Pick<TravelToolDeps, 'results' | 'images' | 'showPick' | 'log'> & { now?: () => Date }): DirectAnswer {
   return async ({ tripId, wake, ctx }) => {
     const item = wake[0];
     if (wake.length !== 1 || item?.kind !== 'search' || !KINDS.includes(item.ref)) return false;

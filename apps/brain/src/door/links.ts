@@ -1,5 +1,5 @@
 /**
- * Go's links live in card actions ("See on ixigo"), never in a chat line: a 300-character ixigo address in the room
+ * Go's links live on cards (an option's own ixigo page, a notice's source), never in a chat line: a 300-character ixigo address in the room
  * (demo, 8 Oct) is noise nobody reads, and a link is the one thing a person might tap without Go's card around it.
  * The door takes every http or https link out of a post's text, whatever wrote it, and closes up what is left.
  */

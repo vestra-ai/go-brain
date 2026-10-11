@@ -152,12 +152,12 @@ describe('askToPay refuses, in plain words, and posts nothing', () => {
     expect(k.travel.holds).toEqual([]);
   });
 
-  it('for a stay from ixigo.com: no offer to hold, so Go points to See on ixigo on its card (never the link), and holds nothing', async () => {
+  it('for a stay from ixigo.com: no offer to hold, so Go points to View on ixigo in its details (never the link), and holds nothing', async () => {
     k.travel.options.set('opt_villa_sol', null);
     k.travel.pages.set('opt_villa_sol', 'https://www.ixigo.com/hotels/1384544/details?locationId=1366415&checkinDate=06112026&checkoutDate=09112026&adultCount=5&roomCount=3&hotelInfoToken=true%7C3001%7C1');
     expect(await k.ask()).toMatchObject({
       code: 'not_bookable',
-      refused: "Villa Sol is booked on ixigo, not here: See on ixigo on its card opens it there.",
+      refused: "Villa Sol is booked on ixigo, not here: View on ixigo, in its details on its card, opens it there.",
     });
     // A page anywhere but ixigo.com is never handed out.
     k.travel.pages.set('opt_villa_sol', 'https://villa-sol.example.com/book');
@@ -176,7 +176,7 @@ describe('askToPay refuses, in plain words, and posts nothing', () => {
     expect(await k.ask()).toMatchObject({
       code: 'not_bookable_yet',
       say: true,
-      refused: "I can't book flights for the whole group yet. Each of you can book on ixigo: See on ixigo on its card opens it there.",
+      refused: "I can't book flights for the whole group yet. Each of you can book on ixigo: View on ixigo, in its details on its card, opens it there.",
     });
     // A train with no booking page from the travel layer: the first sentence alone.
     k.travel.options.set('opt_villa_sol', 'ixigo:train:12432');
