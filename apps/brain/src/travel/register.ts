@@ -8,6 +8,7 @@ import { loadBook } from './book/book.js';
 import { createEngine } from './book/engine.js';
 import { ixigoTool, runOnStage, toolRecipes } from './book/tool.js';
 import { bookingsNow } from './booking/booking-now.js';
+import { createBusBooking } from './booking/bus-booking.js';
 import { bookingOnFor, createFlightBooking } from './booking/flight-booking.js';
 import { tripToday } from './dates.js';
 import { readTravelEnv } from './env.js';
@@ -390,17 +391,26 @@ export const registerTravel: RegisterLane = async (brain) => {
   });
   // Keshav, 11 Oct: "when logged in, automatically continue". The login landing carries on the bookings that waited on it;
   // the minute's sweep catches one nothing heard land, and puts a person's card back for a login let go or never in.
+  // A person's own bus, as a flight (Keshav, 11 Oct): the same stage, login, vault and ticket.
+  const busBooking = createBusBooking({
+    pool: brain.pool, nameOf, runner: () => brain.recipeRunners?.browserFetch ?? null, link: brain.door.link, switches: brain.switches, now: brain.now, log: brain.log,
+    pay: () => brain.pay,
+    login,
+    results,
+  });
   login.onLoggedIn((tripId) => {
     booking.resumeWaiting(tripId).catch((err: unknown) => brain.log.warn({ err, tripId }, 'travel: carrying on bookings after the login failed'));
+    busBooking.resumeWaiting(tripId).catch((err: unknown) => brain.log.warn({ err, tripId }, 'travel: carrying on bus bookings after the login failed'));
   });
   const bookingSweep = setInterval(() => {
     booking.sweep().catch((err: unknown) => brain.log.warn({ err }, 'travel: the flight bookings sweep failed'));
+    busBooking.sweep().catch((err: unknown) => brain.log.warn({ err }, 'travel: the bus bookings sweep failed'));
   }, LOGIN_SWEEP_MS);
   bookingSweep.unref();
   brain.onStop(function stopBookingSweep() {
     clearInterval(bookingSweep);
   });
-  const { seeMore } = registerTravelTaps(brain.taps, { results, pool: brain.pool, link: brain.door.link, desk: brain.desk, now: brain.now, log: brain.log, booking, nameOf, images, travel });
+  const { seeMore } = registerTravelTaps(brain.taps, { results, pool: brain.pool, link: brain.door.link, desk: brain.desk, now: brain.now, log: brain.log, booking, busBooking, nameOf, images, travel });
   // "show more" typed right after an options card: its See more, with no model round (the lead, 11 Oct).
   brain.context.addDirect(typedMoreAnswer({ seeMore, results }));
   // With BOOKING on for a trip, the model is told Go books its people's flights, and books a pick made before by words.

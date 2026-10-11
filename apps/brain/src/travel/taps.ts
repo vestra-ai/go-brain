@@ -16,6 +16,7 @@ import type { Brain } from '../app.js';
 import type { CardTapParams } from '../door/methods.js';
 import type { DeskItem } from '../desk/desk.js';
 import type { TripPack } from '../trips/pack.js';
+import type { BusBooking } from './booking/bus-booking.js';
 import { PAY_FLIGHT, TRAVEL_DETAILS, TRAVELLER_FEMALE, TRAVELLER_MALE, type FlightBooking } from './booking/flight-booking.js';
 import { BOOK_MINE, budgetSheet, buildConfirmMineCard, CHANGE_MINE, clip, ixigoPage, PERSONAL_KINDS } from './cards.js';
 import { stableId } from './ids.js';
@@ -31,6 +32,8 @@ export interface TravelTapDeps {
   pool: Brain['pool'];
   /** Go booking a person's own flight itself (BOOKING, booking/flight-booking.ts); absent, "Book it" opens ixigo. */
   booking?: Pick<FlightBooking, 'onFor' | 'start' | 'pay' | 'gender' | 'detailsLink'>;
+  /** Go booking a person's own bus itself (BOOKING, booking/bus-booking.ts); absent, "Book it" opens ixigo. */
+  busBooking?: Pick<BusBooking, 'onFor' | 'start' | 'detailsLink'>;
   /** A person's name in the trip, for the room's words about their booking. */
   nameOf?: (tripId: string, personId: string) => Promise<string>;
   link: Brain['door']['link'];
@@ -116,6 +119,20 @@ export function registerTravelTaps(taps: Brain['taps'], d: TravelTapDeps): { see
         const started = await d.booking.start({ tapId: tap.tap_id, tripId: tap.trip_id, personId: tap.person_id, name, offer, choice: 'basic', ...(own ? { restore: row.card } : {}) });
         return { result: 'done', toast: started === 'running' ? ALREADY_BOOKING : "Go is booking it on the trip's computer" };
       }
+      // A bus, as a flight: the pick is the booking (booking/bus-booking.ts), seats and stops chosen in code.
+      if (d.busBooking && offer.kind === 'bus' && offer.sourceUrl && (await d.busBooking.onFor(tap.trip_id))) {
+        const forWho = row.card.for_person_ids ?? [];
+        const own = forWho.length === 1 && forWho[0] === tap.person_id;
+        if (own) {
+          const chosen = { ...row.card, options: [shown], actions: [] };
+          void d.results.replaceCard(tap.trip_id, chosen)
+            .then(() => d.link.request('replace_card', { trip_id: tap.trip_id, card: chosen }))
+            .catch((err: unknown) => d.log.error({ err, cardId: tap.card_id }, "travel: showing a person's pick on their card failed"));
+        }
+        const name = (await d.nameOf?.(tap.trip_id, tap.person_id).catch(() => null)) ?? 'you';
+        const started = await d.busBooking.start({ tapId: tap.tap_id, tripId: tap.trip_id, personId: tap.person_id, name, offer, ...(own ? { restore: row.card } : {}) });
+        return { result: 'done', toast: started === 'running' ? 'Go is already booking your bus' : "Go is booking it on the trip's computer" };
+      }
       const card = buildConfirmMineCard({ cardId: stableId('c_mine', tap.tap_id), personId: tap.person_id, optionKind: row.optionKind, checkedAt: offer.checkedAt, option: shown });
       // Posted after the answer, as a vote is: a request to the Server must not hold the 3 s tap answer.
       void d.link.request('post_message', { trip_id: tap.trip_id, request_id: stableId('go_tap', tap.tap_id, 'mine'), card, visible_to_person_ids: [tap.person_id] })
@@ -147,6 +164,12 @@ export function registerTravelTaps(taps: Brain['taps'], d: TravelTapDeps): { see
       const name = (await d.nameOf?.(tap.trip_id, tap.person_id).catch(() => null)) ?? 'you';
       const started = await d.booking.start({ tapId: tap.tap_id, tripId: tap.trip_id, personId: tap.person_id, name, offer: m.offer, choice: 'basic' });
       return { result: 'done', toast: started === 'running' ? ALREADY_BOOKING : "Go is booking it on the trip's computer" };
+    }
+    // A bus as a flight: on the stage, seats and stops chosen in code, up to ixigo's pay button.
+    if (d.busBooking && m.offer.kind === 'bus' && m.offer.sourceUrl && (await d.busBooking.onFor(tap.trip_id))) {
+      const name = (await d.nameOf?.(tap.trip_id, tap.person_id).catch(() => null)) ?? 'you';
+      const started = await d.busBooking.start({ tapId: tap.tap_id, tripId: tap.trip_id, personId: tap.person_id, name, offer: m.offer });
+      return { result: 'done', toast: started === 'running' ? 'Go is already booking your bus' : "Go is booking it on the trip's computer" };
     }
     const url = ixigoPage(forOne(m.offer.sourceUrl));
     if (!url) return { result: 'refused', toast: 'This option has no ixigo page' };
@@ -192,7 +215,10 @@ export function registerTravelTaps(taps: Brain['taps'], d: TravelTapDeps): { see
   taps.on('notice', TRAVEL_DETAILS, async (tap, card) => {
     const forWho = 'for_person_ids' in card ? (card.for_person_ids ?? []) : [];
     if (!d.booking || !forWho.includes(tap.person_id)) return { result: 'refused', toast: 'This one is for someone else' };
-    return d.booking.detailsLink({ tripId: tap.trip_id, cardId: tap.card_id, personId: tap.person_id });
+    // A flight's or train's ask, or a bus booking's (the same card, its own id).
+    const i = { tripId: tap.trip_id, cardId: tap.card_id, personId: tap.person_id };
+    const flight = await d.booking.detailsLink(i);
+    return flight.result === 'refused' && d.busBooking ? d.busBooking.detailsLink(i) : flight;
   });
 
   taps.on('notice', 'see_on_ixigo', async (_tap, card) => {
