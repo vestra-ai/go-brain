@@ -6,7 +6,7 @@ import { busLayout, choosePoint, chooseSeats, seatWords, type BusLayout } from '
 // layout as "Select Seats" opened it (POST /wap/GetSeatLayout), trimmed, phone numbers out of its points' names.
 const BODY = JSON.parse(fixture('bus-seat-layout-blr-goa.json')) as Record<string, unknown>;
 const layout = (): BusLayout => busLayout(BODY)!;
-const nos = (l: BusLayout, ask: Parameters<typeof chooseSeats>[1], taken?: string[]) => chooseSeats(l, ask, taken)?.map((s) => s.no) ?? null;
+const nos = (l: BusLayout, ask: Parameters<typeof chooseSeats>[1], taken?: string[], mates?: string[]) => chooseSeats(l, ask, taken, mates)?.map((s) => s.no) ?? null;
 
 describe("a bus's seat layout", () => {
   it('reads every seat by its titles: deck, row and column, berth, free, its fare, and by a window or the aisle', () => {
@@ -47,6 +47,11 @@ describe('the seats Go books, chosen in code', () => {
   it('several people sit together, side by side on one side of the gangway, then the best of the rest', () => {
     expect(nos(layout(), { count: 2 })).toEqual(['6LC', '6LB']);
     expect(nos(layout(), { count: 3 })).toEqual(['6LC', '6LB', '6UC']);
+  });
+
+  it("beside the trip's people already on this bus when a seat there is free; their ask still comes first", () => {
+    expect(nos(layout(), { count: 1 }, ['6LC'], ['6LC'])).toEqual(['6LB']);
+    expect(nos(layout(), { count: 1, berth: 'upper' }, ['6LC'], ['6LC'])).toEqual(['6UC']);
   });
 
   it("never a seat another booking of the trip took on this bus, a booked seat, or a ladies seat a man would take", () => {

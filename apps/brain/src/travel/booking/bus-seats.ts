@@ -144,18 +144,20 @@ const together = (a: BusSeat, b: BusSeat): boolean => a.deck === b.deck && a.col
 
 /**
  * The seats Go books: free, never one already taken by another booking of this trip on this bus, never a ladies seat
- * unless a woman travels; the ask's side and berth first, then the cheapest (the price the person picked was the bus's
- * lowest), then by a window, then nearer the front. Several people sit together when the bus has seats side by side.
- * Null when the bus hasn't that many free.
+ * unless a woman travels; the ask's side and berth first, then beside the trip's people already on this bus (mates), then
+ * the cheapest (the price the person picked was the bus's lowest), then by a window, then nearer the front. Several people
+ * in one booking sit together when the bus has seats side by side. Null when the bus hasn't that many free.
  */
-export function chooseSeats(layout: BusLayout, ask: SeatAsk, taken: readonly string[] = []): BusSeat[] | null {
+export function chooseSeats(layout: BusLayout, ask: SeatAsk, taken: readonly string[] = [], mates: readonly string[] = []): BusSeat[] | null {
   const count = Math.max(1, Math.min(ask.count, layout.maxSeats));
   const free = layout.seats.filter((s) => s.free && !taken.includes(s.no) && (!s.ladies || ask.women === true));
   if (free.length < count) return null;
   const misses = (s: BusSeat): number =>
     (ask.berth && s.sleeper && s.deck !== ask.berth ? 2 : 0) + (ask.side === 'window' && !s.window ? 1 : 0) + (ask.side === 'aisle' && !s.aisle ? 1 : 0);
+  const theirs = layout.seats.filter((s) => mates.includes(s.no));
+  const apart = (s: BusSeat): number => (theirs.length > 0 && !theirs.some((m) => together(s, m)) ? 1 : 0);
   const order = (a: BusSeat, b: BusSeat): number =>
-    misses(a) - misses(b) || a.fareMinor - b.fareMinor || Number(b.window) - Number(a.window) || a.col - b.col || a.row - b.row;
+    misses(a) - misses(b) || apart(a) - apart(b) || a.fareMinor - b.fareMinor || Number(b.window) - Number(a.window) || a.col - b.col || a.row - b.row;
   const ranked = [...free].sort(order);
   if (count === 1) return ranked.slice(0, 1);
   // Side by side first: the best seat that has a free neighbour, with it; then whatever is best.

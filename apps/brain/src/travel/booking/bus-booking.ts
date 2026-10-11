@@ -241,7 +241,9 @@ export function createBusBooking(d: BusBookingDeps): BusBooking {
 
     // 2. Seats and stops, chosen in code: their ask, else the best free; never a seat another booking of the trip took.
     await live.step(1, 'doing');
-    const seats = chooseSeats(layout, { count: 1, ...(ask.seat ?? {}) }, await takenOn(ask, runId));
+    // Beside the trip's people already on this bus, when a seat there is free.
+    const taken = await takenOn(ask, runId);
+    const seats = chooseSeats(layout, { count: 1, ...(ask.seat ?? {}) }, taken, taken);
     const board = choosePoint(layout.boarding, ask.near?.board ?? []);
     const drop = choosePoint(layout.dropping, ask.near?.drop ?? []);
     if (!seats || !board || !drop) {
@@ -261,7 +263,7 @@ export function createBusBooking(d: BusBookingDeps): BusBooking {
       return;
     }
     await save(runId, { state: 'passengers', seats: seats.map((s) => s.no), board_id: board.id, drop_id: drop.id, total_minor: amountMinor });
-    await live.step(1, 'done', clip(seatWords(seats, board, drop), 80));
+    await live.step(1, 'done', clip(seatWords(seats, board, null), 80));
 
     // 3. The passenger, privately: their vault's travel details typed only into ixigo's form (never a log, the model or a
     // card). The trip's ixigo login first: its card goes to them, and the booking carries on once it is in.
