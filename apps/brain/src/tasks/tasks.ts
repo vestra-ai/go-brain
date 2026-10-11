@@ -150,8 +150,8 @@ export function createTasks(d: TasksDeps): TasksService {
   /** Stops a job on /v1: by its task id, or, when Go never heard /v1 name it, by looking its start up (mapStarts then stops it). */
   /**
    * After a stop that found no /v1 id: the job's start is looked up on /v1 again soon (STOP_LOOKUP_MS), and mapStarts
-   * stops it there once found. Over once /v1 named the job, or when it was never handed over (no turn, none in flight).
-   * Not tracked, so nothing waits on it: the sweep is the backstop.
+   * stops it there once found. Over once /v1 named the job; a job never handed over has no turn, so findStart asks
+   * nothing. Not tracked, so nothing waits on it: the sweep is the backstop.
    */
   function lookUpSoon(taskId: string): void {
     const waits = [...(d.stopLookupMs ?? STOP_LOOKUP_MS)];
@@ -161,8 +161,8 @@ export function createTasks(d: TasksDeps): TasksService {
       setTimeout(() => {
         void (async () => {
           const row = await d.store.get(taskId);
-          if (!row || row.v1TaskId || (!row.v1TurnId && !dispatching.has(taskId))) return;
-          if (row.v1TurnId) await service.findStart(row);
+          if (!row || row.v1TaskId) return;
+          await service.findStart(row);
           next();
         })().catch((err: unknown) => d.log.warn({ err, taskId }, "tasks: looking up a stopped job's start failed; the sweep tries again"));
       }, ms).unref();

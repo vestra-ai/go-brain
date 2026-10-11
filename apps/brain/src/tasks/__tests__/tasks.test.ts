@@ -298,19 +298,29 @@ describe('stopping a job', () => {
 
   // 11 Oct: a stop that lands before /v1 started the job, whose "started" then never reaches Go (a stream reconnect),
   // stopped it on /v1 only at the sweep, two minutes on, the job working all the while.
-  it("looks the job up again soon when the stop lands before /v1 started it and /v1's started never reaches Go", async () => {
-    const v1 = createV1Client({ baseUrl: fake.url, keys: KEYS, adminKey: ADMIN, sleep: async () => undefined });
+  it("looks the job up again soon when /v1 starts it just after the stop's own lookup and its started never reaches Go", async () => {
+    const real = createV1Client({ baseUrl: fake.url, keys: KEYS, adminKey: ADMIN, sleep: async () => undefined });
+    let taskId = '';
+    let started: string | undefined;
+    // /v1 starts the job right after the stop looked it up, and no task.started reaches Go: no stream, no sweep.
+    const v1 = { ...real, call: async <T>(method: Parameters<typeof real.call>[0], path: string, opts?: Parameters<typeof real.call>[2]): Promise<T> => {
+      const out = await real.call<T>(method, path, opts);
+      if (path === '/v1/events' && started === undefined) {
+        const row = (await store.get(taskId))!;
+        started = fake.startTask(row.conversationId!, row.v1TurnId!, row.title).id;
+      }
+      return out;
+    } };
     const computer = createComputer({ pool: db.pool, v1, tokens: createTokenStore(db.pool, lb.clock.now), env: { VESTRA_DEPLOYMENT_ID: 'dep_go', VESTRA_MCP_SERVER_ID: 'mcp_go' }, now: lb.clock.now, log: lb.brain.log });
     const own = createTasks({ store, v1, computer, cards, link: lb.link, desk: lb.desk, packs: lb.brain.packs, now: lb.clock.now, log: lb.brain.log, follow: () => undefined, stopLookupMs: [30, 100] });
     const r = await own.start('t_s4', { ...VILLAS, key: 'stop4' });
+    taskId = r.taskId;
     await own.settled();
     await own.stop(r.taskId);
     await own.settled();
-    const row = (await store.get(r.taskId))!;
-    // /v1 starts the job only now, and no task.started reaches Go: no stream, no sweep.
-    const t = fake.startTask(row.conversationId!, row.v1TurnId!, row.title);
-    await eventually(() => fake.tasks.get(t.id)?.stopped === true, 2_000);
-    expect(await store.get(r.taskId)).toMatchObject({ state: 'stopped', v1TaskId: t.id });
+    expect(started).toBeDefined();
+    await eventually(() => fake.tasks.get(started!)?.stopped === true, 2_000);
+    expect(await store.get(r.taskId)).toMatchObject({ state: 'stopped', v1TaskId: started });
   });
 
   it('stops on /v1 a job whose hand-off failed after its message got through, once /v1 names it', async () => {
