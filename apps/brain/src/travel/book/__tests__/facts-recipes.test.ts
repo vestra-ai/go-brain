@@ -380,6 +380,20 @@ describe("ixigo's trip explorer", () => {
     ]);
   });
 
+  // Prod drill, 11 Oct: "where should we go in December" had the model give month "December". The recipe's date reading
+  // threw (D3110) where the model saw no way to fix it, five times, and no place card went up. A date in words is now
+  // said back as the date it must be, before any page opens; a month as YYYY-MM still reads.
+  it('refuses a date in words with the form it must take, opening no page, and reads a month as YYYY-MM', async () => {
+    const { engine, runs } = engineWith(() => [capture('/x', `${IXIGO}/plan?origin=Delhi&travelMonth=december`, sample('plan.explore.html'))]);
+    const err = await engine.answer('plan.explore', { origin: 'Delhi', month: 'December' }, { tripId: 't_goa' }).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(TravelError);
+    expect(err).toMatchObject({ code: 'needs_more', message: 'month is a date written YYYY-MM-DD, any day in the month they would travel, not "December".' });
+    expect(runs).toEqual([]);
+    const month = await engine.answer('plan.explore', { origin: 'Delhi', month: '2026-12' }, { tripId: 't_goa' });
+    expect(month).toMatchObject({ as: 'facts', title: 'Where to go from Delhi in December' });
+    expect(runs.map((r) => r.url)).toEqual([`${IXIGO}/plan?origin=Delhi&travelMonth=december`]);
+  });
+
   it("plan.top_locations answers the planner's popular places", async () => {
     const got = await facts('plan.top_locations', {}, [capture('/x', `${IXIGO}/itinerary-planner/api/itinerary/getTopLocations?country=IN`, sample('plan.top_locations.json'))]);
     expect(got.page).toBe(`${IXIGO}/plan`);

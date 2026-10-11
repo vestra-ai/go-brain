@@ -223,7 +223,7 @@ export function renderSetupWake(item: DeskItem): string {
       '(find stays and flights, run votes, keep the plan, book when the group agrees). If someone asked you something ' +
       'in this turn, answer that first and keep the hello to a few words. Do not open a vote unless someone asks for one: ' +
       'votes come later, when the group is choosing. Where the trip could go, if you suggest any, is a place card (the ixigo tool\'s ' +
-      'plan.explore, then show_options), never names in your words or in offer_replies.'
+      'plan.explore, then show_options), never names in your words or in offer_replies. If the card can\'t come, say the hello anyway.'
     );
   }
   return `setup: ${item.ref}`;
