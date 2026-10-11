@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { BOOK_DIR, loadBook } from '../../book/book.js';
 import { evaluate } from '../../book/expr.js';
-import { asOffers, bandsFor, createOffers, NAMES_PER_GROUP, OFFERS_TTL_MS, offersText, pickOffers, strictestOf, type Offer } from '../offers.js';
+import { asOffers, bandsFor, createOffers, meansOffer, NAMES_PER_GROUP, OFFERS_TTL_MS, offersText, pickOffers, strictestOf, type Offer } from '../offers.js';
 import { offersNow } from '../offers-now.js';
 
 const { book } = loadBook();
@@ -53,6 +53,23 @@ describe("a site's own list of what it offers (hotels.search: ixigo's metadata c
     expect(pickOffers(list, ['price (low to high)'], 'sort').picked.map((o) => o.code)).toEqual(['SC_P_LH']);
     // A filter's name is no sort.
     expect(pickOffers(list, ['Swimming Pool'], 'sort')).toEqual({ picked: [], unknown: ['Swimming Pool'] });
+  });
+
+  // The Manali room, 11 Oct: "stays that have gym" went unfiltered, and Go told them to check each one's amenities.
+  it("matches what people call a thing by the site's own words: a gym is its Fitness Centre, free wifi its Internet access", async () => {
+    const list = await listed();
+    const names = (asked: string[]) => pickOffers(list, asked, 'filter');
+    expect(names(['gym']).picked.map((o) => o.code)).toEqual(['FL_HF_11']);
+    // A pool is the ordinary Swimming Pool, never the Private Pool unless they say private; parking is the plain
+    // Parking, the name that says least besides (not "Parking Available").
+    expect(names(['free wifi', 'a pool', 'private pool', 'parking', 'pets', 'spa']).picked.map((o) => o.name))
+      .toEqual(['Internet access', 'Swimming Pool', 'Private Pool', 'Parking', 'Pet-friendly property', 'Spa/Sauna']);
+    // Nothing on ixigo's list means these: they stay the model's to pick from the results.
+    expect(names(['jacuzzi', 'mountain view', 'quiet'])).toEqual({ picked: [], unknown: ['jacuzzi', 'mountain view', 'quiet'] });
+    expect(meansOffer('pool', 'Private Pool')).toBe(false);
+    expect(meansOffer('Gym', 'Fitness Centre')).toBe(true);
+    // A sort is never matched by meaning.
+    expect(pickOffers(list, ['gym'], 'sort').picked).toEqual([]);
   });
 
   it('keeps a list per recipe and place for 12 hours, and knows the trips whose reads brought one', () => {
