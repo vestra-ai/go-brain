@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { ResultOption } from '../../travel/results.js';
-import { FOUND_ON_WEB, readReturned, resolvePicks, returnsSchema, type FindOffer } from '../returns.js';
+import { FOUND_ON_WEB, readReturned, resolvePicks, returnsSchema, type FindBySource, type FindOffer } from '../returns.js';
 
 describe('return shapes', () => {
   it('asks for options with a summary, every pick with its offer_id and whole price, or for an answer', () => {
@@ -105,6 +105,38 @@ describe("a job's picks against Go's own searches", () => {
       expect(web.facts.found_on_web).toBe(true);
     }
     expect(r.options[1]).toMatchObject({ title: 'Casa Lua', priceMinor: 1500000, totalMinor: 4500000, sourceUrl: 'https://villas.example/casa-lua' });
+  });
+
+  // The lead, 11 Oct: options read off ixigo.com come back with offer_id null, so a job's pick of one was "Found on the web"
+  // and never booked. Its ixigo page finds the option Go's own search read there.
+  it("turns a pick read off ixigo.com into the option Go's search read on that page; only another site's is found on the web", async () => {
+    const page = 'https://www.ixigo.com/hotels/4395492/details?checkinDate=06112026&checkoutDate=09112026&adultCount=5';
+    const onIxigo: ResultOption = {
+      kind: 'stay', title: 'High Five Hotels Phase 2', priceMinor: 945000, totalMinor: 2835000, currency: 'INR', priceNote: 'per night', sourceUrl: page, highlights: ['Pool'], facts: { area: 'Anjuna' },
+    };
+    const asked: string[] = [];
+    const bySource: FindBySource = async (tripId, kind, url, title) => {
+      asked.push(`${tripId}:${kind}:${title}`);
+      return url === page ? { option: onIxigo, checkedAt: '2026-10-11T07:00:00.000Z' } : null;
+    };
+    const read = readReturned('stays', {
+      summary: 'Three stays.',
+      options: [
+        { title: 'High Five Hotels', price_minor: 900000, total_paise: 2700000, highlights: ['Near the beach'], offer_id: null, source_url: page, why: 'Pool and close to the beach.' },
+        { title: 'Ganga Homestay', price_minor: 400000, total_paise: 800000, highlights: ['Garden'], offer_id: null, source_url: 'https://www.ixigo.com/hotels/999/details?x=1', why: 'Cheap and calm.' },
+        { title: 'Casa Lua', price_minor: 1500000, total_paise: 4500000, highlights: ['Garden'], offer_id: null, source_url: 'https://villas.example/casa-lua', why: 'Quiet.' },
+      ],
+    }, null).options;
+    const r = await resolvePicks('t_goa', 'stay', read, find, bySource);
+    expect(asked).toEqual(['t_goa:stay:High Five Hotels', 't_goa:stay:Ganga Homestay']);
+    expect(r.options[0]).toEqual({ ...onIxigo, highlights: ['Near the beach'], why: 'Pool and close to the beach.' });
+    expect(r.checkedAt).toBe('2026-10-11T07:00:00.000Z');
+    // An ixigo page Go's search never read stays the job's own pick, ixigo's still: never "Found on the web".
+    expect(r.options[1]).toMatchObject({ title: 'Ganga Homestay', sourceUrl: 'https://www.ixigo.com/hotels/999/details?x=1', highlights: ['Garden'] });
+    expect(r.options[1]).not.toHaveProperty('offerId');
+    expect(r.options[1]!.facts).not.toHaveProperty('found_on_web');
+    expect(r.options[2]!.highlights[0]).toBe(FOUND_ON_WEB);
+    expect(r.fromWeb).toBe(1);
   });
 
   it('leaves places, food and activities alone: they are never booked through Go', async () => {
