@@ -96,6 +96,10 @@ export function refusalWords(code: RefusalCode, c: { payer: string; what: string
       return yes(`${c.what} is booked already. To book it again, cancel that booking first.`);
     case 'not_in_trip':
       return yes(`${c.payer} isn't in this trip any more, so I can't take a payment for their ticket. Nothing was charged.`);
+    case 'no_pick':
+      // Contract 1.3 (G3): the Server grants a person's own payment only for an option they tapped on their own card in the
+      // last 30 minutes, at most its price plus 5%.
+      return yes(`${c.payer}, pick ${c.what} again on your card: it has been a while, or the price moved. Nothing was charged.`);
     case 'wrong_offer':
       return yes(`That isn't what the group voted for. I can only pay for ${c.what}.`);
     case 'not_bookable':
@@ -176,6 +180,8 @@ export const TOASTS = {
   notReady: "This payment isn't ready yet.",
   fresh: 'That one timed out. Setting up a fresh payment.',
   restart: 'Setting up a fresh payment.',
+  /** A traveller's ticket has no vote to ask again from: its own flow asks afresh. */
+  ticketRunOut: 'That payment ran out. Tap Book it again for a fresh one.',
   noPage: "Couldn't open the payment page. Try again.",
   declinedDone: 'Declined. Nothing was charged.',
   confirming: "We're confirming this payment with the bank. Don't pay again.",

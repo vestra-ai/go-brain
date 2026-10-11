@@ -6,7 +6,7 @@ Go uses these requests for everything it does in a trip: reading the trip and th
 
 ## The methods
 
-Go sends 18 methods. Every one names its trip with `trip_id`.
+Go sends 19 methods. Every one names its trip with `trip_id`.
 
 | Method | What it does | Result | Event the server then sends |
 |---|---|---|---|
@@ -20,6 +20,7 @@ Go sends 18 methods. Every one names its trip with `trip_id`.
 | `update_trip` | Changes the title, destination, dates, vibe, stay or the itinerary. | `WriteResult` | `trip.updated` |
 | `open_vote` | Opens a vote. | `OpenDecisionResult` | `decision.opened` |
 | `close_vote` | Closes a vote now and returns the result. | `CloseDecisionResult` | `decision.closed` |
+| `add_vote_options` (1.3) | Adds options to an open vote, for the options "See more" brought. | `WriteResult` | `decision.options_added` |
 | `set_mandate` | Sets what the group allowed for a closed choice vote: the choice, the cap, refundable only, and who pays. | `WriteResult` | `mandate.set` |
 | `add_record_line` | Adds an agreed, open or doing line to the trip record. | `AddRecordLineResult` | `record.changed` |
 | `update_record_line` | Changes a line Go wrote, or marks it done. | `WriteResult` | `record.changed` |
@@ -230,6 +231,7 @@ Every write that changes the trip adds one to the trip's change number, answers 
 | `update_trip` | `WriteResult` | `trip.updated`, with `changed` listing the fields sent and `by` Go |
 | `open_vote` | `OpenDecisionResult` | `decision.opened`, `by` Go |
 | `close_vote` | `CloseDecisionResult` | `decision.closed` with reason `closed_by_go`, then `record.changed` for the decided line, `by` system |
+| `add_vote_options` | `WriteResult` | `decision.options_added`, `by` Go |
 | `set_mandate` | `WriteResult` | `mandate.set` |
 | `add_record_line` | `AddRecordLineResult` | `record.changed` with change `added`, `by` Go |
 | `update_record_line` | `WriteResult` | `record.changed` with change `done` when `status` becomes `done`, otherwise `updated`, `by` Go |
@@ -1159,6 +1161,31 @@ What the server does:
 Good to know:
 - An anonymous vote shows totals only. Nobody sees who voted for what, including Go: `decision.voted` events and the snapshot leave out `person_id`, `option_index` and `votes`.
 - `option_ref` is Go's own reference for an option (such as an ixigo offer), so it can book the winner. The server stores it and gives it back unchanged.
+- 1.3: for the group's stays or places, Go opens the vote first, one option a card option with `option_ref` the card option's `option_id` and its photos, details and prices copied, then posts the options card with that `decision_id`. The app draws a Vote button on each option and the tally on the card. Travel options (flights, trains, buses) are never put to a vote: they are each traveller's own.
+
+### `add_vote_options`: add options to an open vote (1.3)
+
+When someone taps "See more" on an options card that is in a vote, Go posts a new options card with options not shown before and adds them to the same vote, so both messages show Vote buttons for one vote:
+
+<!-- schema: AddVoteOptions -->
+```json
+{
+  "request_id": "go_more_01JA9QK2",
+  "trip_id": "t_goa",
+  "decision_id": "d_12",
+  "options": [
+    { "label": "Casa Lua", "option_ref": "opt_14", "price_minor": 4500000, "currency": "INR", "photos": [{ "url": "https://brain.go.example/img/casa-lua-pool.jpg", "label": "Pool" }] }
+  ]
+}
+```
+
+The server answers with the change's `seq` (a `WriteResult`) and sends `decision.options_added`. The new options take the next indexes, and votes already cast stay.
+
+| Check | Error when it fails |
+|---|---|
+| The vote exists in this trip. | `404` `not_found` |
+| The vote is open. | `409` `conflict` |
+| The vote has at most 20 options in all. | `422` `invalid` |
 
 ### `close_vote`: close a vote now
 
@@ -1500,7 +1527,7 @@ The params are a `RequestSpendApproval`:
 | `merchant` | Who is paid, as the payer will see it in the vault. |
 | `purpose` | What the payment is for, as the payer will see it in the vault. |
 | `refundable_until` | When free cancellation ends. Required when the mandate is refundable only. |
-| `kind`, `for_person_id` | Contract 1.2, a traveller's own ticket: `kind: "ticket"` and the traveller in place of `decision_id`. The traveller is the payer. See [A traveller's own ticket](08-money-and-the-vault.md#a-travellers-own-ticket-contract-12). |
+| `personal` | Contract 1.3, a person's own pick (their ticket, or a seat or bag at check-in): `{ person_id, card_id, option_id }` in place of `decision_id`. That person is the payer. See [A person's own pick](08-money-and-the-vault.md#a-persons-own-pick-contract-13). |
 
 #### The approved result
 

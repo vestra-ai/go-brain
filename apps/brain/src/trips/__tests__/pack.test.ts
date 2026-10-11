@@ -174,3 +174,17 @@ describe('1.1 votes (A5, A9)', () => {
     expect(applyEvent(pack(), ev(2, 'decision.voted', { decision_id: 'd_stay', person_id: 'p_arjun', option_index: 1, voted: 2, of: 5, tally: [1, 1] }, T))).toBe('ok');
   });
 });
+
+describe('1.3 votes (rev 5 R5)', () => {
+  it('"see more" options join the vote after its last option with no votes, and the votes cast stay', () => {
+    const T = 't_more';
+    const pack = { trip: goaSnapshot({ trip_id: T, decisions: [vote({ decision_id: 'd_stay', voted: 1, tally: [1, 0], votes: [{ person_id: 'p_priya', option_index: 0 }] })] }), messages: [], seq: 1 };
+    const before = pack.trip.decisions[0]!.options.map((o) => o.label);
+    const added = ev(2, 'decision.options_added', { decision_id: 'd_stay', options: [{ label: 'Casa Lua', option_ref: 'opt_14' }], by: { kind: 'go' } }, T);
+    expect(applyEvent(pack, added)).toBe('ok');
+    expect(pack.trip.decisions[0]).toMatchObject({ voted: 1, tally: [1, 0, 0], votes: [{ person_id: 'p_priya', option_index: 0 }] });
+    expect(pack.trip.decisions[0]!.options.map((o) => o.label)).toEqual([...before, 'Casa Lua']);
+    // A vote this copy doesn't have: the trip is read again.
+    expect(applyEvent(pack, ev(3, 'decision.options_added', { decision_id: 'd_other', options: [{ label: 'X' }], by: { kind: 'go' } }, T))).toBe('reread');
+  });
+});

@@ -4,7 +4,7 @@
 import { MAX_APPROVAL_TTL_SECONDS, signSpendApproval } from '@go/contract';
 import type * as C from '@go/contract';
 import type { z } from 'zod';
-import { fail, type Booking, type Change, type Expense, type Params, type RecordLine, type TripState } from './trip-state.js';
+import { fail, type Approval, type Booking, type Change, type Expense, type Params, type RecordLine, type TripState } from './trip-state.js';
 
 type SpendResult = z.infer<typeof C.SpendApprovalResult>;
 type DenialReason = z.infer<typeof C.SpendDenialReason>;
@@ -19,7 +19,8 @@ const DETAIL: Record<DenialReason, string> = {
   over_cap: "the amount is above the mandate's cap",
   not_refundable: 'the mandate is refundable only, and refundable_until is missing or past',
   approval_outstanding: 'another approval for this vote is still waiting',
-  not_in_trip: 'the person the ticket is for is not in this trip',
+  not_in_trip: 'the person this payment is for is not in this trip',
+  no_pick: "that person has not picked that option on their own card in the last 30 minutes, or the amount is more than its price plus 5%",
   already_booked: 'this vote is already booked: a second payment would charge twice (cancel the booking first)',
 };
 
@@ -38,10 +39,10 @@ export function addBooking(s: TripState, p: Params<typeof C.AddBooking>): Change
   const approval = p.approval_id != null ? s.approvals.get(p.approval_id) : undefined;
   if (p.approval_id != null) {
     if (!approval) throw fail('conflict', `approval ${p.approval_id} is not for this trip`);
-    // A ticket's approval (1.2) has no vote: its booking has none either, and its payer is the ticket's traveller.
+    // A personal approval (1.3) has no vote: its booking has none either, and its payer is the person who picked.
     if (approval.decision_id !== (p.decision_id ?? null)) throw fail('conflict', `approval ${p.approval_id} is for another vote`);
-    if (approval.for_person_id !== null && p.payer_person_id !== approval.for_person_id) {
-      throw fail('conflict', `approval ${p.approval_id} is ${approval.for_person_id}'s ticket`);
+    if (approval.personal !== null && p.payer_person_id !== approval.personal.person_id) {
+      throw fail('conflict', `approval ${p.approval_id} is ${approval.personal.person_id}'s own pick`);
     }
     if (approval.used || approval.cancelled) throw fail('conflict', `approval ${p.approval_id} is already used or cancelled`);
     if (p.amount_minor > approval.amount_minor || p.currency !== approval.currency) {
@@ -171,7 +172,11 @@ export function recomputeMoney(s: TripState): void {
 }
 
 type GroupAsk = Params<typeof C.RequestGroupSpendApproval>;
-type TicketAsk = Params<typeof C.RequestTicketSpendApproval>;
+type PersonalAsk = Params<typeof C.RequestPersonalSpendApproval>;
+
+/** How long after the tap a pick still counts, and how far over the option's price the amount may be (G3). */
+const PICK_MS = 30 * 60_000;
+const PICK_MARGIN = 1.05;
 
 /** The spend check in the guide's order (docs/guide/08-money-and-the-vault.md): the first rule that fails gives the reason. */
 export function spendCheck(s: TripState, p: GroupAsk): DenialReason | null {
@@ -194,13 +199,34 @@ export function spendCheck(s: TripState, p: GroupAsk): DenialReason | null {
 }
 
 /**
- * 1.2, a traveller's own ticket (never voted on): granted when that person is in the trip. The payer is always that
- * person, and the approval signs the amount Go asked, with for_person_id in place of a vote.
+ * 1.3 (G3), a person's own pick (never voted on): granted when that person is in the trip, tapped that option on their own
+ * card of Go's in the last 30 minutes, the amount is at most its price plus 5%, and nothing else is approved and waiting,
+ * or booked, for that pick. The payer is always that person, and the approval signs `personal` in place of a vote.
  */
-function ticketApproval(s: TripState, p: TicketAsk, privateKeyPem: string): Change<SpendResult> {
-  if (!s.trip.people.some((x) => x.person_id === p.for_person_id)) {
-    return { result: { status: 'denied', reason: 'not_in_trip', detail: DETAIL.not_in_trip }, events: [] };
+function personalCheck(s: TripState, p: PersonalAsk): DenialReason | null {
+  const { person_id, card_id, option_id } = p.personal;
+  if (!s.trip.people.some((x) => x.person_id === person_id)) return 'not_in_trip';
+  const m = s.cardMessage(card_id);
+  const card = m?.author.kind === 'go' ? m.card : undefined;
+  const theirs = card != null && ((card.for_person_ids ?? []).includes(person_id) || (m?.visible_to_person_ids ?? []).includes(person_id));
+  const option = card?.kind === 'options' ? card.options.find((o) => o.option_id === option_id) : undefined;
+  const tapped = s.taps.get(`${person_id}|${card_id}|${option_id}`);
+  if (!theirs || !option || !tapped || s.now().getTime() - tapped.getTime() > PICK_MS) return 'no_pick';
+  if (option.price_minor == null || p.amount_minor > Math.floor(option.price_minor * PICK_MARGIN)) return 'no_pick';
+  const now = s.now().getTime();
+  const same = (a: Approval) => a.personal?.person_id === person_id && a.personal.card_id === card_id && a.personal.option_id === option_id;
+  for (const a of s.approvals.values()) {
+    if (!same(a)) continue;
+    if (a.used) return 'already_booked';
+    if (!a.cancelled && a.expires_at.getTime() > now) return 'approval_outstanding';
   }
+  return null;
+}
+
+function personalApproval(s: TripState, p: PersonalAsk, privateKeyPem: string): Change<SpendResult> {
+  const reason = personalCheck(s, p);
+  if (reason) return { result: { status: 'denied', reason, detail: DETAIL[reason] }, events: [] };
+  const person = p.personal.person_id;
   const iat = Math.floor(s.now().getTime() / 1000);
   const exp = iat + MAX_APPROVAL_TTL_SECONDS;
   const approvalId = s.mint('ap_sim_');
@@ -210,9 +236,8 @@ function ticketApproval(s: TripState, p: TicketAsk, privateKeyPem: string): Chan
       aud: 'go-vault',
       jti: approvalId,
       trip_id: s.id,
-      for_person_id: p.for_person_id,
-      kind: 'ticket',
-      payer_person_id: p.for_person_id,
+      personal: { ...p.personal },
+      payer_person_id: person,
       amount_minor: p.amount_minor,
       currency: p.currency,
       merchant: p.merchant,
@@ -227,8 +252,8 @@ function ticketApproval(s: TripState, p: TicketAsk, privateKeyPem: string): Chan
   s.approvals.set(approvalId, {
     approval_id: approvalId,
     decision_id: null,
-    for_person_id: p.for_person_id,
-    payer_person_id: p.for_person_id,
+    personal: { ...p.personal },
+    payer_person_id: person,
     amount_minor: p.amount_minor,
     currency: p.currency,
     expires_at: expiresAt,
@@ -239,7 +264,7 @@ function ticketApproval(s: TripState, p: TicketAsk, privateKeyPem: string): Chan
 }
 
 export function requestSpendApproval(s: TripState, p: Params<typeof C.RequestSpendApproval>, privateKeyPem: string): Change<SpendResult> {
-  if ('kind' in p && p.kind === 'ticket') return ticketApproval(s, p, privateKeyPem);
+  if ('personal' in p) return personalApproval(s, p, privateKeyPem);
   return groupApproval(s, p as GroupAsk, privateKeyPem);
 }
 
@@ -273,7 +298,7 @@ function groupApproval(s: TripState, p: GroupAsk, privateKeyPem: string): Change
   s.approvals.set(approvalId, {
     approval_id: approvalId,
     decision_id: d.decision_id,
-    for_person_id: null,
+    personal: null,
     payer_person_id: m.payer_person_id,
     amount_minor: p.amount_minor,
     currency: p.currency,

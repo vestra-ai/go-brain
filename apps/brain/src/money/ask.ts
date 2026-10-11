@@ -72,7 +72,7 @@ function refuse(d: MoneyDeps, code: RefusalCode, words: Words, err?: unknown): R
 const CODES: ReadonlySet<string> = new Set<RefusalCode>([
   'decision_not_found', 'decision_not_closed', 'no_mandate', 'payer_has_not_confirmed', 'payer_declined', 'over_cap',
   'currency_mismatch', 'not_refundable', 'approval_outstanding', 'no_vote', 'wrong_offer', 'not_bookable', 'not_bookable_yet', 'already_paid',
-  'no_travel', 'hold_failed', 'rail_not_ready', 'vault_refused', 'server_down', 'closed', 'not_in_trip', 'already_booked',
+  'no_travel', 'hold_failed', 'rail_not_ready', 'vault_refused', 'server_down', 'closed', 'not_in_trip', 'already_booked', 'no_pick',
 ]);
 
 /** Fares Go does not book for the whole group this week (master §9 "Cut now"): they are per person. */
@@ -359,6 +359,12 @@ async function advance(d: MoneyDeps, row: PaymentRow, ids: AskIds, deliver: Deli
 export interface TicketAsk {
   /** The traveller, who is the payer. */
   personId: string;
+  /**
+   * Their pick (contract 1.3, G3): the card of Go's they tapped and the option on it. The Server grants the approval only
+   * for an option that person tapped on their own card in the last 30 minutes, at most its price plus 5%.
+   */
+  cardId: string;
+  optionId: string;
   amountMinor: number;
   currency: string;
   /** Shown on the vault's page and signed into the approval, e.g. "IndiGo 6E2150, Fri 6 Nov, for Meher". */
@@ -370,6 +376,8 @@ export interface TicketAsk {
 }
 
 export type TicketLink = { url: string; expiresAt: string; approvalId: string; paymentId: string } | Refused;
+/** A ticket's pay card, posted for its traveller alone (askForTicketCard). */
+export type TicketCard = { cardId: string; paymentId: string } | Refused;
 
 /** A ticket's price is held for the payment as long as its approval may last: the caller's page holds the real fare. */
 const TICKET_HOLD_MS = MAX_APPROVAL_TTL_SECONDS * 1000;
@@ -381,7 +389,7 @@ const TICKET_TOASTS = {
   paid: 'This ticket is already paid.',
   closed: 'That payment is closed. Tap Pay again for a fresh one.',
 } as const;
-const toast = (text: string): TicketLink => ({ refused: text, code: 'closed', say: false });
+const toast = (text: string): Refused => ({ refused: text, code: 'closed', say: false });
 
 /**
  * A traveller's own ticket: the Server's ticket approval for that person (no vote; they are the payer), then the vault's
@@ -390,12 +398,33 @@ const toast = (text: string): TicketLink => ({ refused: text, code: 'closed', sa
  * one's page; one whose approval ran out is let go and a fresh one asked.
  */
 export async function askForTicket(d: MoneyDeps, tripId: string, o: TicketAsk): Promise<TicketLink> {
+  const got = await ticketRow(d, tripId, o);
+  return 'refused' in got ? got : ticketLinkOf(d, got.row, got.spend);
+}
+
+/**
+ * A traveller's own ticket with a pay card (G2, the App team, 11 Oct: "one private pay card: Book IndiGo 6E2313 + 6E877
+ * for you, ₹19,893?"): the Server's ticket approval for that person, then a pay card posted for them alone
+ * (visible_to_person_ids), as a group's payment has. Its Approve opens the vault's page (Face ID), its Decline closes
+ * it, and from there it is any payment's: the vault's two keys, the rail, the callbacks, the card's looks as it goes.
+ * Paid, the caller's flow books it (onPaid). The same key and trigger ask once; a second ask while one is open gets its card.
+ */
+export async function askForTicketCard(d: MoneyDeps, tripId: string, o: TicketAsk): Promise<TicketCard> {
+  const got = await ticketRow(d, tripId, o);
+  return 'refused' in got ? got : ticketCardOf(d, got.row, got.spend);
+}
+
+/**
+ * A ticket's payments row: this ask's own (spend: its spend request id), or the one open for its key (spend null: its
+ * first ask is still on its way, or its answer is in); one whose approval ran out is let go and a fresh one made.
+ */
+async function ticketRow(d: MoneyDeps, tripId: string, o: TicketAsk): Promise<{ row: PaymentRow; spend: string | null } | Refused> {
   const spend = rid('go_spend_ticket', o.key, o.trigger);
   const paymentId = paymentIdFor(tripId, spend);
   const mine = await getPayment(d.pool, paymentId);
-  if (mine) return ticketLinkOf(d, mine, spend);
+  if (mine) return { row: mine, spend };
   const open = await openTicket(d.pool, tripId, o.key);
-  if (open && !(await letGoIfRunOut(d, open))) return ticketLinkOf(d, open, null);
+  if (open && !(await letGoIfRunOut(d, open))) return { row: open, spend: null };
 
   let trip: Trip;
   try {
@@ -427,12 +456,14 @@ export async function askForTicket(d: MoneyDeps, tripId: string, o: TicketAsk): 
       payment_kind: d.payRail(),
       hold_expires_at: new Date(now.getTime() + TICKET_HOLD_MS),
       refundable_until: null,
+      pick_card_id: o.cardId,
+      pick_option_id: o.optionId,
     },
     now,
   );
   const row = (await getPayment(d.pool, paymentId)) ?? (inserted === 'busy' ? await openTicket(d.pool, tripId, o.key) : null);
   if (!row) return refuse(d, 'server_down', words);
-  return ticketLinkOf(d, row, row.payment_id === paymentId ? spend : null);
+  return { row, spend: row.payment_id === paymentId ? spend : null };
 }
 
 /** A waiting ticket whose approval ran out is let go (the sweep releases it): true when it was. */
@@ -466,21 +497,85 @@ async function ticketLinkOf(d: MoneyDeps, row: PaymentRow, spend: string | null)
   }
   // Another ask's first try is still on its way: its page comes on the next tap.
   if (spend === null) return toast(TICKET_TOASTS.preparing);
+  const denied = await approveTicket(d, row, spend, words);
+  if (denied) return denied;
+
+  // 2. The vault checks the approval and opens the traveller's page; then the payment waits on them.
+  const page = await pageOf(d, row, words);
+  if ('refused' in page) {
+    await transition(d.pool, row.payment_id, ['asking'], 'refused', { refused_reason: page.code === 'rail_not_ready' ? 'vault_rail_not_ready' : 'vault_refused', release_reason: 'other' }, d.now());
+    return page;
+  }
+  await transition(d.pool, row.payment_id, ['asking'], 'waiting', {}, d.now());
+  return page;
+}
+
+/** Takes a ticket's row as far as its pay card: the Server's approval, then the card, posted for the traveller alone. */
+async function ticketCardOf(d: MoneyDeps, row: PaymentRow, spend: string | null): Promise<TicketCard> {
+  const words: Words = { payer: row.payer_name, what: row.label };
+  switch (row.state) {
+    case 'paid':
+      return toast(TICKET_TOASTS.paid);
+    case 'confirming':
+      return toast(TICKET_TOASTS.confirming);
+    case 'declined':
+    case 'expired':
+    case 'failed':
+      return toast(TICKET_TOASTS.closed);
+    case 'refused':
+      return refuse(d, codeOf(row.refused_reason), words);
+    case 'waiting':
+      // Its card is up already; one asked for its page before has none yet, and gets it now.
+      return row.card_id ? { cardId: row.card_id, paymentId: row.payment_id } : postTicketCard(d, row, words);
+    case 'asking':
+      break;
+  }
+  if (spend === null) return toast(TICKET_TOASTS.preparing);
+  const denied = await approveTicket(d, row, spend, words);
+  if (denied) return denied;
+  return postTicketCard(d, row, words);
+}
+
+/**
+ * The ticket's pay card, for its traveller alone, the row waiting before it shows: the Server shows the card before its
+ * answer reaches Go, and a quick tap must find the payment ready (as a group's ask). A card that never reached the room is
+ * no ask: the payment is refused, and its approval let go.
+ */
+async function postTicketCard(d: MoneyDeps, row: PaymentRow, words: Words): Promise<TicketCard> {
+  const cardId = row.card_id ?? rid('c_pay_ticket', row.payment_id);
+  const card = payCardOf({ ...row, card_id: cardId }, 'waiting');
+  if (!card) return refuse(d, 'server_down', words);
+  await patchPayment(d.pool, row.payment_id, { card_id: cardId, card_state: 'waiting' }, d.now());
+  if (row.state === 'asking') await transition(d.pool, row.payment_id, ['asking'], 'waiting', {}, d.now());
+  try {
+    await d.link.request('post_message', {
+      request_id: rid('go_pay_ticket', row.payment_id), trip_id: row.trip_id, card, visible_to_person_ids: [row.payer_person_id],
+    });
+  } catch (e) {
+    await transition(d.pool, row.payment_id, ['waiting'], 'refused', { refused_reason: 'server_down', release_reason: 'other' }, d.now());
+    return refuse(d, 'server_down', words, e);
+  }
+  return { cardId, paymentId: row.payment_id };
+}
+
+/**
+ * 1. The Server's key for a ticket: the personal form names the traveller's own pick (who, Go's card, the option they
+ * tapped), in place of a vote; they are the payer. Null once the row holds its approval; the refusal otherwise.
+ */
+async function approveTicket(d: MoneyDeps, row: PaymentRow, spend: string, words: Words): Promise<Refused | null> {
   if (row.amount_minor === null || !row.currency || !row.merchant) return refuse(d, 'server_down', words);
-  const fail = async (reason: string, code: RefusalCode, err?: unknown): Promise<TicketLink> => {
+  const fail = async (reason: string, code: RefusalCode, err?: unknown): Promise<Refused> => {
     await transition(d.pool, row.payment_id, ['asking'], 'refused', { refused_reason: reason, release_reason: 'other' }, d.now());
     return refuse(d, code, words, err);
   };
-
-  // 1. The Server's key: the ticket form names the traveller, who is the payer, in place of a vote.
   if (!row.approval_id || !row.approval_token || !row.approval_expires_at) {
+    if (!row.pick_card_id || !row.pick_option_id) return fail('no_pick', 'no_pick');
     let answer: ToServerResult<'request_spend_approval'>;
     try {
       answer = await d.link.request('request_spend_approval', {
         request_id: spend,
         trip_id: row.trip_id,
-        kind: 'ticket',
-        for_person_id: row.payer_person_id,
+        personal: { person_id: row.payer_person_id, card_id: row.pick_card_id, option_id: row.pick_option_id },
         amount_minor: row.amount_minor,
         currency: row.currency,
         merchant: row.merchant,
@@ -497,15 +592,7 @@ async function ticketLinkOf(d: MoneyDeps, row: PaymentRow, spend: string | null)
     await patchPayment(d.pool, row.payment_id, patch, d.now());
     Object.assign(row, patch);
   }
-
-  // 2. The vault checks the approval and opens the traveller's page; then the payment waits on them.
-  const page = await pageOf(d, row, words);
-  if ('refused' in page) {
-    await transition(d.pool, row.payment_id, ['asking'], 'refused', { refused_reason: page.code === 'rail_not_ready' ? 'vault_rail_not_ready' : 'vault_refused', release_reason: 'other' }, d.now());
-    return page;
-  }
-  await transition(d.pool, row.payment_id, ['asking'], 'waiting', {}, d.now());
-  return page;
+  return null;
 }
 
 /** The traveller's vault page for a ticket's approval: the one already open while it lasts, else a fresh one. */

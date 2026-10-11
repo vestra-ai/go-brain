@@ -41,7 +41,7 @@ afterAll(async () => {
 describe('boot', () => {
   it('serves /v1/health', async () => {
     const r = await fetch(`http://127.0.0.1:${port}/v1/health`);
-    expect(await r.json()).toEqual({ ok: true, contract: '1.2.0' });
+    expect(await r.json()).toEqual({ ok: true, contract: '1.3.0' });
   });
 
   it('hands every lane the model client it was given, so side passes use the same fake or recorder', async () => {

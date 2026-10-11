@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import { isVoiceModel } from './config.js';
 
-/** P6: calls. All optional: call_business refuses while a setting is missing, and the room keeps working. */
+/** P6: calls. All optional: call_business is not offered while a setting is missing, and the room keeps working. */
 export const CallsEnv = z.object({
   TWILIO_ACCOUNT_SID: z.string().min(1).optional(),
   TWILIO_AUTH_TOKEN: z.string().min(1).optional(),

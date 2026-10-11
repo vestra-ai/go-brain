@@ -12,7 +12,7 @@ The fake Go is a small stand-in for Go that speaks the real socket. The Server t
 - Answers `card_tap`, `catch_up`, `get_person`, `update_person`, `delete_fact`, `forget_person` and `vault_link` with fixed answers taken from the guide's examples. A repeated `tap_id` gets its first answer back. `approve` on a pay card works only for that card's payer; anyone else gets `refused` with a toast.
 - Answers `-32601` for any other method, and `-32700` with `id: null` for a frame it cannot read or a request that is not well formed (a non-string id, an id over 64 characters, no `"jsonrpc": "2.0"`).
 - Checks every answer from the Server against the contract. An answer that breaks it (a missing `result`, a result of the wrong shape, an error with no `data.code` other than `-32601` and `-32700`), or one that does not come within 2 seconds, shows as a Problem row on the frames page.
-- Answers `GET /v1/health` with `{"ok":true,"contract":"1.2.0"}`.
+- Answers `GET /v1/health` with `{"ok":true,"contract":"1.3.0"}`.
 
 ## Connecting
 

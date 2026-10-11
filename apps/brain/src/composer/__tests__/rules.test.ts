@@ -9,6 +9,14 @@ describe("Go's rules", () => {
     expect(section).toContain('Never only promise it for later ("I\'ll allow only refundable rates when we book").');
   });
 
+  // Prod, 10 Oct: with calls not set up, Go offered "I can call a local cab operator", and "yes call" placed nothing.
+  it('phone only a business "Go can phone" names; without it, say what the group can do and never offer a call', () => {
+    const section = GO_RULES.slice(GO_RULES.indexOf('\nTruth and money\n'), GO_RULES.indexOf('\nForget me\n'));
+    expect(section).toContain(
+      '- You phone a business only with call_business, and only one that "Go can phone" names. Never offer to call anyone else ("I can call a local cab operator"): without that line, say what the group can do themselves (the prepaid taxi counter at arrivals, the stay\'s own pickup, the fare to expect) and leave the call to them.',
+    );
+  });
+
   it('answer the line Go woke for, and never ask an earlier open question again in a reply about something else (the re-run, #17)', () => {
     const section = GO_RULES.slice(GO_RULES.indexOf('\nWhen you speak\n'), GO_RULES.indexOf('\nHow you write\n'));
     expect(section).toContain(

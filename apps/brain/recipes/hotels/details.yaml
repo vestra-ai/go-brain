@@ -81,6 +81,7 @@ answer:
         "house_rules": [houseRulesAndPolicies.rules[$count(subRules.details) > 0].($trim(heading) & ": " & $join(subRules.details.$clean($), " "))],
         "amenities": $distinct(amenityDetails.amenities.name),
         "nearby": $distinct(landmarks.(name & ", " & $string(distance) & " " & unit))[[0..9]],
+        "nearby_list": [landmarks[$type(name) = "string" and $trim(name) != ""].{ "name": $trim(name), "distance": $num(distance), "unit": unit }][[0..19]],
         "about": aboutSection.data ? $clean(aboutSection.data),
         "lat": locationDetail.lat,
         "lng": locationDetail.lon,
