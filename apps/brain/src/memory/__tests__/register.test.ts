@@ -429,6 +429,12 @@ describe('open lines a vote settles', () => {
     await mirrorLine(db.pool, 't_r31', line('r_v31'), 5);
     await linkLine(db.pool, 't_r31', 'r_v31', 'd_villa', w.pack);
     w.pack.trip.decisions = [closed];
+    // Its Server away: the sweep calls nothing for it (#390's away), and settles it once the Server is back.
+    let away = true;
+    Object.assign(w.link, { away: async (tripId: string) => away && tripId === 't_r31' });
+    await w.wired.sweep();
+    expect(doneCalls(w)).toEqual([]);
+    away = false;
     await w.wired.sweep();
     expect(doneCalls(w)).toEqual([['r_v31', 'done']]);
     // The Server's record.changed would follow; without it the line stays active in the copy and other sweeps here would try again.
@@ -466,6 +472,24 @@ describe('a trip the Server no longer has', () => {
     expect(ran).toContain('t_r15');
     expect(ran).not.toContain('t_r16');
     expect(await w.wired.sweep()).not.toContain('t_r16');
+  });
+});
+
+// Prod, 11 Oct: for trips whose Server instance was away, the sweep's notes pass and fold each failed "no socket from the
+// Server is open", 9 times in 48 minutes. #390's away gates them, as it gates the minute refresh and the proactive sweep.
+describe('a trip whose Server is away', () => {
+  it('gets no notes pass and no fold from the sweep while its Server is away, and both once it is back', async () => {
+    const m = msg(95, 'p_priya', 'Sunday works too');
+    const w = setup('t_r17', [m], [JSON.stringify({ facts: [], lines: [] })]);
+    await db.pool.query(`INSERT INTO trips (trip_id) VALUES ('t_r17') ON CONFLICT DO NOTHING`);
+    await seedMessages(db.pool, 't_r17', [m]);
+    let away = true;
+    const asked: string[] = [];
+    Object.assign(w.link, { away: async (tripId: string) => (asked.push(tripId), away && tripId === 't_r17') });
+    expect(await w.wired.sweep()).not.toContain('t_r17');
+    expect(asked).toContain('t_r17');
+    away = false;
+    expect(await w.wired.sweep()).toContain('t_r17');
   });
 });
 
