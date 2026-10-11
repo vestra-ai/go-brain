@@ -96,6 +96,9 @@ export class FakeLink implements ServerLink {
       }
       case 'open_vote':
         return { decision_id: `d_${this.n}`, seq: 100 + this.n };
+      // As the Server answers it: the booking's id, which a ticket card names.
+      case 'add_booking':
+        return { booking_id: `bk_${this.n}`, seq: 100 + this.n };
       case 'read_trip':
         return GOA_TRIP;
       default:

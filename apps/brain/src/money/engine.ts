@@ -4,12 +4,10 @@ import { newRequestId } from '../door/server-link.js';
 import { askForTicket, askForTicketCard, askOutsideTurn } from './ask.js';
 import { Later, type MoneyDeps } from './deps.js';
 import { tripEvent } from './events.js';
-import { markConfirming, markFailed, markPaid, reconcile, sweepPayments, type VaultFailReason } from './finish.js';
-import type { Pay } from './pay.js';
+import { markConfirming, markFailed, markPaid, markPaidByServer, postTicket, reconcile, sweepPayments, type VaultFailReason } from './finish.js';
+import type { Paid, Pay } from './pay.js';
 import { byApproval, paidApprovalIds } from './store.js';
 import { approveTap, declineTap, type TapDeps } from './taps.js';
-
-type Paid = { tripId: string; approvalId: string; railRef: string };
 
 export interface PayEngine extends Pay {
   paid(p: Paid): Promise<'ok' | 'unknown'>;
@@ -25,9 +23,24 @@ export interface PayEngine extends Pay {
   settled(): Promise<void>;
 }
 
+type PaymentCompleted = Extract<TripEvent, { type: 'payment.completed' }>;
+
 export function createPay(d: MoneyDeps): PayEngine {
   const later = new Later();
-  const t: TapDeps = { d, ask: (tripId, o, trigger) => askOutsideTurn(d, tripId, o, trigger), later, reconcile: (id) => reconcile(d, id) };
+  // The Server paid a waiting pay card on its payer's tap and booked it (the demo): paid, then on as after the vault's.
+  const paidByServer = async (ev: PaymentCompleted): Promise<void> => {
+    const p = ev.data;
+    const row = await markPaidByServer(d, { tripId: ev.trip_id, approvalId: p.approval_id, bookingId: p.booking_id ?? null, expenseId: p.expense_id ?? null });
+    if (!row) {
+      d.log.info({ trip: ev.trip_id, approval_id: p.approval_id }, 'payment.completed for an approval Go has no payment for: ignored');
+      return;
+    }
+    const paid: Paid = { tripId: ev.trip_id, approvalId: p.approval_id, railRef: p.method ?? 'demo', ...(p.booking_id ? { bookingId: p.booking_id } : {}) };
+    for (const fn of listeners) later.run(d.log, 'a paid listener', () => fn(paid));
+  };
+  const t: TapDeps = {
+    d, ask: (tripId, o, trigger) => askOutsideTurn(d, tripId, o, trigger), later, reconcile: (id) => reconcile(d, id), paidByServer,
+  };
   // The first listener finishes the booking. Other lanes may add their own.
   const listeners: Array<(p: Paid) => Promise<void>> = [
     async (p) => {
@@ -48,6 +61,7 @@ export function createPay(d: MoneyDeps): PayEngine {
     onPaid(fn) {
       listeners.push(fn);
     },
+    booked: (b, line) => postTicket(d, b, line),
     async withoutBothKeys() {
       const [vault, paid] = await Promise.all([d.vault.bothKeys(), paidApprovalIds(d.pool)]);
       const charged = new Set(vault.chargedApprovalIds);

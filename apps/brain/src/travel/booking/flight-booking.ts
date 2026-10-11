@@ -20,6 +20,7 @@ import type { IxigoLogin } from '../login.js';
 import { bodiesFor } from '../recipes/recipe.js';
 import type { FetchPlan } from '../recipes/recipe.js';
 import type { RecipeRunner } from '../recipes/runners.js';
+import type { Booked, Paid } from '../../money/pay.js';
 import type { TravelDetails, TravelField } from '../../money/vault-client.js';
 import type { ResultsStore } from '../results.js';
 import type { StoredOffer } from '../travel.js';
@@ -80,7 +81,9 @@ export interface TicketPay {
     tripId: string,
     o: { personId: string; cardId: string; optionId: string; amountMinor: number; currency: string; purpose: string; key: string; trigger: string },
   ): Promise<{ cardId: string; paymentId: string } | { refused: string; code: string; say: boolean }>;
-  onPaid(fn: (p: { tripId: string; approvalId: string; railRef: string }) => Promise<void>): void;
+  onPaid(fn: (p: Paid) => Promise<void>): void;
+  /** Their ticket card, theirs alone (money's, pay.ts), once the booking is on the trip. */
+  booked?(b: Booked): Promise<void>;
   /** Their travel details from their vault (#395), for a ticket of their own: typed only into ixigo's traveller form. */
   travelDetails?(i: { tripId: string; personId: string; booking: { ref: string; travellerPersonId: string; purpose: string } }): Promise<TravelDetails | null>;
   /** The vault's own travel details form for them, showing the fields a booking's one ask needs (detailsAsk). */
@@ -369,6 +372,14 @@ export async function bookingOnFor(d: Pick<FlightBookingDeps, 'pool' | 'switches
   return instance !== null && names.includes(instance);
 }
 
+/** A ticket's day and times, in India's time: "Fri 14 Nov, 06:10 to 08:45". */
+export function ticketWhen(journey: { depart_at: string; arrive_at: string } | null): string | null {
+  if (!journey) return null;
+  const ist = (iso: string) => new Date(Date.parse(iso) + 330 * 60_000).toISOString();
+  const hm = (iso: string) => ist(iso).slice(11, 16);
+  return `${dayText(ist(journey.depart_at).slice(0, 10))}, ${hm(journey.depart_at)} to ${hm(journey.arrive_at)}`;
+}
+
 export function createFlightBooking(d: FlightBookingDeps): FlightBooking {
   const running = new Set<Promise<void>>();
   // Paid, the vault's word through money: the booking that asked for that approval is paid. Hooked on the first Pay, since
@@ -377,40 +388,57 @@ export function createFlightBooking(d: FlightBookingDeps): FlightBooking {
   const hookPaid = (pay: TicketPay): void => {
     if (hooked) return;
     hooked = true;
-    pay.onPaid(async ({ tripId, approvalId }) => {
+    pay.onPaid(async ({ tripId, approvalId, bookingId }) => {
       // The booking that approval paid for: its pay card's payment (money's) keeps this run as its key (hold_id); a ready
-      // card's Pay from before kept the approval on the booking itself.
+      // card's Pay from before kept the approval on the booking itself. The Server's own booking when it paid (bookingId).
       const r = await d.pool.query<{ run_id: string; person_id: string; option_id: string; title: string; total_minor: string | null }>(
-        `update flight_bookings f set state = 'paid', approval_id = $2, updated_at = $3
+        `update flight_bookings f set state = 'paid', approval_id = $2, booking_id = coalesce($4, f.booking_id), updated_at = $3
          where f.trip_id = $1 and f.state <> 'paid'
            and (f.approval_id = $2 or f.run_id in (select p.hold_id from payments p where p.trip_id = $1 and p.approval_id = $2 and p.kind = 'ticket'))
          returning f.run_id, f.person_id, f.option_id, f.title, f.total_minor`,
-        [tripId, approvalId, d.now()],
+        [tripId, approvalId, d.now(), bookingId ?? null],
       );
-      for (const b of r.rows) await addTicket(tripId, approvalId, b);
+      for (const b of r.rows) await addTicket(pay, tripId, approvalId, b, bookingId ?? null);
     });
   };
 
   /**
-   * A paid ticket on the trip, as that person's own (the App team's G2): Go's own reference, simulated, as a stay's is,
-   * since Go stops before ixigo's pay button; the flight's journey when its search kept it.
+   * A paid ticket on the trip, as that person's own (the App team's G2), then its card for them alone. The Server's own
+   * booking when it paid on their tap (payment.completed): Go books nothing. Else Go's: its own reference, simulated, as a
+   * stay's is, since Go stops before ixigo's pay button; the flight's journey when its search kept it.
    */
-  const addTicket = async (tripId: string, approvalId: string, b: { run_id: string; person_id: string; option_id: string; title: string; total_minor: string | null }): Promise<void> => {
-    if (b.total_minor === null) return;
+  const addTicket = async (
+    pay: TicketPay,
+    tripId: string,
+    approvalId: string,
+    b: { run_id: string; person_id: string; option_id: string; title: string; total_minor: string | null },
+    serverBookingId: string | null,
+  ): Promise<void> => {
     const journey = d.results ? ((await d.results.optionOf(b.option_id).catch(() => null))?.journey ?? null) : null;
-    await d.link.request('add_booking', {
-      request_id: stableId('go_ticket_booking', b.run_id),
-      trip_id: tripId,
-      kind: 'flight',
-      title: clip(b.title, 120),
-      vendor: TICKET_VENDOR,
-      ref: `SIM-${createHash('sha256').update(b.run_id).digest('hex').slice(0, 8).toUpperCase()}`,
-      amount_minor: Number(b.total_minor),
-      currency: 'INR',
-      payer_person_id: b.person_id,
-      for_person_ids: [b.person_id],
-      approval_id: approvalId,
-      ...(journey ? { journey, starts_at: journey.depart_at } : {}),
+    let bookingId = serverBookingId;
+    let ref: string | null = null;
+    if (!bookingId) {
+      if (b.total_minor === null) return;
+      ref = `SIM-${createHash('sha256').update(b.run_id).digest('hex').slice(0, 8).toUpperCase()}`;
+      const added = await d.link.request('add_booking', {
+        request_id: stableId('go_ticket_booking', b.run_id),
+        trip_id: tripId,
+        kind: 'flight',
+        title: clip(b.title, 120),
+        vendor: TICKET_VENDOR,
+        ref,
+        amount_minor: Number(b.total_minor),
+        currency: 'INR',
+        payer_person_id: b.person_id,
+        for_person_ids: [b.person_id],
+        approval_id: approvalId,
+        ...(journey ? { journey, starts_at: journey.depart_at } : {}),
+      });
+      bookingId = added.booking_id;
+      await d.pool.query('update flight_bookings set booking_id = $2 where run_id = $1', [b.run_id, bookingId]);
+    }
+    await pay.booked?.({
+      tripId, approvalId, bookingId, title: b.title, ref, refundableUntil: null, simulated: true, detail: ticketWhen(journey), personId: b.person_id,
     });
   };
 

@@ -60,7 +60,7 @@ export type CardTapParams = z.infer<typeof C.CardTap>;
 export type CardTapResult = z.input<typeof C.CardActionResult>;
 
 /**
- * The 22 event types the contract knows (1.1 added settlement.recorded, 1.3 decision.options_added). The contract's Event schema rejects any other type, so the
+ * The 23 event types the contract knows (1.1 added settlement.recorded, 1.3 decision.options_added and payment.completed). The contract's Event schema rejects any other type, so the
  * door checks `type` against this list first and accepts an unknown type without validating it.
  */
 export const KNOWN_EVENT_TYPES: ReadonlySet<string> = new Set<C.EventType>([
@@ -72,5 +72,5 @@ export const KNOWN_EVENT_TYPES: ReadonlySet<string> = new Set<C.EventType>([
   // 1.1
   'settlement.recorded',
   // 1.3
-  'decision.options_added',
+  'decision.options_added', 'payment.completed',
 ]);

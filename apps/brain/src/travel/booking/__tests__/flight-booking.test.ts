@@ -1,6 +1,7 @@
 import * as C from '@go/contract';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { withSchema } from '../../../db/test-db.js';
+import type { Booked, Paid } from '../../../money/pay.js';
 import { makeLaneBrain, type LaneBrain } from '../../../tasks/testing/lane-brain.js';
 import { capture } from '../../recipes/__tests__/fixtures.js';
 import type { FetchPlan } from '../../recipes/recipe.js';
@@ -11,7 +12,7 @@ import { SWITCH_RULES } from '../../../admin/switches.js';
 import { spokenFirstName } from '../travellers.js';
 import {
   createFlightBooking, dayMs, dayOf, FLIGHT_FARE, FLIGHT_STREAM, GRAPH, LOGIN_WAIT_MS, newTravellerSteps, numbersOf, readyCard, SAVED_TRAVELLERS, TRAVELLER_FEMALE,
-  TRAVEL_DETAILS, TRAVELLER_FIELDS, TRAVELLER_MALE, travellerAsk, TRAVELLERS_RETRY, detailsAsk, hasFields,
+  TRAVEL_DETAILS, TRAVELLER_FIELDS, TRAVELLER_MALE, travellerAsk, TRAVELLERS_RETRY, detailsAsk, hasFields, ticketWhen,
   type FlightBooking, type TicketPay,
 } from '../flight-booking.js';
 import { buildOptionsCard } from '../../cards.js';
@@ -531,6 +532,45 @@ describe("Go books a person's own flight up to ixigo's pay button", () => {
     // Heard again, nothing is booked twice.
     await hook.paid!({ tripId: 't_goa', approvalId: 'appr_t1', railRef: 'fake_t1' });
     expect(lb.link.requests.slice(paidFrom).filter((r) => r.method === 'add_booking')).toHaveLength(1);
+  });
+
+  // The Server team's demo payment (11 Oct): the Server paid on her tap and wrote the booking, so Go books nothing; her
+  // ticket card names the Server's booking, theirs alone, through money's one way on (pay.booked).
+  it("takes the Server's own booking when the Server paid it (payment.completed): no add_booking, her ticket card on it", async () => {
+    const hook: { paid?: (p: Paid) => Promise<void> } = {};
+    const booked: Booked[] = [];
+    const pay: TicketPay = {
+      requestTicketCard: async () => ({ cardId: 'c_pay_srv', paymentId: 'pay_srv' }),
+      onPaid(fn) {
+        hook.paid = fn;
+      },
+      booked: async (b) => void booked.push(b),
+    };
+    const b = booking(fakeRunner().runner, true, pay, { results: createResultsStore(db.pool) });
+    await b.start({ tapId: 'tap_srv', tripId: 't_goa', personId: 'p_meher_srv', name: 'Meher', offer: OFFER, choice: 'basic' });
+    await b.settled();
+    const row = (await db.pool.query(`select run_id from flight_bookings where person_id = 'p_meher_srv'`)).rows[0];
+    const at = new Date('2026-10-10T08:00:00Z');
+    await db.pool.query(
+      `insert into payments (payment_id, trip_id, decision_id, option_ref, purpose, label, payer_person_id, payer_name, for_person_ids, state, created_at, updated_at, kind, hold_id, approval_id, paid_by)
+       values ('pay_srv', 't_goa', null, $1, 'IndiGo 6E2150', 'IndiGo 6E2150', 'p_meher_srv', 'Meher', '{p_meher_srv}', 'paid', $2, $2, 'ticket', $1, 'appr_srv', 'server')`,
+      [row.run_id, at],
+    );
+    const from = lb.link.requests.length;
+    await hook.paid!({ tripId: 't_goa', approvalId: 'appr_srv', railRef: 'demo', bookingId: 'bk_server_2' });
+    await hook.paid!({ tripId: 't_goa', approvalId: 'appr_srv', railRef: 'demo', bookingId: 'bk_server_2' });
+    expect(lb.link.requests.slice(from).filter((r) => r.method === 'add_booking')).toEqual([]);
+    expect((await db.pool.query(`select state, approval_id, booking_id from flight_bookings where person_id = 'p_meher_srv'`)).rows[0]).toEqual({
+      state: 'paid', approval_id: 'appr_srv', booking_id: 'bk_server_2',
+    });
+    expect(booked).toEqual([expect.objectContaining({
+      tripId: 't_goa', approvalId: 'appr_srv', bookingId: 'bk_server_2', title: 'IndiGo 6E2150', ref: null, personId: 'p_meher_srv',
+    })]);
+  });
+
+  it("says a ticket's day and times in India's time, or nothing without a journey", () => {
+    expect(ticketWhen({ depart_at: '2026-11-06T00:40:00Z', arrive_at: '2026-11-06T03:15:00Z' })).toBe('Fri 6 Nov, 06:10 to 08:45');
+    expect(ticketWhen(null)).toBeNull();
   });
 
   // The G2 drill, 11 Oct: logged out, the booking stopped at its travellers and her card, showing her flight alone with no

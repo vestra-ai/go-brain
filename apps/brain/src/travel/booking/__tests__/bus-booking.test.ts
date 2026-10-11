@@ -1,5 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { withSchema } from '../../../db/test-db.js';
+import type { Booked, Paid } from '../../../money/pay.js';
 import { makeLaneBrain, type LaneBrain } from '../../../tasks/testing/lane-brain.js';
 import { capture, fixture } from '../../recipes/__tests__/fixtures.js';
 import type { FetchPlan } from '../../recipes/recipe.js';
@@ -47,7 +48,8 @@ function money(o: { details?: boolean } = {}) {
   const kept = { details: o.details !== false };
   const cards: Array<Record<string, unknown>> = [];
   const links: Array<{ personId: string; fields: unknown }> = [];
-  let paid: ((p: { tripId: string; approvalId: string; railRef: string }) => Promise<void>) | null = null;
+  const booked: Booked[] = [];
+  let paid: ((p: Paid) => Promise<void>) | null = null;
   const pay: TicketPay = {
     async requestTicketCard(_trip, req) {
       cards.push(req);
@@ -56,13 +58,14 @@ function money(o: { details?: boolean } = {}) {
     onPaid: (fn) => {
       paid = fn;
     },
+    booked: async (b) => void booked.push(b),
     travelDetails: async () => (kept.details ? DETAILS : null),
     travelLink: async (personId, fields) => {
       links.push({ personId, fields });
       return { url: 'https://vault.test/l/travel', expiresAt: '2026-10-11T08:00:00.000Z' };
     },
   };
-  return { pay, cards, paid: () => paid, kept, links };
+  return { pay, cards, paid: () => paid, kept, links, booked };
 }
 
 function booking(runner: RecipeRunner, pay: TicketPay | null, on = true, more: { name?: string; results?: ReturnType<typeof createResultsStore> } = {}): BusBooking {
@@ -198,6 +201,37 @@ describe("Go books a person's own bus up to ixigo's pay button", () => {
     const tickets = lb.link.requests.slice(from).filter((r) => r.method === 'add_booking');
     expect(tickets).toHaveLength(1);
     expect(tickets[0]!.params).toMatchObject({ kind: 'bus', vendor: 'ixigo (simulated)', amount_minor: 385_800, payer_person_id: 'p_rahul', for_person_ids: ['p_rahul'], approval_id: `ap_${key}` });
+    // Then their ticket card, theirs alone, through money's one way on (pay.booked), naming the booking Go just added.
+    const row = (await db.pool.query(`select booking_id from bus_bookings where person_id = 'p_rahul' and state = 'paid'`)).rows[0];
+    expect(row.booking_id).toMatch(/^bk_/);
+    expect(m.booked).toEqual([expect.objectContaining({ bookingId: row.booking_id, personId: 'p_rahul', ref: expect.stringMatching(/^SIM-/) })]);
+  });
+
+  // The Server team's demo payment (11 Oct): it paid on their tap and wrote the booking, so Go books nothing.
+  it("takes the Server's own booking when the Server paid it (payment.completed): no add_booking, their ticket card on it", async () => {
+    const { runner } = fakeRunner();
+    const m = money();
+    // Picked at a price the next free seat fits in (the bus's cheap seats are the earlier tests').
+    const b = booking(runner, m.pay);
+    await b.start({ tapId: 'tap_bus6', tripId: 't_bus', personId: 'p_bus_srv', name: 'Arjun', offer: { ...OFFER, priceMinor: 900_000 } });
+    await b.settled();
+    const key = String(m.cards.at(-1)!['key']);
+    const at = new Date('2026-10-11T08:00:00Z');
+    await db.pool.query(
+      `insert into payments (payment_id, trip_id, decision_id, option_ref, purpose, label, payer_person_id, payer_name, for_person_ids, state, created_at, updated_at, kind, hold_id, approval_id, paid_by)
+       values ($1, 't_bus', null, $2, 'IntrCity SmartBus 22:35', 'IntrCity SmartBus 22:35', 'p_bus_srv', 'Arjun', '{p_bus_srv}', 'paid', $3, $3, 'ticket', $2, $4, 'server')`,
+      [`pay_${key}`, key, at, `ap_${key}`],
+    );
+    const from = lb.link.requests.length;
+    await m.paid()!({ tripId: 't_bus', approvalId: `ap_${key}`, railRef: 'demo', bookingId: 'bk_server_1' });
+    await m.paid()!({ tripId: 't_bus', approvalId: `ap_${key}`, railRef: 'demo', bookingId: 'bk_server_1' });
+    expect(lb.link.requests.slice(from).filter((r) => r.method === 'add_booking')).toEqual([]);
+    const row = (await db.pool.query(`select state, booking_id, seats from bus_bookings where person_id = 'p_bus_srv'`)).rows[0];
+    expect(row).toMatchObject({ state: 'paid', booking_id: 'bk_server_1' });
+    expect(m.booked).toEqual([{
+      tripId: 't_bus', approvalId: `ap_${key}`, bookingId: 'bk_server_1', title: expect.any(String), ref: null, refundableUntil: null,
+      simulated: true, detail: `seat ${row.seats.join(', ')}`, personId: 'p_bus_srv',
+    }]);
   });
 
   it('is off without BOOKING', async () => {

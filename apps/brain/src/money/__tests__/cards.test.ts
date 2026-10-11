@@ -29,7 +29,7 @@ describe('pay card', () => {
       fallback_text: 'Rahul, approve ₹54,200 to ixigo: Villa Sol, Anjuna for Villa Sol, 3 nights, 6 to 9 Nov. Free cancellation until 1 Nov.',
     });
     expect(card.actions).toEqual([
-      { action_id: 'approve', label: 'Approve', style: 'primary', only_for_person_ids: ['p_rahul'] },
+      { action_id: 'approve', label: 'Pay with ixigo money', style: 'primary', only_for_person_ids: ['p_rahul'] },
       { action_id: 'decline', label: 'Decline', style: 'secondary', only_for_person_ids: ['p_rahul'] },
     ]);
   });

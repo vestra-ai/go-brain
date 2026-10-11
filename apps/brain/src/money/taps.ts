@@ -1,5 +1,5 @@
 import type * as C from '@go/contract';
-import type { CardTapParams, CardTapResult } from '../door/methods.js';
+import type { CardTapParams, CardTapResult, TripEvent } from '../door/methods.js';
 import type { AskResult } from './ask.js';
 import { payerOf, postLine, type Later, type MoneyDeps } from './deps.js';
 import { rid } from './ids.js';
@@ -13,6 +13,8 @@ export interface TapDeps {
   ask: (tripId: string, o: { decisionId: string; optionRef: string; purpose: string }, trigger: string) => Promise<AskResult>;
   later: Later;
   reconcile: (paymentId: string) => Promise<void>;
+  /** payment.completed: the Server paid and booked a waiting pay card itself (engine.ts). */
+  paidByServer: (ev: Extract<TripEvent, { type: 'payment.completed' }>) => Promise<void>;
 }
 
 const refused = (toast: string): CardTapResult => ({ result: 'refused', toast });
