@@ -1,20 +1,20 @@
 id: help.faq
-title: ixigo's own answers on one help topic, such as ixigo money, ixigo assured, the ixigo AU credit card or booking problems
+title: ixigo's own answers on one help topic, such as ixigo assured, the ixigo AU credit card or booking problems
+# ixigo money, its instant refunds and saved cards or wallets are never surfaced (Keshav's ruling): those topics are not
+# here, and help.services leaves them out. Asked for one, the recipe reads About ixigo.
 asks:
-  - how does ixigo money work
   - what is ixigo assured
   - what does the ixigo credit card give
   - not able to book on ixigo, what do we do
-  - ixigo money kaise use karte hain
+  - ixigo assured kya hai
 inputs:
   # The topics as help.services lists them.
   topic:
     kind: choice
     optional: true
     about: >-
-      the help topic: about-ixigo (the default), account-faq, money-faq (ixigo money), pre-booking (booking problems),
-      money-max-faq (instant refunds), ixigo-assured (free cancellation), au-credit-card (the ixigo AU credit card),
-      payment-faq (saved cards and wallets), metro or tourpackages (holiday packages)
+      the help topic: about-ixigo (the default), account-faq, pre-booking (booking problems), ixigo-assured (free
+      cancellation), au-credit-card (the ixigo AU credit card), metro or tourpackages (holiday packages)
 auth: none
 changes_state: false
 # /support answers its About ixigo questions as it opens; a topic's own questions come when its card is clicked. Only the
@@ -22,11 +22,9 @@ changes_state: false
 let:
   # Each topic's card on /support, by its second line, which is what is clicked.
   cards: >-
-    { "account-faq": "Update email, phone no. or password", "money-faq": "View ixigo money transaction details and rules",
-    "pre-booking": "Facing issue while booking? Not able to book?", "money-max-faq": "Seamless instant refunds",
+    { "account-faq": "Update email, phone no. or password", "pre-booking": "Facing issue while booking? Not able to book?",
     "ixigo-assured": "Get free cancellation benefits", "au-credit-card": "Your Gateway To Exclusive Perks",
-    "payment-faq": "Delete saved cards or link/delink wallets", "metro": "Metro Tickets Made Simple",
-    "tourpackages": "Unforgettable Tours Made Simple" }
+    "metro": "Metro Tickets Made Simple", "tourpackages": "Unforgettable Tours Made Simple" }
   # A topic ixigo doesn't list reads as About ixigo, which the title then says.
   tag: "($t := $lowercase($trim(topic)); $exists($lookup($cards, $t)) ? $t : 'about-ixigo')"
   card: "$lookup($cards, $tag)"
@@ -58,5 +56,5 @@ ttl_minutes: 60
 samples: { money: help.faq.money.json }
 measured: { fast_ms: 123, page_ms: 2130, flow_ms: null }
 notes: >-
-  Counts on 7 Oct 2026: pre-booking 73, au-credit-card 19, metro 18, ixigo-assured 13, money-max-faq 8, tourpackages 8,
-  about-ixigo 8, money-faq 6, account-faq 4, payment-faq 3. The calls need the page's own headers, so only the page makes them.
+  Counts on 7 Oct 2026: pre-booking 73, au-credit-card 19, metro 18, ixigo-assured 13, tourpackages 8, about-ixigo 8,
+  account-faq 4. The calls need the page's own headers, so only the page makes them.

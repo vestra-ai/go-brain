@@ -16,7 +16,9 @@ describe('a flights list ixigo sent cut short', () => {
     const found = { results: [1, 2, 3, 4].map(flight), checkedAt: '2026-10-10T06:00:00.000Z', found: 4, cut: true as const };
     const out = await searchAnswer('flights', { from: 'Delhi', to: 'Dubai', date: '2026-11-13' }, found, 't_cut', { results, now });
     expect(out.summary).toContain("ixigo's list came cut short: these are from the first 4 it sent, not all of them.");
-    expect(out.note).toContain("Say in the line that these are from the first 4 ixigo sent, and the whole list is on ixigo's page.");
+    expect(out.note).toContain('Say in the line that you picked these from the first 4 ixigo sent, and offer to look at more.');
+    // Keshav's ruling: ixigo's page is never the answer, so the line never sends anyone there for the rest.
+    expect(out.note).not.toContain("ixigo's page");
     // A whole list says nothing of it.
     const { cut: _cut, ...all } = found;
     const whole = await searchAnswer('flights', { from: 'Delhi', to: 'Dubai', date: '2026-11-13' }, all, 't_cut', { results, now });

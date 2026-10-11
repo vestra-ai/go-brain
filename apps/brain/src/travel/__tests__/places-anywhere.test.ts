@@ -139,7 +139,7 @@ describe("Go's rules", () => {
   it('never name another travel or booking site, and give a flight abroad its airport code', () => {
     const section = GO_RULES.slice(GO_RULES.indexOf('\nTruth and money\n'), GO_RULES.indexOf('\nForget me\n'));
     expect(section).toContain('Never name or suggest another travel or booking site or app (Google Flights, Skyscanner, MakeMyTrip, Booking.com, Airbnb, Cleartrip, Goibibo, Agoda or any other)');
-    expect(section).toContain('search it, or give ixigo\'s page for it.');
+    expect(section).toContain("search it, or say plainly you couldn't load it and try again. Never send ixigo's page instead.");
     expect(section).toContain('"London (LHR)"');
   });
 });

@@ -39,7 +39,7 @@ const OPTIONS_SCHEMA = {
           offer_id: {
             type: ['string', 'null'],
             maxLength: 200,
-            description: "The offer_id Go's search tools gave for this pick, copied exactly. null only for a pick found on the open web (give its source_url), or a place, restaurant or activity.",
+            description: "The offer_id Go's search tools gave for this pick, copied exactly: null when they gave null (one read off ixigo.com: give its source_url), for one read on ixigo.com, or for a place, restaurant or activity.",
           },
           source_url: { type: 'string', description: 'The https page it came from.' },
           why: { type: 'string', maxLength: 200, description: 'One sentence on why it fits.' },
