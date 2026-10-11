@@ -23,6 +23,11 @@ export interface IxigoToolDeps {
   engine: Pick<Engine, 'answer'>;
   /** Go's saved search results and cards: an option input ("r_ab12#2", or "c_opt_x#1" off a card) is that option's own ixigo page. */
   results?: Pick<ResultsStore, 'get'> & Partial<Pick<ResultsStore, 'card' | 'offer'>>;
+  /**
+   * "Where should we go" as its own card (the Server team's rev 5, R2): the explorer's places (plan.explore) saved as
+   * results of kind place (places-card.ts), their results_id for show_options. Absent, the places are facts alone.
+   */
+  placesOf?: (tripId: string, rows: Array<Record<string, unknown>>, checkedAt: string) => Promise<string | null>;
   /** Whether Go searches ixigo.com itself now (TRAVEL_MODE ixigo_web): the recipes run in the trip's browser. */
   live: () => boolean;
   /**
@@ -125,6 +130,10 @@ function keptRow(o: ResultOption): Record<string, unknown> {
 /** Go names a venue only from ixigo's own data (a well-known place also from what it knows): what the room is told about the facts it gets. */
 export const NAMES_ONLY_FROM_IXIGO =
   "Answer in your own words, from these facts, as the person asked: a line or two, or a short list if they asked for some. Name a cafe, restaurant, bar, beach shack, club or shop only if it is in these facts or someone in the group named it, never one from memory, and never say why you can or can't name one. Well-known places (beaches, forts, falls, markets) you may name from what you know too. When these facts don't match the ask exactly (another area, another kind of place), offer the nearest ones in them, with no word about what ixigo doesn't have.";
+
+/** What the model is told with the explorer's places saved for a card (rev 5 R2): a card, never a list in words. */
+export const PLACES_CARD =
+  "These places are saved as results_id: put the best up to three for the ask on a card with show_options (this results_id, a short title) and one short line that carries on, never a list of them in words. Each shows ixigo's estimate a person for the trip: say no other price.";
 
 /** What the room is told with a link recipe's card (a PNR's: the person checks it on ixigo's page themselves). */
 export const LINK_ON_IXIGO =
@@ -273,9 +282,12 @@ export function ixigoTool(d: IxigoToolDeps): QuickTool<{ recipe: string; inputs:
         if (answer.rows.length === 0) {
           return { recipe: a.recipe, title: answer.title, facts: [], note: account ? NOTHING_ON_THE_ACCOUNT : NOTHING_ON_IXIGO };
         }
+        // "Where should we go": the places on a card of their own (rev 5 R2), never only words.
+        const places = a.recipe === 'plan.explore' && d.placesOf ? await d.placesOf(ctx.tripId, answer.rows, answer.checkedAt).catch(() => null) : null;
+        const note = [...('note' in wider ? [wider.note] : []), ...(places ? [PLACES_CARD] : [])];
         return {
           recipe: a.recipe, title: answer.title, checked_at: answer.checkedAt, source: answer.page, facts: answer.rows.map(withoutPhotos),
-          ...wider, tell_the_room: account ? FROM_THE_ACCOUNT : NAMES_ONLY_FROM_IXIGO,
+          ...(places ? { results_id: places } : {}), ...(note.length ? { note: note.join(' ') } : {}), tell_the_room: account ? FROM_THE_ACCOUNT : NAMES_ONLY_FROM_IXIGO,
         };
       } catch (err) {
         if (!(err instanceof TravelError)) throw err;
