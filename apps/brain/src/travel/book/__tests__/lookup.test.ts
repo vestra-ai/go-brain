@@ -66,6 +66,17 @@ describe("ixigo's search box, read and picked as a person would (p4's raw answer
     expect(pickSuggestion('Kasol', [])).toBeNull();
   });
 
+  // Keshav's Varkala trip, 11 Oct: every flights search stopped on "TRV, TCR or COK?" for a town with no airport.
+  it("takes the nearest airport ixigo lists for a place with none of its own, never a choice; an airport by the words keeps its rules", () => {
+    const a = (code: string, name: string, city: string): Suggestion => ({ name: `${code} ${name}`, line: `${city}, Kerala, India`, all: false, country: 'India', place: { code, city }, placeName: city });
+    const near = [a('TRV', 'Thiruvananthapuram International Airport', 'Thiruvananthapuram'), a('TCR', 'Tuticorin', 'Tuticorin'), a('COK', 'Cochin International Airport', 'Kochi')];
+    expect(pickSuggestion('Varkala', near, { nearest: true })).toEqual({ place: { code: 'TRV', city: 'Thiruvananthapuram' }, nearest: true });
+    // Without the flight box's rule, the model is handed the list, as before.
+    expect(pickSuggestion('Varkala', near)).toEqual({ choose: near });
+    // A place an airport is named for is never "nearest": Kochi is COK.
+    expect(pickSuggestion('Kochi', near, { nearest: true })).toEqual({ place: { code: 'COK', city: 'Kochi' } });
+  });
+
   it("types each end's words into ixigo's box in one fetch, and keeps one suggestion call per end", async () => {
     const plan = await boxPlan(book.get('trains.station_lookup')!, [{ end: 'from', words: 'Jaipur' }, { end: 'to', words: 'Udaipur' }]);
     expect(plan).toEqual({

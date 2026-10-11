@@ -86,7 +86,15 @@ export function planEach(people: Person[], to: string, date: string): EachPlan {
 }
 
 const listOf = (words: string[]): string => (words.length < 2 ? (words[0] ?? '') : `${words.slice(0, -1).join(', ')} and ${words.at(-1)}`);
-const namesOf = (g: EachGroup): string => listOf(g.people.map((p) => p.name));
+/** A person as a line names them: their first name, as a friend would (Keshav's Varkala trip, 11 Oct: "Keshav Musunuri, I couldn't…"). */
+const firstName = (name: string): string => name.trim().split(/\s+/)[0] || name;
+const namesOf = (g: EachGroup): string => listOf(g.people.map((p) => firstName(p.name)));
+
+/** A search that stops on which place ixigo means (more than one airport by the words, or none): the person's to say. */
+const PLACE_ASKS: ReadonlySet<string> = new Set(['pick_place', 'unknown_place']);
+/** That question in a line, with ixigo's own names for the airports it lists. */
+const placeAsk = (err: TravelError): string =>
+  err.code === 'pick_place' && err.choices.length > 0 ? `which airport do you mean? ixigo has ${listOf(err.choices.slice(0, 4))}.` : `${clip(err.message, 200)}`;
 
 /** A seat people can still buy: a price, a time, and not a fare ixigo says has no seat left. */
 const bookable = (o: TravelOption): boolean => o.priceMinor > 0 && !!o.journey && o.facts['seats_left'] !== 0;
@@ -141,8 +149,10 @@ async function groupCard(d: Pick<FlightsEachDeps, 'results'>, tripId: string, tu
   // A rerun of the same turn finds this card saved already, and posts that one.
   const saved = (await d.results.card(tripId, cardId))?.card ?? card;
   const cheapest = shown[0]!;
+  // A place with no airport of its own (Varkala), searched at ixigo's nearest (TRV): said once, in plain words.
+  const near = (got.near ?? []).map((n) => `${n.words} has no airport, so these are flights ${norm(n.words) === norm(g.home) ? 'from' : 'to'} ${n.city} (${n.code}). `).join('');
   const line =
-    `${who}, your flights from ${g.home} on ${dayText(at.date)}${when}: ${fit} ${fit === 1 ? 'fits' : 'fit'}, from ${formatInr(cheapest.priceMinor)} a person. ` +
+    `${who}, your flights from ${g.home} on ${dayText(at.date)}${when}: ${near}${fit} ${fit === 1 ? 'fits' : 'fit'}, from ${formatInr(cheapest.priceMinor)} a person. ` +
     `Tap "I'll take this" on yours.`;
   return { card: saved, line };
 }
@@ -173,11 +183,21 @@ export function eachTryAgain(d: Omit<FlightsEachDeps, 'live'>): (t: TryAgainItem
     if (groups.length === 0) return;
     const at = { to: each.to, date: each.date };
     const run = async (): Promise<void> => {
+      const asked: { err: TravelError | null } = { err: null };
       const got = await d.engine.answer(CITY_FLIGHTS, { from: each.home, to: each.to, date: each.date, ...(each.cabin ? { cabin: each.cabin } : {}) }, { tripId: t.tripId, retry: true })
         .catch((err: unknown) => {
+          // Which place ixigo means is the person's to say, never a page that didn't load: no try after it.
+          if (err instanceof TravelError && PLACE_ASKS.has(err.code)) asked.err = err;
           d.log?.warn({ err: String(err).slice(0, 200), tripId: t.tripId, n: t.payload.n }, "travel: a city's flights try again didn't load");
           return null;
         });
+      if (asked.err) {
+        for (const g of groups) {
+          const ids = g.people.map((p) => p.personId);
+          await postFor(d, t.tripId, stableId('go_each', t.id, ...ids, 'asks'), null, `${namesOf(g)}, ${placeAsk(asked.err)}`, ids);
+        }
+        return;
+      }
       if (got?.as === 'options' && got.options.length > 0) {
         for (const g of groups) {
           const ids = g.people.map((p) => p.personId);
@@ -223,8 +243,8 @@ export function flightsEachTool(d: FlightsEachDeps): QuickTool<z.infer<typeof Ar
       if (!to || !date) return { error: 'needs_more', note: `Ask the group in one line for ${!to ? 'where the trip goes' : 'the day they fly'}.` };
       const plan = planEach(trip.people, to, date);
       const asks = [
-        ...(plan.noHome.length > 0 ? [`${listOf(plan.noHome)}, where do you fly from?`] : []),
-        ...plan.unread.map((u) => `${u.name}, "${clip(u.text, 40)}" isn't a time, so your card has every flight.`),
+        ...(plan.noHome.length > 0 ? [`${listOf(plan.noHome.map(firstName))}, where do you fly from?`] : []),
+        ...plan.unread.map((u) => `${firstName(u.name)}, "${clip(u.text, 40)}" isn't a time, so your card has every flight.`),
       ].join(' ');
       if (plan.groups.length === 0) return { error: 'needs_more', note: `Nobody has said where they fly from. Say only this, in one line: ${asks || 'where does everyone fly from?'}` };
 
@@ -237,7 +257,10 @@ export function flightsEachTool(d: FlightsEachDeps): QuickTool<z.infer<typeof Ar
       // Each city's two steps (its page and its link); its cards post as its page lands, and when the page didn't come,
       // its people hear that Go will try again, and the city's try goes on the desk. The turn's own line, to the room,
       // names no flight, price or window.
-      const cities = new Map<string, { steps: number; posted: boolean }>();
+      const cities = new Map<string, { steps: number; posted: boolean; asks?: string }>();
+      // The cities whose cards went up, and the rest with why: what the model may say, and nothing more.
+      const up = new Set<string>();
+      const notUp = new Map<string, string>();
       const posts: Array<Promise<void>> = [];
       const post = (key: string, card: C.Card | null, text: string, only: string[]): void => {
         posts.push(postFor(d, ctx.tripId, stableId('go_each', ctx.turnId, key), card, text, only));
@@ -247,6 +270,7 @@ export function flightsEachTool(d: FlightsEachDeps): QuickTool<z.infer<typeof Ar
         const city = cities.get(norm(e.entry)) ?? { steps: 0, posted: false };
         cities.set(norm(e.entry), city);
         city.steps += 1;
+        if (e.why && PLACE_ASKS.has(e.why.split(':')[0]!)) city.asks = e.why.slice(e.why.indexOf(':') + 1).trim();
         if (e.recipe === 'flights.results') live.step(e.entry, 'flights', e.answer?.as === 'options');
         const got = e.answer;
         if (got?.as === 'options' && got.options.length > 0 && !city.posted) {
@@ -254,7 +278,11 @@ export function flightsEachTool(d: FlightsEachDeps): QuickTool<z.infer<typeof Ar
           for (const g of groupsOf(e.entry)) {
             posts.push(
               groupCard(d, ctx.tripId, ctx.turnId, g, at, got)
-                .then((made) => post(g.people.map((p) => p.personId).join(','), made.card, made.line, g.people.map((p) => p.personId)))
+                .then((made) => {
+                  if (made.card) up.add(g.home);
+                  else notUp.set(g.home, 'no flight that day has seats on ixigo');
+                  post(g.people.map((p) => p.personId).join(','), made.card, made.line, g.people.map((p) => p.personId));
+                })
                 .catch((err: unknown) => d.log?.warn({ err: String(err).slice(0, 200), tripId: ctx.tripId }, "travel: a person's flights card could not be made")),
             );
           }
@@ -262,8 +290,20 @@ export function flightsEachTool(d: FlightsEachDeps): QuickTool<z.infer<typeof Ar
         }
         // Both steps in and no flights read: never a link card. Each of the city's people hears it, theirs alone, and the
         // city is tried again in a minute.
+        if (city.steps >= 2 && !city.posted && city.asks) {
+          // Which place ixigo means is the person's to say (more than one airport by those words): asked once, theirs
+          // alone, never "couldn't load" and never a try on the same question.
+          city.posted = true;
+          for (const g of groupsOf(e.entry)) {
+            const only = g.people.map((p) => p.personId);
+            post(`${only.join(',')}|asks`, null, `${namesOf(g)}, ${clip(city.asks, 240)} Which one?`, only);
+            notUp.set(g.home, `ixigo needs to know which airport: ${clip(city.asks, 160)}`);
+          }
+          return;
+        }
         if (city.steps >= 2 && !city.posted) {
           city.posted = true;
+          for (const g of groupsOf(e.entry)) notUp.set(g.home, "ixigo's page didn't load; Go tries again in the background and says so to them");
           // A minute, or past ixigo's own quiet when ixigo refused a flights page: the line says which.
           const wait = waitFor(d, 'flights', { from: e.entry, to, date });
           for (const g of groupsOf(e.entry)) {
@@ -334,13 +374,20 @@ export function flightsEachTool(d: FlightsEachDeps): QuickTool<z.infer<typeof Ar
         ctx.lines.push(asks);
         ctx.answered = true;
       }
+      // Exactly the cards that went up, and the rest with why (Keshav's Varkala trip, 11 Oct: "your Delhi flights card is
+      // up", when none had posted).
+      const cardsUp = facts.filter((f) => up.has(f.home));
+      const notCards = facts.filter((f) => !up.has(f.home)).map((f) => ({ ...f, why: notUp.get(f.home) ?? 'no card' }));
+      const said = cardsUp.length > 0
+        ? `These cards are up, each with its own line: ${cardsUp.map((f) => `${listOf(f.people.map(firstName))}'s from ${f.home}`).join('; ')}.`
+        : 'No flights card went up.';
+      const notSaid = notCards.length > 0 ? ` Not up: ${notCards.map((f) => `${listOf(f.people.map(firstName))}'s from ${f.home} (${f.why})`).join('; ')}; each of them has their own line about it already.` : '';
       return {
-        cards: facts,
+        cards_up: cardsUp,
+        ...(notCards.length > 0 ? { not_up: notCards } : {}),
         answered: !!asks,
         ...(asks ? {} : { tell_the_room: SAY_NOTHING }),
-        note: asks
-          ? 'Each person\'s flights card is up, and this turn\'s line asks what is missing: it has said what it needed to.'
-          : "Each person's flights card is up, each with its own line: say nothing more about them.",
+        note: `${said}${notSaid} Never say a card is up that is not in cards_up.${asks ? " This turn's line asks what is missing: it has said what it needed to." : ' Say nothing more about them.'}`,
       };
     },
   };

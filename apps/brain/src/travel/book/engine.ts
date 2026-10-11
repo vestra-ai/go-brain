@@ -207,7 +207,7 @@ export type EngineAnswer =
   /** cut: the call the rows came from was cut short (Bash kept an earlier part of it), so these are the first it sent.
    *  notes: the recipe's lines about the whole list (ixigo's Smart Lock for the route), for the model. */
   | {
-      as: 'options'; options: RecipeOption[]; page: string; checkedAt: string; ms: number; site?: SiteSaid; cut?: true; notes?: string[];
+      as: 'options'; options: RecipeOption[]; page: string; checkedAt: string; ms: number; site?: SiteSaid; cut?: true; notes?: string[]; near?: Near[];
       /** How many rows the page's list held before the recipe's keep: a full page says the site has more (stays' See more). */
       listed?: number;
     }
@@ -294,8 +294,15 @@ export interface RunFor {
   staged?: boolean;
 }
 
-/** A step's event carries its answer, for a caller that shows each entry's as it lands (travel/flights-each.ts). */
-export type StepsEvent = { type: 'entries'; entries: string[] } | { type: 'step'; entry: string; recipe: string; ok: boolean; answer?: EngineAnswer };
+/** A step's event carries its answer, for a caller that shows each entry's as it lands (travel/flights-each.ts); why, its failure. */
+export type StepsEvent = { type: 'entries'; entries: string[] } | { type: 'step'; entry: string; recipe: string; ok: boolean; answer?: EngineAnswer; why?: string };
+
+/** A place the search took ixigo's nearest airport for, having none of its own by its words (Varkala: TRV). */
+export interface Near {
+  words: string;
+  code: string;
+  city: string;
+}
 
 /** The most of the site's list of what it offers that a read keeps (ixigo's stays metadata: about 23 KB). */
 export const OFFERS_MAX_BYTES = 300_000;
@@ -376,6 +383,17 @@ export function createEngine(d: EngineDeps) {
     if (!l.ok) throw new TravelError('refused', l.note);
   }
   const offered = new Map<string, Offered>();
+  /** The words whose airport is ixigo's nearest to them (pickSuggestion's nearest), as kind|words: what a search says once. */
+  const nearWords = new Set<string>();
+  /** A recipe's place inputs whose airport is the nearest to the words, with the airport. */
+  const nearOf = (recipe: RecipeFile, inputs: Record<string, unknown>): Near[] =>
+    Object.entries(recipe.inputs).flatMap(([name, input]) => {
+      const v = inputs[name] as { words?: unknown; code?: unknown; city?: unknown } | undefined;
+      const kind = input.kind === 'place' && input.lookup ? d.book.get(input.lookup)?.keeps : undefined;
+      return kind && v && typeof v.words === 'string' && typeof v.code === 'string' && typeof v.city === 'string' && nearWords.has(`${kind}|${norm(v.words)}`)
+        ? [{ words: v.words, code: v.code, city: v.city }]
+        : [];
+    });
   /** The places ixigo listed for words it knows more than one place for, by lookup and words: asked again, the same list. */
   const listed = new Map<string, { choices: Suggestion[]; at: number }>();
   const keptFacts = new Map<string, { at: number; answer: Promise<EngineAnswer> }>();
@@ -567,12 +585,13 @@ export function createEngine(d: EngineDeps) {
               caps: captures.map((c) => ({ match: c.match.slice(0, 60), status: c.status, bytes: c.body.length, truncated: c.truncated })),
             }, "book: a page answered, and its answer didn't read");
           }
-          const picked = pickSuggestion(e.words, list);
+          const picked = pickSuggestion(e.words, list, { nearest: lookup.keeps === 'flights' });
           if (!picked) throw new TravelError('unknown_place', `ixigo doesn't know "${e.words.slice(0, 60)}" for ${lookup.keeps}.`);
           if ('choose' in picked) {
             offer(lookup, e.words, picked.choose);
             throw pickPlace(e.input, e.words, picked.choose);
           }
+          if (picked.nearest) nearWords.add(`${lookup.keeps}|${norm(e.words)}`);
           await keep(lookup, [e.words], picked.place, `${IXIGO}${fetches[Math.min(i, fetches.length - 1)]!.path}`);
           out[e.input] = known(lookup.keeps!, e.words) ?? { words: e.words, ...picked.place };
           // The entry as ixigo's list shows it: "Udaipur City (UDZ)".
@@ -873,6 +892,9 @@ export function createEngine(d: EngineDeps) {
       const notes: string[] = [];
       const listed = { rows: 0 };
       const options = await readOptions(recipeRead, caps, inputs, opened, b, notes, listed);
+      // A place ixigo has no airport for by its words, searched at its nearest: said once, in plain words.
+      const near = nearOf(recipe, inputs);
+      for (const n of near) notes.push(`${n.words} has no airport of its own on ixigo: these are flights for ${n.city} (${n.code}), the nearest airport ixigo lists for it.`);
       const at = d.now();
       // A stream cut short (an earlier snapshot of ixigo's flights, or a Bash that cut the whole stream at 1 MB): its whole
       // events read, and the answer says these are the first the page sent.
@@ -880,7 +902,7 @@ export function createEngine(d: EngineDeps) {
       const cut = from !== undefined && caps.some((c) => c.truncated && c.status >= 200 && c.status < 300 && matches(from, c.url));
       return {
         as: 'options', options, page: opened, checkedAt: at.toISOString(), ms: at.getTime() - started, listed: listed.rows,
-        ...(cut ? { cut: true as const } : {}), ...(notes.length > 0 ? { notes } : {}),
+        ...(cut ? { cut: true as const } : {}), ...(notes.length > 0 ? { notes } : {}), ...(near.length > 0 ? { near } : {}),
       };
     };
     // Fast first: the page's own call from the trip's warm tab, read as its answer. Any failure falls to the page.
@@ -1091,7 +1113,7 @@ export function createEngine(d: EngineDeps) {
       };
       const told = async (entry: string, step: Step, priority: number): Promise<StepAnswer> => {
         const s = await stepFor(entry, step, priority);
-        o.onSteps?.({ type: 'step', entry, recipe: s.recipe, ok: !!s.answer, ...(s.answer ? { answer: s.answer } : {}) });
+        o.onSteps?.({ type: 'step', entry, recipe: s.recipe, ok: !!s.answer, ...(s.answer ? { answer: s.answer } : {}), ...(s.why ? { why: s.why } : {}) });
         return s;
       };
       const done = await Promise.all(entries.map(async (entry) => ({ entry, steps: await Promise.all(steps.run.map((step, i) => told(entry, step, i))) })));
