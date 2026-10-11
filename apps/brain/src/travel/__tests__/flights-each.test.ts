@@ -161,7 +161,7 @@ describe("each person's own flights, from their home city", () => {
     expect(puts.at(-1)).toMatchObject({ id: expect.stringMatching(new RegExp(`:1:${quietEnds}$`)), dueAt: new Date(quietEnds + 5_000), payload: { n: 1, each: { home: 'Bangalore' } } });
   });
 
-  it("tries that city again: its people's cards, theirs alone, when it lands; the next try when it doesn't; nothing more after the last", async () => {
+  it("tries that city again: its people's cards, theirs alone, when it lands; the next try when it doesn't; after the last, one line to who asked", async () => {
     const tryOf = (n: number): TryAgainItem => ({
       id: `try_again:t_goa:each_blr:${n}`, tripId: 't_goa', kind: 'search', ref: 'flights', dueAt: lb.brain.now(),
       payload: { source: 'travel_try_again', key: 'each_blr', what: 'flights from Bangalore', n, each: { home: 'Bangalore', to: 'North Goa', date: '2026-11-06' } },
@@ -185,14 +185,27 @@ describe("each person's own flights, from their home city", () => {
     await eventually(() => puts.length === before + 1);
     expect(puts.at(-1)).toMatchObject({ id: 'try_again:t_goa:each_blr:2', dueAt: new Date(lb.brain.now().getTime() + 60_000), payload: { n: 2, key: 'each_blr' } });
     expect(postedSince(from)).toEqual([]);
-    // The last try doesn't either: his one line already said it, and nothing more goes up (p2's re-audit, 11 Oct: a
-    // line a minute), never a link.
+    // The last try doesn't either: nothing to everyone again (p2's re-audit, 11 Oct: a line a minute), never a link.
     const runsBefore = runs.length;
     tries(async () => link('BLR'))(tryOf(2), goaPack());
     await eventually(() => runs.length === runsBefore + 1);
     await new Promise((r) => setTimeout(r, 20));
     expect(postedSince(from)).toEqual([]);
     expect(puts).toHaveLength(before + 1);
+    // Arjun asked for it: one closing line, his alone, so his "I'll try again in a minute" never reads as Go forgetting.
+    const hisTry = tryOf(2);
+    hisTry.payload = { ...hisTry.payload, key: 'each_blr2', each: { ...hisTry.payload.each!, asker: 'p_arjun' } };
+    tries(async () => link('BLR'))(hisTry, goaPack());
+    await eventually(() => postedSince(from).length === 1);
+    expect(postedSince(from)).toEqual([{ text: "Still couldn't load your Bangalore flights. Say 'my flights' again whenever you want.", card: undefined, visibleTo: ['p_arjun'] }]);
+    // Rahul asked for everyone's: Bangalore isn't his, and he hears nothing of it.
+    const other = tryOf(2);
+    other.payload = { ...other.payload, key: 'each_blr3', each: { ...other.payload.each!, asker: 'p_rahul' } };
+    const runsNow = runs.length;
+    tries(async () => link('BLR'))(other, goaPack());
+    await eventually(() => runs.length === runsNow + 1);
+    await new Promise((r) => setTimeout(r, 20));
+    expect(postedSince(from)).toHaveLength(1);
   });
 
   // p2's re-audit of Keshav's Varkala trip (11 Oct): his "Book my flights" searched all five, and 20 private "I couldn't

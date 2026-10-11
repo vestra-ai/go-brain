@@ -231,8 +231,12 @@ export function eachTryAgain(d: Omit<FlightsEachDeps, 'live'>): (t: TryAgainItem
         await tryAgain({ ...d, desk: d.desk }, t.tripId, 'flights', { ...t.payload, n: t.payload.n + 1 });
         return;
       }
-      // The last try didn't land either: their one line said it, and they ask again when they want (never a second line).
+      // The last try didn't land either. Never a line to everyone again: one closing line, to the person who asked when the
+      // city is theirs, so "I'll try again in a minute" never reads as Go forgetting (the lead, 11 Oct).
       d.log?.warn({ tripId: t.tripId, home: each.home }, "travel: a city's flights didn't load after its tries");
+      if (each.asker && groups.some((g) => g.people.some((p) => p.personId === each.asker))) {
+        await postFor(d, t.tripId, stableId('go_each', t.id, each.asker, 'closing'), null, `Still couldn't load your ${each.home} flights. Say 'my flights' again whenever you want.`, [each.asker]);
+      }
     };
     run().catch((err: unknown) => d.log?.warn({ err: String(err).slice(0, 200), tripId: t.tripId }, "travel: a city's flights try again failed"));
   };
@@ -343,7 +347,9 @@ export function flightsEachTool(d: FlightsEachDeps): QuickTool<z.infer<typeof Ar
             post(`${only.join(',')}|not_loaded`, null, notLoadedFor({ ...g, people: fresh }, (what) => notLoadedLine(what, wait)), only);
           }
           if (d.desk) {
-            const each = { home: e.entry, to, date, ...(a.cabin ? { cabin: a.cabin } : {}), ...(scope ? { people: scope } : {}) };
+            const each = {
+              home: e.entry, to, date, ...(a.cabin ? { cabin: a.cabin } : {}), ...(scope ? { people: scope } : {}), ...(asked ? { asker: asked.personId } : {}),
+            };
             posts.push(
               tryAgain({ ...d, desk: d.desk }, ctx.tripId, 'flights', { key: stableId('each', ctx.turnId, norm(e.entry)), what: `flights from ${e.entry}`, n: 1, each })
                 .then(() => undefined)
