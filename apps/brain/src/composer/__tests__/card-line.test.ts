@@ -16,7 +16,7 @@ import { CARD_LINE, GO_RULES } from '../rules.js';
 //                the 15 and 20 minute ones. I'll show the best-rated villas that are close to the beach."
 const cardTools = () =>
   [...travelTools({} as Parameters<typeof travelTools>[0]), ...roomTools({ now: () => new Date('2026-10-07T09:00:00Z'), pool: {} as Pool })].filter((t) =>
-    ['show_options', 'put_to_vote', 'open_vote'].includes(t.name),
+    ['show_options', 'put_to_vote', 'open_vote', 'suggest_places'].includes(t.name),
   );
 
 describe('the line that goes out with a card', () => {
@@ -35,9 +35,9 @@ describe('the line that goes out with a card', () => {
     expect(section).not.toContain('except with a card');
   });
 
-  it('is a required argument of show_options, put_to_vote and open_vote, and each description says how it reads', () => {
+  it('is a required argument of show_options, put_to_vote, open_vote and suggest_places, and each description says how it reads', () => {
     const tools = cardTools();
-    expect(tools.map((t) => t.name).sort()).toEqual(['open_vote', 'put_to_vote', 'show_options']);
+    expect(tools.map((t) => t.name).sort()).toEqual(['open_vote', 'put_to_vote', 'show_options', 'suggest_places']);
     for (const def of toolDefs(tools)) {
       expect(def.description, def.name).toContain(CARD_LINE);
       expect((def.input_schema as { required?: string[] }).required, def.name).toContain('line');

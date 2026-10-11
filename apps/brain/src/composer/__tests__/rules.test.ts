@@ -196,11 +196,13 @@ describe("ixigo's page is never the answer", () => {
 // Surprise us). Where the trip could go is a place card, the App's rail with Details and Vote, never words or buttons. An
 // area inside the place the trip has (North or South Goa) stays a quick reply (the lead, 11 Oct).
 describe('where the trip could go is a place card', () => {
-  it('runs plan.explore and puts its places up with show_options, never in words or offer_replies, the hello too', () => {
+  // Keshav, 11 Oct: suggestions need no ixigo. Go picks the places itself (suggest_places); ixigo books what is picked.
+  it('puts places Go picks itself up with suggest_places, never in words or offer_replies, the hello too', () => {
     expect(section('How you work', 'When you speak')).toContain(
-      "- Where the trip could go is always a place card (plan.explore from the asker's home city, the trip's month or next, then show_options), " +
-        'never words or offer_replies, for "Surprise us" and your hello too.',
+      '- Where the trip could go is always a place card: suggest_places, 5 to 8 places you pick for this group, never words or offer_replies, ' +
+        'for "Surprise us" and your hello too.',
     );
+    expect(GO_RULES).not.toContain('plan.explore');
   });
 
   it('keeps buttons for other picks, an area inside the place among them', () => {

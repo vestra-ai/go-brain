@@ -410,7 +410,7 @@ describe('the room\'s tools', () => {
     // The whole message comes after the call, a hello included, never the question alone (staging drill, 10 Oct).
     expect((out as { tell_the_room: string }).tell_the_room).toContain('Now write your whole message, everything you meant to say');
     // Keshav, 11 Oct: where the trip could go is never buttons, but a place card; an area inside the place still is one.
-    expect(offer.description).toContain("Never where the trip could go: that is a place card (the ixigo tool's plan.explore, then show_options).");
+    expect(offer.description).toContain('Never where the trip could go: that is a place card (suggest_places).');
     expect(offer.description).toContain('North or South Goa');
   });
 

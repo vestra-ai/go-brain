@@ -102,6 +102,73 @@ export function placeOptions(rows: Array<Record<string, unknown>>, asked: Explor
   });
 }
 
+/** A place Go picked itself for where the trip could go (suggest_places), as the model gives it. */
+export interface SuggestedPlace {
+  name: string;
+  kind: string;
+  travel: string;
+  fit: string;
+  why: string[];
+  cost_each_rupees: number;
+  nights?: number | undefined;
+  things_to_do: string[];
+}
+
+/** One line of a place's list kept in its facts (facts take no lists): its items with this between them. */
+const SEP = ' | ';
+const listOf = (v: unknown): string[] => (typeof v === 'string' && v !== '' ? v.split(SEP).map((x) => x.trim()).filter((x) => x !== '') : []);
+const itemsOf = (xs: string[], max: number): string => xs.map((x) => clip(x.replace(/\|/g, '/').trim(), max)).filter((x) => x !== '').join(SEP);
+
+/**
+ * The places Go picked itself, as options of kind place drawn as the App's place card (Keshav, 11 Oct: suggestions need
+ * no ixigo): the tagline (its kind and rough travel time from the asker's city), its cost a person as Go's rough
+ * estimate (facts.estimate: the card says so), and the fit line, reasons and things to do for its Details. Its guide's
+ * name is the place before its first comma, for its guide's best time and places to visit in the background.
+ */
+export function suggestedPlaces(places: SuggestedPlace[]): ResultOption[] {
+  return places.map((p) => {
+    const name = clip(p.name.trim(), 80);
+    return {
+      kind: 'place',
+      title: name,
+      subtitle: clip(`${p.kind.trim()} · ${p.travel.trim()}`, 120),
+      priceMinor: Math.round(p.cost_each_rupees) * 100,
+      currency: 'INR',
+      priceNote: 'each, rough',
+      highlights: [clip(p.kind.trim(), 40)],
+      facts: {
+        estimate: true,
+        fit: clip(p.fit.trim(), 140),
+        why: itemsOf(p.why.slice(0, 4), 140),
+        things: itemsOf(p.things_to_do.slice(0, 6), 60),
+        ...(p.nights ? { nights: p.nights } : {}),
+        guide: name.split(',')[0]!.trim(),
+      },
+      place: { name: clip(p.name.trim(), 120) },
+    };
+  });
+}
+
+/** A place Go picked itself, its Details: the fit line first, its reasons, its rough cost as an estimate, things to do. */
+function suggestedDetails(o: ResultOption): OptionDetailsT {
+  const f = o.facts;
+  const nights = num(f['nights']);
+  const why = [text(f['fit']), ...listOf(f['why'])].filter((x): x is string => x !== null).slice(0, 5);
+  const things = listOf(f['things']).slice(0, 20);
+  const cost = o.priceMinor;
+  return {
+    ...(why.length ? { why } : {}),
+    ...(cost !== undefined
+      ? {
+          costs: [{ label: nights ? `Getting there and ${nights} nights` : 'Getting there and the stay', emoji: '🧳', amount_minor: cost, currency: 'INR' }],
+          total_minor: cost,
+          caption: `Go's rough estimate, not a price: about ${formatInr(cost)} each`,
+        }
+      : {}),
+    ...(things.length ? { activities: things } : {}),
+  };
+}
+
 /** ixigo's "about ₹2,000" a night, in paise; null when it says no amount. */
 function nightMinor(night: string | null): number | null {
   const m = night ? /₹\s*([\d,]+)/.exec(night) : null;
@@ -115,6 +182,7 @@ function nightMinor(night: string | null): number | null {
  * total), and the caption that says what that total covers. Things to do come from its guide (showPlaces, Details).
  */
 export function placeDetails(o: ResultOption): OptionDetailsT | null {
+  if (o.facts['estimate'] === true) return suggestedDetails(o);
   const f = o.facts;
   const kinds = text(f['kinds']);
   const goodFor = text(f['good_for']);
