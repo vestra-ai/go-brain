@@ -173,6 +173,7 @@ describe('the early answer, with no model call', () => {
       }),
       get: vi.fn(async (_t: string, id: string) => (sets.get(id) ?? null) as never),
       saveCard: vi.fn(async (row: { cardId: string }) => { cards.push(row); }),
+      shownFrom: vi.fn(async () => []),
       card: vi.fn(async () => null),
     };
     const puts: Array<Omit<DeskItem, 'id'> & { id?: string }> = [];
@@ -210,7 +211,7 @@ describe('the early answer, with no model call', () => {
     const saved: Array<Record<string, unknown>> = [];
     const run = earlyAnswer({
       early: { searchFor: (_t: string, id: string): EarlySearch | null => (id === line.message_id ? { kind: 'stays', query, search: Promise.resolve(stays), live: true } : null) },
-      results: { save: async (s: Record<string, unknown>) => { saved.push(s); return { ...s, resultsId: 'r_direct2' } as never; }, saveCard: async () => undefined, card: async () => null } as never,
+      results: { save: async (s: Record<string, unknown>) => { saved.push(s); return { ...s, resultsId: 'r_direct2' } as never; }, saveCard: async () => undefined, shownFrom: async () => [], card: async () => null } as never,
       images: { rehostUrl: async (u: string) => u } as never, travel: { waitMs: async () => null }, today: async () => '2026-10-07',
       now: () => new Date('2026-10-07T12:00:01Z'), wait: async () => undefined,
     });
@@ -286,7 +287,7 @@ describe('the early answer, with no model call', () => {
     const query = { area: 'goa', checkIn: '2026-11-06', checkOut: '2026-11-09' };
     const run = earlyAnswer({
       early: { searchFor: (_t: string, id: string): EarlySearch | null => (id === line.message_id ? { kind: 'stays', query, search: Promise.resolve(stays), live: true } : null) },
-      results: { save: async (s: Record<string, unknown>) => ({ ...s, resultsId: 'r_direct3' }) as never, saveCard: async () => undefined, card: async () => null } as never,
+      results: { save: async (s: Record<string, unknown>) => ({ ...s, resultsId: 'r_direct3' }) as never, saveCard: async () => undefined, shownFrom: async () => [], card: async () => null } as never,
       images: { rehostUrl: async (u: string) => u } as never, travel: { waitMs: async () => null }, today: async () => '2026-10-07',
       now: () => new Date('2026-10-07T12:00:01Z'), wait: async () => undefined,
     });
@@ -321,6 +322,7 @@ describe('an early search reaches the room only when the turn takes it up', () =
       }),
       get: vi.fn(async (_t: string, id: string) => (sets.get(id) ?? null) as never),
       saveCard: vi.fn(async () => undefined),
+      shownFrom: vi.fn(async () => []),
       card: vi.fn(async () => null),
     };
     const puts: DeskItem[] = [];

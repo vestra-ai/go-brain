@@ -244,7 +244,8 @@ export function loadWhat(kind: TravelKind, q: TravelQuery): string {
 /**
  * The card's picks, by their numbers in the saved list (1-based), in the order shown. Stays: the engine's first 10, a
  * card's most (rev 5 R3; its order already holds the conditions, the rating and the region's spread). Journeys: the
- * three cheapest that fit, one fare a train, shown by departure.
+ * three cheapest that fit, one fare a train, shown by departure, first on the card; the rest follow them to 10
+ * (tools.ts cardNumbers).
  */
 export function directPicks(kind: TravelKind, options: ResultOption[]): number[] {
   if (kind === 'stays') return options.slice(0, 10).map((_, i) => i + 1);

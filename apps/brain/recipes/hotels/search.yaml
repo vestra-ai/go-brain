@@ -13,6 +13,9 @@ inputs:
   rooms: { kind: count, value: "$ceil(adults / 2)", min: 1, max: 8 }
   # How ixigo orders the list, by the page's own codes; ixigo's default is SC_P.
   sort: { kind: choice, optional: true, about: "the order: SC_P popular first, SC_P_LH cheapest first, SC_P_HL dearest first, SC_UR best rated first" }
+  # How many of ixigo's pages of the list to read: 2 when a card's "See more" has shown all page 1 held (Keshav, 11 Oct:
+  # "show 10 then see more button, and on click 10 more"). A whole state reads two anyway.
+  pages: { kind: count, min: 1, max: 2, value: "1", about: "how many pages of ixigo's list to read, 10 stays a page" }
 auth: none
 changes_state: false
 # ixigo filters the search itself on the codes it has: an area of a city, a pool, breakfast, free cancellation, paying at
@@ -73,9 +76,10 @@ capture:
 # times) shows 1 s after the page mounts, over everything, so it is closed first: the click looks for it up to 3 s
 # after the page opens (Bash's within_ms), in the live view's first seconds, never after a slow search (staging, 8 Oct:
 # a 21.5 s Goa search kept it over the page to the end). It is looked for again once the results are in, and after the
-# scrolls, which it can block. Bash's last picture waits 550 ms after the hotels are in, when the cards are drawn.
+# scrolls, which it can block. Bash's last picture waits 550 ms after the hotels are in, when the cards are drawn. Two
+# pages asked (See more) read the same way: page 1 was full, so the scrolls have room.
 fetch:
-  - when: $wide
+  - when: $wide or pages = 2
     capture: [{ match: /accommodation-search/api/v3/accommodations/search$, min_count: 2, max_count: 2 }]
     steps:
       - { op: click, name: Close modal, optional: true, within_ms: 3000 }

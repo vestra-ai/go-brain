@@ -23,7 +23,8 @@ export const VOTE_MOST = 20;
 
 export type VoteCard = Extract<C.Card, { kind: 'vote' }>;
 export type VoteOutcome =
-  | { ok: true; decisionId: string; voteCard: VoteCard }
+  /** size: how many options the vote holds now, when this opened or joined it (a card's See more needs room in it). */
+  | { ok: true; decisionId: string; voteCard: VoteCard; size?: number }
   | { ok: false; reason: 'unknown_card' | 'already_voting' | 'too_few_options' | 'personal'; decisionId?: string };
 
 const QUESTIONS: Record<OptionKind, string> = {
@@ -174,7 +175,7 @@ export async function openVoteFromCard(
       if (!stale && open.count + each.length <= VOTE_MOST) {
         await d.link.request('add_vote_options', { request_id: o.requestId, trip_id: o.tripId, decision_id: open.decisionId, options: each });
         await d.results.setDecision(o.cardId, open.decisionId);
-        return { ok: true, decisionId: open.decisionId, voteCard: voteCardFor(o.voteCardId, open.decisionId, question, options) };
+        return { ok: true, decisionId: open.decisionId, voteCard: voteCardFor(o.voteCardId, open.decisionId, question, options), size: open.count + each.length };
       }
       // Stale, or full with nobody voted: it closes, said plainly, and this card opens its own vote. Full with votes in
       // it: it stays open as it is, and this card still opens its own (Keshav's Varkala trip, 11 Oct: a card for the new
@@ -195,7 +196,7 @@ export async function openVoteFromCard(
       trip_id: o.tripId, request_id: o.requestId, question, kind: 'choice', anonymous: o.anonymous ?? false, options, closes_at: closesAt,
     });
     await d.results.setDecision(o.cardId, opened.decision_id);
-    return { ok: true, decisionId: opened.decision_id, voteCard: voteCardFor(o.voteCardId, opened.decision_id, question, options) };
+    return { ok: true, decisionId: opened.decision_id, voteCard: voteCardFor(o.voteCardId, opened.decision_id, question, options), size: options.length };
   } catch (err) {
     await d.results.releaseVote(o.cardId, o.key);
     throw err;

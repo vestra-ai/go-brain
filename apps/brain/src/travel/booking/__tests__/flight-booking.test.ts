@@ -647,15 +647,21 @@ describe("Go books a person's own flight up to ixigo's pay button", () => {
     });
   });
 
-  it("sends them to ixigo only when the vault can't take it, saying why; any other no is said, theirs alone", async () => {
+  // Keshav, 11 Oct: an ixigo page is never the answer; pay is always through the vault.
+  it("never sends them to ixigo when the vault can't take it: why, in the vault's words, and the pick kept; any other no is said, theirs alone", async () => {
     const refusing = (code: string, say = false): TicketPay => ({ requestTicketCard: async () => ({ refused: 'The test rail is not ready.', code, say }), onPaid: () => undefined });
     const from = lb.link.requests.length;
     const b = booking(fakeRunner().runner, true, refusing('rail_not_ready'));
     await b.start({ tapId: 'tap_t2', tripId: 't_goa', personId: 'p_meher11', name: 'Meher', offer: OFFER, choice: 'basic' });
     await b.settled();
-    const ixigo = lb.link.requests.slice(from).find((r) => (r.params['card'] as { kind?: string } | undefined)?.kind === 'notice')!;
-    expect(ixigo.params).toMatchObject({ text: 'The test rail is not ready. You can book it on ixigo yourself: it opens set for you.', visible_to_person_ids: ['p_meher11'] });
-    expect(C.NoticeCard.parse(ixigo.params['card'])).toMatchObject({ for_person_ids: ['p_meher11'], source: { url: expect.stringContaining('adults=1') } });
+    const vaultSaid = lb.link.requests.slice(from).filter((r) => r.method === 'post_message' && String(r.params['text'] ?? '').startsWith('The test rail is not ready.'));
+    expect(vaultSaid).toHaveLength(1);
+    expect(vaultSaid[0]!.params).toMatchObject({
+      text: "The test rail is not ready. Your pick is kept: tap I'll take this on your flights card to pay once it goes through.", visible_to_person_ids: ['p_meher11'],
+    });
+    expect(vaultSaid[0]!.params['card']).toBeUndefined();
+    // No ixigo link card at all.
+    expect(lb.link.requests.slice(from).some((r) => /ixigo\.com/.test(JSON.stringify((r.params['card'] as { source?: unknown } | undefined)?.source ?? '')))).toBe(false);
     expect((await db.pool.query(`select state, why from flight_bookings where person_id = 'p_meher11'`)).rows[0]).toEqual({ state: 'failed', why: 'pay_rail_not_ready' });
     const from2 = lb.link.requests.length;
     const c = booking(fakeRunner().runner, true, refusing('not_in_trip'));

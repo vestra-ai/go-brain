@@ -12,7 +12,7 @@ import { createImages } from '../images.js';
 import { createTravelLayer } from '../layer.js';
 import { createFakeTravel } from '../mcp-travel.js';
 import { createResultsStore, type ResultsStore } from '../results.js';
-import { busesQuery, compactOption, searchAnswer, searchRoundSummary, travelTools } from '../tools.js';
+import { busesQuery, cardNumbers, compactOption, searchAnswer, searchRoundSummary, travelTools } from '../tools.js';
 import type { Travel } from '../travel.js';
 
 let db: Awaited<ReturnType<typeof withSchema>>;
@@ -42,7 +42,8 @@ describe('search tools', () => {
     expect(out.checked).toBe('just now');
     expect(out.results[0]).toMatchObject({ n: 1, title: 'IndiGo 6E 2134', when: '6:10 pm to 8:45 pm, non-stop', price: '₹5,920 per person' });
     expect(out.results.map((r: { title: string }) => r.title)).not.toContain('Akasa Air QP 1846');
-    expect(out.card).toEqual({ results_id: out.results_id, option_numbers: [1, 2, 3], title: 'Flights, Delhi to Goa' });
+    // A card shows 10, or all there are (Keshav, 11 Oct): here the four.
+    expect(out.card).toEqual({ results_id: out.results_id, option_numbers: [1, 2, 3, 4], title: 'Flights, Delhi to Goa' });
     const saved = await results.get('t_goa', out.results_id);
     expect(saved?.options.every((o) => (o.journey?.depart_at.slice(11, 16) ?? '') >= '18:00')).toBe(true);
   });
@@ -327,6 +328,37 @@ describe('a search that answers itself', () => {
 });
 
 describe('show_options', () => {
+  // Keshav, 11 Oct: "show 10 then see more button, and on click 10 more etc".
+  it("shows 10: the picks first, in their order, then what no card of the search has shown, in its order; no picks, its first 10", () => {
+    const set = { options: Array.from({ length: 14 }, (_, i) => ({ title: `S${i + 1}`, sourceUrl: `https://www.ixigo.com/hotels/${100 + i}/details?hName=S${i + 1}` })) } as never;
+    const shown = (set as { options: unknown[] }).options.slice(0, 10) as never;
+    expect(cardNumbers(set, [3, 1, 5])).toEqual([3, 1, 5, 2, 4, 6, 7, 8, 9, 10]);
+    expect(cardNumbers(set, [])).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
+    // Another card showed the first 10: a pick of the 12th comes with the rest no card has shown.
+    expect(cardNumbers(set, [12], shown)).toEqual([12, 11, 13, 14]);
+    // Picks that are none of the search's are the search's first 10.
+    expect(cardNumbers(set, [99])).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
+  });
+
+  it('keeps that ixigo has more of a stays search when its one page read came full, never after two pages, a half of one, or an earlier read', async () => {
+    const stay = (i: number) => ({
+      kind: 'stay' as const, title: `Morjim ${i}`, priceMinor: 500_000, currency: 'INR', priceNote: 'per night', highlights: [], facts: {},
+      sourceUrl: `https://www.ixigo.com/hotels/${7000 + i}/details?hName=Morjim%20${i}`,
+    });
+    const q = { area: 'Morjim', checkIn: '2026-11-06', checkOut: '2026-11-09' };
+    const page = 'https://www.ixigo.com/hotels/search/result?locationId=1';
+    const siteMore = async (found: Record<string, unknown>) => {
+      const out = await searchAnswer('stays', q, { checkedAt: '2026-10-07T12:00:00.000Z', page, results: Array.from({ length: 10 }, (_, i) => stay(i + 1)), ...found } as never, 't_goa', { results, now: () => new Date('2026-10-07T12:00:00Z') });
+      return (await results.get('t_goa', out.results_id!))?.siteMore ?? false;
+    };
+    expect(await siteMore({ listed: 10 })).toBe(true);
+    expect(await siteMore({ listed: 20 })).toBe(false);
+    // North Goa of all of Goa's two pages: 7 kept of the 20 the list held.
+    expect(await siteMore({ listed: 7 })).toBe(false);
+    expect(await siteMore({ listed: 10, earlier: true })).toBe(false);
+    expect(await siteMore({})).toBe(false);
+  });
+
   it('puts a valid options card built from the saved set into ctx.cards, with re-hosted images, so it rides with the message', async () => {
     const found = (await lb.tools.run('search_stays', STAYS, lb.ctx({ turnId: 'turn_o1' }))) as any;
     const ctx = lb.ctx({ turnId: 'turn_o2' });
@@ -338,7 +370,8 @@ describe('show_options', () => {
     expect(ctx.lines).toEqual(['Here are the villas.']);
     const card = C.OptionsCard.parse(ctx.cards[0]);
     expect(card.card_id).toBe(shown.card_id);
-    expect(card.options.map((o) => o.title)).toEqual(['Villa Sol', 'The Palms Villa', 'Ocean Breeze Villa']);
+    // The picks first, then the rest of the search, 10 or all there are (Keshav, 11 Oct: "show 10 then see more button").
+    expect(card.options.map((o) => o.title)).toEqual(['Villa Sol', 'The Palms Villa', 'Ocean Breeze Villa', 'Casa Mareia']);
     // The whole stay, as its vote and its payment carry it (the Server team's §6c); the night in the subtitle.
     expect(card.options[0]).toMatchObject({ price_minor: 3840000, price_note: 'for 3 nights', subtitle: 'Anjuna, ₹12,800 per night' });
     expect(card.options[0]!.image_url).toMatch(/^https:\/\/go\.test\/img\/u[0-9a-f]{32}\.jpg$/);
@@ -367,7 +400,7 @@ describe('show_options', () => {
     await lb.tools.run('show_options', args, first);
     await lb.tools.run('show_options', args, again);
     expect(again.cards).toEqual(first.cards);
-    expect(await results.offersOnCard('c_opt_turn_r2_1')).toHaveLength(3);
+    expect(await results.offersOnCard('c_opt_turn_r2_1')).toHaveLength(4);
   });
 
   it('shows the card it saved first when a rerun of the same turn asks for other options, so the card always matches its offers', async () => {
@@ -376,7 +409,7 @@ describe('show_options', () => {
     await lb.tools.run('show_options', { line: 'Here are the villas.', results_id: found.results_id, option_numbers: [1, 2], title: 'Two villas' }, first);
     const again = lb.ctx({ turnId: 'turn_c2' });
     const out = (await lb.tools.run('show_options', { line: 'Here are the villas.', results_id: found.results_id, option_numbers: [3, 4], title: 'Two other villas' }, again)) as any;
-    expect(out.shown).toBe(2);
+    expect(out.shown).toBe(C.OptionsCard.parse(first.cards[0]).options.length);
     expect(again.cards).toEqual(first.cards);
     const card = C.OptionsCard.parse(again.cards[0]);
     expect(card.title).toBe('Two villas');
@@ -481,9 +514,12 @@ describe("a shared thing's card is its vote", () => {
   // "I'll book it" then had nothing to book.
   it('gives a one-option card no vote of its own; put_to_vote puts it to the group as that option, bound to its offer, or "Keep looking"', async () => {
     const found = (await lb.tools.run('search_stays', STAYS, lb.ctx({ turnId: 'turn_one1' }))) as any;
+    // A card shows 10, or all there are: one option is a search that found one.
+    const all = (await results.get('t_goa', found.results_id))!;
+    const one = await results.save({ tripId: 't_goa', optionKind: 'stay', source: 'search', query: all.query, options: [all.options[1]!], checkedAt: all.checkedAt });
     const showCtx = lb.ctx({ turnId: 'turn_one2' });
     const opened = lb.link.sent('open_vote').length;
-    const shown = (await lb.tools.run('show_options', { line: 'One fits.', results_id: found.results_id, option_numbers: [2], title: 'Villas' }, showCtx)) as any;
+    const shown = (await lb.tools.run('show_options', { line: 'One fits.', results_id: one.resultsId, option_numbers: [1], title: 'Villas' }, showCtx)) as any;
     const card = C.OptionsCard.parse(showCtx.cards[0]);
     expect(card.options).toHaveLength(1);
     expect(card.decision_id).toBeUndefined();
@@ -584,6 +620,33 @@ describe("a shared thing's card is its vote", () => {
     expect(fresh.decision_id).not.toBe(idle.decision_id);
     expect(lb.link.sent('close_vote').at(-1)).toMatchObject({ decision_id: idle.decision_id });
     expect(lb.link.sent('post_message').at(-1)).toMatchObject({ text: 'The earlier stays vote was for North Goa, 6 to 9 Nov; this card is the vote for North Goa, 7 to 10 Nov.' });
+  });
+
+  // #459 with #469: a card of 10 that joins an open vote of 10 fills it to the most one vote takes.
+  it('gives a card that fills the open stays vote to its most no See more, the vote having no room for more', async () => {
+    const stay = (area: string, i: number) => ({
+      kind: 'stay' as const, title: `${area} ${i}`, priceMinor: 500_000, totalMinor: 1_500_000, currency: 'INR', priceNote: 'per night, per room', highlights: [], facts: { nights: 3 },
+      sourceUrl: `https://www.ixigo.com/hotels/${(area === 'Baga' ? 9700 : 9800) + i}/details?hName=${area}%20${i}`,
+    });
+    // One search, read twice (a card, then the same search again): the second card joins the first's vote, never a stale one.
+    const save = (area: string, n: number) =>
+      results.save({ tripId: 't_goa', optionKind: 'stay', source: 'search', query: { area: 'North Goa' }, options: Array.from({ length: n }, (_, i) => stay(area, i + 1)), checkedAt: '2026-10-07T12:00:00.000Z' });
+    let open: Array<{ decision_id: string; voted: number; options: Array<{ label: string }> }> = [];
+    const server = {
+      request: async (method: string, params: unknown) =>
+        method === 'read_trip' ? { ...GOA_TRIP, decisions: open.map((v) => ({ ...v, status: 'open' })) } : lb.link.request(method as 'open_vote', params as never),
+    } as unknown as typeof lb.link;
+    const candolim = await save('Candolim', 10);
+    const first = (await lb.tools.run('show_options', { line: 'Stays in Candolim.', results_id: candolim.resultsId, title: 'Stays in Candolim' }, lb.ctx({ turnId: 'turn_fill1', link: server }))) as any;
+    open = [{ decision_id: first.decision_id, voted: 0, options: Array.from({ length: 10 }, (_, i) => ({ label: `Candolim ${i + 1}` })) }];
+    const baga = await save('Baga', 12);
+    const ctx = lb.ctx({ turnId: 'turn_fill2', link: server });
+    const joined = (await lb.tools.run('show_options', { line: 'Stays in Baga.', results_id: baga.resultsId, title: 'Stays in Baga' }, ctx)) as any;
+    expect(joined.decision_id).toBe(first.decision_id);
+    const card = C.OptionsCard.parse(ctx.cards[0]);
+    expect(card.options).toHaveLength(10);
+    // 20 in the vote now, the most: no See more, though the search has two more.
+    expect(card.actions).toEqual([]);
   });
 
   it("never puts a ticket to a group vote: a train's card is each traveller's own pick, and the model is told so", async () => {

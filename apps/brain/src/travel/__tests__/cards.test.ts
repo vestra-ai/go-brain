@@ -28,9 +28,13 @@ describe('the options card', () => {
     const card = buildOptionsCard({ cardId: 'c_v', title: 'Stays', optionKind: 'stay', checkedAt: '2026-10-07T12:00:00.000Z', picks: stays, decisionId: 'd_12', more: true });
     expect(C.OptionsCard.safeParse(card).success).toBe(true);
     expect(card).toMatchObject({ decision_id: 'd_12', actions: [C.MORE_OPTIONS] });
-    // A ticket's card never: it is each traveller's own pick.
+    // A ticket's card has no vote, each traveller picking their own, and See more too while its search has more (the
+    // lead's ruling on #459, 11 Oct).
     const flights = buildOptionsCard({ cardId: 'c_f', title: 'Flights', optionKind: 'flight', checkedAt: '2026-10-07T12:00:00.000Z', picks, more: true });
-    expect(flights.actions?.map((a) => a.action_id)).toEqual(['pick']);
+    expect(flights.decision_id).toBeUndefined();
+    expect(flights.actions?.map((a) => a.action_id)).toEqual(['pick', 'more_options']);
+    const last = buildOptionsCard({ cardId: 'c_f2', title: 'Flights', optionKind: 'flight', checkedAt: '2026-10-07T12:00:00.000Z', picks });
+    expect(last.actions?.map((a) => a.action_id)).toEqual(['pick']);
   });
 
   it('offers no vote for a single option, and never shows an em dash', () => {

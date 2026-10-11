@@ -206,7 +206,11 @@ interface Site {
 export type EngineAnswer =
   /** cut: the call the rows came from was cut short (Bash kept an earlier part of it), so these are the first it sent.
    *  notes: the recipe's lines about the whole list (ixigo's Smart Lock for the route), for the model. */
-  | { as: 'options'; options: RecipeOption[]; page: string; checkedAt: string; ms: number; site?: SiteSaid; cut?: true; notes?: string[]; near?: Near[] }
+  | {
+      as: 'options'; options: RecipeOption[]; page: string; checkedAt: string; ms: number; site?: SiteSaid; cut?: true; notes?: string[]; near?: Near[];
+      /** How many rows the page's list held before the recipe's keep: a full page says the site has more (stays' See more). */
+      listed?: number;
+    }
   | { as: 'facts'; title: string; rows: Array<Record<string, unknown>>; page: string; checkedAt: string; ms: number }
   | { as: 'link'; link: string; title: string; who: string | null }
   /** A composite's: its inputs as filled, and each entry (a home city) with each step's answer, or why it has none. */
@@ -886,7 +890,8 @@ export function createEngine(d: EngineDeps) {
         return { as: 'facts', title: await fill(recipe.answer.title, inputs, { url: false, bindings: b }), rows, page: opened, checkedAt: at.toISOString(), ms: at.getTime() - started };
       }
       const notes: string[] = [];
-      const options = await readOptions(recipeRead, caps, inputs, opened, b, notes);
+      const listed = { rows: 0 };
+      const options = await readOptions(recipeRead, caps, inputs, opened, b, notes, listed);
       // A place ixigo has no airport for by its words, searched at its nearest: said once, in plain words.
       const near = nearOf(recipe, inputs);
       for (const n of near) notes.push(`${n.words} has no airport of its own on ixigo: these are flights for ${n.city} (${n.code}), the nearest airport ixigo lists for it.`);
@@ -896,8 +901,8 @@ export function createEngine(d: EngineDeps) {
       const from = recipeRead.read?.rows.from;
       const cut = from !== undefined && caps.some((c) => c.truncated && c.status >= 200 && c.status < 300 && matches(from, c.url));
       return {
-        as: 'options', options, page: opened, checkedAt: at.toISOString(), ms: at.getTime() - started, ...(cut ? { cut: true as const } : {}),
-        ...(notes.length > 0 ? { notes } : {}), ...(near.length > 0 ? { near } : {}),
+        as: 'options', options, page: opened, checkedAt: at.toISOString(), ms: at.getTime() - started, listed: listed.rows,
+        ...(cut ? { cut: true as const } : {}), ...(notes.length > 0 ? { notes } : {}), ...(near.length > 0 ? { near } : {}),
       };
     };
     // Fast first: the page's own call from the trip's warm tab, read as its answer. Any failure falls to the page.

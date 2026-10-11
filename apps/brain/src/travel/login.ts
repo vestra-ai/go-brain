@@ -142,8 +142,6 @@ const LOGIN_DRAWER: CropTo = { role: 'dialog' };
 const MOBILE_BOX = { op: 'click', role: 'textbox', text: 'mobile' } as const;
 /** ixigo's home page, where the log in sheet opens. */
 export const LOGIN_URL = 'https://www.ixigo.com/';
-/** A booking ask asks again with its own line, unless it asked this recently (a turn that runs again). */
-const BOOK_ASK_AGAIN_MS = 2 * 60_000;
 /** The first ask, at setup or at a trip's first search, when Go's hello went without it. */
 const FIRST_LINE = "{name}, link ixigo for the trip: one login on the trip's computer, about a minute.";
 /** The ask when the person's browser lost the login (the keep-alive, another trip's check), at the trip's next travel talk. */
@@ -164,7 +162,9 @@ export const HELLO_LINE = '{name}, link ixigo once with one tap and I can book f
  * How a line in the chat names the person it asks: their first name, as a friend would ("Nishanth", never "Nishanth
  * Gunupudi": p2's audit, 11 Oct). The card keeps the whole name.
  */
-const addressOf = (name: string): string => (name === ORGANIZER ? name : name.trim().split(/\s+/)[0] || name);
+const firstOf = (name: string): string => (name === ORGANIZER ? name : name.trim().split(/\s+/)[0] || name);
+/** Who a login line addresses: "@FirstName" (Keshav, 11 Oct: "directed messages should send @name"), or the organizer. */
+const addressOf = (name: string): string => (name === ORGANIZER ? name : `@${firstOf(name)}`);
 const ORGANIZER = 'the organizer';
 
 export type LoginState = 'asked' | 'logging_in' | 'logged_in' | 'skipped' | 'logged_out';
@@ -482,7 +482,7 @@ export function createIxigoLogin(d: LoginDeps): IxigoLogin {
     await save(row);
     const name = await nameOf(tripId, personId);
     await d.link.request('post_message', {
-      request_id: `go_login_${tripId}_${attempt}`, trip_id: tripId, text: line.replaceAll('{name}', addressOf(name)), mentions: [personId], card: loginCard(row, name),
+      request_id: `go_login_${tripId}_${attempt}`, trip_id: tripId, text: line.replaceAll("{name}'s", `${firstOf(name)}'s`).replaceAll('{name}', addressOf(name)), mentions: [personId], card: loginCard(row, name),
     });
   }
 
@@ -1180,10 +1180,11 @@ export function createIxigoLogin(d: LoginDeps): IxigoLogin {
           : pack.trip.people.find((p) => can(p.person_id))?.person_id;
       if (!personId) return { ok: false, note: `${what} needs the trip's ixigo login, and nobody can be asked for it now. Say so in one line.` };
       const name = await nameOf(tripId, personId);
-      // Someone new (the one asked used Forget me) is asked at once; the same person, at most once in half an hour, or,
-      // for a booking, with its own line unless that was just asked.
-      const again = park ? BOOK_ASK_AGAIN_MS : ASK_AGAIN_MS;
-      if (!row || row.personId !== personId || row.state !== 'asked' || now - row.askedAt.getTime() >= again) {
+      // One login card per trip while it is up and unanswered (p2's re-audit, 11 Oct: the same ask twice in two minutes,
+      // the first right after the rooms card, then a booking's): a booking parks on the card that is up, and the reply
+      // says what comes once the login is in. Someone new (the one asked used Forget me) is asked at once; the same
+      // person again once the last ask was answered (a login that ended) or half an hour on, far up the chat by then.
+      if (!row || row.personId !== personId || row.state !== 'asked' || now - row.askedAt.getTime() >= ASK_AGAIN_MS) {
         const line = park ? `To book ${park.what} I need ixigo linked once, {name}: one login on the trip's computer, about a minute.` : "{name}, this needs ixigo linked for the trip: one login on the trip's computer, about a minute.";
         await ask(tripId, personId, row ? row.attempt + 1 : 0, line, park);
         // Go's line and the card are the ask: the reply adds only what comes once the login is in.
