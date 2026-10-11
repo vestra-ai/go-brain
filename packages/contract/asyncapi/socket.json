@@ -1548,6 +1548,64 @@
             ]
           }
         },
+        "update_expense": {
+          "name": "update_expense",
+          "title": "update_expense",
+          "summary": "Change who an expense is split between (and its note): the App's Fix the split, done by Go. The amount and the payer never change.",
+          "payload": {
+            "type": "object",
+            "required": [
+              "jsonrpc",
+              "id",
+              "method",
+              "params"
+            ],
+            "properties": {
+              "jsonrpc": {
+                "const": "2.0"
+              },
+              "id": {
+                "type": "string"
+              },
+              "method": {
+                "const": "update_expense"
+              },
+              "params": {
+                "$ref": "#/components/schemas/UpdateExpense"
+              }
+            }
+          }
+        },
+        "update_expense_result": {
+          "name": "update_expense_result",
+          "title": "update_expense answer",
+          "payload": {
+            "oneOf": [
+              {
+                "type": "object",
+                "required": [
+                  "jsonrpc",
+                  "id",
+                  "result"
+                ],
+                "properties": {
+                  "jsonrpc": {
+                    "const": "2.0"
+                  },
+                  "id": {
+                    "type": "string"
+                  },
+                  "result": {
+                    "$ref": "#/components/schemas/UpdateExpenseResult"
+                  }
+                }
+              },
+              {
+                "$ref": "#/components/schemas/SocketError"
+              }
+            ]
+          }
+        },
         "request_spend_approval": {
           "name": "request_spend_approval",
           "title": "request_spend_approval",
@@ -2248,6 +2306,28 @@
         "messages": [
           {
             "$ref": "#/channels/socket/messages/add_expense_result"
+          }
+        ]
+      }
+    },
+    "update_expense": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/socket"
+      },
+      "summary": "Change who an expense is split between (and its note): the App's Fix the split, done by Go. The amount and the payer never change.",
+      "messages": [
+        {
+          "$ref": "#/channels/socket/messages/update_expense"
+        }
+      ],
+      "reply": {
+        "channel": {
+          "$ref": "#/channels/socket"
+        },
+        "messages": [
+          {
+            "$ref": "#/channels/socket/messages/update_expense_result"
           }
         ]
       }
@@ -9904,6 +9984,72 @@
         },
         "required": [
           "expense_id",
+          "seq"
+        ]
+      },
+      "UpdateExpense": {
+        "type": "object",
+        "properties": {
+          "request_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "trip_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "expense_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "split_person_ids": {
+            "minItems": 1,
+            "maxItems": 30,
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64
+            }
+          },
+          "note": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 120
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "request_id",
+          "trip_id",
+          "expense_id",
+          "split_person_ids"
+        ],
+        "description": "Change an expense's split (and its note). The amount and the payer never change."
+      },
+      "UpdateExpenseResult": {
+        "type": "object",
+        "properties": {
+          "expense": {
+            "$ref": "#/components/schemas/Expense"
+          },
+          "seq": {
+            "type": "integer",
+            "exclusiveMinimum": 0,
+            "maximum": 9007199254740991
+          }
+        },
+        "required": [
+          "expense",
           "seq"
         ]
       },

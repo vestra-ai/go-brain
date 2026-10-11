@@ -32,7 +32,7 @@ describe('registerMoney', () => {
     const { brain, seen } = fakeBrain({ pool: k.pool, link: k.server, travel: k.travel, trips: k.server.trips });
     await registerMoneyWith({ fetch: vaultFetch, sweepEveryMs: 0 })(brain);
     expect(brain.pay).toBeDefined();
-    expect(seen.tools.map((t) => t.name).sort()).toEqual(['ask_to_pay', 'record_expense', 'set_mandate', 'who_owes_what']);
+    expect(seen.tools.map((t) => t.name).sort()).toEqual(['ask_to_pay', 'record_expense', 'set_mandate', 'split_expense', 'who_owes_what']);
     expect([...seen.taps.keys()].sort()).toEqual(['notice:claim', 'pay:approve', 'pay:decline']);
     expect([...seen.handlers.keys()]).toEqual(['vault_link']);
     expect(seen.nows.map((n) => [n.name, n.order])).toEqual([['payments', 40]]);
@@ -104,7 +104,7 @@ describe('registerMoney', () => {
     await registerMoneyWith({ fetch: vaultFetch, sweepEveryMs: 0 })(brain);
     expect(brain.pay).toBeUndefined();
     // Paying stays off, but what people say they paid is still recorded and read back: that needs no vault.
-    expect(seen.tools.map((t) => t.name).sort()).toEqual(['record_expense', 'who_owes_what']);
+    expect(seen.tools.map((t) => t.name).sort()).toEqual(['record_expense', 'split_expense', 'who_owes_what']);
     expect(seen.stoppers).toEqual([]);
   });
 

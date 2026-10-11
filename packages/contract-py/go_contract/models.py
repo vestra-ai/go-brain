@@ -1603,6 +1603,23 @@ class AddExpenseResult(BaseModel):
     seq: Annotated[int, Field(gt=0)]
 
 
+class UpdateExpense(BaseModel):
+    """
+    Change an expense's split (and its note). The amount and the payer never change.
+    """
+
+    request_id: Annotated[str, Field(max_length=64, min_length=1)]
+    trip_id: Annotated[str, Field(max_length=64, min_length=1)]
+    expense_id: Annotated[str, Field(max_length=64, min_length=1)]
+    split_person_ids: Annotated[list[str], Field(max_length=30, min_length=1)]
+    note: str | None = None
+
+
+class UpdateExpenseResult(BaseModel):
+    expense: Expense
+    seq: Annotated[int, Field(gt=0)]
+
+
 class RequestGroupSpendApproval(BaseModel):
     request_id: Annotated[str, Field(max_length=64, min_length=1)]
     trip_id: Annotated[str, Field(max_length=64, min_length=1)]

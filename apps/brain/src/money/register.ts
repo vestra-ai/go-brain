@@ -8,7 +8,7 @@ import { CLAIM_ACTION, createClaims } from './claims.js';
 import { Later, type MoneyDeps } from './deps.js';
 import { createPay } from './engine.js';
 import { readMoneyEnv } from './env.js';
-import { readExpensesTool, recordExpenseTool } from './expenses.js';
+import { readExpensesTool, recordExpenseTool, splitExpenseTool } from './expenses.js';
 import { setMandate } from './mandate.js';
 import { paidButNotBooked } from './store.js';
 import { paymentsNow } from './now.js';
@@ -23,6 +23,7 @@ export function registerMoneyWith(o: { fetch?: typeof fetch; sweepEveryMs?: numb
   return async (brain) => {
     // What people say they paid needs no vault: Go records it and reads who owes whom whether or not paying is on.
     brain.tools.register(recordExpenseTool({ pool: brain.pool }));
+    brain.tools.register(splitExpenseTool({ pool: brain.pool }));
     brain.tools.register(readExpensesTool());
     const env = readMoneyEnv(brain.env);
     if (!env) {

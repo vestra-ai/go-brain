@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { AmountMinor, Category, Currency, HttpUrl, Id, IsoDate, IsoDateTime, Journey, Place, PositiveAmountMinor, Seq } from './common.js';
-import { BookingDetail, BookingDocument, BookingKind, Day, Decision, DecisionOption, Passenger, Proof } from './trip.js';
+import { BookingDetail, BookingDocument, BookingKind, Day, Decision, DecisionOption, Expense, Passenger, Proof } from './trip.js';
 
 /**
  * Go's requests: what Go asks the Server over the socket, to read the trip or act in it.
@@ -179,6 +179,22 @@ export const AddExpense = z
   })
   .meta({ id: 'AddExpense' });
 export const AddExpenseResult = z.object({ expense_id: Id, seq: Seq }).meta({ id: 'AddExpenseResult' });
+
+/**
+ * Change who an expense that stands is split between, and its note when given: the App's Fix the split, done by Go
+ * ("split it evenly" changes the expense, never adds a second one). The amount and the payer never change. Everyone named
+ * is in the trip (422); an expense not in the trip or removed is 404.
+ */
+export const UpdateExpense = z
+  .object({
+    request_id,
+    trip_id,
+    expense_id: Id,
+    split_person_ids: z.array(Id).min(1).max(30),
+    note: z.string().min(1).max(120).nullish(),
+  })
+  .meta({ id: 'UpdateExpense', description: "Change an expense's split (and its note). The amount and the payer never change." });
+export const UpdateExpenseResult = z.object({ expense: Expense, seq: Seq }).meta({ id: 'UpdateExpenseResult' });
 
 const spendAsk = {
   request_id,
