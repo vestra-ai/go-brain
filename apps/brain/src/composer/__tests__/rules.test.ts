@@ -32,10 +32,23 @@ describe("Go's rules: a travel agent who owns the outcome", () => {
     expect(work).toContain('Never ask for what the chat or the trip already says.');
   });
 
-  it('asks at most one question a turn, only when it blocks, and always with buttons', () => {
+  // p2's prod tone drill, 11 Oct: "goa in december?" got two questions in words ("are you in for Goa? If yes, what dates in
+  // December work?") with no buttons.
+  it('asks at most one question a turn, never two in one message, only when it blocks, and always with buttons: dates as likely ranges', () => {
     expect(section('How you work', 'When you speak')).toContain(
-      '- At most one question a turn, only when nothing can move without the answer, and always with its choices as offer_replies buttons.',
+      '- At most one question a turn, never two in one message, only when nothing can move without the answer, and always with its choices as offer_replies buttons, ' +
+        'never in words alone: dates get their likely ranges ("1 to 7 Dec", "8 to 14 Dec", "Other dates").',
     );
+  });
+
+  // The same drill: "first week" from one member rightly left the trip's dates as they were (#475's gate), and Go then
+  // waited ("Once a couple of you agree, I'll pull up stays"). A proposal is searched at once; only agreement moves the trip.
+  it('records a proposed date range as an open line and searches stays for it at once, the trip\'s dates unchanged until agreed', () => {
+    expect(section('When you speak', 'How you write')).toContain(
+      '- A date range someone proposes ("first week of December", "1 to 7 Dec?") is an open proposal: record it as an open line ("1 to 7 Dec?") and run search_stays at once ' +
+        "with those dates as check_in and check_out, the card's line saying they're for those dates. The trip's dates stay as they are until someone agrees or the organizer says so.",
+    );
+    expect(section('When you speak', 'How you write')).not.toContain('never search on it unless someone asks');
   });
 
   it('never says it cannot do what ixigo or its tools can, never hands the work back, and reports the outcome of a failure', () => {
