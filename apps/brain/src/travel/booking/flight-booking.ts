@@ -263,14 +263,24 @@ export function genderAsk(cardId: string, personId: string, name: string): Notic
 export interface NewTraveller { first: string; last: string; gender: 'male' | 'female' }
 
 /**
- * ixigo's "Adult 1" form on the traveller step (E2, his browser, 10 Oct: Title, "First & Middle Name", "Last Name",
- * Nationality, India by default), filled for a traveller not saved on the account. Its Title is opened when it is a
- * dropdown (skipped when it is chips), then chosen. A step that finds no box stops the fetch before anything is submitted.
+ * The shapes ixigo's Title may take, tried in turn (the lead, 11 Oct; E2 saw its label, not its control): a select, which
+ * takes its option typed in; chips or buttons; radios. Each by the title's own text, Mr or Ms.
  */
-export function newTravellerSteps(t: NewTraveller): NonNullable<FetchPlan['steps']> {
+export const TITLE_SHAPES = ['select', 'chips', 'radio'] as const;
+export type TitleShape = (typeof TITLE_SHAPES)[number];
+
+/**
+ * ixigo's "Adult 1" form on the traveller step (E2, his browser, 10 Oct: Title, "First & Middle Name", "Last Name",
+ * Nationality, India by default), filled for a traveller not saved on the account, its Title as one shape. A step that
+ * finds no box ends the fetch before anything is submitted: the next shape is tried.
+ */
+export function newTravellerSteps(t: NewTraveller, shape: TitleShape = 'select'): NonNullable<FetchPlan['steps']> {
+  const title = t.gender === 'male' ? 'Mr' : 'Ms';
+  const titleStep: NonNullable<FetchPlan['steps']>[number] = shape === 'select'
+    ? { op: 'type', role: 'combobox', name: 'Title', text: title }
+    : { op: 'click', role: shape === 'chips' ? 'button' : 'radio', name: title, near_text: 'Adult 1' };
   return [
-    { op: 'click', role: 'combobox', name: 'Title', optional: true },
-    { op: 'click', text: t.gender === 'male' ? 'Mr' : 'Ms', near_text: 'Adult 1' },
+    titleStep,
     { op: 'type', role: 'textbox', name: 'First & Middle Name', text: t.first },
     { op: 'type', role: 'textbox', name: 'Last Name', text: t.last },
   ];
@@ -541,7 +551,8 @@ export function createFlightBooking(d: FlightBookingDeps): FlightBooking {
       d.link.request('post_message', { request_id: stableId(key, runId), trip_id: ask.tripId, text, visible_to_person_ids: [ask.personId] }).catch(() => undefined);
     // Their saved traveller ticked; else (not saved on the account, or several with their first name) typed into ixigo's
     // own traveller form (Keshav, 11 Oct: "its not mandatory, it can use the details of the traveller and just go ahead").
-    let steps: NonNullable<FetchPlan['steps']>;
+    let steps: NonNullable<FetchPlan['steps']> = [];
+    let newcomer: NewTraveller | null = null;
     if (match.status === 'matched') {
       steps = [FARE_TYPES[ask.choice].click, CONTINUE, { op: 'click', text: match.shown }];
     } else {
@@ -572,14 +583,26 @@ export function createFlightBooking(d: FlightBookingDeps): FlightBooking {
         await live.finish(false);
         return;
       }
-      steps = [FARE_TYPES[ask.choice].click, CONTINUE, ...newTravellerSteps({ ...named, gender })];
+      newcomer = { ...named, gender };
     }
     // The tick or the form is the last step: a fetch that ran out of time before it (their name not on the list, a box
     // not found) answers with what it caught all the same, so it is its trace that says it failed. Nothing is submitted.
-    let ranOut = false;
-    const ticked = await runner
-      .read(ask.tripId, review, { capture: [{ match: TRAVELLER_FIELDS, required: true }], steps }, { private: true, tag: runId, onTrace: (t) => { if (t.failed) ranOut = true; } })
-      .then(() => !ranOut, () => false);
+    const tick = async (plan: NonNullable<FetchPlan['steps']>): Promise<boolean> => {
+      let ranOut = false;
+      return runner
+        .read(ask.tripId, review, { capture: [{ match: TRAVELLER_FIELDS, required: true }], steps: plan }, { private: true, tag: runId, onTrace: (t) => { if (t.failed) ranOut = true; } })
+        .then(() => !ranOut, () => false);
+    };
+    let ticked = false;
+    if (newcomer) {
+      // Each shape of ixigo's Title in turn, until one fills the form.
+      for (const shape of TITLE_SHAPES) {
+        ticked = await tick([FARE_TYPES[ask.choice].click, CONTINUE, ...newTravellerSteps(newcomer, shape)]);
+        if (ticked) break;
+      }
+    } else {
+      ticked = await tick(steps);
+    }
     if (!ticked && match.status !== 'matched') {
       await tell('go_book_unfilled', `Go couldn't fill your traveller details on ixigo's form, so it stopped before booking ${title}. Tap I'll take this to try again.`);
       return fail('traveller_not_filled', 3);
