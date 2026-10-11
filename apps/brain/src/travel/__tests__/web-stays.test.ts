@@ -6,7 +6,7 @@ import { TravelError } from '../mcp-travel.js';
 import { capture, fixture } from '../recipes/__tests__/fixtures.js';
 import type { FetchPlan } from '../recipes/recipe.js';
 import type { StoredOffer } from '../travel.js';
-import { createWebStays, listingWholeStay, SIM_VENDOR, stayOf, WEB_STAY } from '../web-stays.js';
+import { createWebStays, listingWholeStay, REVIEW_CALL, SIM_VENDOR, stayOf, WEB_STAY } from '../web-stays.js';
 
 // The demo's ask (8 Oct): Saudades won the vote, "heyy can you try booking Saudades now", and Go answered with a link.
 // A stay from ixigo.com now books on Go's test rail, once the trip's ixigo login is in, at ixigo's price read again.
@@ -42,10 +42,20 @@ const offer = (over: Partial<StoredOffer> = {}): StoredOffer => ({
 // The stay's own page's rooms call, as ixigo answers it (H1, the drill browser): five rooms, IXIFIRST on each.
 const ROOMS = fixture('stays-saudades-rooms.json');
 const ROOMS_URL = 'https://www.ixigo.com/accommodation-search/api/v1/accommodations/details/54381/rooms';
+// ixigo's review after its Reserve, in the shape H2 mapped (keys only, from his browser) with the drill's public numbers:
+// its room, and its fare. The lead guest and the account's ixigo money it also carries are never read, so not here.
+const review = (room: string, bookingRupees: number, couponRupees: number): string => JSON.stringify({
+  data: { bookingDetail: {
+    name: 'Saudades Homestays', travelDetails: { roomType: room, roomCount: 1, nightCount: 2 },
+    fareDetail: { totalBookingAmount: bookingRupees, couponCode: 'IXIFIRST', discountMap: { 'Reversal of Convenience fee': 398.8, 'Coupon Discount': couponRupees } },
+  } },
+});
+const REVIEW = review('1 Bedroom Apartment', 5586.66, 111);
+const REVIEW_URL = 'https://www.ixigo.com/accommodation-search/api/v1/accommodations/booking/review';
 
-function world(o: { login?: 'in' | 'out'; body?: string | null; stored?: StoredOffer | null; page?: string | null; booking?: boolean; rooms?: string | null } = {}) {
+function world(o: { login?: 'in' | 'out'; body?: string | null; stored?: StoredOffer | null; page?: string | null; booking?: boolean; rooms?: string | null; review?: string | null } = {}) {
   const stored = o.stored === undefined ? offer() : o.stored;
-  const reads: Array<{ url: string; plan: FetchPlan; stage?: boolean }> = [];
+  const reads: Array<{ url: string; plan: FetchPlan; stage?: boolean; private?: boolean }> = [];
   const posted: Array<{ method: string; params: Record<string, unknown> }> = [];
   const ensured: Array<{ tripId: string; what: string; park?: Parked; booking?: boolean }> = [];
   const stays = createWebStays({
@@ -57,8 +67,12 @@ function world(o: { login?: 'in' | 'out'; body?: string | null; stored?: StoredO
       },
     },
     runner: () => ({
-      read: async (_trip: string, url: string, plan: FetchPlan, opts?: { stage?: boolean }) => {
-        reads.push({ url, plan, ...(opts?.stage ? { stage: true } : {}) });
+      read: async (_trip: string, url: string, plan: FetchPlan, opts?: { stage?: boolean; private?: boolean }) => {
+        reads.push({ url, plan, ...(opts?.stage ? { stage: true } : {}), ...(opts?.private ? { private: true } : {}) });
+        if (url === PAGE && opts?.private) {
+          const body = o.review === undefined ? REVIEW : o.review;
+          return { captures: body === null ? [] : [capture(REVIEW_CALL, REVIEW_URL, body)], finalUrl: url };
+        }
         if (url === PAGE) {
           const rooms = o.rooms === undefined ? ROOMS : o.rooms;
           return { captures: rooms === null ? [] : [capture('/accommodations/details/54381/rooms$', ROOMS_URL, rooms)], finalUrl: url };
@@ -177,18 +191,49 @@ describe('the hold and the booking, on the test rail', () => {
   });
 
   // The lead, 10 Oct: every Book ends in Go doing it, where the room watches.
-  it("with BOOKING on, books it on ixigo's own pages on the stage: the stay's page, the rate chosen, ixigo's coupon, its price the hold's", async () => {
+  it("with BOOKING on, books it on ixigo's own pages: the stay, its rate and coupon on the stage, then Reserve and the review privately", async () => {
     const w = world({ booking: true });
     const h = await w.stays.hold(`${WEB_STAY}opt_saudades`, { name: 'Rahul', personIds: ['p_rahul'] });
-    // The stay's own page, on the stage, its rooms call kept.
-    expect(w.reads).toEqual([{ url: PAGE, plan: { capture: [{ match: '/accommodations/details/54381/rooms$', required: true }], timeoutMs: 20_000 }, stage: true }]);
-    // The cheapest whole stay at what ixigo charges for it (the 1 Bedroom Apartment's rate), with ixigo's own IXIFIRST on it.
+    expect(w.reads).toEqual([
+      // The stay's own page, on the stage, its rooms call kept.
+      { url: PAGE, plan: { capture: [{ match: '/accommodations/details/54381/rooms$', required: true }], timeoutMs: 20_000 }, stage: true },
+      // Then in a tab the room never sees (ixigo fills its review with the account owner's details): the chosen room's
+      // Reserve, and the review's call. Nothing is typed, and nothing past the review is pressed.
+      {
+        url: PAGE, private: true,
+        plan: { capture: [{ match: REVIEW_CALL, required: true }], steps: [{ op: 'click', role: 'button', text: 'Reserve', near_text: '1 Bedroom Apartment' }], timeoutMs: 30_000 },
+      },
+    ]);
+    // What ixigo's review charges for the whole stay, its coupon taken off, with ixigo's own IXIFIRST on it.
     expect(h).toMatchObject({ amountMinor: 547_566, currency: 'INR', payment: { kind: 'fake' } });
     expect(h.merchant).toBe(`${SIM_VENDOR}: Saudades Homestays, 1 Bedroom Apartment, IXIFIRST ₹111 off`);
-    // The room watches it tick: the group's stay, so the live card is the room's.
+    // The room watches it tick, the fare and coupon on it: the group's stay, so the live card is the room's.
     const live = w.posted.filter((p) => (p.params['card'] as { kind?: string } | undefined)?.kind === 'working');
     expect(live[0]!.params['visible_to_person_ids']).toBeUndefined();
-    expect(live.at(-1)!.params['card']).toMatchObject({ title: 'Booking Saudades Homestays for the group', state: 'done' });
+    const last = live.at(-1)!.params['card'] as { title: string; state: string; steps: Array<{ text: string; state: string }> };
+    expect(last).toMatchObject({ title: 'Booking Saudades Homestays for the group', state: 'done' });
+    expect(last.steps).toEqual([
+      { text: 'Opening Saudades Homestays on ixigo', state: 'done' },
+      { text: '1 Bedroom Apartment: ₹5,475.66 for the stay', state: 'done' },
+      { text: "ixigo's IXIFIRST: ₹111 off", state: 'done' },
+      { text: "ixigo's review: ₹5,475.66, IXIFIRST on it", state: 'done' },
+      { text: 'Ready to pay', state: 'done' },
+    ]);
+  });
+
+  it("holds at the review's price when it moved from the stay's page", async () => {
+    const w = world({ booking: true, review: review('1 Bedroom Apartment', 5700, 111) });
+    expect(await w.stays.hold(`${WEB_STAY}opt_saudades`, { name: 'Rahul', personIds: [] })).toMatchObject({ amountMinor: 558_900 });
+  });
+
+  it("with no review, or one for another room, says so on the live card and holds at the price read as before", async () => {
+    for (const r of [null, review('4 bedroom Villa', 28277.18, 501)]) {
+      const w = world({ booking: true, review: r });
+      expect(await w.stays.hold(`${WEB_STAY}opt_saudades`, { name: 'Rahul', personIds: [] })).toMatchObject({ amountMinor: 4_768_200, merchant: `${SIM_VENDOR}: Saudades Homestays` });
+      const last = w.posted.at(-1)!.params['card'] as { state: string; steps: Array<{ state: string }> };
+      expect(last.state).toBe('failed');
+      expect(last.steps.map((s) => s.state)).toEqual(['done', 'done', 'done', 'failed', 'todo']);
+    }
   });
 
   it("with BOOKING on and no rate on the stay's page, holds at the price read as before; with it off, never opens the page", async () => {

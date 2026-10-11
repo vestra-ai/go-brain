@@ -214,6 +214,17 @@ GO_REHEARSAL_URL=https://brain-staging-e92c.up.railway.app GO_STAGE_URL=https://
 
 The single quotes matter: the token is read inside the command's environment, never typed or shown. The only thing the runner does to production's Go is the warm-up before the demo (`--warm --trip <real trip id>`, with `--environment production` and `GO_STAGE_URL`): one health read, no trip and no message.
 
+## Learn the idea places
+
+The Server's ideas on the home screen ask Go `place_info`, which answers only from places Go has learned. To have the ideas' photos, map and best months ready before anyone looks, learn them ahead, once, on the Go that Server talks to, in your ixigo queue turn:
+
+```bash
+GO_URL=https://brain-staging-e92c.up.railway.app \
+  railway run --service brain --environment staging -- sh -c 'GO_ADMIN_TOKEN="$ADMIN_TOKEN" pnpm --filter @go/sim learn-places'
+```
+
+It makes one new trip of its own (its own computer, no dates, so no stays search), waits a minute for the computer, then learns each place through that trip with `POST /admin/places/learn`: ixigo's place box once and its guide once or twice a place, one place every few seconds. It prints what `place_info` will answer for each and stops at the first refusal. Name places after the command to learn only those. A place already learned with its months loads nothing.
+
 ## Roll back
 
 1. Find the last good version: the deployment list (`railway deployment list --service brain --environment production`) and its messages, or `git log origin/build`.
