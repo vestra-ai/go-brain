@@ -45,7 +45,7 @@ import { travelTools } from './tools.js';
 import { budgetNow, budgetTool, createTripBudgets, stayCap } from './trip-budget.js';
 import { showBusDrops } from './bus-drops.js';
 import { saveTrip } from '../trips/save-trip.js';
-import { placeOnClose, placeOptions, showPlaces } from './places-card.js';
+import { placeOnClose, placeOptions, showPlaces, type PlacePick } from './places-card.js';
 import { optionDetailsHandler } from './option-details.js';
 import { showPickPhotos, type TopPick } from './pick-photos.js';
 import type { TravelKind, TravelQuery } from './travel.js';
@@ -326,7 +326,7 @@ export const registerTravel: RegisterLane = async (brain) => {
   // A place's cover from its guide, for one the explorer gave no photo: placeFor keeps it for good, so a second card is instant.
   const placeCover = async (tripId: string, name: string): Promise<string | null> =>
     brain.switches.get('TRAVEL_MODE') === 'ixigo_web' ? ((await travel.placeFor?.(name, { tripId }))?.place.photo_url ?? null) : null;
-  const showPlacesOf = (tripId: string, picks: Array<{ cardId: string; optionId: string; name: string }>): void => {
+  const showPlacesOf = (tripId: string, picks: PlacePick[]): void => {
     if (brain.switches.get('TRAVEL_MODE') !== 'ixigo_web') return;
     void showPlaces({
       placeFor: async (words, o) => (await travel.placeFor?.(words, o)) ?? null,

@@ -9,7 +9,7 @@ import type { ToGoResult } from '../door/methods.js';
 import { SocketCallError } from '../door/rpc.js';
 import type { Engine } from './book/engine.js';
 import { clip, ixigoPage } from './cards.js';
-import { fromGuide, withGuide } from './places-card.js';
+import { fromGuide, guideName, withGuide } from './places-card.js';
 import type { ResultOption, ResultsStore } from './results.js';
 import { stayRoomFields } from './rooms.js';
 import { stayOf } from './web-stays.js';
@@ -147,7 +147,8 @@ export function optionDetailsHandler(d: {
     // A place past the card's first three (their guides come with the card, showPlaces): its guide's best time and places
     // to visit, the App's "Things the crew can do", once read; read now in the background, and the answer is partial.
     if (offer?.kind === 'place' && !card.activities?.length) {
-      const given = { place: offer.title };
+      const saved = (await d.results.get(p.trip_id, offer.resultsId))?.options[offer.n - 1] ?? null;
+      const given = { place: saved ? guideName(saved) : offer.title };
       const rows = await keptFor(d.engine, 'plan.destination', given);
       if (rows) return { ...card, ...withGuide(card, fromGuide(rows[0])) };
       if (d.live()) {

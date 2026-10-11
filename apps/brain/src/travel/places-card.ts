@@ -163,6 +163,17 @@ export function withGuide(details: OptionDetailsT | null, guide: { best: string 
   return { ...(details ?? {}), ...(reasons.length ? { why: reasons } : {}), ...(guide.visit.length ? { activities: guide.visit } : {}) };
 }
 
+/** A place on a card, for its reads in the background: its name, and its guide's own name on ixigo when the explorer gave it. */
+export interface PlacePick { cardId: string; optionId: string; name: string; guide?: string }
+
+/**
+ * A place's guide on ixigo by the name its guide goes by: the explorer's own ("agra"), else the place as named. The
+ * guide recipe makes its page from the words, and "Agra, Uttar Pradesh, India" made /plan/agra-uttar-pradesh-india,
+ * which has no guide (prod drill, 11 Oct: no things to do on any place).
+ */
+export const guideName = (o: { title: string; facts: Record<string, unknown> }): string =>
+  typeof o.facts['guide'] === 'string' && o.facts['guide'].trim() !== '' ? o.facts['guide'].trim() : o.title;
+
 /**
  * The card's first places, one at a time in the background: each one's own place from ixigo (where it is, its photos)
  * and its guide's best time and places to visit, onto its option; the card is replaced once it has been posted.
@@ -177,12 +188,12 @@ export async function showPlaces(
     log?: { warn: (o: object, msg: string) => void };
   },
   tripId: string,
-  picks: Array<{ cardId: string; optionId: string; name: string }>,
+  picks: PlacePick[],
 ): Promise<void> {
   for (const pick of picks) {
     try {
       const found = d.placeFor ? await d.placeFor(pick.name, { tripId }).catch(() => null) : null;
-      const guide = await d.engine.answer('plan.destination', { place: pick.name }, { tripId, background: true }).catch(() => null);
+      const guide = await d.engine.answer('plan.destination', { place: pick.guide ?? pick.name }, { tripId, background: true }).catch(() => null);
       const { best, visit } = fromGuide(guide?.as === 'facts' ? guide.rows[0] : undefined);
       const option = (await d.results.card(tripId, pick.cardId))?.card.options.find((o) => o.option_id === pick.optionId);
       if (!option) continue;

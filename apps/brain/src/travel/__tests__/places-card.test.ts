@@ -1,7 +1,7 @@
 import * as C from '@go/contract';
 import { describe, expect, it } from 'vitest';
 import type { EngineAnswer } from '../book/engine.js';
-import { placeDetails, placeOnClose, placeOptions, retitled, showPlaces } from '../places-card.js';
+import { guideName, placeDetails, placeOnClose, placeOptions, retitled, showPlaces } from '../places-card.js';
 import type { ResultsStore } from '../results.js';
 
 // The Server team's rev 5 (R2): "where should we go" as a card of places, from ixigo's trip explorer (plan.explore).
@@ -91,8 +91,11 @@ describe('the places a trip could go, as a card', () => {
       placeFor: async () => ({ place, kind: 'city', within: [] }),
       engine: { answer: async (_id: string, given: Record<string, unknown>, o: Record<string, unknown>) => { read.push({ given, o }); return guide; } } as never,
       results, link: { request: async (_m: string, p: Record<string, unknown>) => { sent.push(p); return {}; } } as never,
-    }, 't_goa', [{ cardId: 'c_places', optionId: 'opt_c_1', name: 'Agra, Uttar Pradesh, India' }]);
-    expect(read).toEqual([{ given: { place: 'Agra, Uttar Pradesh, India' }, o: { tripId: 't_goa', background: true } }]);
+    }, 't_goa', [{ cardId: 'c_places', optionId: 'opt_c_1', name: 'Agra, Uttar Pradesh, India', guide: 'agra' }]);
+    // Its guide by the guide's own name on ixigo (prod drill, 11 Oct: the long title made a page with no guide).
+    expect(read).toEqual([{ given: { place: 'agra' }, o: { tripId: 't_goa', background: true } }]);
+    expect(guideName({ title: 'Agra, Uttar Pradesh, India', facts: { guide: 'agra' } })).toBe('agra');
+    expect(guideName({ title: 'Agra, Uttar Pradesh, India', facts: {} })).toBe('Agra, Uttar Pradesh, India');
     // The place's own hero replaces the explorer's photo; its best time is one more reason (the App's rich Details draws no
     // facts), and its places to visit are the things the crew can do.
     expect(saved).toEqual([{

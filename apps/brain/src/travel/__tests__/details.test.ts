@@ -99,7 +99,7 @@ describe('the options card', () => {
     const images = { rehostUrl: async () => 'https://go.test/img/x.jpg' } as never;
     const ctx = makeTurnCtx({ tripId: 't_goa', turnId: 'turn_pl', link: {} as never, pack: goaPack(), wake: [], signal: new AbortController().signal });
     const place = (name: string, photo = true) => ({
-      place: name, estimate_minor: 900_000, estimate_nights: 3, getting_there_minor: 17_000, kind: ['beaches'],
+      place: name, estimate_minor: 900_000, estimate_nights: 3, getting_there_minor: 17_000, kind: ['beaches'], guide: name.split(',')[0]!.toLowerCase(),
       ...(photo ? { photo_list: [`https://plan-cf.ixigo.com/v2/images/${name.split(',')[0]!.toLowerCase()}`] } : {}),
     });
     const options = placeOptions([place('Agra, India'), place('Goa, India'), place('Manali, India'), place('Ladakh, India', false), place('Spiti, India', false)]);
@@ -127,7 +127,8 @@ describe('the options card', () => {
         caption: "ixigo's estimate for 3 nights: about ₹9,000 each",
       },
     });
-    expect(handed).toEqual([card.options.slice(0, 3).map((o) => ({ cardId: card.card_id, optionId: o.option_id, name: o.title }))]);
+    // Each with its guide's own name on ixigo, for its guide's read (prod drill, 11 Oct).
+    expect(handed).toEqual([card.options.slice(0, 3).map((o) => ({ cardId: card.card_id, optionId: o.option_id, name: o.title, guide: o.title.split(',')[0]!.toLowerCase() }))]);
     expect(covers).toEqual(['t_goa|Ladakh, India', 't_goa|Spiti, India']);
     expect(card.options.map((o) => [o.title, o.image_url ?? null])).toEqual([
       ['Agra, India', 'https://go.test/img/x.jpg'], ['Goa, India', 'https://go.test/img/x.jpg'], ['Manali, India', 'https://go.test/img/x.jpg'],
