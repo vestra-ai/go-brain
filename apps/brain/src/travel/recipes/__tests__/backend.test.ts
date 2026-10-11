@@ -389,8 +389,9 @@ describe("a live card belongs to its search's turn", () => {
     expect(c.events).toEqual(['1:failed', '1:finish:failed']);
   });
 
-  // Exam #9, 10 Oct: Go answered well, and its cards were left failed beside the answer.
-  it('tells the cards of a turn that answered first, so they end done with their gap, never failed beside the answer', async () => {
+  // Exam #9, 10 Oct: Go answered well, and its cards were left failed beside the answer. Told first, a failed card's words
+  // say Go answered without it; it still shows failed, never Done (the lead, 11 Oct).
+  it('tells the cards of a turn that answered first, so their words say Go answered without them', async () => {
     const c = carded(scripted('fail').engine);
     await expect(c.b.search('trains', TRAINS, EARLY)).rejects.toThrow();
     c.b.turnEnded({ tripId: 't_goa', turnId: 'turn_1', messageIds: ['m_41'], answered: true });

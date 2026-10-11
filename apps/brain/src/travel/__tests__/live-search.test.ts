@@ -481,7 +481,9 @@ describe("an ask's cards and Go's answer", () => {
     expect(up.sent[0]!.params.text).toBe('On it.');
   });
 
-  it('a card that failed before Go answered ends done, its failed step the gap', async () => {
+  // The lead, 11 Oct (Ankur's "hills"): a working card said Done over "Opening ixigo, Step 1 of 3" on a read that failed.
+  // A failed read shows failed, whether or not Go answered without it.
+  it('a card that failed stays failed when Go answers, its words saying Go answered without it', async () => {
     const r = room();
     const live = startLiveSearch(r.deps, 't_goa', { runKey: 'k_gap', ...RECIPE });
     await live.finish(false);
@@ -489,23 +491,24 @@ describe("an ask's cards and Go's answer", () => {
     live.answered();
     await new Promise((resolve) => setTimeout(resolve, 0));
     const last = r.cards().at(-1)!;
-    expect(last.state).toBe('done');
+    expect(last.state).toBe('failed');
     expect(last.steps.map((st) => st.state)).toEqual(['failed', 'todo', 'todo']);
     expect(last.fallback_text).toBe("Go answered; ixigo's page for one bus's every pickup and drop point didn't load.");
+    expect(r.cards().map((c) => c.state)).not.toContain('done');
   });
 
-  it('a card still running when Go answered is done at once; a page that times out later is its gap, never a failed card', async () => {
+  it('a card still running when Go answered ends as its read does: failed when it fails, done when it finishes', async () => {
     const r = room();
     const live = startLiveSearch(r.deps, 't_goa', { runKey: 'k_late', ...RECIPE });
     live.answered();
     await new Promise((resolve) => setTimeout(resolve, 0));
-    expect(r.cards().at(-1)!.state).toBe('done');
+    expect(r.cards().map((c) => c.state)).not.toContain('done');
     live.progress({ type: 'failed', code: 'unreachable' });
     await live.finish(false);
     const last = r.cards().at(-1)!;
-    expect(r.cards().map((c) => c.state)).not.toContain('failed');
-    expect(last.state).toBe('done');
-    expect(last.steps[0]!.state).toBe('failed');
+    expect(r.cards().map((c) => c.state)).not.toContain('done');
+    expect(last.state).toBe('failed');
+    expect(last.fallback_text).toBe("Go answered; ixigo's page for one bus's every pickup and drop point didn't load.");
     // One that finishes well after the answer is simply done.
     const ok = room();
     const fine = startLiveSearch(ok.deps, 't_goa', { runKey: 'k_fine', ...RECIPE });

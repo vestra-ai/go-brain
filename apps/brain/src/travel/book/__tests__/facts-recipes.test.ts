@@ -334,50 +334,67 @@ describe("ixigo's trip explorer", () => {
     expect(got.rows[0]).toMatchObject({ visa_on_arrival: true, tag: 'Visa on Arrival', kind: expect.arrayContaining(['beaches']) });
   });
 
-  it("plan.explore clicks a theme's chip and reads the explorer's call it makes", async () => {
+  // Prod, Ankur's "hills" (11 Oct): a theme chip pressed made no call, and the wait for one ran out, 20 s each, four
+  // times. A theme is never pressed: ixigo's own list keeps the places of its kind (their destinationType), or all of
+  // them when none is, from the one page load.
+  it("plan.explore keeps the places of a theme's kind from ixigo's own list, pressing nothing, and all of them when none is", async () => {
     const got = await facts('plan.explore', { origin: 'New Delhi', month: '2026-10-20', theme: 'Beaches' }, [
       capture('/x', `${IXIGO}/plan?origin=New%20Delhi&travelMonth=october`, sample('plan.explore.html')),
-      capture('/x', `${IXIGO}/itinerary-planner/api/explore?origin=new-delhi&offset=0&limit=15&travelMonth=OCT&category=BEACHES`, sample('plan.explore.beaches.json')),
     ]);
-    // Only the theme was asked: the scope's and the weather's buttons are left out, not pressed.
-    expect(got.runs[0]!.plan).toMatchObject({
-      capture: [{ match: '/plan?origin=', required: true, max_bytes: 1_000_000 }, { match: '/itinerary-planner/api/explore?', required: true }],
-      steps: [{ op: 'click', text: 'Beaches', optional: true }, { op: 'wait_for', match: '/itinerary-planner/api/explore?' }],
-    });
+    expect(got.runs[0]!.plan).toEqual({ capture: [{ match: '/plan?origin=', required: true, max_bytes: 1_000_000 }] });
     expect(got.title).toBe('Where to go from New Delhi in October, beaches');
-    expect(got.rows.map((r) => r['place'])).toEqual(['Denpasar, Bali, Indonesia', 'Devgad, Maharashtra, India', 'Chandpur, Chittagong, Bangladesh', 'Tajpur, West Bengal, India']);
-    expect(got.rows[1]).toMatchObject({ getting_there: 'Prices starting from ₹10,041', weather: '23 to 35 C', guide: 'devgad' });
-    // A theme the page has no chip for clicks nothing: the page's own list.
-    const snow = await facts('plan.explore', { origin: 'Delhi', month: '2026-12-12', theme: 'snow' }, [capture('/x', `${IXIGO}/plan?origin=Delhi&travelMonth=december`, sample('plan.explore.html'))]);
+    expect(got.rows.map((r) => r['place'])).toEqual(['Denpasar, Bali, Indonesia', 'Chandpur, Chittagong, Bangladesh', 'Bangladesh, Asia, Bangladesh']);
+    const kind = async (theme: string) =>
+      (await facts('plan.explore', { origin: 'Delhi', month: '2026-12-12', theme }, [capture('/x', `${IXIGO}/plan?origin=Delhi&travelMonth=december`, sample('plan.explore.html'))]));
+    // Its own words for a theme: wildlife is nature, hills are mountains.
+    expect((await kind('wildlife')).rows.map((r) => r['place'])).toEqual(['Denpasar, Bali, Indonesia', 'Neemrana, Rajasthan, India', 'Alwar, Rajasthan, India', 'Bangladesh, Asia, Bangladesh']);
+    const hills = await kind('hills');
+    expect(hills.runs[0]!.plan).not.toHaveProperty('steps');
+    expect(hills.title).toBe('Where to go from Delhi in December, mountains');
+    // None of ixigo's list is in the mountains: the whole list, the nearest it has.
+    expect(hills.rows).toHaveLength(6);
+    // A theme ixigo has no name for: the page's own list, its title with no theme.
+    const snow = await kind('snow');
     expect(snow.runs[0]!.plan).not.toHaveProperty('steps');
     expect(snow.title).toBe('Where to go from Delhi in December');
   });
 
-  // p2's atlas, 10 Oct: the page has 18 theme chips (no "Wildlife", "Romance" not "Romantic": two of the recipe's six
-  // themes clicked nothing that is there), scope and weather buttons, and a budget slider the recipe never used.
-  it('plan.explore presses the chip, the scope and the weather asked, as the page names them, and keeps places within a budget', async () => {
+  // p2's atlas, 10 Oct: scope and weather buttons, and a budget slider the recipe never used.
+  it('plan.explore presses the scope and the weather asked, as the page names them, keeps a theme by kind, and places within a budget', async () => {
     const themed = await facts('plan.explore', { origin: 'Mumbai', month: '2026-12-05', theme: 'romantic', scope: 'visa free', weather: 'no rain' }, [
       capture('/x', `${IXIGO}/plan?origin=Mumbai&travelMonth=december`, sample('plan.explore.html')),
-      capture('/x', `${IXIGO}/itinerary-planner/api/explore?origin=mumbai&offset=0&limit=15&travelMonth=DEC&category=ROMANTIC`, sample('plan.explore.beaches.json')),
+      capture('/x', `${IXIGO}/itinerary-planner/api/explore?origin=mumbai&offset=0&limit=15&travelMonth=DEC&popularForFilter=VISA_FREE`, sample('plan.explore.beaches.json')),
     ]);
     expect(themed.runs[0]!.plan.steps).toEqual([
-      { op: 'click', text: 'Romance', optional: true },
       { op: 'click', role: 'button', name: 'Visa-free', optional: true },
       { op: 'click', role: 'button', name: 'No Rain', optional: true },
       { op: 'wait_for', match: '/itinerary-planner/api/explore?' },
     ]);
     expect(themed.title).toBe('Where to go from Mumbai in December, romance, visa-free, no rain');
-    // The page's own chips by their words: wildlife is Nature, night skies NightSkies.
-    const chip = async (theme: string) =>
-      (await facts('plan.explore', { origin: 'Delhi', month: '2026-12-12', theme }, [capture('/x', `${IXIGO}/plan?origin=Delhi&travelMonth=december`, sample('plan.explore.html'))])).runs[0]!.plan.steps?.[0];
-    expect(await chip('wildlife')).toEqual({ op: 'click', text: 'Nature', optional: true });
-    expect(await chip('night skies')).toEqual({ op: 'click', text: 'NightSkies', optional: true });
+    // The places the last press brought, of the theme's kind.
+    expect(themed.rows.map((r) => r['place'])).toEqual(['Tajpur, West Bengal, India']);
     // A budget is Go's own pick from ixigo's estimate for the trip, getting there and the stays: ₹10,000 a person.
     const cheap = await facts('plan.explore', { origin: 'Delhi', month: '2026-12-12', max_budget: 1_000_000 }, [capture('/x', `${IXIGO}/plan?origin=Delhi&travelMonth=december`, sample('plan.explore.html'))]);
     expect(cheap.runs[0]!.plan).not.toHaveProperty('steps');
     expect(cheap.rows.map((r) => [r['place'], r['trip_estimate']])).toEqual([
       ['Agra, Uttar Pradesh, India', 'about ₹9,000 for 3 nights'], ['Chandpur, Chittagong, Bangladesh', 'about ₹9,500 for 3 nights'],
     ]);
+  });
+
+  // Prod, Ankur's "hills" (11 Oct): a trip with no dates had Go ask "when?" and wait. No month asked is next month, from
+  // the trip's own today, and the explorer is read at once.
+  it("plan.explore with no month reads next month, from the trip's today, a year on in December", async () => {
+    const at = (today: string) => {
+      const urls: string[] = [];
+      const runner = { read: async (_t: string, url: string) => { urls.push(url); return { captures: [capture('/x', url, sample('plan.explore.html'))], finalUrl: url }; } };
+      return { urls, engine: createEngine({ book, runner: () => runner as never, trip: async () => ({ people: 4, homes: [], today }), now: () => new Date(`${today}T12:00:00Z`) }) };
+    };
+    const oct = at('2026-10-11');
+    expect(await oct.engine.answer('plan.explore', { origin: 'Delhi', theme: 'hills' }, { tripId: 't_goa' })).toMatchObject({ as: 'facts', title: 'Where to go from Delhi in November, mountains' });
+    expect(oct.urls).toEqual([`${IXIGO}/plan?origin=Delhi&travelMonth=november`]);
+    const dec = at('2026-12-20');
+    expect(await dec.engine.answer('plan.explore', { origin: 'Delhi' }, { tripId: 't_goa' })).toMatchObject({ title: 'Where to go from Delhi in January' });
+    expect(dec.urls).toEqual([`${IXIGO}/plan?origin=Delhi&travelMonth=january`]);
   });
 
   // Prod drill, 11 Oct: "where should we go in December" had the model give month "December". The recipe's date reading
