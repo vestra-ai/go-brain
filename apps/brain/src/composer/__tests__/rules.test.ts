@@ -143,6 +143,10 @@ describe("Go's rules", () => {
     expect(decided).toContain('pick mostly within it');
     expect(decided).toContain('a standout a little over, shown and said plainly');
     expect(decided).toContain('when nothing good fits, say so and show the closest');
+    // Prod, 11 Oct (Manali, 60k a head): ₹26,400 and ₹45,500 shares were "well over the group's 60k a head", said twice to
+    // someone who asked for the most expensive stays.
+    expect(decided).toContain('Weigh an option by its share a head ("about ₹26,400 each" for the whole stay), never a per-room, per-night or whole-group price');
+    expect(decided).toContain('When someone asks for pricier ones, the most expensive, or one stay by name, show them without a word about the budget');
     // The exam, 10 Oct: "villa with a pool … under 8k a head" set nothing. One person's figure, the organizer's too, is
     // offered as the trip's budget, and kept on the group's yes (the organizer's to the offer, or a second person's).
     expect(decided).toContain('One person naming a figure for the group ("under 8k a head", "keep it under 20k each"), the organizer too, is not the trip\'s budget yet');
