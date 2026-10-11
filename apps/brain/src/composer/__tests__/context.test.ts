@@ -379,6 +379,9 @@ describe('why Go woke, and the trip block', () => {
     expect(helloOne).toContain('which has one person');
     expect(helloOne).toContain('never say vote, poll, everyone or the group');
     expect(helloOne).not.toMatch(/run votes|when the group agrees/);
+    // Where the trip could go is Go's own place card (#504), as the group's hello says.
+    expect(helloOne).toContain('is a place card (suggest_places)');
+    expect(helloOne).not.toContain('plan.explore');
     const theirs = c.renderWake(wake({ kind: 'trip_change', ref: 'booking:b_1', payload: { type: 'stay.booked', title: 'Villa Sol' } }), one);
     expect(theirs).toContain('Their flights are next: call search_flights_each for them');
     expect(theirs).not.toMatch(/for everyone|group's stay/);

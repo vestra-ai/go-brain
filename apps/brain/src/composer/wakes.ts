@@ -241,8 +241,8 @@ export function renderSetupWake(item: DeskItem, pack?: TripPack): string {
       'you just joined this trip, which has one person. Say hello to them in one or two short lines and what you can do for them ' +
       '(find stays and flights, keep the plan, book what they pick). If they asked you something in this turn, answer that first ' +
       'and keep the hello to a few words. Their word is the decision: never say vote, poll, everyone or the group. Where the trip ' +
-      'could go, if you suggest any, is a place card (the ixigo tool\'s plan.explore, then show_options), never names in your words or ' +
-      'in offer_replies. If the card can\'t come, say the hello anyway.'
+      'could go, if you suggest any, is a place card (suggest_places), never names in your words or in offer_replies. If the card ' +
+      'can\'t come, say the hello anyway.'
     );
   }
   if (item.ref === 'greet') {
