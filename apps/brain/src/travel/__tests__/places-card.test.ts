@@ -110,6 +110,32 @@ describe('the places a trip could go, as a card', () => {
     expect(sent[0]).toMatchObject({ trip_id: 't_goa', card: { card_id: 'c_places' } });
   });
 
+  // p1-a, 11 Oct: a country or a region won (Morocco), ixigo couldn't set it as the trip's place, the save failed with
+  // only a warning, and the trip never moved.
+  it("sets a place the vote picked that ixigo can't pin as the town Go picked it with, and says so in one line", async () => {
+    const changes: Array<Record<string, unknown>> = [];
+    const decision = { decision_id: 'd_where', kind: 'choice', result_index: 0, options: [{ label: 'Morocco', option_ref: 'opt_mor' }] };
+    const pack = { trip: { trip_id: 't_goa', title: '', destination: null, decisions: [decision] } };
+    const wake = [{ id: 'w', tripId: 't_goa', kind: 'trip_change', ref: 'd_where', dueAt: new Date(), payload: { type: 'decision.closed', decisionId: 'd_where' } }];
+    const rider = (stayIn: string | null, pins: string[]) => placeOnClose({
+      results: {
+        offer: async () => ({ kind: 'place', title: 'Morocco', resultsId: 'r_sug', n: 1 }),
+        get: async () => ({ options: [{ kind: 'place', title: 'Morocco', facts: stayIn ? { stay_in: stayIn } : {} }] }),
+      } as never,
+      save: async (_pack, change, requestId) => {
+        changes.push({ ...change, request: requestId() });
+        return pins.includes(String(change.destination)) ? { ok: true, changed: ['destination'] } : { ok: false, error: 'unknown_place' } as never;
+      },
+    });
+    expect(await rider('Marrakech', ['Marrakech'])({ tripId: 't_goa', turnId: 'turn_1', wake: wake as never, pack: pack as never }))
+      .toEqual({ line: 'The trip is set to Marrakech, the town most people stay in for Morocco.' });
+    expect(changes.map((c) => c['destination'])).toEqual(['Morocco', 'Marrakech']);
+    expect(changes[1]).toMatchObject({ title: 'Marrakech trip' });
+    // No town to fall back on, or that fails too: no line, as before.
+    expect(await rider(null, [])({ tripId: 't_goa', turnId: 'turn_2', wake: wake as never, pack: pack as never })).toBeNull();
+    expect(await rider('Marrakech', [])({ tripId: 't_goa', turnId: 'turn_3', wake: wake as never, pack: pack as never })).toBeNull();
+  });
+
   it("follows a place a vote picked: the trip's destination, and its title when it named the old place, never the group's own", async () => {
     expect(retitled('Manali trip', 'Manali', 'Goa, India')).toBe('Goa trip');
     expect(retitled('Manali with the gang', 'Manali, Himachal Pradesh', 'Ladakh')).toBe('Ladakh with the gang');

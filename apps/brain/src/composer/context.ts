@@ -53,7 +53,8 @@ export type DirectAnswer = (i: { tripId: string; wake: DeskItem[]; pack: TripPac
  * A card a lane puts on the turn's own post, first, with one line after Go's words, so the room gets one message, never
  * two in a row (the ixigo login on Go's hello). Asked once, just before the post; null for none.
  */
-export type TurnCard = (i: { tripId: string; turnId: string; wake: DeskItem[]; pack: TripPack }) => Promise<{ card: C.Card; line: string } | null>;
+/** A lane's card for the turn's post, with its line after Go's words; or a line alone (a place a vote picked, set as its town). */
+export type TurnCard = (i: { tripId: string; turnId: string; wake: DeskItem[]; pack: TripPack }) => Promise<{ card?: C.Card; line: string } | null>;
 
 /** A turn's limits: the only tools it may call (stay_silent always works) and whether its text may be posted. */
 export interface TurnLimits {
@@ -124,7 +125,7 @@ export type ContextImpl = Context & {
   /** Whether a lane answered the turn with no model call; a lane that throws is logged and the model answers. */
   direct(i: Parameters<DirectAnswer>[0]): Promise<boolean>;
   /** Every lane's card for this turn's post, in registration order; a lane that throws is logged and left out. */
-  turnCards(i: Parameters<TurnCard>[0]): Promise<Array<{ card: C.Card; line: string }>>;
+  turnCards(i: Parameters<TurnCard>[0]): Promise<Array<{ card?: C.Card; line: string }>>;
 };
 
 export const CHUNK = 25;
@@ -240,7 +241,7 @@ export function createContext(log: Log): ContextImpl {
       riders.push(fn);
     },
     async turnCards(i) {
-      const out: Array<{ card: C.Card; line: string }> = [];
+      const out: Array<{ card?: C.Card; line: string }> = [];
       for (const fn of riders) {
         try {
           const rider = await fn(i);
