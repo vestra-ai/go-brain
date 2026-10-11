@@ -201,7 +201,11 @@ describe('the payments block of right now', () => {
     expect(await paymentsNow({ pool: k.pool, packs: packs(goaTrip('open')), now: k.now }).render('t_goa', [])).toBeNull();
     await k.ask();
     const text = await paymentsNow({ pool: k.pool, packs: packs(), now: k.now }).render('t_goa', []);
-    expect(text).toMatch(/Waiting on Rahul to approve ₹54,200 for Villa Sol on pay card c_pay_d_villa_trigger_1; the approval runs out at 2:40 pm\./);
+    // In the trip's time (IST), and how to send a fresh one when the payer can't see it (prod, 10 Oct 21:06Z).
+    expect(text).toContain(
+      "Waiting on Rahul to approve ₹54,200 for Villa Sol on pay card c_pay_d_villa_trigger_1, in this chat; the approval runs out at 2:40 pm. " +
+        "If they say they can't see it, or declined it by mistake, call ask_to_pay with again: true for a fresh one; say a fresh one is up only once it answers with its card.",
+    );
     expect(text).not.toContain('Ready to pay');
   });
 });

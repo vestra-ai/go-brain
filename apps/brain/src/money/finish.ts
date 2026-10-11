@@ -241,7 +241,15 @@ async function finishClosed(d: MoneyDeps, row: PaymentRow, state: 'declined' | '
   //    sweep came back). Nothing can be paid from it either way: the payer's own Decline closed the row.
   if (state !== 'refused' && row.card_id && row.card_state !== state) {
     const card = payCardOf(row, state);
-    if (card) await d.link.request('replace_card', { trip_id: row.trip_id, card });
+    try {
+      if (card) await d.link.request('replace_card', { trip_id: row.trip_id, card });
+    } catch (e) {
+      // A card the Server refuses (it never reached the room: prod, 10 Oct, "card … is not on one of Go's messages") has
+      // nothing to show: the approval is let go all the same. The Server unreachable (5xx) tries again on the sweep.
+      const code = (e as { code?: unknown }).code;
+      if (typeof code !== 'number' || code < 400 || code >= 500) throw e;
+      d.log.warn({ payment_id: row.payment_id, err: e instanceof Error ? e.message : String(e) }, "a pay card the Server doesn't have was not updated; the payment closes all the same");
+    }
     await patchPayment(d.pool, row.payment_id, { card_state: state }, d.now());
   }
 
