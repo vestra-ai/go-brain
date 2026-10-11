@@ -5,6 +5,7 @@ import type { OptionsCardT } from '../cards.js';
 import { goaPack } from '../../tasks/testing/goa.js';
 import { stayDetails, trainDetails } from '../details.js';
 import type { ResultOption, ResultsStore } from '../results.js';
+import { placeOptions } from '../places-card.js';
 import { putUpCard } from '../tools.js';
 
 // Riva Beach Resort as ixigo's list gave it (staging, 8 Oct; recipes/__fixtures__/stays-anjuna-full.json), read by
@@ -91,6 +92,26 @@ describe("a train's details sheet", () => {
 });
 
 describe('the options card', () => {
+  // The Server team's rev 5 (R2): a card of places, each with ixigo's estimate a person and a sheet of why and getting
+  // there; its first three get their own place and guide in the background (places-card.ts showPlaces).
+  it("puts places up with ixigo's estimate a person and their sheet, and hands the first three on for their own photos", async () => {
+    const results = { saveCard: async () => undefined, card: async () => null } as unknown as ResultsStore;
+    const images = { rehostUrl: async () => 'https://go.test/img/x.jpg' } as never;
+    const ctx = makeTurnCtx({ tripId: 't_goa', turnId: 'turn_pl', link: {} as never, pack: goaPack(), wake: [], signal: new AbortController().signal });
+    const place = (name: string) => ({ place: name, estimate_minor: 900_000, estimate_nights: 3, getting_there_minor: 17_000, kind: ['beaches'] });
+    const options = placeOptions([place('Agra, India'), place('Goa, India'), place('Manali, India'), place('Ladakh, India')]);
+    const set = { resultsId: 'r_pl', tripId: 't_goa', optionKind: 'place' as const, source: 'search' as const, query: {}, options, checkedAt: '2026-10-11T02:00:00.000Z' };
+    const handed: Array<Array<{ cardId: string; optionId: string; name: string }>> = [];
+    await putUpCard(set, [1, 2, 3, 4], { title: 'Where to go in December', line: 'x' }, ctx, { results, images, showPlaces: (_trip, picks) => handed.push(picks) });
+    const card = ctx.cards[0] as OptionsCardT;
+    expect(card.option_kind).toBe('place');
+    expect(card.options[0]).toMatchObject({
+      title: 'Agra, India', price_minor: 900_000, price_note: 'a person, 3 nights', price_min_minor: 900_000, place: { name: 'Agra, India' },
+      details: { why: ['Beaches'], facts: [{ label: 'Getting there', value: 'from ₹170 a person' }, { label: 'The trip', value: "about ₹9,000 a person for 3 nights, ixigo's estimate" }] },
+    });
+    expect(handed).toEqual([card.options.slice(0, 3).map((o) => ({ cardId: card.card_id, optionId: o.option_id, name: o.title }))]);
+  });
+
   // The Server team's rev 5 (R1): labelled photos on every stay, not the top pick's alone. The card's next two stays go
   // with the top pick, their own pages read after its page, in the background (register.ts showPick).
   it("hands the top pick's next two stays with it, each by its own ixigo page; none off ixigo.com, none past the third", async () => {

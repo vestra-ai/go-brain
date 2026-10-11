@@ -323,6 +323,8 @@ describe("ixigo's trip explorer", () => {
     ]);
     expect(got.rows[1]).toEqual({
       place: 'Agra, Uttar Pradesh, India', getting_there: 'Prices starting from ₹170', stay_a_night: 'about ₹2,000', trip_estimate: 'about ₹9,000 for 3 nights',
+      // The same estimates as numbers, for a place's card (rev 5 R2): ₹9,000 a person for 3 nights, getting there from ₹170.
+      estimate_minor: 900_000, estimate_nights: 3, getting_there_minor: 17_000,
       weather: '15 to 24 C', good_for: ['family', 'friends', 'solo'], weather_tags: ['Warmer', 'No Snow', 'No Rain', 'Pollution free'],
       kind: ['historical sites', 'architecture', 'cultural', 'food drink', 'photography', 'romantic', 'shopping', 'luxury', 'festivals events', 'scenic outdoors', 'weekend destination'],
       guide: 'agra',

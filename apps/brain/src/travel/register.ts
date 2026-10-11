@@ -39,6 +39,8 @@ import { registerTravelTaps, renderOptionsTap } from './taps.js';
 import { travelTools } from './tools.js';
 import { budgetNow, budgetTool, createTripBudgets, stayCap } from './trip-budget.js';
 import { showBusDrops } from './bus-drops.js';
+import { saveTrip } from '../trips/save-trip.js';
+import { placeOnClose, placeOptions, showPlaces } from './places-card.js';
 import { showPickPhotos, type TopPick } from './pick-photos.js';
 import type { TravelKind } from './travel.js';
 import { createIxigoWarm, createStaysHeadStart, IXIGO_WARM_STEP, STAYS_HEAD_START_STEP, startComputerAtSetup, wakeForCheck, warmForTravel } from './warm.js';
@@ -279,7 +281,20 @@ export const registerTravel: RegisterLane = async (brain) => {
   // kept), never Go dropping a stay.
   const budgets = createTripBudgets({ pool: brain.pool, now: brain.now });
   const stayBudget = async (tripId: string): Promise<number | null> => stayCap(await budgets.get(tripId, (await brain.packs.get(tripId)).trip));
-  for (const t of travelTools({ travel, results, images, now: brain.now, desk: brain.desk, log: brain.log, warmForTravel: warm, today, showPick, stayBudget, groupStay })) brain.tools.register(t);
+  // The Server team's rev 5 (R2): "where should we go" as a card of places. The explorer's places are saved as results of
+  // kind place for show_options; a place card's first three get their own place and guide in the background.
+  const placesOf = async (tripId: string, rows: Array<Record<string, unknown>>, checkedAt: string): Promise<string | null> => {
+    const options = placeOptions(rows);
+    return options.length > 0 ? (await results.save({ tripId, optionKind: 'place', source: 'search', query: {}, options, checkedAt })).resultsId : null;
+  };
+  const showPlacesOf = (tripId: string, picks: Array<{ cardId: string; optionId: string; name: string }>): void => {
+    if (brain.switches.get('TRAVEL_MODE') !== 'ixigo_web') return;
+    void showPlaces({
+      placeFor: async (words, o) => (await travel.placeFor?.(words, o)) ?? null,
+      engine, results, link: brain.door.link, ...(brain.cardPosted ? { posted: brain.cardPosted } : {}), log: brain.log,
+    }, tripId, picks);
+  };
+  for (const t of travelTools({ travel, results, images, now: brain.now, desk: brain.desk, log: brain.log, warmForTravel: warm, today, showPick, showPlaces: showPlacesOf, stayBudget, groupStay })) brain.tools.register(t);
   brain.tools.register(budgetTool({ budgets, pool: brain.pool, now: brain.now, log: brain.log }));
   brain.context.addNow(budgetNow({ budgets, trip: async (tripId) => (await brain.packs.get(tripId)).trip }));
   // A recipe's live card: its runs on the stage, as a search's are, so the room watches every page Go opens. Kept while
@@ -291,7 +306,7 @@ export const registerTravel: RegisterLane = async (brain) => {
   // Any other recipe in the book, by its id: ixigo's own facts for the model to say (the destination guide, and more).
   const recipesTool = ixigoTool({
     book, engine, results, live: () => brain.switches.get('TRAVEL_MODE') === 'ixigo_web',
-    card: recipeCard,
+    card: recipeCard, placesOf,
     // A call that is the read the early start began for the message this turn woke for joins it, on its card.
     joined: (ctx, recipe, inputs) => early.joined(ctx.tripId, messageIdsOf(ctx.wake), recipe, inputs),
   });
@@ -341,6 +356,11 @@ export const registerTravel: RegisterLane = async (brain) => {
   const roomsCards = createRoomsCards(brain.pool);
   const rooms = { engine, results, store: roomsCards, link: brain.door.link, packs: brain.packs, log: brain.log };
   brain.context.addTurnCard(roomsCardOnClose(rooms));
+  // A place a vote picked becomes the trip's, its title following when it named the old place (rev 5 R2).
+  brain.context.addTurnCard(placeOnClose({
+    results, log: brain.log,
+    save: (pack, change, requestId) => saveTrip({ pool: brain.pool, now: brain.now, travel: () => brain.travel }, { link: brain.door.link, tripId: pack.trip.trip_id, pack, requestId }, change),
+  }));
   brain.taps.on('rooms', ROOMS_PICK, roomsTap(rooms));
   const early = createEarlyStart({
     travel: () => brain.travel, switches: brain.switches, today: tripToday(brain.pool, brain.now), now: brain.now, log: brain.log,
