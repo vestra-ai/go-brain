@@ -74,6 +74,16 @@ describe('catch_up', () => {
     expect(jev.asked).toHaveLength(0);
   });
 
+  // Rev 5 R5: a shared thing's options card is its vote, with no vote card beside it.
+  it('links a vote to the options card that is the vote', async () => {
+    const onCard = messages.map((m) => (m.message_id === 'm_0170'
+      ? { ...m, card: { card_id: 'c_opts', kind: 'options', option_kind: 'activity', title: 'Beach day', fallback_text: 'Beach day', checked_at: '2026-10-05T10:00:00Z', options: [], decision_id: 'd_beach' } as unknown as C.Card }
+      : m));
+    const handler = catchUpHandler({ pool: db.pool, packs: fakePacks({ t_c7: packOf(onCard, trip('t_c7')) }), jev: jevAnswering({}), log: silentLog });
+    const res = await handler({ trip_id: 't_c7', person_id: 'p_meher', since: '2026-10-05T05:00:00Z' }, meta);
+    expect(res.items[0]).toEqual({ kind: 'needs_you', text: 'Vote: Beach day on Sunday?', message_id: 'm_0170' });
+  });
+
   it("never lists a person's own question as Go asking them: it is \"You asked\", whoever the line names (Server team, 10 Oct)", async () => {
     // The line names its asker as the one asked, and its proof says who wrote it only through the message.
     const own = [rl({ line_id: 'r_bakery', kind: 'open', text: 'A good bakery near Anjuna?', person_ids: ['p_arjun'], proof: [{ message_id: 'm_0172', person_id: null }], updated_at: '2026-10-05T12:30:00Z' })];

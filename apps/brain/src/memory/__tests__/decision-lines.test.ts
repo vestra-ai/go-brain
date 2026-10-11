@@ -15,7 +15,7 @@ let db: { pool: Pool; drop: () => Promise<void> };
 beforeAll(async () => { db = await withSchema(); });
 afterAll(async () => { await db.drop(); });
 
-const card = (kind: 'vote' | 'mandate', decisionId: string) => ({ card: { kind, decision_id: decisionId } as unknown as C.Card });
+const card = (kind: 'vote' | 'mandate' | 'options', decisionId?: string) => ({ card: { kind, ...(decisionId ? { decision_id: decisionId } : {}) } as unknown as C.Card });
 const voteMsg = msg(40, 'go', 'Which villa? Vote below.', card('vote', 'd_villa'));
 const ask = msg(41, 'p_priya', 'Casa Mareia looks nice');
 const open = (proof: string[], over: Partial<CheckedLine> = {}): CheckedLine => ({
@@ -34,6 +34,9 @@ describe('decisionOf: the one vote an open line is about, by id', () => {
 
   it('reads it from the turn: a card the turn put up, or the vote that woke it', () => {
     expect(decisionOf(open(['m_0041']), pack, { cards: [card('vote', 'd_new').card], wake: [] })).toBe('d_new');
+    // Since rev 5 (R5) a shared thing's options card is its vote; one without a vote names none.
+    expect(decisionOf(open(['m_0041']), pack, { cards: [card('options', 'd_stays').card], wake: [] })).toBe('d_stays');
+    expect(decisionOf(open(['m_0041']), pack, { cards: [card('options').card], wake: [] })).toBeNull();
     expect(decisionOf(open(['m_0041']), pack, { cards: [], wake: [wake('d_villa')] })).toBe('d_villa');
   });
 

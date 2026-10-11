@@ -5,7 +5,7 @@
  * plain is null, and the composer asks which.
  */
 import type pg from 'pg';
-import type { ResultsStore } from '../results.js';
+import { MORE_CARD, type ResultsStore } from '../results.js';
 import type { ShownOption } from './fast.js';
 
 const ORDINALS: Array<[number, RegExp]> = [
@@ -44,8 +44,9 @@ export async function optionOnCard(
   kind: 'stay' | 'flight',
 ): Promise<ShownOption | null> {
   const { rows: cards } = await pool.query<{ card_id: string; results_id: string }>(
-    'select card_id, results_id from options_cards where trip_id = $1 and option_kind = $2 order by created_at desc limit 1',
-    [tripId, kind],
+    // A "See more" card is more of the card before it, never the newest card itself.
+    'select card_id, results_id from options_cards where trip_id = $1 and option_kind = $2 and not starts_with(card_id, $3) order by created_at desc limit 1',
+    [tripId, kind, `${MORE_CARD}_`],
   );
   const card = cards[0];
   if (!card) return null;

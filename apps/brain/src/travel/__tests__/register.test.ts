@@ -2,12 +2,13 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import * as C from '@go/contract';
 import { withSchema } from '../../db/test-db.js';
 import { eventually, makeLaneBrain, type LaneBrain } from '../../tasks/testing/lane-brain.js';
-import { goaPack } from '../../tasks/testing/goa.js';
-import { buildIxigoLinkCard, buildOptionsCard } from '../cards.js';
+import { GOA_TRIP, goaPack } from '../../tasks/testing/goa.js';
+import { buildIxigoLinkCard, buildOptionsCard, SEE_ALL_ACTION } from '../cards.js';
 import { stableId } from '../ids.js';
 import { picksOf } from '../picks.js';
 import { registerTravel } from '../register.js';
-import { createResultsStore, type ResultOption } from '../results.js';
+import { SocketCallError } from '../../door/rpc.js';
+import { createResultsStore, MORE_CARD, type ResultOption } from '../results.js';
 
 let db: Awaited<ReturnType<typeof withSchema>>;
 let lb: LaneBrain;
@@ -58,7 +59,7 @@ describe('registerTravel', () => {
     expect(lb.tools.list().map((t) => t.name)).toEqual(['search_flights', 'search_trains', 'search_buses', 'search_stays', 'show_options', 'put_to_vote', 'set_budget', 'ixigo', 'ixigo_login', 'compare_ways_there', 'search_flights_each', 'watch_ixigo', 'stop_watch']);
     expect([...lb.taps.handlers.keys()].sort()).toEqual([
       'notice/ixigo_logged_in', 'notice/ixigo_login', 'notice/ixigo_logout', 'notice/ixigo_not_now', 'notice/ixigo_watch', 'notice/pay_flight', 'notice/see_on_ixigo',
-      'options/add_budget', 'options/book_mine', 'options/change', 'options/flights_home', 'options/open', 'options/pick', 'options/see_all', 'options/vote',
+      'options/add_budget', 'options/book_mine', 'options/change', 'options/flights_home', 'options/more_options', 'options/open', 'options/pick', 'options/see_all', 'options/vote',
       // The rooms card's pick (REV4 B5, rooms-card.ts).
       'rooms/pick',
     ]);
@@ -83,17 +84,18 @@ describe('registerTravel', () => {
     expect(await lb.taps.tap('options', 'pick', tap({ tap_id: 'tap_p2', option_id: 'opt_gone' }), card)).toEqual({ result: 'refused', toast: 'That option is no longer available' });
   });
 
-  it('"Put it to a vote" opens one vote and posts its card, even when two people tap at the same moment', async () => {
+  it("a stays card is the group's vote from the start (rev 5 R5); an older card's \"Put it to a vote\" opens nothing more", async () => {
+    if (card.kind !== 'options') throw new Error('expected an options card');
+    expect(card.decision_id).toMatch(/^d_\d+$/);
+    expect(lb.link.sent('open_vote')).toHaveLength(1);
     const [a, b] = await Promise.all([
       lb.taps.tap('options', 'vote', tap({ tap_id: 'tap_v1', action_id: 'vote' }), card),
       lb.taps.tap('options', 'vote', tap({ tap_id: 'tap_v2', action_id: 'vote', person_id: 'p_kabir' }), card),
     ]);
-    expect(a.result).toBe('done');
-    expect(b.result).toBe('done');
-    await eventually(() => lb.link.sent('post_message').some((p) => (p.card as { kind: string }).kind === 'vote'));
+    expect([a, b]).toEqual([{ result: 'done', toast: 'Already up for a vote' }, { result: 'done', toast: 'Already up for a vote' }]);
     await new Promise((r) => setTimeout(r, 50));
     expect(lb.link.sent('open_vote')).toHaveLength(1);
-    expect(await lb.taps.tap('options', 'vote', tap({ tap_id: 'tap_v3', action_id: 'vote' }), card)).toEqual({ result: 'done', toast: 'Already up for a vote' });
+    expect(lb.link.sent('post_message').some((p) => (p.card as { kind?: string } | undefined)?.kind === 'vote')).toBe(false);
   });
 
   // Keshav, 10 Oct: Go opened a group vote, "Book IndiGo 6E2150 for Meher on 12 Nov? 0 of 5 voted", for Meher's own
@@ -107,8 +109,9 @@ describe('registerTravel', () => {
     const picks = [{ optionId: 'opt_fl1', n: 1, option: flight('IndiGo 6E2150'), imageUrl: null }, { optionId: 'opt_fl2', n: 2, option: flight('Air India AI2981'), imageUrl: null }];
     const flights = buildOptionsCard({ cardId: 'c_fl', title: 'Flights, Delhi to Goa', optionKind: 'flight', checkedAt, picks });
     await results.saveCard({ cardId: 'c_fl', tripId: 't_goa', resultsId: set.resultsId, title: flights.title, optionKind: 'flight', card: flights }, picks, checkedAt);
-    // No group vote on a ticket's card.
-    expect(flights.actions?.map((a) => a.action_id)).toEqual(['pick', 'open']);
+    // No group vote on a ticket's card, and its ixigo page is in each option (rev 5 R5), never a button.
+    expect(flights.actions?.map((a) => a.action_id)).toEqual(['pick']);
+    expect(flights.options[0]!.url).toBe(page);
     const at = (over: Partial<{ tap_id: string; action_id: string; person_id: string; option_id: string; card_id: string }>) =>
       ({ tap_id: 'tap_f', trip_id: 't_goa', card_id: 'c_fl', action_id: 'pick', person_id: 'p_meher', option_id: 'opt_fl1', ...over });
     const before = lb.desk.of('tap').length;
@@ -142,7 +145,7 @@ describe('registerTravel', () => {
     expect(await lb.taps.tap('options', 'vote', at({ tap_id: 'tap_f5', action_id: 'vote' }), flights)).toEqual({ result: 'refused', toast: "A ticket is each person's own: tap I'll take this" });
   });
 
-  it('"See on ixigo" opens the option\'s own ixigo.com page, and refuses an option that has none', async () => {
+  it('"See on ixigo" on a card from before rev 5 opens the option\'s own ixigo.com page, and refuses an option that has none', async () => {
     if (card.kind !== 'options') throw new Error('expected an options card');
     // The fake's villas have no ixigo page.
     expect(await lb.taps.tap('options', 'open', tap({ tap_id: 'tap_o1', action_id: 'open', option_id: card.options[0]!.option_id }), card)).toEqual({ result: 'refused', toast: 'This option has no ixigo page' });
@@ -160,7 +163,7 @@ describe('registerTravel', () => {
     expect(await lb.taps.tap('options', 'open', tap({ tap_id: 'tap_o3', action_id: 'open', option_id: 'opt_ixr1' }), card)).toEqual({ result: 'refused', toast: 'That option is no longer here' });
   });
 
-  it('"See all on ixigo" on a card of stays opens the whole list the search read, and nothing for a list without one', async () => {
+  it('"See all on ixigo" on a card of stays from before rev 5 opens the whole list the search read, and nothing for a list without one', async () => {
     const results = createResultsStore(db.pool);
     const list = 'https://www.ixigo.com/hotels/search/result?locationId=32&locationName=Goa&filters=FL_HF_29';
     const hotel: ResultOption = { kind: 'stay', title: 'Meritas', priceMinor: 810400, currency: 'INR', priceNote: 'per night, per room', highlights: [], facts: {}, sourceUrl: 'https://www.ixigo.com/hotels/1384544/details?hName=Meritas' };
@@ -168,15 +171,103 @@ describe('registerTravel', () => {
     const picks = [{ optionId: 'opt_all1', n: 1, option: hotel, imageUrl: null }];
     const keep = async (cardId: string, page?: string) => {
       const set = await results.save({ tripId: 't_goa', optionKind: 'stay', source: 'search', query: {}, options: [hotel], checkedAt, ...(page ? { page } : {}) });
-      const c = buildOptionsCard({ cardId, title: 'Stays in North Goa', optionKind: 'stay', checkedAt, picks, seeAll: page !== undefined });
+      const c = { ...buildOptionsCard({ cardId, title: 'Stays in North Goa', optionKind: 'stay', checkedAt, picks }), actions: [SEE_ALL_ACTION] };
       await results.saveCard({ cardId, tripId: 't_goa', resultsId: set.resultsId, title: c.title, optionKind: 'stay', card: c }, picks, checkedAt);
       return c;
     };
     const all = await keep('c_all1', list);
-    expect(all.actions?.map((a) => a.action_id)).toEqual(['pick', 'see_all']);
     const tapAll = (c: C.Card) => lb.taps.tap('options', 'see_all', { tap_id: `tap_${c.card_id}`, trip_id: 't_goa', card_id: c.card_id, action_id: 'see_all', person_id: 'p_meher' }, c);
     expect(await tapAll(all)).toEqual({ result: 'open', url: list, expires_at: new Date(lb.brain.now().getTime() + 600_000).toISOString() });
     expect(await tapAll(await keep('c_all2'))).toEqual({ result: 'refused', toast: 'This list has no ixigo page' });
+  });
+
+  // Rev 5 R4: "See more" puts up to 10 more of the same search on a new card, in the same vote.
+  it('"See more" puts the search\'s next stays on a new card in the same vote, and says when there are none, or the vote is closed or full', async () => {
+    const results = createResultsStore(db.pool);
+    const stay = (i: number): ResultOption => ({
+      kind: 'stay', title: `Stay ${i}`, priceMinor: 500_000 + i * 1_000, totalMinor: 1_500_000 + i * 3_000, currency: 'INR', priceNote: 'per night, per room',
+      highlights: [], facts: { nights: 3 }, sourceUrl: `https://www.ixigo.com/hotels/${9000 + i}/details?hName=Stay%20${i}`,
+    });
+    const options = Array.from({ length: 12 }, (_, i) => stay(i + 1));
+    const set = await results.save({ tripId: 't_goa', optionKind: 'stay', source: 'search', query: { area: 'anjuna', guests: 5 }, options, checkedAt: '2026-10-07T12:00:00.000Z' });
+    const ctx = lb.ctx({ turnId: 'turn_more1' });
+    const shown = (await lb.tools.run('show_options', { line: 'Here are stays in Anjuna.', results_id: set.resultsId, title: 'Stays in Anjuna' }, ctx)) as any;
+    const first = C.OptionsCard.parse(ctx.cards[0]);
+    expect(first.options).toHaveLength(10);
+    expect(first).toMatchObject({ decision_id: shown.decision_id, actions: [C.MORE_OPTIONS] });
+    // The Server's trip: the card's vote closed, full, or open with its 10 options.
+    const real = lb.link.request.bind(lb.link);
+    const voteIs = (status: string, count: number) => {
+      lb.link.request = (async (method: string, params: unknown) =>
+        method === 'read_trip'
+          ? { ...GOA_TRIP, decisions: [{ decision_id: shown.decision_id, status, options: Array.from({ length: count }, (_, i) => ({ label: `S${i}` })) }] }
+          : real(method as 'post_message', params as never)) as typeof lb.link.request;
+    };
+    const more = (tapId: string) => lb.taps.tap('options', 'more_options', { tap_id: tapId, trip_id: 't_goa', card_id: first.card_id, action_id: 'more_options', person_id: 'p_meher' }, first);
+    try {
+      voteIs('closed', 10);
+      expect(await more('tap_m1')).toEqual({ result: 'done', toast: 'The vote has closed' });
+      voteIs('open', 20);
+      expect(await more('tap_m2')).toEqual({ result: 'done', toast: 'This vote has 20 options, the most one vote takes' });
+      voteIs('open', 10);
+      // The Server refuses the add: the new card is dropped, so its stays were never shown, and the next tap offers them.
+      const adds = lb.link.sent('add_vote_options').length;
+      lb.link.failNext = { method: 'add_vote_options', error: new SocketCallError(409, 'conflict: the vote closed') };
+      expect(await more('tap_m3a')).toEqual({ result: 'done' });
+      await eventually(() => lb.link.sent('add_vote_options').length > adds);
+      await eventually(async () => (await results.card('t_goa', stableId(MORE_CARD, 'tap_m3a'))) === null);
+      expect(lb.link.sent('post_message').some((p) => (p.card as { card_id?: string } | undefined)?.card_id === stableId(MORE_CARD, 'tap_m3a'))).toBe(false);
+      expect(await more('tap_m3')).toEqual({ result: 'done' });
+      const cardId = stableId(MORE_CARD, 'tap_m3');
+      const posted = () => lb.link.sent('post_message').find((p) => (p.card as { card_id?: string } | undefined)?.card_id === cardId);
+      await eventually(() => posted() !== undefined);
+      const next = C.OptionsCard.parse(posted()!.card);
+      // The two stays no card showed, in the same vote, and nothing more to show after them.
+      expect(next.options.map((o) => o.title)).toEqual(['Stay 11', 'Stay 12']);
+      expect(next).toMatchObject({ title: `More: ${first.title}`, decision_id: shown.decision_id, actions: [] });
+      const added = lb.link.sent('add_vote_options').at(-1)!;
+      expect(added).toMatchObject({ request_id: stableId('go_more', 'tap_m3'), trip_id: 't_goa', decision_id: shown.decision_id });
+      expect((added.options as Array<{ option_ref: string }>).map((o) => o.option_ref)).toEqual(next.options.map((o) => o.option_id));
+      // Every one shown now: a toast, and nothing posted.
+      const posts = lb.link.sent('post_message').length;
+      expect(await more('tap_m4')).toEqual({ result: 'done', toast: "That's everything ixigo listed for this search" });
+      expect(lb.link.sent('post_message')).toHaveLength(posts);
+    } finally {
+      lb.link.request = real;
+    }
+  });
+
+  // Your reviewer, 11 Oct: a 503 from add_vote_options may have added them on the Server all the same.
+  it('"See more" keeps its card, unposted, when the Server may have added its stays (a 503), and never adds them twice', async () => {
+    const results = createResultsStore(db.pool);
+    const options: ResultOption[] = Array.from({ length: 11 }, (_, i) => ({
+      kind: 'stay', title: `Assagao ${i + 1}`, priceMinor: 500_000, totalMinor: 1_500_000, currency: 'INR', priceNote: 'per night, per room',
+      highlights: [], facts: { nights: 3 }, sourceUrl: `https://www.ixigo.com/hotels/${9100 + i}/details?hName=Assagao%20${i + 1}`,
+    }));
+    const set = await results.save({ tripId: 't_goa', optionKind: 'stay', source: 'search', query: { area: 'assagao', guests: 5 }, options, checkedAt: '2026-10-07T12:00:00.000Z' });
+    const ctx = lb.ctx({ turnId: 'turn_more2' });
+    const shown = (await lb.tools.run('show_options', { line: 'Here are stays in Assagao.', results_id: set.resultsId, title: 'Stays in Assagao' }, ctx)) as any;
+    const first = C.OptionsCard.parse(ctx.cards[0]);
+    const real = lb.link.request.bind(lb.link);
+    lb.link.request = (async (method: string, params: unknown) =>
+      method === 'read_trip'
+        ? { ...GOA_TRIP, decisions: [{ decision_id: shown.decision_id, status: 'open', options: Array.from({ length: 10 }, (_, i) => ({ label: `S${i}` })) }] }
+        : real(method as 'post_message', params as never)) as typeof lb.link.request;
+    const more = (tapId: string) => lb.taps.tap('options', 'more_options', { tap_id: tapId, trip_id: 't_goa', card_id: first.card_id, action_id: 'more_options', person_id: 'p_meher' }, first);
+    try {
+      const adds = lb.link.sent('add_vote_options').length;
+      lb.link.failNext = { method: 'add_vote_options', error: new SocketCallError(503, 'unavailable') };
+      expect(await more('tap_m5')).toEqual({ result: 'done' });
+      await eventually(() => lb.link.sent('add_vote_options').length > adds);
+      await new Promise((r) => setTimeout(r, 50));
+      const kept = stableId(MORE_CARD, 'tap_m5');
+      expect(await results.card('t_goa', kept)).not.toBeNull();
+      expect(lb.link.sent('post_message').some((p) => (p.card as { card_id?: string } | undefined)?.card_id === kept)).toBe(false);
+      // Its stay counts as shown: the next See more never adds it again.
+      expect(await more('tap_m6')).toEqual({ result: 'done', toast: "That's everything ixigo listed for this search" });
+    } finally {
+      lb.link.request = real;
+    }
   });
 
   it('"Add my budget" opens the App\'s own budget sheet for the trip, a go:// link (contract 1.1 A4)', async () => {

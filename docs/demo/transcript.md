@@ -87,9 +87,6 @@ From each cue to what had to happen, on the wall clock of the run.
 | 35.0 s | The trip's computer (simulated) | searches Go's stays for North Goa, 6 to 9 Nov, five people, with a pool |
 | 35.0 s | The trip's computer (simulated) | finishes the job: three villas |
 | 35.1 s | Go | Three villas that fit, with their prices for the whole stay. [options card: Villa Sol, The Palms Villa, Ocean Breeze Villa] |
-| 35.1 s | Priya | taps "vote" on the options card: done, "Putting it to a vote" |
-| 35.1 s | Go | [vote card: Vote: Where do we stay? Villa Sol ₹38,400, The Palms Villa ₹36,600, Ocean Breeze Villa ₹39,300. Open Go to vote.] |
-| 35.1 s | Priya | taps "vote" on the options card: done, "Already up for a vote" |
 
 ### 2:30 Everyone votes
 
