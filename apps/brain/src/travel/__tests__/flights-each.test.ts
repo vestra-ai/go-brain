@@ -301,11 +301,11 @@ describe("each person's own flights, from their home city", () => {
 
   // Prod, 12 Oct (t_f0b08c1cdb0f7420): ixigo answered Delhi to Kullu, Manali's airport, with 200 and errors.code 201 "No
   // flights found", and each Delhi traveller heard "I couldn't load your flights from Delhi", with tries for 20 minutes.
-  // Keshav: "if there is no airport in source or destination, Go should be smart enough to give the closest airport".
-  it("searches the nearest other airport with flights next, by itself: never \"couldn't load\", never a try; after one, the bus", async () => {
+  // Keshav: Go says so and offers the nearest airport with flights, one tap ("Should I look at flights to Chandigarh?").
+  it("offers each traveller the nearest airport with flights, one tap, theirs alone: never \"couldn't load\", never a try", async () => {
     const NONE: EngineAnswer = {
-      as: 'options', options: [], page: 'https://www.ixigo.com/search/result/flight?from=DEL&to=GOX', checkedAt: '2026-10-10T09:00:00.000Z', ms: 3_200,
-      none: { from: { words: 'Delhi', code: 'DEL', city: 'New Delhi' }, to: { words: 'North Goa', code: 'GOX', city: 'Mopa' } },
+      as: 'options', options: [], page: 'https://www.ixigo.com/search/result/flight?from=DEL&to=KUU', checkedAt: '2026-10-10T09:00:00.000Z', ms: 3_200,
+      none: { from: { words: 'Delhi', code: 'DEL', city: 'New Delhi' }, to: { words: 'Manali', code: 'KUU', city: 'Kullu' } },
     };
     const told = (delhi: EngineAnswer, entries = ['Delhi', 'Mumbai']) => (run: RunFor): void => {
       run.onSteps?.({ type: 'entries', entries });
@@ -316,52 +316,55 @@ describe("each person's own flights, from their home city", () => {
         run.onSteps?.({ type: 'step', entry: 'Mumbai', recipe: 'flights.search', ok: true, answer: link('BOM') });
       }
     };
-    const delhiIds = ['p_rahul', 'p_priya', 'p_kabir'];
+    const raw = (since: number) => lb.link.requests.slice(since).filter((r) => r.method === 'post_message').map((r) => r.params);
+    const offerTo = (name: string) =>
+      `${name}, ixigo has no flights from Delhi to Kullu (Manali's airport) on Fri 6 Nov. Should I look at flights to Chandigarh, the nearest airport with flights? ` +
+      "It's about 7 h by road to Manali.";
+    const taps = [
+      { label: 'Yes, Chandigarh', text: 'My flights to Chandigarh, the nearest airport to Manali' },
+      { label: 'A bus instead', text: 'A bus from Delhi to Manali instead' },
+    ];
     const from = lb.link.requests.length;
     const before = puts.length;
-    const out = (await toolWith(async (run) => (told(NONE)(run), COMPARE)).run({}, lb.ctx({ turnId: 'turn_each_none' }))) as any;
-    // No line to Delhi's travellers yet, never "couldn't load", and no try: one wake, Go's, to search the nearest airport.
-    const posted = postedSince(from);
-    expect(posted.filter((p) => delhiIds.includes(p.visibleTo?.[0] ?? ''))).toEqual([]);
-    expect(posted.map((p) => p.text).join(' ')).not.toContain("couldn't load");
-    const woke = puts.slice(before);
-    expect(woke).toEqual([expect.objectContaining({ kind: 'search', ref: 'flights' })]);
-    const wake = woke[0]!.payload as { summary: string; next: string; count: number };
-    expect(wake.summary).toBe("ixigo has no flights from Delhi to Mopa (North Goa's airport) on Fri 6 Nov.");
-    expect(wake.next).toContain(`call search_flights_each with person_ids ${JSON.stringify(delhiIds)}, instead_of the place in the summary`);
-    expect(wake.next).toContain('Never say it didn\'t load');
-    // Mumbai's card still goes up; the model hears Delhi's is no card yet, and why.
+    const out = (await toolWith(async (run) => (told(NONE)(run), COMPARE)).run({ to: 'Manali' }, lb.ctx({ turnId: 'turn_each_none' }))) as any;
+    // Each Delhi traveller's own line and taps, theirs alone; never "couldn't load", and nothing tried again.
+    for (const [id, name] of [['p_rahul', 'Rahul'], ['p_priya', 'Priya'], ['p_kabir', 'Kabir']] as const) {
+      expect(raw(from).filter((p) => (p['visible_to_person_ids'] as string[])?.[0] === id), name).toEqual([
+        expect.objectContaining({ text: offerTo(name), quick_replies: taps, visible_to_person_ids: [id] }),
+      ]);
+    }
+    expect(raw(from).map((p) => p['text']).join(' ')).not.toContain("couldn't load");
+    expect(puts).toHaveLength(before);
     expect(out.cards_up.map((c: { home: string }) => c.home)).toEqual(['Mumbai']);
-    expect(out.not_up.find((c: { home: string }) => c.home === 'Delhi').why).toContain('Go searches the nearest other airport with flights next');
+    expect(out.not_up.find((c: { home: string }) => c.home === 'Delhi').why).toContain('offers the nearest airport with flights, or a bus');
 
-    // The nearest airport's search, as the wake asks for it: its card says which airport, and for where.
+    // The tap's search: its card says which airport, and for where.
     const near = lb.link.requests.length;
-    await toolWith(async (run) => (told(options(DELHI), ['Delhi'])(run), COMPARE)).run({ to: 'Dabolim', instead_of: 'North Goa', person_ids: ['p_priya'] }, lb.ctx({ turnId: 'turn_each_near_ok' }));
-    const priya = postedSince(near).find((p) => p.visibleTo?.[0] === 'p_priya')!;
+    await toolWith(async (run) => (told(options(DELHI), ['Delhi'])(run), COMPARE)).run({ to: 'Chandigarh', instead_of: 'Manali', person_ids: ['p_priya'] }, lb.ctx({ turnId: 'turn_each_near_ok' }));
     // The none first, as ixigo searched it, then the nearest airport and for where (Keshav, 12 Oct).
-    expect(priya.text).toBe(
-      "Priya, ixigo has no flights from Delhi to Mopa (North Goa's airport) on Fri 6 Nov, so here are flights to Dabolim, the nearest airport to North Goa " +
+    expect(postedSince(near).find((p) => p.visibleTo?.[0] === 'p_priya')!.text).toBe(
+      "Priya, ixigo has no flights from Delhi to Kullu (Manali's airport) on Fri 6 Nov, so here are flights to Chandigarh, the nearest airport to Manali " +
         'with flights that day. 5 fit, from ₹4,000 a person. Tap "I\'ll take this" on yours.',
     );
-    // One that has none too: the bus, theirs alone, and no second nearest.
+    // One with none too: the bus alone, theirs, no taps for another airport.
     const again = lb.link.requests.length;
-    const before2 = puts.length;
-    await toolWith(async (run) => (told(NONE, ['Delhi'])(run), COMPARE)).run({ to: 'Dabolim', instead_of: 'North Goa', person_ids: ['p_priya'] }, lb.ctx({ turnId: 'turn_each_near_none' }));
-    expect(postedSince(again).filter((p) => p.visibleTo?.[0] === 'p_priya').map((p) => p.text)).toEqual([
-      'Priya, ixigo has no flights from Delhi to Mopa (North Goa\'s airport) on Fri 6 Nov. I can look for a bus from Delhi to North Goa instead: just say "bus".',
+    await toolWith(async (run) => (told(NONE, ['Delhi'])(run), COMPARE)).run({ to: 'Chandigarh', instead_of: 'Manali', person_ids: ['p_priya'] }, lb.ctx({ turnId: 'turn_each_near_none' }));
+    expect(raw(again).filter((p) => (p['visible_to_person_ids'] as string[])?.[0] === 'p_priya')).toEqual([
+      expect.objectContaining({ text: 'Priya, ixigo has no flights from Delhi to Kullu (Manali\'s airport) on Fri 6 Nov. I can look for a bus from Delhi to Manali instead: just say "bus".' }),
     ]);
-    expect(puts).toHaveLength(before2);
-    // A try that reads ixigo's none wakes the nearest airport's search too, and posts nothing itself.
+    expect(raw(again).some((p) => p['quick_replies'])).toBe(false);
+    // A try that reads ixigo's none offers the same, and tries no more.
     const tryItem: TryAgainItem = {
       id: 'try_again:t_goa:each_none:1', tripId: 't_goa', kind: 'search', ref: 'flights', dueAt: lb.brain.now(),
-      payload: { source: 'travel_try_again', key: 'each_none', what: 'flights from Delhi', n: 1, each: { home: 'Delhi', to: 'North Goa', date: '2026-11-06' } },
+      payload: { source: 'travel_try_again', key: 'each_none', what: 'flights from Delhi', n: 1, each: { home: 'Delhi', to: 'Manali', date: '2026-11-06' } },
     };
     const tried = lb.link.requests.length;
-    const before3 = puts.length;
     eachTryAgain({ engine: { answer: async () => NONE }, results, link: lb.link, now: lb.brain.now, desk })(tryItem, goaPack());
-    await eventually(() => puts.length === before3 + 1);
-    expect(puts.at(-1)).toMatchObject({ kind: 'search', ref: 'flights', payload: { summary: "ixigo has no flights from Delhi to Mopa (North Goa's airport) on Fri 6 Nov." } });
-    expect(postedSince(tried)).toEqual([]);
+    await eventually(() => raw(tried).length === 3);
+    expect(raw(tried).map((p) => [p['visible_to_person_ids'], p['text'], p['quick_replies']])).toEqual([
+      [['p_rahul'], offerTo('Rahul'), taps], [['p_priya'], offerTo('Priya'), taps], [['p_kabir'], offerTo('Kabir'), taps],
+    ]);
+    expect(puts).toHaveLength(before);
   });
 
   it('four travellers from four cities get four cards, each theirs alone to act on, none with a vote (the Server team, 10 Oct)', async () => {
