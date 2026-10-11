@@ -1405,6 +1405,13 @@ describe("one tap: Go's screen opens with the log in, and Go sees the login land
     expect(gaps).toContain(LOGIN_POLL_SLOW_MS);
   });
 
+  // 11 Oct, Saket: ixigo's desktop home showed in the App's view until Go read the login landed.
+  it("reads every 3 s after the fast 30 s: 20 a minute per open login, inside a Go key's 60 with room for two", () => {
+    expect(LOGIN_POLL_SLOW_MS).toBe(3_000);
+    expect(60_000 / LOGIN_POLL_SLOW_MS).toBeLessThanOrEqual(20);
+    expect(60_000 / LOGIN_POLL_MS).toBeLessThanOrEqual(30);
+  });
+
   it('an `at` the browser had counts once its expiry moves or it went and came back; a read Bash could not answer compares nothing', async () => {
     // Its expiry moves on the third read.
     const moved = world({ cookies: (n) => (n < 2 ? at(AT) : at(AT + 3600_000)), statuses: [200] });
