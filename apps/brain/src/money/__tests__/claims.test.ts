@@ -47,6 +47,17 @@ describe('the claim card', () => {
     expect(taken).toMatchObject({ title: 'Rahul is booking for all 4', actions: [] });
   });
 
+  // 11 Oct, prod: Saket alone at Hampi saw "Saket Diwakar is booking for all 1… Go splits it with the group after."
+  it('for a trip of one, asks them alone and then says what they book: no "for all", nobody to split with', () => {
+    const open = claimCard({ decisionId: 'd_villa', what: 'Ganga Homestay', people: 1, claimer: null });
+    expect(C.Card.parse(open)).toEqual(open);
+    expect(open).toMatchObject({ title: 'Book Ganga Homestay', actions: [{ action_id: 'claim', label: "I'll book it", style: 'primary' }] });
+    const taken = claimCard({ decisionId: 'd_villa', what: 'Ganga Homestay', people: 1, claimer: 'Saket' });
+    expect(C.Card.parse(taken)).toEqual(taken);
+    expect(taken).toMatchObject({ title: 'Saket is booking Ganga Homestay', body: 'Saket pays for Ganga Homestay and books it.', actions: [] });
+    for (const card of [open, taken]) expect(JSON.stringify(card)).not.toMatch(/for all|everyone|split|group/i);
+  });
+
   it('goes up on one turn only (a rerun of that turn carries it again), and the first claim wins', async () => {
     expect(await claims.offer('t_goa', 'd_villa', 'turn_a')).toBe(true);
     expect(await claims.offer('t_goa', 'd_villa', 'turn_a')).toBe(true);
@@ -115,6 +126,47 @@ describe("I'll book it", () => {
     // Later taps hear who already is.
     expect(await tap(tapOf('p_priya', 2))).toEqual({ result: 'refused', toast: 'Rahul is already booking this.' });
     expect(await tap(tapOf('p_rahul', 3))).toEqual({ result: 'done', toast: "You're booking it" });
+  });
+});
+
+describe("I'll book it on a trip of one", () => {
+  it('books it for them: the line says what, for how much and how many nights, never "for all", everyone or a split', async () => {
+    const base = goaTrip('closed');
+    const solo = await moneyKit({ trip: { ...base, people: base.people.slice(0, 1), dates: { start: '2026-11-06', end: '2026-11-09' } } });
+    try {
+      const soloClaims = createClaims(solo.pool, solo.now);
+      await solo.server.request('post_message', { request_id: 'go_close', trip_id: 't_goa', card: claimCard({ decisionId: 'd_villa', what: 'Villa Sol', people: 1, claimer: null }) });
+      const later = new Later();
+      const soloPacks = { get: async () => ({ trip: solo.server.trip('t_goa'), messages: [], seq: 1 }) };
+      const tap = claimTap({ d: { ...solo.deps, claims: soloClaims }, claims: soloClaims, packs: soloPacks, later });
+      expect(await tap(tapOf('p_rahul', 1))).toEqual({ result: 'done', toast: "You're booking it" });
+      await later.settled();
+      expect(solo.server.cards.get('c_claim_d_villa')).toMatchObject({ title: 'Rahul is booking Villa Sol', actions: [] });
+      expect(solo.server.writesOf('set_mandate')[0]?.params).toMatchObject({ payer_person_id: 'p_rahul' });
+      const post = solo.server.writesOf('post_message').at(-1)?.params;
+      expect(post).toMatchObject({
+        text: expect.stringMatching(/^Rahul, you're booking Villa Sol, ₹[\d,]+ for 3 nights\. .*Tap Yes, book it when you're ready\.$/),
+        card: { kind: 'mandate' },
+      });
+      expect(String(post?.text)).not.toMatch(/for all|everyone|split|group/i);
+    } finally {
+      await solo.drop();
+    }
+  });
+
+  it('a trip of one that asks Go to book it in words gets no card asking the group: they are the payer', async () => {
+    const base = goaTrip('closed');
+    const solo = await moneyKit({ trip: { ...base, people: base.people.slice(0, 1) } });
+    try {
+      const soloClaims = createClaims(solo.pool, solo.now);
+      const ctx = Object.assign(turnCtx('t_goa', solo.server, solo.server.trip('t_goa'), []), { wake: [], turnId: 'turn_solo' });
+      const r = await setMandate({ ...solo.deps, claims: soloClaims }, ctx, noCap);
+      expect(r).toMatchObject({ cardId: expect.any(String), note: expect.stringMatching(/^Rahul, you're booking Villa Sol, ₹[\d,]+\. /) });
+      expect(ctx.cards.map((c) => c.kind)).toEqual(['mandate']);
+      expect(await soloClaims.get('t_goa', 'd_villa')).toMatchObject({ personId: 'p_rahul' });
+    } finally {
+      await solo.drop();
+    }
   });
 });
 

@@ -156,6 +156,8 @@ export function roomsCardOnClose(d: RoomsCardDeps): TurnCard {
     const stay = page ? stayOf(page) : null;
     if (!offer || !page || !stay) return null;
     const people = pack.trip.people.map((p) => p.person_id);
+    // A trip of one has nothing to split: no rooms card, and no "split evenly" when the payment starts.
+    if (people.length < 2) return null;
     const cardId = stableId('c_rooms', tripId, decision.decision_id);
     const build = async (): Promise<{ card: C.Card; line: string } | null> => {
       const read = await d.engine.answer('hotels.details', { hotel: page }, { tripId });

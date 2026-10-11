@@ -78,7 +78,7 @@ describe('set_mandate', () => {
 
   it('with no clear number, sets the whole price plus up to 10% and says so', async () => {
     const r = await setMandate(k.deps, ctxWith([['p_rahul', 'just book whatever works']]), noCap);
-    expect(r).toMatchObject({ cardId: expect.any(String), capMinor: 5900000, byMargin: true, note: expect.stringContaining('the price plus a little margin') });
+    expect(r).toMatchObject({ cardId: expect.any(String), capMinor: 5900000, byMargin: true, note: expect.stringContaining("The card allows up to ₹59,000, in case the price rises a little before it's booked.") });
     expect(k.server.writesOf('set_mandate')[0]?.params).toMatchObject({ cap_minor: 5900000 });
   });
 
@@ -258,7 +258,7 @@ describe('the quick tools', () => {
     const [out] = await runToolCalls(tools(), ctx, [
       { name: 'set_mandate', input: { decision_id: 'd_villa', choice_index: 0, refundable_only: true, payer_person_id: 'p_rahul' } },
     ]);
-    expect(out).toMatchObject({ mandate_card: 'c_mandate_turn_test_1', tell_the_room: expect.stringContaining('₹59,000: the price plus a little margin') });
+    expect(out).toMatchObject({ mandate_card: 'c_mandate_turn_test_1', tell_the_room: expect.stringContaining('The card allows up to ₹59,000, in case the price rises') });
     expect(k.server.writesOf('set_mandate')[0]?.params).toMatchObject({ cap_minor: 5900000 });
   });
 });
