@@ -94,7 +94,11 @@ export function bookFlightTool(d: BookFlightDeps): QuickTool<z.infer<typeof Args
         return { error: 'no_pick', note: "They have no flight picked that Go can book. Search their flights now (search_flights_each, or search_flights for the route they named): their tap on \"I'll take this\" books it." };
       }
       const name = await d.nameOf(ctx.tripId, personId);
-      await d.booking.start({ tapId: stableId('words', ctx.turnId, personId, offer.optionId), tripId: ctx.tripId, personId, name, offer, choice: 'basic' });
+      const started = await d.booking.start({ tapId: stableId('words', ctx.turnId, personId, offer.optionId), tripId: ctx.tripId, personId, name, offer, choice: 'basic' });
+      // One booking of theirs at a time (flight-booking.ts start): the one under way goes on, and nothing starts twice.
+      if (started === 'running') {
+        return { booking: pick.title, note: `A flight booking of ${name}'s is already under way on the trip's computer; their own live card shows it. Say so in one short line.` };
+      }
       return {
         booking: pick.title,
         note: `Go is booking ${pick.title} for ${name} on ixigo now, on the trip's computer; their own live card shows it, then their pay card. Say so in one short line, and nothing about booking it themselves.`,

@@ -56,7 +56,8 @@ export function bookingWords(r: Row, nowMs: number): string {
 export function bookingsNow(d: { pool: pg.Pool; packs: Pick<Packs, 'get'>; now: () => Date }): NowProvider {
   return {
     name: 'bookings',
-    order: 41,
+    // Right after the booking rules and the picks (book-flight.ts bookingNow, 38).
+    order: 39,
     async render(tripId, wake) {
       const now = d.now();
       // Each traveller's latest booking that moved lately.
