@@ -39,6 +39,7 @@ import { registerTravelTaps, renderOptionsTap } from './taps.js';
 import { travelTools } from './tools.js';
 import { budgetNow, budgetTool, createTripBudgets, stayCap } from './trip-budget.js';
 import { showBusDrops } from './bus-drops.js';
+import { optionDetailsHandler } from './option-details.js';
 import { showPickPhotos, type TopPick } from './pick-photos.js';
 import type { TravelKind } from './travel.js';
 import { createIxigoWarm, createStaysHeadStart, IXIGO_WARM_STEP, STAYS_HEAD_START_STEP, startComputerAtSetup, wakeForCheck, warmForTravel } from './warm.js';
@@ -263,6 +264,13 @@ export const registerTravel: RegisterLane = async (brain) => {
         }
       });
   };
+  // The Server team's rev 5 (R9): an option's Details as a person opens them, from what Go has read and kept, in 3 s; what
+  // isn't read yet is read in the background and the answer says it is partial (option-details.ts).
+  brain.door.handle('get_option_details', optionDetailsHandler({
+    results, engine, log: brain.log,
+    people: async (tripId) => (await brain.packs.get(tripId)).trip.people.map((p) => p.person_id),
+    live: () => brain.switches.get('TRAVEL_MODE') === 'ixigo_web',
+  }));
   // Where the group stays (booked, else the vote's winner, else the latest stays card's top pick): each bus's nearest drop.
   const groupStay = createGroupStay({ trip: async (tripId) => (await brain.packs.get(tripId)).trip, results });
   // The budget the group decided: the group's in the App, or one kept with set_budget, and in "Right now" for every turn,
