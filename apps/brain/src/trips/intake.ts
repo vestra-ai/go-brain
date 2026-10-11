@@ -34,6 +34,8 @@ export interface IntakeDeps {
   waitMs?: number;
   /** The trip's own Server has been away for minutes (the link's away): the minute refresh reads nothing for it. */
   away?: (tripId: string) => Promise<boolean>;
+  /** The link follows the trip's home to the socket its event came on (ServerLink.rehome), for its very next request. */
+  rehome?: (tripId: string, home: { instance: string; server: string | null }) => void;
 }
 
 /**
@@ -198,9 +200,11 @@ export function createIntake(d: IntakeDeps) {
     const started = Date.now();
     // People's text is screened before it is written anywhere: from here on, every copy holds the masked text.
     const ev = screenEvent(raw);
-    // The one write before the answer: the event, with the Server instance (and the Server's own name) that brought the
-    // trip the first time, half of the key of the person's browser (tasks/browsers.ts).
-    const r = await d.tripLog.append(ev, { instance: meta.instance, server: meta.server ?? null });
+    // The one write before the answer: the event, and the trip's home moved to the socket it came on (trips/log.ts),
+    // which the link follows at once: the reply to this very message goes there.
+    const from = { instance: meta.instance, server: meta.server ?? null };
+    const r = await d.tripLog.append(ev, from);
+    d.rehome?.(ev.trip_id, from);
     // Answered as soon as the event is written; the work happens after, in seq order per trip.
     if (r === 'new') void enqueue(ev.trip_id, () => processEvent(ev));
     const ms = Date.now() - started;

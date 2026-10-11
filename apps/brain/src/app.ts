@@ -267,6 +267,7 @@ export async function buildBrain(env: Env, o: BuildOptions = {}): Promise<Built>
     runningTasks: async (tripId) => (await brain.tasks?.running(tripId)) ?? [],
     waitMs: t.waitMs,
     away: (tripId) => link.away(tripId),
+    rehome: (tripId, home) => link.rehome(tripId, home),
   });
   door.handle('send_event', intake.sendEvent);
   door.handle('card_tap', taps.handle);

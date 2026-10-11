@@ -4,9 +4,10 @@ import type { Log } from '../log.js';
 
 export interface TripLog {
   /**
-   * Keeps the event once: 'new', or 'duplicate' for an event_id already kept. `from` is the Server instance that sent it
-   * (and the Server's own name), kept on the trip the first time: half of the key of the person's browser
-   * (tasks/browsers.ts).
+   * Keeps the event once: 'new', or 'duplicate' for an event_id already kept. `from` is the socket's Server instance (and
+   * the Server's own name) that sent it, and the trip's home moves to it on every event, a repeat too: only the Server
+   * that has a trip sends its events, and a Server's instance is its container, new on every redeploy (prod, 11 Oct
+   * 07:24Z: every older trip waited for the old instance, "no socket from the Server is open").
    */
   append(ev: TripEvent, from?: { instance: string; server?: string | null }): Promise<'new' | 'duplicate'>;
   lastSeq(tripId: string): Promise<number>;
@@ -28,7 +29,7 @@ export function createTripLog(o: {
     async append(ev, from) {
       // One statement, so the event and its trip's change number are kept together in one round trip, on the append's
       // own connections (appendPool): send_event's answer never queues behind the work of earlier events (GO-TEAM-FINAL
-      // §6, 10 Oct: mandate.set took 2,142 ms, the promise is 2 s). The trip's Server instance, the first time.
+      // §6, 10 Oct: mandate.set took 2,142 ms, the promise is 2 s). The trip's home is the socket the event came on.
       const db = o.appendPool ?? o.pool;
       const r = await db.query(
         `with kept as (
@@ -41,11 +42,19 @@ export function createTripLog(o: {
          on conflict (trip_id) do update set
            last_seq = greatest(trips.last_seq, excluded.last_seq),
            active_at = excluded.active_at,
-           server_instance = coalesce(trips.server_instance, excluded.server_instance),
-           server_name = case when trips.server_instance is null then excluded.server_name else trips.server_name end`,
+           server_instance = coalesce(excluded.server_instance, trips.server_instance),
+           server_name = case when excluded.server_instance is null then trips.server_name else excluded.server_name end`,
         [ev.event_id, ev.trip_id, ev.seq, ev.type, JSON.stringify(ev), o.now(), from?.instance ?? null, from?.server ?? null],
       );
       if (r.rowCount === 1) return 'new';
+      // A repeat sent again from a socket of a new instance (the Server redeployed, then resent) moves the trip there too.
+      if (from) {
+        await db.query(
+          `update trips set server_instance = $2, server_name = $3
+            where trip_id = $1 and (server_instance is distinct from $2 or server_name is distinct from $3)`,
+          [ev.trip_id, from.instance, from.server ?? null],
+        );
+      }
       // event_id is unique per Server by contract, so the same id for another trip is the Server's mistake. It is
       // ignored like any repeat (an event is never applied to a trip it was not written for), and said out loud.
       const first = await db.query<{ trip_id: string }>('select trip_id from trip_events where event_id = $1', [ev.event_id]);

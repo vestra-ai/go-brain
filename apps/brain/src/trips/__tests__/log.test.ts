@@ -31,6 +31,26 @@ describe('TripLog', () => {
     expect(rows[0]).toEqual({ last_seq: 1, server_instance: 'server-1', server_name: 'vestra-staging' });
   });
 
+  // Prod, 11 Oct 07:24Z: the Server redeployed and its socket's instance (its container) changed. Every older trip kept
+  // waiting for the old instance: "no socket from the Server is open", then "a turn failed".
+  it("moves the trip's home to the socket each event comes on, a repeat too; an event with no socket keeps it", async () => {
+    const log = createTripLog({ pool: db.pool, log: silentLog, now: () => new Date() });
+    const T = 't_rehome_log';
+    const home = async () => (await db.pool.query('select server_instance, server_name from trips where trip_id = $1', [T])).rows[0];
+    const first = ev(1, 'trip.created', { trip: goaSnapshot({ trip_id: T }) }, T);
+    expect(await log.append(first, { instance: 'ca6989a06930-80' })).toBe('new');
+    expect(await home()).toEqual({ server_instance: 'ca6989a06930-80', server_name: null });
+    // The Server redeployed: its next event comes on the new instance's socket.
+    const next = ev(2, 'message.created', { message: msg(2, 'p_rahul', 'hi') }, T);
+    expect(await log.append(next, { instance: 'fb0da31b49f7-80' })).toBe('new');
+    expect(await home()).toEqual({ server_instance: 'fb0da31b49f7-80', server_name: null });
+    // A repeat the Server resends from yet another socket moves it too; one with no socket leaves it.
+    expect(await log.append(next, { instance: 'c0ffee000000-80', server: 'prod' })).toBe('duplicate');
+    expect(await home()).toEqual({ server_instance: 'c0ffee000000-80', server_name: 'prod' });
+    expect(await log.append(ev(3, 'message.created', { message: msg(3, 'p_rahul', 'ok') }, T))).toBe('new');
+    expect(await home()).toEqual({ server_instance: 'c0ffee000000-80', server_name: 'prod' });
+  });
+
   it('ignores an event id that comes again for another trip, and warns naming both trips', async () => {
     const warned: Array<Record<string, unknown>> = [];
     const log = createTripLog({ pool: db.pool, log: { ...silentLog, warn: (obj) => warned.push(obj as Record<string, unknown>) }, now: () => new Date() });
