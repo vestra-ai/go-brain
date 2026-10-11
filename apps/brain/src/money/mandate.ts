@@ -174,7 +174,7 @@ export async function setMandate(
     };
     let ready: Awaited<ReturnType<typeof prepare>>;
     try {
-      ready = await prepare(chosen.option_ref, { tripId: ctx.tripId, what: chosen.label, resume });
+      ready = await prepare(chosen.option_ref, { tripId: ctx.tripId, what: chosen.label, resume, for: payer.person_id });
     } catch {
       return { refused: `I couldn't check ${chosen.label} just now. Try again in a moment.` };
     }

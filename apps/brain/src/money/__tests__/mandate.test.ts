@@ -300,7 +300,7 @@ describe('set_mandate on a stay from ixigo.com: the login first, and ixigo\'s pr
     const calls = prepared({ ok: false, note });
     expect(await setMandate(k.deps, ctxWith(), noCap)).toEqual({ refused: note, parked: true });
     expect(calls).toEqual([
-      { optionId: 'opt_villa_sol', tripId: 't_goa', what: 'Villa Sol', resume: { decision_id: 'd_villa', choice_index: 0, payer_person_id: 'p_rahul', refundable_only: true } },
+      { optionId: 'opt_villa_sol', tripId: 't_goa', what: 'Villa Sol', resume: { decision_id: 'd_villa', choice_index: 0, payer_person_id: 'p_rahul', refundable_only: true }, for: 'p_rahul' },
     ]);
     expect(k.server.writesOf('set_mandate')).toEqual([]);
     // A cap someone said rides along, so the call made later is the same one.

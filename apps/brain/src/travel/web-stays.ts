@@ -214,8 +214,9 @@ export function createWebStays(d: WebStaysDeps): WebStays {
       const offer = await d.results.offer(optionId);
       if (!offer?.sourceUrl || offer.offerId || offer.kind !== 'stay' || !stayOf(offer.sourceUrl)) return { ok: true, priceMinor: null };
       const park: Parked = { what: o.what, resume: o.resume };
-      // Money is about to move: ixigo is read now, so a login it no longer has asks again instead of standing.
-      const login = await d.login.ensure(o.tripId, o.what, { park, booking: true });
+      // Money is about to move: ixigo is read now, so a login it no longer has asks again instead of standing. The card
+      // goes to the person booking it, as a flight's does (#478).
+      const login = await d.login.ensure(o.tripId, o.what, { park, booking: true, ...(o.for ? { for: o.for } : {}) });
       if (!login.ok) return { ok: false, note: login.note, ...(login.line ? { line: login.line } : {}) };
       return { ok: true, priceMinor: await livePrice(offer as StoredOffer & { sourceUrl: string }) };
     },

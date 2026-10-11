@@ -129,15 +129,15 @@ describe("I'll book it", () => {
   });
 
   // Prod drill, 11 Oct: "I'll book it" a minute after the hello's login card said nothing at all.
-  it("parked on the login card that is up: the login's one plain line, naming who it points at, and no mandate yet", async () => {
+  it("parked on their login card that is up: the login's one plain line, naming them, and no mandate yet", async () => {
     await k.server.request('post_message', { request_id: 'go_close', trip_id: 't_goa', card: claimCard({ decisionId: 'd_villa', what: 'Villa Sol', people: 5, claimer: null }) });
     const line = "Booking Villa Sol waits on the trip's ixigo login: Rahul, tap Log in to ixigo on your card above, and I'll carry on once you're in.";
     Object.assign(k.travel, { prepare: async () => ({ ok: false as const, note: 'For the model.', line }) });
     const later = new Later();
-    await claimTap({ d, claims, packs: packs(), later })(tapOf('p_priya', 1));
+    await claimTap({ d, claims, packs: packs(), later })(tapOf('p_rahul', 1));
     await later.settled();
     expect(k.server.writesOf('set_mandate')).toEqual([]);
-    expect(k.server.cards.get('c_claim_d_villa')).toMatchObject({ title: 'Priya is booking for all 5' });
+    expect(k.server.cards.get('c_claim_d_villa')).toMatchObject({ title: 'Rahul is booking for all 5' });
     expect(k.server.writesOf('post_message').at(-1)?.params).toEqual({ request_id: 'go_claim_waits_tap_claim_1', trip_id: 't_goa', text: line, mentions: ['p_rahul'] });
   });
 
