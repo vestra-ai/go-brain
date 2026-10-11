@@ -32,9 +32,12 @@ export function isStripeError(e: unknown): e is { type: string; statusCode?: num
 }
 
 export interface CardsReady {
+  /** Stripe's card form works. */
   ready(): boolean;
-  /** For /health: whether adding a card works, never why in a key's words. */
-  health(): 'ready' | 'not_configured' | 'refused_by_stripe';
+  /** No Stripe keys: cards are the demo's test cards (demo-cards.ts), and payments run on the fake rail. */
+  demo(): boolean;
+  /** For /health: whether adding a card works, and how, never why in a key's words. */
+  health(): 'ready' | 'demo' | 'refused_by_stripe';
   /** An error from a card call: when Stripe refused the vault's keys, cards are off from now on. Said once in the log. */
   saw(e: unknown): void;
 }
@@ -44,11 +47,15 @@ export function cardsReady(env: Pick<VaultEnv, 'STRIPE_SECRET_KEY' | 'STRIPE_PUB
   const keysSet = placeholders.length === 0;
   let refused = false;
   if (!keysSet) {
-    log.error({ settings: placeholders }, `${placeholders.join(' and ')} ${placeholders.length > 1 ? 'are placeholders' : 'is a placeholder'}: adding a card is off until a Stripe test key is set`);
+    log.error(
+      { settings: placeholders },
+      `${placeholders.join(' and ')} ${placeholders.length > 1 ? 'are placeholders' : 'is a placeholder'}: cards are the demo's test cards (no money moves) until a Stripe test key is set`,
+    );
   }
   return {
     ready: () => keysSet && !refused,
-    health: () => (!keysSet ? 'not_configured' : refused ? 'refused_by_stripe' : 'ready'),
+    demo: () => !keysSet,
+    health: () => (!keysSet ? 'demo' : refused ? 'refused_by_stripe' : 'ready'),
     saw(e) {
       if (refused || !isStripeError(e)) return;
       if (e.type === 'StripeAuthenticationError' || e.statusCode === 401) {

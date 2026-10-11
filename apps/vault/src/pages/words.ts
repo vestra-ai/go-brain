@@ -38,6 +38,7 @@ export const PAY_MESSAGES: Record<'paid' | 'confirming' | PayRefusal | RailFailR
   card_declined: 'Your bank declined the card. Nothing was charged.',
   needs_authentication: "Your bank wants an extra check this card can't do here. Nothing was charged.",
   rail_error: "The payment didn't go through. Nothing was charged. Ask Go to try again.",
+  otp_wrong: "That code isn't right. The demo code is 123456.",
   rail_not_ready: "This way of paying isn't ready yet. Nothing was charged.",
   link_invalid: "This link doesn't work. Tap Approve on the card in Go again.",
   link_used: 'This payment link was already used.',

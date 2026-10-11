@@ -4,6 +4,8 @@ The vault holds each person's card and makes payments. It is its own service wit
 
 It is a Fastify service on Node 22 with Postgres 16. It takes Stripe test keys only and refuses to start with a live key. It also refuses to start with the contract's public test spend key unless it pays on the fake rail only (`VAULT_RAILS=fake`), because anyone can sign approvals with that key. Its settings are checked at boot in [`src/env.ts`](src/env.ts). A failed request is logged by its route, never by its path, because link tokens travel in paths.
 
+**Demo cards.** While the Stripe keys are placeholders (both envs today: Stripe isn't available to us in India), the vault runs in demo mode, and `/health` says `cards: "demo"`. The add-card page shows the vault's own form, labelled "Demo build: no money moves", which takes only the test cards 4242 4242 4242 4242 (pays) and 4000 0000 0000 0002 (declined). The number is matched on the phone and only the test card's name is sent (`POST /l/:token/cards/demo`), so the vault never receives a card number; it keeps the brand, the last four digits, the expiry and a sealed demo token. A payment asks for the demo's bank code (123456) after Face ID, then charges on the fake rail. The Server's approval, the payer's Face ID and every pay check stay as they are. With real Stripe test keys, Stripe's form takes over again (`demo-cards.ts`).
+
 ## Main parts (under `src/`)
 
 | Part | What it does |

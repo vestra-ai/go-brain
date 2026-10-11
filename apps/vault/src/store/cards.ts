@@ -1,5 +1,6 @@
 import { randomBytes } from 'node:crypto';
 import { itemAad, openJson, sealJson } from '../crypto/envelope.js';
+import { DEMO_CARDS, type DemoCardId } from '../demo-cards.js';
 import type { StripeLike } from '../stripe-client.js';
 import { customerIdOf, ensurePerson, type Db } from './people.js';
 import { logUnlock } from './unlock-log.js';
@@ -66,6 +67,23 @@ export async function saveCardFromSetup(
   );
   await logUnlock(db, now, { personId: o.personId, kind: 'card_added', cardId: card.card_id });
   return { ok: true, card };
+}
+
+/**
+ * A demo test card (demo-cards.ts), named by the page, never typed to the vault: its brand, last four digits and expiry,
+ * and its demo token sealed as a Stripe card's token is.
+ */
+export async function saveDemoCard(db: Db, master: Buffer, now: Date, o: { personId: string; card: DemoCardId; expMonth: number; expYear: number }): Promise<CardSummary> {
+  await ensurePerson(db, o.personId, now);
+  const demo = DEMO_CARDS[o.card];
+  const card: CardSummary = { card_id: `cd_${randomBytes(9).toString('base64url')}`, brand: demo.brand, last4: demo.last4, exp_month: o.expMonth, exp_year: o.expYear };
+  const sealed = sealJson(master, itemAad(o.personId, 'card', card.card_id), { pm: demo.ref });
+  await db.query(
+    'insert into cards (card_id, person_id, brand, last4, exp_month, exp_year, sealed, created_at) values ($1, $2, $3, $4, $5, $6, $7, $8)',
+    [card.card_id, o.personId, card.brand, card.last4, card.exp_month, card.exp_year, sealed, now],
+  );
+  await logUnlock(db, now, { personId: o.personId, kind: 'card_added', cardId: card.card_id });
+  return card;
 }
 
 export async function listCards(db: Db, personId: string): Promise<CardSummary[]> {
