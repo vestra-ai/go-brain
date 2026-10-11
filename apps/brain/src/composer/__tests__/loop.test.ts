@@ -366,6 +366,9 @@ describe('never silent on a direct ask (EXAM, 10 Oct: #8, #15, #24 ended in stay
       expect(r.text).toBe("Which villa, Arjun? There's no vote yet; the top pick was Summerville.");
       expect(bodies[1].messages[2].content[0]).toMatchObject({ is_error: true });
       expect(bodies[1].messages[2].content[0].content).toContain('Arjun asked you directly (#3): never stay silent on it.');
+      // Keshav, 11 Oct ("why this whining"): the nearest thing done, never what Go can't do.
+      expect(bodies[1].messages[2].content[0].content).toContain('or do the nearest thing you can now and say what you did.');
+      expect(bodies[1].messages[2].content[0].content).not.toContain("can't do");
     }
   });
 

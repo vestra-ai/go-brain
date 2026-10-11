@@ -11,7 +11,7 @@ import { TravelError } from '../mcp-travel.js';
 import type { RecipeOption } from '../recipes/recipe.js';
 import { createResultsStore, type ResultsStore } from '../results.js';
 import { registerTravelTaps } from '../taps.js';
-import type { TryAgainItem } from '../try-again.js';
+import { TRIES, type TryAgainItem } from '../try-again.js';
 import { asksForOwn } from '../asker.js';
 import { msg } from '../../__tests__/fixtures/goa.js';
 
@@ -187,19 +187,19 @@ describe("each person's own flights, from their home city", () => {
     expect(postedSince(from)).toEqual([]);
     // The last try doesn't either: nothing to everyone again (p2's re-audit, 11 Oct: a line a minute), never a link.
     const runsBefore = runs.length;
-    tries(async () => link('BLR'))(tryOf(2), goaPack());
+    tries(async () => link('BLR'))(tryOf(TRIES), goaPack());
     await eventually(() => runs.length === runsBefore + 1);
     await new Promise((r) => setTimeout(r, 20));
     expect(postedSince(from)).toEqual([]);
     expect(puts).toHaveLength(before + 1);
     // Arjun asked for it: one closing line, his alone, so his "I'll try again in a minute" never reads as Go forgetting.
-    const hisTry = tryOf(2);
+    const hisTry = tryOf(TRIES);
     hisTry.payload = { ...hisTry.payload, key: 'each_blr2', each: { ...hisTry.payload.each!, asker: 'p_arjun' } };
     tries(async () => link('BLR'))(hisTry, goaPack());
     await eventually(() => postedSince(from).length === 1);
-    expect(postedSince(from)).toEqual([{ text: "Still couldn't load your Bangalore flights. Say 'my flights' again whenever you want.", card: undefined, visibleTo: ['p_arjun'] }]);
+    expect(postedSince(from)).toEqual([{ text: "I kept trying for over 20 minutes and still couldn't load your Bangalore flights, so I've stopped for now.", card: undefined, visibleTo: ['p_arjun'] }]);
     // Rahul asked for everyone's: Bangalore isn't his, and he hears nothing of it.
-    const other = tryOf(2);
+    const other = tryOf(TRIES);
     other.payload = { ...other.payload, key: 'each_blr3', each: { ...other.payload.each!, asker: 'p_rahul' } };
     const runsNow = runs.length;
     tries(async () => link('BLR'))(other, goaPack());
