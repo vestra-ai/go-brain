@@ -209,13 +209,13 @@ function stayCovers(o: StayPrice): string | null {
 }
 
 /** What a stay's whole price covers, as its price says it: "for 3 nights", "for 3 nights, 2 rooms", or the whole stay. */
-function stayNote(o: StayPrice): string {
+export function stayNote(o: StayPrice): string {
   const covers = stayCovers(o);
   return covers ? `for ${covers}` : 'for the whole stay';
 }
 
 /** A stay's night as its whole price's brackets say it: "₹12,800 a night", "₹11,972 a room a night" for more rooms. */
-function stayNight(o: Pick<ResultOption, 'priceMinor' | 'facts'>): string | null {
+export function stayNight(o: Pick<ResultOption, 'priceMinor' | 'facts'>): string | null {
   const rooms = typeof o.facts.rooms === 'number' && o.facts.rooms > 1;
   return o.priceMinor !== undefined ? `${formatInr(o.priceMinor)} ${rooms ? 'a room a night' : 'a night'}` : null;
 }
@@ -237,10 +237,19 @@ function shareWords(o: StayPrice): string | null {
  */
 export function stayFrom(stays: ReadonlyArray<StayPrice>): string {
   const cheapest = stays.filter((o) => o.totalMinor !== undefined).sort((a, b) => (a.totalMinor ?? 0) - (b.totalMinor ?? 0))[0];
-  const total = cheapest?.totalMinor;
-  if (!cheapest || total === undefined) return '';
-  const each = shareWords(cheapest);
-  return `, from ${formatInr(total)} ${stayNote(cheapest)}${each ? `, ${each}` : ''}`;
+  const whole = cheapest ? stayWhole(cheapest) : null;
+  return whole ? `, from ${whole}` : '';
+}
+
+/**
+ * A stay's price as its card headlines it, and as the model reads it: the whole stay, what it covers and each person's
+ * share ("₹31,140 for 4 nights, 3 rooms, about ₹5,200 each"), never a night's first (the Manali room, 11 Oct: Go said
+ * "prices are per room per night" four times over cards whose headline was the whole stay). Null with no total.
+ */
+export function stayWhole(o: StayPrice): string | null {
+  if (o.totalMinor === undefined) return null;
+  const each = shareWords(o);
+  return `${formatInr(o.totalMinor)} ${stayNote(o)}${each ? `, ${each}` : ''}`;
 }
 
 /**
