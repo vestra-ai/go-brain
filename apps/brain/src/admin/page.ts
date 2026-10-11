@@ -120,7 +120,7 @@ function callsBlock(v: AdminView): string {
   if (!v.calls.deployed) return '<p>Calls are not deployed on this Go yet, so Go cannot phone anyone.</p>';
   const listed = v.calls.allowlist.map((c) => `${esc(c.name ?? 'No name')} (${esc(c.masked)})`).join(', ');
   if (v.calls.mode === 'allowlist' && v.calls.allowlist.length === 0) {
-    return '<p class="warn">CALLS_ALLOWLIST is empty, so Go will refuse every call. Add the villa number before the call beat.</p>';
+    return '<p class="warn">CALLS_ALLOWLIST is empty, so Go offers no calls at all. Add the villa number before the call beat.</p>';
   }
   if (v.calls.mode === 'allowlist') return `<p>Calls go only to: ${listed}.</p>`;
   return `<p>Calls are off. Switch CALLS_MODE to allowlist for the call beat.${listed ? ` The list has: ${listed}.` : ''}</p>`;

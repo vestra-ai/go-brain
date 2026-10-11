@@ -128,6 +128,16 @@ describe('a composer turn', () => {
     expect(rows[0].outcome).toBe('silent');
   });
 
+  // G4, 11 Oct: Go answered a line that didn't tag it, and the room never saw "Go is typing…".
+  it('a reply to a line that did not name Go shows typing from when Go starts writing, and off once it is posted', async () => {
+    const q = msg(5, 'p_kabir', 'anyone know if Anjuna has an ATM?');
+    const r = room({ messages: [q], script: [{ text: 'Yes, a few along the main road near the flea market.' }] });
+    await turn(r, [item(r.tripId, q, false)]);
+    expect(r.posts()).toHaveLength(1);
+    expect(r.notes.map((x) => x.params.on)).toEqual([true, false]);
+    // A tool call is not writing: a silent turn never shows it (the chatter test above).
+  });
+
   it('the greeting: hello only, and the model is not told to open a vote', async () => {
     const r = room({ messages: [], script: [{ text: 'Hi all, I am Go! I can find stays, run votes and keep the plan.' }] });
     await turn(r, [{ id: `setup:${r.tripId}:greet`, tripId: r.tripId, kind: 'setup', ref: 'greet', dueAt: new Date(), payload: {} }]);
@@ -137,7 +147,8 @@ describe('a composer turn', () => {
     const why = r.model.bodies[0].messages[0].content.at(-2).text;
     expect(why).toContain('you just joined this trip');
     expect(why).not.toMatch(/open_vote|first vote/);
-    expect(r.notes).toEqual([]);
+    // Go writing its hello shows typing, as any reply (G4).
+    expect(r.notes.map((x) => x.params.on)).toEqual([true, false]);
   });
 
   it('the first ask lands with the hello: one turn reads both, is told to answer the ask first, and is not told to vote', async () => {
@@ -481,6 +492,8 @@ describe('a composer turn', () => {
     expect(r.model.bodies[0].tools.map((t: { name: string }) => t.name)).toEqual(['close_vote', 'offer_replies', 'open_vote', 'react', 'stay_silent', 'update_trip']);
     const { rows } = await db.pool.query('select outcome from turns where turn_id = $1', [`turn_${r.tripId}`]);
     expect(rows[0].outcome).toBe('acted');
+    // Words it may not post never show typing.
+    expect(r.notes).toEqual([]);
   });
 
   it('a turn under limits never pulls in people\'s new messages: they wait for their own turn, under the normal rules', async () => {

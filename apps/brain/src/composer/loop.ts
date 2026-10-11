@@ -42,6 +42,8 @@ export interface LoopInput {
   signal: AbortSignal;
   maxRounds?: number;
   onFirstToken?: () => void;
+  /** Once, when the model starts writing words (its first text, not a tool call or its thinking): Go is replying. */
+  onWriting?: () => void;
   toolTimeoutMs?: number;
   /** The daily model budget: each round holds its estimate first, and settles to what it really cost. */
   budget?: Pick<Budget, 'reserve'>;
@@ -278,6 +280,7 @@ export async function runLoop(i: LoopInput): Promise<LoopResult> {
   const usage = noUsage();
   const timings: RoundTiming[] = [];
   let firstToken = false;
+  let writing = false;
   let latestText = '';
   // Every call this turn and whether it was refused, quietly or not: the reply never narrates a quiet refusal, and never
   // claims the work of a tool that did nothing (8 Oct: "The record call was refused, so I'll… Noted, …").
@@ -320,6 +323,10 @@ export async function runLoop(i: LoopInput): Promise<LoopResult> {
         if (!firstToken && ev.type === 'content_block_delta') {
           firstToken = true;
           i.onFirstToken?.();
+        }
+        if (!writing && ev.type === 'content_block_delta' && ev.delta.type === 'text_delta' && ev.delta.text.trim() !== '') {
+          writing = true;
+          i.onWriting?.();
         }
       }
       const final = await stream.finalMessage();

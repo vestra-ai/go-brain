@@ -126,6 +126,11 @@ export class CallService {
     return this.d.switches.get('CALLS_MODE') === 'allowlist' ? 'allowlist' : 'off';
   }
 
+  /** Whether a call can go out at all: every setting set and at least one named business to call. */
+  ready(): boolean {
+    return this.d.config.missing.length === 0 && this.callable().length > 0;
+  }
+
   /** Names from the allowlist; numbers are never shown to the model. */
   callable(): string[] {
     return this.d.config.allowlist.flatMap((c) => (c.name ? [c.name] : []));
