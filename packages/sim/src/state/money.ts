@@ -141,7 +141,7 @@ export function addExpense(s: TripState, p: Params<typeof C.AddExpense>): Change
  * update_expense: who an expense that stands is split between, and its note when given; the amount and the payer never
  * change. The Server's own rules: everyone named is in the trip, an expense not in the trip is 404.
  */
-export function updateExpense(s: TripState, p: Params<typeof C.UpdateExpense>): Change<{ expense: Expense; seq: number }> {
+export function updateExpense(s: TripState, p: Params<typeof C.UpdateExpense>): Change<{ seq: number }> {
   const expense = s.trip.expenses.find((e) => e.expense_id === p.expense_id);
   if (!expense) throw fail('not_found', `expense ${p.expense_id} is not in this trip`);
   s.people(p.split_person_ids, 'split_person_ids');
@@ -149,7 +149,7 @@ export function updateExpense(s: TripState, p: Params<typeof C.UpdateExpense>): 
   if (p.note != null) expense.note = p.note;
   recomputeMoney(s);
   const ev = s.bump('expense.changed', { expense: structuredClone(expense), change: 'updated', by: { kind: 'go' } });
-  return { result: { expense: structuredClone(expense), seq: ev.seq }, events: [ev] };
+  return { result: { seq: ev.seq }, events: [ev] };
 }
 
 /** The Server's money maths: what was spent, by category, and the fewest transfers that square everyone up. */

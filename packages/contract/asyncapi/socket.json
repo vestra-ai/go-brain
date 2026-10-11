@@ -1596,7 +1596,7 @@
                     "type": "string"
                   },
                   "result": {
-                    "$ref": "#/components/schemas/UpdateExpenseResult"
+                    "$ref": "#/components/schemas/WriteResult"
                   }
                 }
               },
@@ -10035,23 +10035,6 @@
           "split_person_ids"
         ],
         "description": "Change an expense's split (and its note). The amount and the payer never change."
-      },
-      "UpdateExpenseResult": {
-        "type": "object",
-        "properties": {
-          "expense": {
-            "$ref": "#/components/schemas/Expense"
-          },
-          "seq": {
-            "type": "integer",
-            "exclusiveMinimum": 0,
-            "maximum": 9007199254740991
-          }
-        },
-        "required": [
-          "expense",
-          "seq"
-        ]
       },
       "RequestGroupSpendApproval": {
         "type": "object",

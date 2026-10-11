@@ -27,7 +27,7 @@ Go sends 19 methods. Every one names its trip with `trip_id`.
 | `add_booking` | Records a confirmed booking. | `AddBookingResult` | `booking.changed` |
 | `update_booking` | Changes or cancels a booking. | `WriteResult` | `booking.changed` |
 | `add_expense` | Records something someone paid for, split between people. | `AddExpenseResult` | `expense.changed` |
-| `update_expense` | Changes who an expense is split between (and its note). The amount and the payer never change. | `UpdateExpenseResult` | `expense.changed` |
+| `update_expense` | Changes who an expense is split between (and its note). The amount and the payer never change. | `WriteResult` | `expense.changed` |
 | `request_spend_approval` | Runs the spend check. Answers with a signed, one-use spend approval for the vault, or the reason why not. | `SpendApproved` or `SpendDenied` | None |
 | `cancel_spend_approval` | Releases a spend approval Go will not use, so it can never be used. | `Ok` | None |
 
@@ -239,7 +239,7 @@ Every write that changes the trip adds one to the trip's change number, answers 
 | `add_booking` | `AddBookingResult` | `booking.changed` with change `added`, `by` Go, then `record.changed` for the booked line, `by` system |
 | `update_booking` | `WriteResult` | `booking.changed` with change `cancelled` or `updated`, `by` Go |
 | `add_expense` | `AddExpenseResult` | `expense.changed` with change `added`, `by` Go |
-| `update_expense` | `UpdateExpenseResult` | `expense.changed` with change `updated`, `by` Go |
+| `update_expense` | `WriteResult` | `expense.changed` with change `updated`, `by` Go |
 | `request_spend_approval` | `SpendApproved` or `SpendDenied` (no `seq`) | None. An approval is not a change anyone sees in the trip. |
 | `cancel_spend_approval` | `Ok` (no `seq`) | None |
 
@@ -1508,27 +1508,14 @@ Here Go splits the villa Rahul paid for between all five. The params are an `Upd
 }
 ```
 
-The result is the expense as it now stands, and the change number:
+The result is the change number. The expense as it now stands comes in the `expense.changed` event:
 
-<!-- schema: UpdateExpenseResult -->
+<!-- schema: WriteResult -->
 ```json
-{
-  "expense": {
-    "expense_id": "e_villa",
-    "paid_by_person_id": "p_rahul",
-    "amount_minor": 5420000,
-    "currency": "INR",
-    "note": "Villa Sol, 3 nights",
-    "category": "stay",
-    "split_person_ids": ["p_rahul", "p_priya", "p_arjun", "p_meher", "p_kabir"],
-    "booking_id": "b_villa",
-    "created_at": "2026-10-05T09:12:00Z"
-  },
-  "seq": 81
-}
+{ "seq": 81 }
 ```
 
-The server works out the trip's money again, sends `expense.changed` with change `updated` and `"by": {"kind": "go"}`, and posts a line in the room ("Go changed the split of Villa Sol, 3 nights").
+The server works out the trip's money again and sends `expense.changed` with change `updated` and `"by": {"kind": "go"}`.
 
 | Rule | If it fails |
 |---|---|

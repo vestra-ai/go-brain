@@ -271,11 +271,13 @@ describe('expenses and the money maths', () => {
     expect(s.trip.money.transfers).toEqual([]);
     const done = updateExpense(s, { request_id: 'rq_up', trip_id: 't_goa', expense_id: stay.result.expense_id, split_person_ids: everyone });
     expect(done.events[0]).toMatchObject({ type: 'expense.changed', data: { change: 'updated', by: { kind: 'go' }, expense: { split_person_ids: everyone, note: 'Villa Sol' } } });
-    expect(done.result.expense).toMatchObject({ expense_id: stay.result.expense_id, amount_minor: 4969200 });
+    expect(done.result).toEqual({ seq: done.events[0]!.seq });
+    expect(s.trip.expenses[0]).toMatchObject({ expense_id: stay.result.expense_id, amount_minor: 4969200, split_person_ids: everyone });
     expect(s.trip.expenses).toHaveLength(1);
     expect(s.trip.money.spent_minor).toBe(4969200);
     expect(s.trip.money.transfers.map((t) => [t.from_person_id, t.amount_minor])).toEqual(['p_priya', 'p_arjun', 'p_meher', 'p_kabir'].map((p) => [p, 993840]));
-    expect(updateExpense(s, { request_id: 'rq_up2', trip_id: 't_goa', expense_id: stay.result.expense_id, split_person_ids: ['p_rahul', 'p_priya'], note: 'Villa Sol, two of us' }).result.expense.note).toBe('Villa Sol, two of us');
+    updateExpense(s, { request_id: 'rq_up2', trip_id: 't_goa', expense_id: stay.result.expense_id, split_person_ids: ['p_rahul', 'p_priya'], note: 'Villa Sol, two of us' });
+    expect(s.trip.expenses[0]!.note).toBe('Villa Sol, two of us');
     expect(err(() => updateExpense(s, { request_id: 'rq_up3', trip_id: 't_goa', expense_id: 'e_nope', split_person_ids: everyone })).code).toBe(404);
     expect(err(() => updateExpense(s, { request_id: 'rq_up4', trip_id: 't_goa', expense_id: stay.result.expense_id, split_person_ids: ['p_stranger'] })).code).toBe(422);
   });

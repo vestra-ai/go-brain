@@ -10,7 +10,7 @@ import {
 import {
   AddBooking, AddBookingResult, AddExpense, AddExpenseResult, AddReaction, AddRecordLine, AddRecordLineResult, AddVoteOptions, CancelSpendApproval,
   CloseDecision, CloseDecisionResult, OpenDecision, OpenDecisionResult, ReadMessages, ReadTrip, RemoveReaction, RequestSpendApproval,
-  SetMandate, SpendApprovalResult, UpdateBooking, UpdateExpense, UpdateExpenseResult, UpdateRecordLine, UpdateTrip, WriteResult,
+  SetMandate, SpendApprovalResult, UpdateBooking, UpdateExpense, UpdateRecordLine, UpdateTrip, WriteResult,
 } from './to-server.js';
 import { TripSnapshot } from './trip.js';
 
@@ -136,7 +136,7 @@ export const TO_SERVER: readonly SocketMethod[] = [
   m('add_booking', 'to_server', 'Record a confirmed booking.', AddBooking, AddBookingResult, 2, 'booking.changed'),
   m('update_booking', 'to_server', 'Change or cancel a booking.', UpdateBooking, WriteResult, 2, 'booking.changed'),
   m('add_expense', 'to_server', 'Record something someone paid for, split between people.', AddExpense, AddExpenseResult, 2, 'expense.changed'),
-  m('update_expense', 'to_server', 'Change who an expense is split between (and its note): the App\'s Fix the split, done by Go. The amount and the payer never change.', UpdateExpense, UpdateExpenseResult, 2, 'expense.changed'),
+  m('update_expense', 'to_server', 'Change who an expense is split between (and its note): the App\'s Fix the split, done by Go. The amount and the payer never change.', UpdateExpense, WriteResult, 2, 'expense.changed'),
   m('request_spend_approval', 'to_server', 'Run the spend check. Answers with a signed, one-use spend approval for the vault, or the reason why not.', RequestSpendApproval, SpendApprovalResult, 2),
   m('cancel_spend_approval', 'to_server', 'Release an approval Go will not use. Not a change to the trip: no event.', CancelSpendApproval, Ok, 2),
 ];

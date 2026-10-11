@@ -251,7 +251,7 @@
       "direction": "to_server",
       "summary": "Change who an expense is split between (and its note): the App's Fix the split, done by Go. The amount and the payer never change.",
       "params": "UpdateExpense",
-      "result": "UpdateExpenseResult",
+      "result": "WriteResult",
       "answer_within_seconds": 2,
       "sends_event": "expense.changed"
     },

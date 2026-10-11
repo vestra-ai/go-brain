@@ -1615,11 +1615,6 @@ class UpdateExpense(BaseModel):
     note: str | None = None
 
 
-class UpdateExpenseResult(BaseModel):
-    expense: Expense
-    seq: Annotated[int, Field(gt=0)]
-
-
 class RequestGroupSpendApproval(BaseModel):
     request_id: Annotated[str, Field(max_length=64, min_length=1)]
     trip_id: Annotated[str, Field(max_length=64, min_length=1)]

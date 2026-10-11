@@ -260,7 +260,7 @@ export class FakeServerLink implements ServerLink {
         trip.expenses.push(C.Expense.parse({ ...p, expense_id, created_at: this.now().toISOString() }));
         return { expense_id, seq: this.seq(trip) };
       }
-      // The Server's update_expense (go-backend #2): the split and the note of an expense that stands, by Go.
+      // The Server's update_expense (go-backend 368254a): the split and the note of an expense that stands, by Go; a WriteResult.
       case 'update_expense': {
         const e = trip.expenses.find((x) => x.expense_id === p.expense_id);
         if (!e) throw new SocketCallError(404, `expense ${String(p.expense_id)} does not exist`, 'not_found');
@@ -268,7 +268,7 @@ export class FakeServerLink implements ServerLink {
         if (ids.some((id) => !trip.people.some((x) => x.person_id === id))) throw new SocketCallError(422, 'split_person_ids: someone is not in the trip', 'invalid');
         e.split_person_ids = [...new Set(ids)];
         if (typeof p.note === 'string') e.note = p.note;
-        return { expense: structuredClone(e), seq: this.seq(trip) };
+        return { seq: this.seq(trip) };
       }
       default:
         throw new FakeCallError(-32601, `${method} is not played by the money kit`);
