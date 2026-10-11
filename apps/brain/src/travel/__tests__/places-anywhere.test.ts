@@ -5,6 +5,7 @@ import type { TurnCtx } from '../../composer/tools.js';
 import { withSchema } from '../../db/test-db.js';
 import { goaPack } from '../../tasks/testing/goa.js';
 import type { Images } from '../images.js';
+import { TravelError } from '../mcp-travel.js';
 import { loadBook } from '../book/book.js';
 import { createEngine } from '../book/engine.js';
 import { createIxigoWebBackend } from '../recipes/backend.js';
@@ -35,27 +36,38 @@ const engine = createEngine({
 });
 const backend = createIxigoWebBackend({ book, engine, now });
 
+// The page Go would read, as the backend builds its link: the room never gets it (the App team, 11 Oct, G1).
+const links: string[] = [];
+
 function tool(name: string) {
   const cards: Array<Record<string, unknown>> = [];
   const turn = { tripId: 't_goa', turnId: 'turn_w1', cards, pack, wake: [], stableId: (p: string) => `${p}_turn_w1_1` } as unknown as TurnCtx;
-  const travel = { search: (kind: never, q: never, o: never) => backend.search(kind, q, o), waitMs: async () => null } as unknown as Travel;
+  const travel = {
+    search: (kind: never, q: never, o: never) => backend.search(kind, q, o).catch((e: unknown) => {
+      if (e instanceof TravelError && e.link) links.push(e.link);
+      throw e;
+    }),
+    waitMs: async () => null,
+  } as unknown as Travel;
   const tools = travelTools({ travel, results: {} as ResultsStore, images: {} as Images, now: () => new Date('2026-10-07T12:00:31Z') });
   const t = tools.find((x) => x.name === name)!;
   return { cards, run: (args: Record<string, unknown>) => t.run(args, turn) as Promise<Record<string, unknown>> };
 }
 
 describe('a flight anywhere', () => {
-  it("London to Delhi on 20 Oct, non-stop: ixigo's link for LHR to DEL, the date, the travellers, non-stop and the cheapest first", async () => {
+  it("London to Delhi on 20 Oct, non-stop: the page for LHR to DEL, the date, the travellers, non-stop and the cheapest first, never its link as the answer", async () => {
     // Keshav's ask on staging: "@Go what is the most economical non stop flight between London and Delhi on 20th October?"
     const t = tool('search_flights');
     const out = await t.run({ from: 'London (LHR)', to: 'Delhi', date: '2026-10-20', non_stop: true });
-    const link = String(out.link);
+    // No trip's computer here, so the page didn't load: said plainly, no card (G1).
+    expect(out).toMatchObject({ count: 0, tell_the_room: "Say only this, in one line: I couldn't load flights from London (LHR) just now. Ask me again in a minute." });
+    expect(t.cards).toEqual([]);
+    const link = links.at(-1) ?? '';
     expect(link).toMatch(/^https:\/\/www\.ixigo\.com\/search\/result\/flight\?from=LHR&to=DEL&date=20102026&/);
     // Nobody in the trip lives by Heathrow, so the link is for the whole group.
     expect(link).toContain('&adults=5&');
     expect(link).toContain('&stops=0');
     expect(link.endsWith('&sort_type=cheapest')).toBe(true);
-    expect(t.cards).toEqual([expect.objectContaining({ kind: 'notice', title: 'Flights, London (LHR) to Delhi', source: { name: 'ixigo', url: link } })]);
     expect(JSON.stringify(out)).not.toMatch(OTHER_SITES);
   });
 

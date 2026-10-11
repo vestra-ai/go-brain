@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { msg } from '../../__tests__/fixtures/goa.js';
 import type { DeskItem } from '../../desk/desk.js';
 import { goaPack } from '../../tasks/testing/goa.js';
-import { answerLine, answerTitle, directPicks, linkLine, plainAsk, plainEnglish } from '../answer.js';
+import { answerLine, answerTitle, couldntLine, directPicks, plainAsk, plainEnglish } from '../answer.js';
 import { toResultOption } from '../results.js';
 import type { TravelOption, TravelQuery } from '../travel.js';
 
@@ -115,25 +115,19 @@ describe("the card's line, built from the options the card shows", () => {
       .toBe('Pool stays in North Goa for 6 to 9 Nov, from ₹5,589 for 3 nights, 3 rooms, about ₹1,100 each.');
   });
 
-  it("for a link, says where they are, who they're set for, and that Go notes a pick but books nothing", () => {
-    expect(linkLine('flights', FLIGHTS, 'for 3 from Delhi')).toBe(
-      'Flights Delhi to Goa on Fri 6 Nov are on ixigo, set for 3 from Delhi, leaving after 7:00 pm: book there, and tell me which one so I can note it for the group.',
-    );
-    // What the link can't set, the group picks on ixigo's page: an ask nobody wrote an argument for.
-    expect(linkLine('flights', { ...FLIGHTS, wants: ['IndiGo only', 'a window seat'] }, 'for 3 from Delhi')).toBe(
-      'Flights Delhi to Goa on Fri 6 Nov are on ixigo, set for 3 from Delhi, leaving after 7:00 pm (for IndiGo only and a window seat, pick on the page): ' +
-        'book there, and tell me which one so I can note it for the group.',
-    );
+  // The App team, 11 Oct (G1): a search ixigo didn't give is said plainly, never ixigo's own page as the answer.
+  it("says plainly that a search didn't load: that Go tries again in a minute, that it still couldn't, or once", () => {
+    expect(couldntLine('flights', FLIGHTS, 'first')).toBe("I couldn't load flights from Delhi just now; I'll try again in a minute.");
+    expect(couldntLine('flights', FLIGHTS, 'last')).toBe("I still couldn't load flights from Delhi. Ask me again in a bit.");
+    expect(couldntLine('stays', { area: 'north goa', checkIn: '2026-11-06', checkOut: '2026-11-09' }, 'once')).toBe("I couldn't load stays in North Goa just now. Ask me again in a minute.");
+    expect(couldntLine('trains', { to: 'goa', date: '2026-11-06' }, 'first')).toBe("I couldn't load trains just now; I'll try again in a minute.");
   });
 
   // Staging, 9 Oct: "leaving after 6:00 pm" on a fresh trip, a time nobody in the chat had said, read as made up.
-  it('says why a time the trip gave applies, with the time, on the card line and the link line alike', () => {
+  it('says why a time the trip gave applies, with the time, on the card line', () => {
     const fromTrip: TravelQuery = { from: 'delhi', to: 'goa', date: '2026-11-06', departAfter: '18:00', because: 'because Rahul can leave Friday after 6 pm.' };
     const flights = [priced('flight', 'Air-India Express IX1196', 863_000)];
     expect(answerLine('flights', fromTrip, flights)).toBe('Flights Delhi to Goa on Fri 6 Nov, leaving after 6:00 pm, because Rahul can leave Friday after 6 pm, from ₹8,630 per person.');
-    expect(linkLine('flights', fromTrip, null)).toBe(
-      'Flights Delhi to Goa on Fri 6 Nov are on ixigo, leaving after 6:00 pm, because Rahul can leave Friday after 6 pm: book there, and tell me which one so I can note it for the group.',
-    );
     // With no time, there is nothing to explain.
     expect(answerLine('flights', { from: 'delhi', to: 'goa', date: '2026-11-06', because: 'Rahul can leave Friday after 6 pm' }, flights)).toBe('Flights Delhi to Goa on Fri 6 Nov, from ₹8,630 per person.');
   });

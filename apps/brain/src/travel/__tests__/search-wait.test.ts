@@ -11,7 +11,7 @@ import { loadBook } from '../book/book.js';
 import { createEngine } from '../book/engine.js';
 import { createIxigoWebBackend } from '../recipes/backend.js';
 import { renderSearchWake, searchWakeAnswer } from '../search-wake.js';
-import { answerItself, handOver, putUpCard, searchAnswer, travelTools } from '../tools.js';
+import { answerItself, handOver, putUpCard, RETRIES, searchAnswer, travelTools } from '../tools.js';
 import { makeTurnCtx } from '../../composer/tools.js';
 import type { Travel, TravelSearch } from '../travel.js';
 
@@ -73,13 +73,15 @@ describe('a search that outlives its turn', () => {
     expect((w.puts[0]!.payload as { summary: string }).summary).toContain('1 bus from Mumbai to Goa on 2026-11-06');
   });
 
-  it('wakes Go to say so when the search fails after the turn went on', async () => {
+  it('says so plainly when the search fails after the turn went on, and tries it again (G1)', async () => {
     const run = later<TravelSearch>();
     const w = setup(() => run.p, 0);
     await w.run();
     run.reject(new TravelError('unreachable', 'ixigo took too long to answer.'));
     await vi.waitFor(() => expect(w.puts).toHaveLength(1));
-    expect(w.puts[0]).toMatchObject({ id: 'search:t_goa:turn_w1:buses:failed', payload: { error: 'unreachable', count: 0 } });
+    expect(w.puts[0]).toMatchObject({
+      id: 'search:t_goa:turn_w1:buses:couldnt', payload: { error: 'unreachable', count: 0, line: "I couldn't load buses from Mumbai just now; I'll try again in a minute." },
+    });
   });
 
   it('answers inline when the search is back in time, even one a slow runner kept from before', async () => {
@@ -229,49 +231,78 @@ describe('a stays search past its 12 s (staging pass, 8 Oct: a cold box took 13 
   });
 });
 
-describe('a search ixigo will only show as a link', () => {
-  it("posts a card that links to the flights on ixigo with the conditions set, and never says there are none", async () => {
-    const page = 'https://www.ixigo.com/search/result/flight?from=DEL&to=GOI&date=06112026&returnDate=&adults=4&children=0&infants=0&class=e&source=Search%20Form';
-    const cards: unknown[] = [];
-    const turn = { ...ctx, cards } as unknown as TurnCtx;
-    const travel = { search: async () => { throw new TravelError('link_only', "ixigo won't show its results to Go's computer right now.", page); }, waitMs: async () => null } as unknown as Travel;
-    const tools = travelTools({ travel, results: {} as ResultsStore, images: {} as Images, now: () => new Date('2026-10-07T12:00:31Z') });
-    const out = (await tools.find((t) => t.name === 'search_flights')!.run({ from: 'Delhi', to: 'Goa', date: '2026-11-06', depart_after: '18:00' }, turn)) as Record<string, unknown>;
-    // The link is the recipe's own, with ixigo's filter and sort params already on it.
-    expect(out).toMatchObject({ count: 0, link: page, set_for: 'for 4 from Delhi' });
-    // Go books no flights: the room line sends people to ixigo and offers only to note their pick.
-    expect(out.tell_the_room).toContain("to book on ixigo, and that if they tell you which one, you'll note it for the group");
-    expect(out.tell_the_room).toContain('never offer to book one or to take it from there');
-    expect(out.tell_the_room).toContain('Never say there are no flights');
-    expect(cards).toEqual([expect.objectContaining({
-      kind: 'notice', card_id: 'c_link_turn_w1_1', title: 'Flights, Delhi to Goa', source: { name: 'ixigo', url: page },
-      body: expect.stringContaining('set for 4 from Delhi'),
-      actions: [{ action_id: 'see_on_ixigo', label: 'See flights on ixigo', style: 'primary' }],
-    })]);
-  });
-});
-
-describe('a flights search that outlives its turn and gets ixigo\'s own page', () => {
-  // Flights read their page now (flights.results), so a cold box can outlast the turn's wait; ixigo refusing it, or its
-  // page held back, then answers with the link. The wake puts that card up: never "it didn't work".
-  it('puts its link card and line up when it wakes Go, with no model call', async () => {
-    const page = 'https://www.ixigo.com/search/result/flight?from=DEL&to=GOI&date=06112026&returnDate=&adults=4&children=0&infants=0&class=e&source=Search%20Form';
+// The App team, 11 Oct (G1): a search ixigo didn't give is never ixigo's own page as the answer. Go says so plainly and
+// tries again a minute later, twice; the card goes up when a try lands.
+describe("a search ixigo didn't give", () => {
+  const now = () => new Date('2026-10-07T12:00:31Z');
+  const page = 'https://www.ixigo.com/search/result/flight?from=DEL&to=GOI&date=06112026&returnDate=&adults=4&children=0&infants=0&class=e&source=Search%20Form';
+  const heldBack = () => new TravelError('link_only', "ixigo won't show its results to Go's computer right now.", page);
+  const FLIGHTS = { from: 'Delhi', to: 'Goa', date: '2026-11-06' };
+  const deskOf = () => {
     const puts: DeskItem[] = [];
-    const desk = { put: async (item: Omit<DeskItem, 'id'> & { id?: string }) => { puts.push({ ...item, id: item.id! }); } };
-    const now = () => new Date('2026-10-07T12:00:31Z');
-    const refused = Promise.reject(new TravelError('link_only', "ixigo won't show its results to Go's computer right now.", page));
-    handOver('flights', { from: 'Delhi', to: 'Goa', date: '2026-11-06' }, refused, { tripId: 't_goa', fallbackId: 'turn_l1:flights' }, { desk, now, results: {} as ResultsStore });
+    return { puts, desk: { put: async (item: Omit<DeskItem, 'id'> & { id?: string }) => { puts.push({ ...item, id: item.id! }); } } };
+  };
+  const turnOf = (cards: unknown[]) => ({ ...ctx, cards, lines: [], pack: goaPack(), wake: [] }) as unknown as TurnCtx;
+
+  it('says so plainly in its turn and tries again a minute later: the options wake Go when a try lands, never a link card', async () => {
+    let calls = 0;
+    const later: TravelSearch = {
+      checkedAt: '2026-10-07T12:01:31.000Z', found: 1, runId: 'ixigo.hotels|anjuna|try',
+      results: [{ kind: 'stay', title: 'Casa Anjuna', priceMinor: 480_000, currency: 'INR', priceNote: 'per night, per room', highlights: [], facts: {} }],
+    };
+    const travel = {
+      search: async () => {
+        calls += 1;
+        if (calls === 1) throw new TravelError('link_only', "ixigo won't show its stays to Go's computer right now.", 'https://www.ixigo.com/hotels/search/result?locationId=1');
+        return later;
+      },
+      waitMs: async () => null,
+    } as unknown as Travel;
+    const { puts, desk } = deskOf();
+    const results = { save: async (s: Record<string, unknown>) => ({ ...s, resultsId: 'r_try' }) } as unknown as ResultsStore;
+    const tools = travelTools({ travel, results, images: {} as Images, now, desk, retryMs: 5 });
+    const cards: unknown[] = [];
+    const out = (await tools.find((t) => t.name === 'search_stays')!.run({ area: 'Anjuna', check_in: '2026-11-06', check_out: '2026-11-09' }, turnOf(cards))) as Record<string, unknown>;
+    expect(out).toMatchObject({ count: 0, trying_again: true, tell_the_room: "Say only this, in one line: I couldn't load stays in Anjuna just now; I'll try again in a minute." });
+    expect(JSON.stringify(out)).not.toContain('ixigo.com');
+    expect(cards).toEqual([]);
     await vi.waitFor(() => expect(puts).toHaveLength(1));
-    const line = 'Flights Delhi to Goa on Fri 6 Nov are on ixigo, set for 4 from Delhi: book there, and tell me which one so I can note it for the group.';
-    expect(puts[0]!.payload).toMatchObject({ error: 'link_only', link: { url: page, title: 'Flights, Delhi to Goa', who: 'for 4 from Delhi', line } });
-    // Woken with other things too, the model is told to search again: the card goes up from that search.
-    expect(renderSearchWake(puts[0]!)).toContain('Search again with the same words');
+    expect(calls).toBe(2);
+    expect(puts[0]!.payload).toMatchObject({ source: 'travel_search', count: 1, resultsId: 'r_try', error: null });
+  });
+
+  it("after the last try, says once that it still couldn't, with no model call and no card", async () => {
+    let calls = 0;
+    const travel = { search: async () => { calls += 1; throw heldBack(); }, waitMs: async () => null } as unknown as Travel;
+    const { puts, desk } = deskOf();
+    const tools = travelTools({ travel, results: {} as ResultsStore, images: {} as Images, now, desk, retryMs: 5 });
+    await tools.find((t) => t.name === 'search_flights')!.run(FLIGHTS, turnOf([]));
+    await vi.waitFor(() => expect(puts).toHaveLength(1));
+    expect(calls).toBe(1 + RETRIES);
+    const last = "I still couldn't load flights from Delhi. Ask me again in a bit.";
+    expect(puts[0]!.payload).toMatchObject({ error: 'link_only', line: last });
+    expect(renderSearchWake(puts[0]!)).toContain(`Say only this, in one line: ${last}`);
     const pack = goaPack();
     const next = makeTurnCtx({ tripId: 't_goa', turnId: 'turn_l2', link: {} as never, pack, wake: [puts[0]!], signal: new AbortController().signal });
     expect(await searchWakeAnswer({ results: {} as ResultsStore, images: {} as Images })({ tripId: 't_goa', wake: [puts[0]!], pack, ctx: next })).toBe(true);
-    expect(next.cards).toEqual([expect.objectContaining({ kind: 'notice', title: 'Flights, Delhi to Goa', source: { name: 'ixigo', url: page } })]);
-    expect(next.lines).toEqual([line]);
-    expect(next.answered).toBe(true);
+    expect([next.cards, next.lines, next.answered]).toEqual([[], [last], true]);
+  });
+
+  it('a search that outlived its turn and was not given: said plainly once, then tried again; with no way to try again, said once', async () => {
+    let calls = 0;
+    const travel = { search: async () => { calls += 1; throw heldBack(); } } as unknown as Travel;
+    const { puts, desk } = deskOf();
+    handOver('flights', FLIGHTS, Promise.reject(heldBack()), { tripId: 't_goa', fallbackId: 'turn_l1:flights' }, { desk, now, results: {} as ResultsStore, travel, retryMs: 5 });
+    await vi.waitFor(() => expect(puts).toHaveLength(2));
+    expect(puts.map((p) => (p.payload as { line?: string }).line)).toEqual([
+      "I couldn't load flights from Delhi just now; I'll try again in a minute.",
+      "I still couldn't load flights from Delhi. Ask me again in a bit.",
+    ]);
+    expect(calls).toBe(RETRIES);
+    const one = deskOf();
+    handOver('flights', FLIGHTS, Promise.reject(heldBack()), { tripId: 't_goa', fallbackId: 'turn_l3:flights' }, { desk: one.desk, now, results: {} as ResultsStore });
+    await vi.waitFor(() => expect(one.puts).toHaveLength(1));
+    expect(one.puts[0]!.payload).toMatchObject({ error: 'link_only', line: "I couldn't load flights from Delhi just now. Ask me again in a minute." });
   });
 });
 
@@ -286,28 +317,32 @@ describe("a flight's travellers", () => {
     now: () => new Date('2026-10-07T12:00:31Z'),
   });
   const backend = createIxigoWebBackend({ book, engine, now: () => new Date('2026-10-07T12:00:31Z') });
-  const travel = { search: (kind: never, q: never, o: never) => backend.search(kind, q, o), waitMs: async () => null } as unknown as Travel;
-  const search = (ask: string, travellers?: number) => {
+  // The page Go would read is set for who flies: the link the backend builds says it (the room never gets the link, G1).
+  const links: string[] = [];
+  const travel = {
+    search: (kind: never, q: never, o: never) => backend.search(kind, q, o).catch((e: unknown) => {
+      if (e instanceof TravelError && e.link) links.push(e.link);
+      throw e;
+    }),
+    waitMs: async () => null,
+  } as unknown as Travel;
+  const search = async (ask: string, travellers?: number): Promise<string> => {
     const line = msg(90, 'p_rahul', ask);
     const turn = { ...ctx, cards: [], pack: { ...pack, messages: [...pack.messages, line] }, wake: [{ kind: 'message', payload: { messageId: line.message_id, seq: 90 } }] } as unknown as TurnCtx;
     const tools = travelTools({ travel, results: {} as ResultsStore, images: {} as Images, now: () => new Date('2026-10-07T12:00:31Z') });
-    return tools.find((t) => t.name === 'search_flights')!.run({ from: 'Delhi', to: 'Goa', date: '2026-11-06', ...(travellers ? { travellers } : {}) }, turn) as Promise<Record<string, unknown>>;
+    const out = (await tools.find((t) => t.name === 'search_flights')!.run({ from: 'Delhi', to: 'Goa', date: '2026-11-06', ...(travellers ? { travellers } : {}) }, turn)) as Record<string, unknown>;
+    expect(JSON.stringify(out)).not.toContain('ixigo.com');
+    return links.at(-1) ?? '';
   };
 
   it("never take the model's count for the whole trip: the link is for the 3 who live in Delhi (re-drill 5)", async () => {
-    for (const travellers of [5, 4, undefined]) {
-      const out = await search('@Go flights from Delhi to Goa on Friday', travellers);
-      expect(out.link, String(travellers)).toContain('&adults=3&');
-      expect(out.set_for).toBe('for 3 from Delhi');
-    }
+    for (const travellers of [5, 4, undefined]) expect(await search('@Go flights from Delhi to Goa on Friday', travellers), String(travellers)).toContain('&adults=3&');
   });
 
   it('take a number the ask itself says: "for 2 of us"', async () => {
-    const out = await search('@Go flights from Delhi to Goa on Friday for 2 of us', 2);
-    expect(out.link).toContain('&adults=2&');
-    expect(out.set_for).toBe('for 2 from Delhi');
+    expect(await search('@Go flights from Delhi to Goa on Friday for 2 of us', 2)).toContain('&adults=2&');
     // A different number from the model's than the ask's: the ask's people, counted by home.
-    expect((await search('@Go flights from Delhi to Goa on Friday for 2 of us', 5)).link).toContain('&adults=3&');
+    expect(await search('@Go flights from Delhi to Goa on Friday for 2 of us', 5)).toContain('&adults=3&');
   });
 });
 
@@ -326,10 +361,11 @@ describe('the search wake line', () => {
     expect(line).toContain('<data>3 buses: ₹1,500 to ₹5,000</data>');
   });
 
-  it('a search that failed is said in one line and offered again, never handed to a job (staging, 9 Oct: start_task on a blank page)', async () => {
+  it('a search that failed is said in one line and tried again, never handed to a job (staging, 9 Oct: start_task on a blank page)', async () => {
     const w = setup(async () => { throw new TravelError('unreachable', "Someone is using the trip's computer's browser. Try again in a moment."); }, null);
     const out = await w.run();
-    expect(out).toMatchObject({ count: 0, error: 'unreachable', tell_the_room: expect.stringContaining('Never start_task for it') });
+    expect(out).toMatchObject({ count: 0, trying_again: true, tell_the_room: "Say only this, in one line: I couldn't load buses from Mumbai just now; I'll try again in a minute." });
+    expect(out.note).toContain('never start_task for it');
     expect(renderSearchWake(item({ source: 'travel_search', search: 'buses', count: 0, resultsId: null, summary: '', error: 'unreachable' }))).toContain('Never start_task');
   });
 

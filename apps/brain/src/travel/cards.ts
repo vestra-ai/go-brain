@@ -69,7 +69,8 @@ export const SEE_STAYS_ACTION = { action_id: 'see_on_ixigo', label: 'See stays o
 
 /**
  * The flights (or stays) Go couldn't read, as a link: ixigo's results page with what people asked for already set, and
- * who it is set for ("for 3 from Delhi"). It never says there are none: ixigo refused Go's computer, and the page has them.
+ * who it is set for ("for 3 from Delhi"). No answer is built this way since the App team's G1 (11 Oct: a search ixigo
+ * didn't give is said plainly and tried again, tools.ts tryAgainAnswer); its tap still answers the cards already in rooms.
  */
 export function buildFlightsLinkCard(i: { cardId: string; title: string; url: string; who?: string | null; kind?: 'flights' | 'stays' }): NoticeCardT {
   const set = i.who ? `set ${i.who}, with what you asked for` : 'with what you asked for already set';

@@ -47,6 +47,7 @@ const DELHI = [
   flight('SpiceJet SG8169', 'SG', 6_500, '20:30'),
 ];
 const MUMBAI = [flight('IndiGo 6E5310', '6E', 3_900, '09:10', 'BOM')];
+const BANGALORE = [flight('IndiGo 6E6100', '6E', 4_200, '10:00', 'BLR')];
 const options = (list: RecipeOption[]): EngineAnswer => ({ as: 'options', options: list, page: 'https://www.ixigo.com/search/result/flight?from=DEL&to=GOX', checkedAt: '2026-10-10T09:00:00.000Z', ms: 4_100 });
 const link = (from: string): EngineAnswer => ({ as: 'link', link: `https://www.ixigo.com/search/result/flight?from=${from}&to=GOX&date=06112026&adults=1`, title: 'Flights', who: null });
 const COMPARE: EngineAnswer = { as: 'compare', inputs: { to: 'North Goa', date: '2026-11-06' }, entries: [], checkedAt: '2026-10-10T09:00:00.000Z', ms: 30_000 };
@@ -63,10 +64,13 @@ function tellAll(run: RunFor): void {
 }
 
 const asked: Array<{ id: string; given: Record<string, unknown> }> = [];
-const toolWith = (answer: (o: RunFor) => Promise<EngineAnswer>, o: { live?: boolean; waitMs?: number } = {}) =>
+// retry: a city's one more read (flights.results), tried again after retryMs (a test that doesn't look at it never sees one).
+const toolWith = (answer: (o: RunFor) => Promise<EngineAnswer>, o: { live?: boolean; waitMs?: number; retry?: (given: Record<string, unknown>) => Promise<EngineAnswer> } = {}) =>
   flightsEachTool({
-    engine: { answer: async (id, given, run) => (asked.push({ id, given }), id === FLIGHTS_EACH ? answer(run) : Promise.reject(new Error(id))) },
-    results, link: lb.link, now: lb.brain.now, live: () => o.live ?? true, waitMs: o.waitMs ?? 5_000, cardDelayMs: 60_000,
+    engine: {
+      answer: async (id, given, run) => (asked.push({ id, given }), id === FLIGHTS_EACH ? answer(run) : o.retry ? o.retry(given) : Promise.reject(new Error(id))),
+    },
+    results, link: lb.link, now: lb.brain.now, live: () => o.live ?? true, waitMs: o.waitMs ?? 5_000, cardDelayMs: 60_000, retryMs: o.retry ? 5 : 600_000,
   });
 type Posted = { text: string; card: C.Card; visibleTo: string[] | undefined };
 const postedSince = (from: number): Posted[] =>
@@ -103,17 +107,16 @@ describe("each person's own flights, from their home city", () => {
     expect(flightsFor(priya!, DELHI)).toMatchObject({ fit: 5, shown: [{ title: 'IndiGo 6E2001' }, { title: 'Air India AI101' }, { title: 'IndiGo 6E2134' }] });
   });
 
-  it('posts a card for each city and window, for its people alone, a link for a city whose page did not come, and ends the turn quietly', async () => {
+  it('posts a card for each city and window, for its people alone, tries again a city whose page did not come, and ends the turn quietly', async () => {
     const ctx = lb.ctx({ turnId: 'turn_each1' });
     const from = lb.link.requests.length;
-    const out = await toolWith(async (run) => (tellAll(run), COMPARE)).run({ cabin: 'economy' }, ctx);
+    const out = await toolWith(async (run) => (tellAll(run), COMPARE), { retry: async () => options(BANGALORE) }).run({ cabin: 'economy' }, ctx);
     expect(asked.at(-1)).toEqual({ id: FLIGHTS_EACH, given: { to: 'North Goa', date: '2026-11-06', cabin: 'economy' } });
     expect(out).toMatchObject({ answered: false, tell_the_room: SAY_NOTHING });
     expect([ctx.cards, ctx.lines]).toEqual([[], []]);
     const posted = postedSince(from);
-    const byTitle = new Map(posted.map((p) => [(p.card as { title: string }).title, p]));
+    const byTitle = new Map(posted.filter((p) => p.card).map((p) => [(p.card as { title: string }).title, p]));
     expect([...byTitle.keys()].sort()).toEqual([
-      'Flights for Arjun, Bangalore to North Goa',
       'Flights for Kabir, Delhi to North Goa, Fri 6 Nov, after 5 pm',
       'Flights for Meher, Mumbai to North Goa, Fri 6 Nov',
       'Flights for Priya, Delhi to North Goa, Fri 6 Nov',
@@ -126,15 +129,30 @@ describe("each person's own flights, from their home city", () => {
     // Every button is Rahul's alone, and a ticket has no vote.
     expect(card.actions?.map((a) => [a.action_id, a.only_for_person_ids])).toEqual([['pick', ['p_rahul']], ['open', ['p_rahul']]]);
     expect(rahul.text).toBe('Rahul, your flights from Delhi on Fri 6 Nov, after 6 pm: 3 fit, from ₹6,000 a person. Tap "I\'ll take this" on yours.');
-    // Bangalore's page didn't come: Arjun gets ixigo's own page, pinned to him.
-    const arjun = byTitle.get('Flights for Arjun, Bangalore to North Goa')!;
-    expect(arjun.card).toMatchObject({ kind: 'notice', for_person_ids: ['p_arjun'], source: { url: expect.stringContaining('from=BLR') } });
-    expect([arjun.visibleTo, rahul.visibleTo]).toEqual([['p_arjun'], ['p_rahul']]);
-    expect((arjun.card as { actions: Array<{ only_for_person_ids?: string[] }> }).actions.map((a) => a.only_for_person_ids)).toEqual([['p_arjun']]);
-    expect(arjun.text).toMatch(/^Arjun, Go couldn't read the flights from Bangalore just now/);
+    // Bangalore's page didn't come: never ixigo's own page (the App team, 11 Oct, G1). Arjun is told plainly, his alone,
+    // and Go reads Bangalore's flights again: his card goes up when they land.
+    const arjun = posted.find((p) => !p.card && p.visibleTo?.[0] === 'p_arjun')!;
+    expect([arjun.text, arjun.visibleTo, rahul.visibleTo]).toEqual(["Arjun, I couldn't load flights from Bangalore just now; I'll try again in a minute.", ['p_arjun'], ['p_rahul']]);
+    expect(posted.some((p) => p.card?.kind === 'notice')).toBe(false);
+    const again = () => postedSince(from).find((p) => (p.card as { title?: string } | undefined)?.title === 'Flights for Arjun, Bangalore to North Goa, Fri 6 Nov');
+    await eventually(() => again() !== undefined);
+    expect(again()).toMatchObject({ visibleTo: ['p_arjun'], card: { for_person_ids: ['p_arjun'], options: [{ title: 'IndiGo 6E6100' }] } });
+    expect(asked).toContainEqual({ id: 'flights.results', given: { from: 'Bangalore', to: 'North Goa', date: '2026-11-06', cabin: 'economy' } });
     // Rahul's pick on his card is his own: his confirm, never a vote.
     expect(await lb.taps.tap('options', 'pick', { tap_id: 'tap_each1', trip_id: 't_goa', card_id: card.card_id, action_id: 'pick', person_id: 'p_rahul', option_id: card.options[0]!.option_id }, card))
       .toEqual({ result: 'done', toast: "It's yours to confirm" });
+  });
+
+  it("says once that it still couldn't when every try fails, and never posts ixigo's own page", async () => {
+    const ctx = lb.ctx({ turnId: 'turn_each7' });
+    const from = lb.link.requests.length;
+    await toolWith(async (run) => (tellAll(run), COMPARE), { retry: async () => link('BLR') }).run({}, ctx);
+    const arjun = () => postedSince(from).filter((p) => p.visibleTo?.[0] === 'p_arjun').map((p) => [p.text, p.card?.kind ?? null]);
+    await eventually(() => arjun().length === 2);
+    expect(arjun()).toEqual([
+      ["Arjun, I couldn't load flights from Bangalore just now; I'll try again in a minute.", null],
+      ['Arjun, I still couldn\'t load flights from Bangalore. Ask me again in a bit.', null],
+    ]);
   });
 
   it('four travellers from four cities get four cards, each theirs alone to act on, none with a vote (the Server team, 10 Oct)', async () => {

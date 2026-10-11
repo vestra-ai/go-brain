@@ -11,7 +11,6 @@ import { inlineData } from '../composer/fence.js';
 import { CARD_LINE } from '../composer/rules.js';
 import type { DeskItem } from '../desk/desk.js';
 import { answerLine, answerTitle, directPicks, ledBy } from './answer.js';
-import { buildFlightsLinkCard } from './cards.js';
 import { putUpCard, type TravelToolDeps } from './tools.js';
 import type { TravelKind, TravelQuery } from './travel.js';
 
@@ -29,10 +28,11 @@ export interface SearchWake {
   /** Something is left for the model to pick from the results (tools.ts leftToPick): the wake is the model's. */
   pick?: boolean;
   /**
-   * A search that answered with ixigo's own page instead of a list (link_only: flights held back or refused): its link
-   * card and line, put up as the search's own turn would have (tools.ts linkAnswer), never "it didn't work".
+   * A search ixigo didn't give (its list held back from Go's computer, or no answer): the plain line Go posts, that it
+   * tries again in a minute, or that it still couldn't (answer.ts couldntLine); never ixigo's own page (the App team,
+   * 11 Oct, G1).
    */
-  link?: { url: string; title: string; who: string | null; line: string };
+  line?: string;
 }
 
 /** How a finished search reads in "why Go woke". Null for desk items it doesn't own. */
@@ -40,7 +40,7 @@ export function renderSearchWake(item: DeskItem): string | null {
   const w = item.payload as Partial<SearchWake> | null;
   if (w?.source !== 'travel_search') return null;
   const what = inlineData(w.search ?? 'a travel search', 160);
-  if (w.link) return `The search ${what} answered with ixigo's own page, not a list. Search again with the same words: its card with that page goes up.`;
+  if (w.line) return `The search ${what} didn't load from ixigo. Say only this, in one line: ${inlineData(w.line, 200)}`;
   if (w.error) return `The search ${what} didn't work (${w.error}). Say so in one short line, and offer to try again. Never start_task for it.`;
   if (w.resultsId && !w.count) {
     return (
@@ -72,9 +72,8 @@ export function searchWakeAnswer(d: Pick<TravelToolDeps, 'results' | 'images' | 
     const item = wake[0];
     if (wake.length !== 1 || item?.kind !== 'search' || !KINDS.includes(item.ref)) return false;
     const w = item.payload as Partial<SearchWake> | null;
-    if (w?.source === 'travel_search' && w.link) {
-      ctx.cards.push(buildFlightsLinkCard({ cardId: ctx.stableId('c_link'), title: w.link.title, url: w.link.url, who: w.link.who, ...(item.ref === 'stays' ? { kind: 'stays' as const } : {}) }));
-      ctx.lines.push(w.link.line);
+    if (w?.source === 'travel_search' && w.line) {
+      ctx.lines.push(w.line);
       ctx.answered = true;
       return true;
     }

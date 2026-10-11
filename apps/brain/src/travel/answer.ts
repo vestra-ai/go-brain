@@ -234,18 +234,18 @@ export function droppedWords(dropped: readonly string[]): string {
 /** A line with words before it ("Already on ixigo: "), its own first letter then lower case. */
 export const ledBy = (lead: string | undefined, line: string): string => (lead ? `${lead}${line.charAt(0).toLowerCase()}${line.slice(1)}` : line);
 
+
 /**
- * The line for a journey ixigo shows only as a link (flights from the box, for now): where they are, who they're set
- * for, and that Go notes a pick but books nothing. "Flights Delhi to Goa on Fri 6 Nov are on ixigo, set for 3 from
- * Delhi, leaving after 7:00 pm: book there, and tell me which one so I can note it for the group."
+ * What Go says when ixigo didn't give a search's list (it held it back from Go's computer, or didn't answer): plainly,
+ * never ixigo's own page as the answer (the App team, 11 Oct, G1). first: Go tries again in a minute; last: it tried and
+ * still couldn't; once: no try again here.
  */
-export function linkLine(kind: TravelKind, q: TravelQuery, who: string | null): string {
-  const noun = { flights: 'Flights', trains: 'Trains', buses: 'Buses', stays: 'Stays' }[kind];
-  const where = kind === 'stays' ? ` in ${titleWords(q.area ?? q.to ?? '')}` : ` ${titleWords(q.from ?? '')} to ${titleWords(q.to ?? '')}`;
-  const set = [...(who ? [`set ${who}`] : []), ...asked(kind, q)];
-  // What the link can't set (wants): the group picks it on ixigo's page.
-  const pick = q.wants?.length ? ` (for ${listOf(q.wants)}, pick on the page)` : '';
-  return `${noun}${where}${q.date ? ` on ${dayText(q.date)}` : ''} are on ixigo${set.length ? `, ${set.join(', ')}` : ''}${pick}: book there, and tell me which one so I can note it for the group.`;
+export function couldntLine(kind: TravelKind, q: TravelQuery, when: 'first' | 'last' | 'once'): string {
+  const noun = { flights: 'flights', trains: 'trains', buses: 'buses', stays: 'stays' }[kind];
+  const place = kind === 'stays' ? (q.area ?? q.to ?? '') : (q.from ?? '');
+  const where = place ? ` ${kind === 'stays' ? 'in' : 'from'} ${titleWords(place)}` : '';
+  if (when === 'first') return `I couldn't load ${noun}${where} just now; I'll try again in a minute.`;
+  return when === 'last' ? `I still couldn't load ${noun}${where}. Ask me again in a bit.` : `I couldn't load ${noun}${where} just now. Ask me again in a minute.`;
 }
 
 /**

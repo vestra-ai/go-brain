@@ -16,7 +16,7 @@ import { SAY_NOTHING, type QuickTool, type TurnCtx } from '../composer/tools.js'
 import type { ServerLink } from '../door/server-link.js';
 import { dayText } from './answer.js';
 import type { Engine, EngineAnswer, StepsEvent } from './book/engine.js';
-import { buildFlightsLinkCard, buildOptionsCard, clip, formatInr, type CardPick } from './cards.js';
+import { buildOptionsCard, clip, formatInr, type CardPick } from './cards.js';
 import { flightDetails } from './details.js';
 import { applyConstraints } from './filters.js';
 import { stableId } from './ids.js';
@@ -106,7 +106,16 @@ export interface FlightsEachDeps {
   /** How long the turn waits (TRAVEL_WAIT_MS), and before the live card shows (CARD_DELAY_MS). */
   waitMs?: number;
   cardDelayMs?: number;
+  /** Before each try again of a city whose flights didn't come (RETRY_MS). */
+  retryMs?: number;
 }
+
+/**
+ * A city whose flights didn't come is tried again a minute later, twice (the App team, 11 Oct, G1: "retry first, keep
+ * filling"); never ixigo's own page as the answer.
+ */
+export const RETRY_MS = 60_000;
+export const RETRIES = 2;
 
 const Args = z.object({
   date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional().describe("YYYY-MM-DD, only when the ask names a day other than the trip's start"),
@@ -172,10 +181,9 @@ export function flightsEachTool(d: FlightsEachDeps): QuickTool<z.infer<typeof Ar
       let deadline: ReturnType<typeof setTimeout> | undefined;
       const showing = setTimeout(() => live.show(), d.cardDelayMs ?? CARD_DELAY_MS);
       showing.unref?.();
-      // Each city's two steps (its page and its link); its cards post as its page lands, its link when the page didn't.
-      const cities = new Map<string, { steps: number; posted: boolean; link: string | null }>();
+      // Each city's two steps (its page and its link); its cards post as its page lands, a try again when the page didn't.
+      const cities = new Map<string, { steps: number; posted: boolean }>();
       const posts: Array<Promise<void>> = [];
-      const said: string[] = [];
       // Each traveller's card and its line are theirs alone to see (1.2 visible_to_person_ids, Keshav, 10 Oct), as well as
       // to act on; the turn's own line, to the room, names no flight, price or window.
       const post = (key: string, card: C.Card | null, text: string, only: string[]): void => {
@@ -187,10 +195,9 @@ export function flightsEachTool(d: FlightsEachDeps): QuickTool<z.infer<typeof Ar
       };
       const groupsOf = (entry: string): EachGroup[] => plan.groups.filter((g) => norm(g.home) === norm(entry));
       const onStep = (e: Extract<StepsEvent, { type: 'step' }>): void => {
-        const city = cities.get(norm(e.entry)) ?? { steps: 0, posted: false, link: null };
+        const city = cities.get(norm(e.entry)) ?? { steps: 0, posted: false };
         cities.set(norm(e.entry), city);
         city.steps += 1;
-        if (e.answer?.as === 'link') city.link = e.answer.link;
         if (e.recipe === 'flights.results') live.step(e.entry, 'flights', e.answer?.as === 'options');
         const got = e.answer;
         if (got?.as === 'options' && got.options.length > 0 && !city.posted) {
@@ -204,22 +211,38 @@ export function flightsEachTool(d: FlightsEachDeps): QuickTool<z.infer<typeof Ar
           }
           return;
         }
-        // Both steps in and no flights read: the city's people get ixigo's own page, set for them.
+        // Both steps in and no flights read: never ixigo's own page as the answer (the App team, 11 Oct, G1). The city's
+        // people are told plainly, theirs alone, and Go tries their city again.
         if (city.steps >= 2 && !city.posted) {
           city.posted = true;
           for (const g of groupsOf(e.entry)) {
-            const title = clip(`Flights for ${namesOf(g)}, ${g.home} to ${to}`, 80);
-            if (!city.link) {
-              said.push(`Flights from ${g.home} didn't come back from ixigo.`);
-              continue;
-            }
             const only = g.people.map((p) => p.personId);
-            const link = buildFlightsLinkCard({ cardId: stableId('c_each_link', ctx.turnId, ...only), title, url: city.link });
-            // Theirs alone to act on, as their options card would be.
-            const card = { ...link, for_person_ids: only, actions: (link.actions ?? []).map((a) => ({ ...a, only_for_person_ids: only })) };
-            post(`${only.join(',')}|link`, card, `${namesOf(g)}, Go couldn't read the flights from ${g.home} just now, so here they are on ixigo${g.window ? `; yours leave ${g.window.words}` : ''}.`, only);
+            post(`${only.join(',')}|retry`, null, `${namesOf(g)}, I couldn't load flights from ${g.home} just now; I'll try again in a minute.`, only);
+            tryAgain(g, 1);
           }
         }
+      };
+      // One more read of the city's flights page, after a minute: the card goes up when it lands; after the last, one
+      // plain line, still theirs alone.
+      const tryAgain = (g: EachGroup, attempt: number): void => {
+        const only = g.people.map((p) => p.personId);
+        const later = setTimeout(() => {
+          void d.engine
+            .answer('flights.results', { from: g.home, to, date, ...(a.cabin ? { cabin: a.cabin } : {}) }, { tripId: ctx.tripId, waitOutPace: true })
+            .catch(() => null)
+            .then(async (got) => {
+              if (got?.as === 'options' && got.options.length > 0) {
+                const made = await groupCard(ctx.tripId, ctx.turnId, g, at, got);
+                post(`${only.join(',')}|try${attempt}`, made.card, made.line, only);
+              } else if (attempt < RETRIES) {
+                tryAgain(g, attempt + 1);
+              } else {
+                post(`${only.join(',')}|gave_up`, null, `${namesOf(g)}, I still couldn't load flights from ${g.home}. Ask me again in a bit.`, only);
+              }
+            })
+            .catch((err: unknown) => d.log?.warn({ err: String(err).slice(0, 200), tripId: ctx.tripId }, "travel: a city's flights couldn't be tried again"));
+        }, d.retryMs ?? RETRY_MS);
+        later.unref?.();
       };
       const running = d.engine.answer(FLIGHTS_EACH, { to, date, ...(a.cabin ? { cabin: a.cabin } : {}) }, {
         tripId: ctx.tripId,
@@ -271,7 +294,7 @@ export function flightsEachTool(d: FlightsEachDeps): QuickTool<z.infer<typeof Ar
         if (!(first.err instanceof TravelError)) throw first.err;
         return { error: first.err.code, note: clip(first.err.message, 200) };
       }
-      const line = [...said, asks].filter((s) => s !== '').join(' ');
+      const line = asks;
       if (line) {
         ctx.lines.push(line);
         ctx.answered = true;
