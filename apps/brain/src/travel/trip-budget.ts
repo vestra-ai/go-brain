@@ -17,6 +17,7 @@ import type { NowProvider } from '../composer/context.js';
 import { SAY_NOTHING, type QuickTool, type TurnCtx } from '../composer/tools.js';
 import type { Log } from '../log.js';
 import { reactOnce } from '../memory/reactions.js';
+import { messageByRef } from '../trips/pack.js';
 import { saveTrip } from '../trips/save-trip.js';
 
 /** What a budget is for: the stay, getting there and back, or everything. */
@@ -128,7 +129,7 @@ const SetBudgetArgs = z
     per: z.enum(['person', 'group']).optional().describe('Per person (the default) or for the whole group.'),
     covers: z.enum(['stay', 'travel', 'whole_trip']).optional().describe('What it is for: the stay, getting there and back, or the whole trip (the default).'),
     clear: z.boolean().optional().describe('true: the group dropped its budget.'),
-    proof_message_ids: z.array(z.string().min(1).max(64)).min(1).max(10).describe('The messages the group decided it in.'),
+    proof_message_ids: z.array(z.string().min(1).max(64)).min(1).max(10).describe('The messages the group decided it in, by their numbers in the chat, like "#57".'),
   })
   .strict();
 
@@ -172,13 +173,13 @@ export function budgetTool(d: { budgets: TripBudgets; pool: Pool; now: () => Dat
       const people = ctx.pack.trip.people;
       const organizer = ctx.pack.trip.organizer_person_id;
       const cited = a.proof_message_ids
-        .map((id) => ctx.pack.messages.find((m) => m.message_id === id))
+        .map((ref) => messageByRef(ctx.pack.messages, ref))
         .filter((m): m is NonNullable<typeof m> => m !== undefined && !m.deleted);
       // The people's messages among the proof: Go's own estimate cited beside their yes is passed over, never a refusal
       // (staging drill, 10 Oct: refused twice for it, the turn ran out of rounds).
       const proof = cited.filter((m) => m.author.kind === 'person');
       if (proof.length === 0) {
-        return { refused: "no person's message in this trip among the proof: give the message ids of the people's own words", tell_the_room: SAY_NOTHING };
+        return { refused: "no person's message in this trip among the proof: give the numbers of the people's own messages", tell_the_room: SAY_NOTHING };
       }
       // Who backs it: the people who said it in words. A reaction alone, a 👍 on the figure or on Go's offer too, is never
       // a yes, and neither is a bare 👍 sent as a message. The organizer's yes counts alone only as an answer to Go's offer.

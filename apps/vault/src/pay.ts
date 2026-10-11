@@ -46,11 +46,14 @@ interface PayRequestRow {
   merchant: string;
   hold_expires_at: Date;
   payment_kind: RailKind;
+  /** Go's word that the group agreed first; null on an older pay link. */
+  group_agreed: boolean | null;
 }
 
 async function payRequest(db: Db, approvalId: string): Promise<PayRequestRow | null> {
   const r = await db.query<PayRequestRow>(
-    `select approval_id, jti, trip_id, payer_person_id, approval, amount_minor, currency, merchant, hold_expires_at, payment_kind
+    `select approval_id, jti, trip_id, payer_person_id, approval, amount_minor, currency, merchant, hold_expires_at, payment_kind,
+       group_agreed
      from pay_requests where approval_id = $1`,
     [approvalId],
   );
@@ -79,6 +82,8 @@ export type PayInfo =
       refundable_until: string | null;
       card: { brand: string; last4: string } | null;
       expires_at: string;
+      /** The group agreed to it first: the page says so. Never for a person's own ticket or a trip of one. */
+      group_agreed: boolean;
     };
 
 /** What the pay page shows: read from the signed approval itself, and the amount the hold will charge. */
@@ -97,6 +102,8 @@ export async function payInfo(d: PayDeps, token: string): Promise<PayInfo> {
     refundable_until: check.claims.refundable_until ?? null,
     card: card ? { brand: card.brand, last4: card.last4 } : null,
     expires_at: link.expires_at.toISOString(),
+    // Go's word; an older pay link goes by whether the approval names a vote (a personal one never does).
+    group_agreed: pr.group_agreed ?? check.claims.decision_id != null,
   };
   if (!(await hasPasskey(d.pool, link.person_id))) return { state: 'no_passkey', ...shown };
   if (!card) return { state: 'no_card', ...shown };

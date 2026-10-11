@@ -158,9 +158,10 @@ export function createNotes(d: NotesDeps): { run(tripId: string, opts?: { only?:
   }
 
   /**
-   * An agreed line that fixes the trip's dates or place sets them on the trip too: the organizer's own settled line, or
-   * the group's yes (the checker has passed it). Through the trip's one writer (update_trip, with its checks); what the
-   * trip already holds is not sent again. Days read in the wrong year become the same days this year or next.
+   * An agreed line that fixes the trip's dates or place sets them on the trip too, in a trip of one: in a group the vote
+   * decides (save-trip.ts groupDecided), and nobody's word moves the trip, the organizer's neither. Through the trip's one
+   * writer (update_trip, with its checks); what the trip already holds is not sent again. Days read in the wrong year
+   * become the same days this year or next.
    */
   async function onTrip(tripId: string, pack: TripPack, line: CheckedLine, trip: { dates?: { start: string; end: string } | undefined; destination?: string | undefined }): Promise<string | null> {
     const now = pack.trip;
@@ -170,8 +171,6 @@ export function createNotes(d: NotesDeps): { run(tripId: string, opts?: { only?:
     };
     if (!change.dates && !change.destination) return null;
     const at = { link: d.link, tripId, pack, requestId: () => `go_trip_${lineRequestId(line).slice('go_line_'.length)}` };
-    // The checker passed the line: the organizer's own settled line, or the group's yes.
-    change.agreed = true;
     let saved = await saveTrip(d, at, change);
     if (!saved.ok && saved.next && change.dates) saved = await saveTrip(d, at, { ...change, dates: saved.next });
     return saved.ok ? null : `trip: ${saved.error}`;

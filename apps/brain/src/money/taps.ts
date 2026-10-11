@@ -35,6 +35,10 @@ function stateToast(row: PaymentRow): string {
   }
 }
 
+/** The group agreed to it first: a vote's payment among more than one person. A person's own ticket or a trip of one: no. */
+export const groupAgreed = (row: Pick<PaymentRow, 'kind' | 'decision_id' | 'for_person_ids'>): boolean =>
+  row.kind === 'group' && row.decision_id !== null && row.for_person_ids.length > 1;
+
 export function payLinkInput(row: PaymentRow): PayLinkInput | null {
   if (!row.approval_token || !row.approval_id || !row.hold_id || row.amount_minor === null || !row.currency || !row.merchant || !row.hold_expires_at) return null;
   return {
@@ -43,6 +47,7 @@ export function payLinkInput(row: PaymentRow): PayLinkInput | null {
     tripId: row.trip_id,
     payerPersonId: row.payer_person_id,
     payerName: row.payer_name,
+    groupAgreed: groupAgreed(row),
     hold: {
       holdId: row.hold_id,
       amountMinor: row.amount_minor,

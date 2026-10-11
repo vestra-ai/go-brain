@@ -351,13 +351,15 @@ describe('why Go woke, and the trip block', () => {
     expect(hello).toContain('answer that first');
     expect(hello).toContain('Do not open a vote unless someone asks for one');
     // Keshav, 11 Oct: a hello that suggests where the trip could go puts it on a place card, never in words or buttons.
-    expect(hello).toContain("Where the trip could go, if you suggest any, is a place card (the ixigo tool's plan.explore, then show_options), never names in your words or in offer_replies.");
+    expect(hello).toContain('Where the trip could go, if you suggest any, is a place card (suggest_places), never names in your words or in offer_replies.');
     // Prod drill, 11 Oct: a hello whose card failed went silent; the hello is said anyway.
     expect(hello).toContain("If the card can't come, say the hello anyway.");
     expect(hello).not.toMatch(/open_vote|first vote/);
     expect(c.renderWake(wake({ kind: 'trip_change', ref: 'decision:d_stay', payload: { type: 'decision.closed', decisionId: 'd_stay' } }), p)).toBe(
       'the vote <data>Where do we stay?</data> closed: <data>Villa Sol</data> won (<data>Villa Sol</data> 3, <data>Casa Azul</data> 1; 4 of 5 voted). ' +
-        'If it settled the trip\'s dates, save them with update_trip first, with decision_id "d_stay" (days without a year are the next ones from today). ' +
+        'If it settled where the trip goes, its dates or its name, save it with update_trip at once, with decision_id "d_stay" ' +
+        '(days without a year are the next ones from today; a country or region is its main city for visitors, and say which; a city ' +
+        'someone names in the winning country is that pick, with the same decision_id, never a second vote). ' +
         "If it settled where to stay (an area or a place to stay), save the winner as the stay, never as the destination: the destination is where the trip goes. " +
         'Say it is the stay or picked, never "locked in": that reads as ixigo\'s Lock Price. ' +
         "The App already posted the result in the room: never say the counts again, or who won outside the stay's line below. " +
@@ -486,6 +488,21 @@ describe('why Go woke, and the trip block', () => {
     expect(quietNote(mixed.items, mixed.pack)).not.toContain('#3');
   });
 
+  // Ankur, 12 Oct 00:14 IST: a place vote won, and Go answered with money's "can't be booked through me".
+  it('a place vote that closed: the trip goes there, and its next step is the dates or its stays, never booking or paying it', () => {
+    const where = vote({
+      decision_id: 'd_where', question: 'Where do we go?', options: [{ label: 'Denpasar, Bali, Indonesia' }, { label: 'Tumkur, Karnataka' }],
+      status: 'closed', voted: 1, tally: [1, 0], result_index: 0, closed_at: '2026-10-05T12:00:00Z',
+    });
+    const card = { kind: 'options', card_id: 'c_where', option_kind: 'place', decision_id: 'd_where', title: 'November ideas', options: [], checked_at: '2026-10-05T11:00:00Z' };
+    const p = packOf([...chatOf(3), { ...msg(5, null, 'Here are some ideas.'), card: card as never }], goaSnapshot({ decisions: [where] }));
+    const text = context().renderWake(wake({ kind: 'trip_change', ref: 'decision:d_where', payload: { type: 'decision.closed', decisionId: 'd_where' } }), p);
+    expect(text).toContain("It picked where the trip goes, and Go saves it as the trip's place itself");
+    expect(text).toContain('never set_mandate or ask_to_pay, and never a word about booking or paying it');
+    expect(text).toContain("with the trip's dates set, put up its stays (search_stays); without them, ask for the dates in one question with offer_replies date buttons");
+    expect(text).not.toMatch(/I'll book it|save the winner as the stay/);
+  });
+
   it('a dates vote that closed tells Go to save the dates on the trip: an option is only a label, so the model reads it', () => {
     const dates = vote({
       decision_id: 'd_dates', question: 'Which dates work?', options: [{ label: '6-9 Nov' }, { label: '13-16 Nov' }],
@@ -499,7 +516,10 @@ describe('why Go woke, and the trip block', () => {
     // The App posts the result line itself (GO-TEAM-FINAL §8): Go reads the counts and never says them again.
     expect(closed('d_dates')).toContain("The App already posted the result in the room: never say the counts again, or who won outside the stay's line below.");
     expect(closed('d_split')).toContain('no clear winner (<data>Villa Sol</data> 2, <data>Casa Azul</data> 2; 4 of 5 voted)');
-    expect(closed('d_dates')).toContain("If it settled the trip's dates, save them with update_trip first");
+    expect(closed('d_dates')).toContain('If it settled where the trip goes, its dates or its name, save it with update_trip at once, with decision_id "d_dates"');
+    expect(closed('d_dates')).toContain('a city someone names in the winning country is that pick, with the same decision_id, never a second vote');
+    // Varkala, 11 Oct: "Where do we go?" closed on Morocco and a 7 to 0 rename passed, and Go said neither changed the trip.
+    expect(closed('d_dates')).toContain('a country or region is its main city for visitors, and say which');
     // Staging, 8 Oct: a vote on where to stay in Goa became the trip's destination.
     expect(closed('d_dates')).toContain('If it settled where to stay (an area or a place to stay), save the winner as the stay, never as the destination');
     expect(closed('d_dates')).toContain('days without a year are the next ones from today');

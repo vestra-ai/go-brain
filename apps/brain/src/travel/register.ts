@@ -31,7 +31,8 @@ import { createEarlyStart } from './recipes/early.js';
 import { earlyAnswer, earlyReadNow, earlySearchNow, jevPickNow } from './recipes/now.js';
 import { loadLearnedPlaces } from './recipes/places-store.js';
 import { optionOnCard } from './recipes/option-on-card.js';
-import { createGuideOf, createPlaceFor } from './place-for.js';
+import { createGuideOf, createPlaceFor, keptPhoto } from './place-for.js';
+import { wikiPhoto } from './wiki-photo.js';
 import { placeInfoHandler, registerPlaceLearn } from './place-info.js';
 import { createGroupStay } from './group-stay.js';
 import { createResultsStore } from './results.js';
@@ -324,8 +325,19 @@ export const registerTravel: RegisterLane = async (brain) => {
     return options.length > 0 ? (await results.save({ tripId, optionKind: 'place', source: 'search', query: {}, options, checkedAt })).resultsId : null;
   };
   // A place's cover from its guide, for one the explorer gave no photo: placeFor keeps it for good, so a second card is instant.
-  const placeCover = async (tripId: string, name: string): Promise<string | null> =>
-    brain.switches.get('TRAVEL_MODE') === 'ixigo_web' ? ((await travel.placeFor?.(name, { tripId }))?.place.photo_url ?? null) : null;
+  // A place's cover as its card goes up, reading no ixigo page (Keshav, 11 Oct: suggestions need no ixigo): its photo
+  // kept from ixigo's guide, else Wikipedia's photo of it through Go's image cache, else none. A card's first three get
+  // ixigo's own hero after, in the background (showPlaces).
+  const placePhoto = async (_tripId: string, name: string): Promise<{ url: string; credit?: string } | null> => {
+    const kept = await keptPhoto(brain.pool, name).catch(() => null);
+    if (kept) return { url: kept };
+    const wiki = await wikiPhoto(name);
+    return wiki ? { url: wiki.url, credit: wiki.page } : null;
+  };
+  const placeCover = async (tripId: string, name: string): Promise<string | null> => {
+    const found = await placePhoto(tripId, name);
+    return found ? images.rehostUrl(found.url) : null;
+  };
   const showPlacesOf = (tripId: string, picks: PlacePick[]): void => {
     if (brain.switches.get('TRAVEL_MODE') !== 'ixigo_web') return;
     void showPlaces({
@@ -335,7 +347,7 @@ export const registerTravel: RegisterLane = async (brain) => {
   };
   // When ixigo's own quiet on a search's page ends (it refused one): Go's tries again wait past it (try-again.ts).
   const ixigoQuiet = (kind: TravelKind, q: TravelQuery): number | null => engine.ixigoQuietUntil(searchRecipeOf(kind, q));
-  for (const t of travelTools({ travel, results, images, now: brain.now, desk: brain.desk, ixigoQuiet, log: brain.log, warmForTravel: warm, today, showPick, showPlaces: showPlacesOf, placeCover, stayBudget, groupStay })) brain.tools.register(t);
+  for (const t of travelTools({ travel, results, images, now: brain.now, desk: brain.desk, ixigoQuiet, log: brain.log, warmForTravel: warm, today, showPick, showPlaces: showPlacesOf, placeCover, placePhoto, stayBudget, groupStay })) brain.tools.register(t);
   brain.tools.register(budgetTool({ budgets, pool: brain.pool, now: brain.now, log: brain.log }));
   brain.context.addNow(budgetNow({ budgets, trip: async (tripId) => (await brain.packs.get(tripId)).trip }));
   // A person's own flight booking, in the turns they speak in (the lead, 11 Oct: Ankur's "?" after his stopped).

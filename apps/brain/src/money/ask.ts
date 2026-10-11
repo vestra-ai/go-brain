@@ -9,7 +9,7 @@ import { reconcile } from './finish.js';
 import { paymentIdFor, rid } from './ids.js';
 import type { Room } from './rooms.js';
 import { EXPIRY_GRACE_MS, getPayment, insertAsking, openForDecision, openTicket, paidForDecision, patchPayment, transition, type PaymentRow } from './store.js';
-import { payLinkInput } from './taps.js';
+import { groupAgreed, payLinkInput } from './taps.js';
 import type { PaymentKind } from './vault-client.js';
 import { clip, money, plain, refusalWords, type RefusalCode } from './words.js';
 
@@ -341,6 +341,7 @@ async function advance(d: MoneyDeps, row: PaymentRow, ids: AskIds, deliver: Deli
     tripId: row.trip_id,
     payerPersonId: row.payer_person_id,
     payerName: row.payer_name,
+    groupAgreed: groupAgreed(row),
     hold: {
       holdId: row.hold_id,
       amountMinor,

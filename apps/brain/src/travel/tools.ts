@@ -12,7 +12,7 @@ import { buildOptionsCard, clip, formatInr, ixigoPage, PERSONAL_KINDS, placeKind
 import { localDay } from '../proactive/clock.js';
 import { answerLine, answerTitle, directPicks, droppedWords, ledBy, leftOff, loadWhat, plainAsk } from './answer.js';
 import { flightDetails, stayDetails, trainDetails } from './details.js';
-import { guideName, placeDetails, type PlacePick } from './places-card.js';
+import { guideName, placeDetails, suggestedPlaces, type PlacePick } from './places-card.js';
 import { DEFAULT_TRIP_TZ } from './dates.js';
 import { asked } from './filters.js';
 import { stableId } from './ids.js';
@@ -70,6 +70,12 @@ export interface TravelToolDeps {
    * waited for in parallel, up to COVER_WAIT_MS, before its card goes up. Null when ixigo has none: never a made-up one.
    */
   placeCover?: (tripId: string, name: string) => Promise<string | null>;
+  /**
+   * A place's photo for one Go picked itself (suggest_places), read with no ixigo page: the photo kept from ixigo's
+   * guide, else Wikipedia's with its file's page for a credit. Its address as found, put through Go's image cache with
+   * the card. Null when there is none.
+   */
+  placePhoto?: (tripId: string, name: string) => Promise<{ url: string; credit?: string } | null>;
   /** Where the group stays, with its position (group-stay.ts): each bus's nearest drop to it. Absent, none is said. */
   groupStay?: (tripId: string) => Promise<GroupStay | null>;
 }
@@ -435,9 +441,10 @@ export async function cardPicks(set: ResultSet, numbers: number[], cardId: strin
         : set.optionKind === 'train' ? trainDetails(option) : set.optionKind === 'flight' ? flightDetails(option, people) : set.optionKind === 'place' ? placeDetails(option) : null;
       // A place goes up with its real cover (Saket, 11 Oct: never the App's drawing): the explorer's own photo, else its
       // guide's, waited for a little; a place with neither goes up without one.
+      // A place Go picked itself was looked for already (suggest_places): none is none, never a second wait.
       const imageUrl = option.imageUrl
         ? await d.images.rehostUrl(option.imageUrl)
-        : set.optionKind === 'place' && d.placeCover ? await coverWithin(d.placeCover(set.tripId, option.title)) : null;
+        : set.optionKind === 'place' && option.facts['estimate'] !== true && d.placeCover ? await coverWithin(d.placeCover(set.tripId, option.title)) : null;
       return {
         n: i + 1, optionId: stableId('opt', cardId, i + 1), option, imageUrl,
         ...(details ? { details } : {}),
@@ -450,7 +457,7 @@ export async function cardPicks(set: ResultSet, numbers: number[], cardId: strin
 /** How long a place card waits for a place's cover from its guide, every place at once, before it goes up without one. */
 export const COVER_WAIT_MS = 2_500;
 
-const coverWithin = (cover: Promise<string | null>): Promise<string | null> =>
+const coverWithin = <T>(cover: Promise<T | null>): Promise<T | null> =>
   Promise.race([cover.catch(() => null), new Promise<null>((r) => setTimeout(() => r(null), COVER_WAIT_MS).unref())]);
 
 /**
@@ -944,6 +951,30 @@ const ShowArgs = z.object({
   anonymous: z.boolean().optional().describe('true for a secret ballot, only when someone asks for a secret or anonymous vote. Leave it out otherwise.'),
 });
 
+/** Where the trip could go, picked by Go itself (Keshav, 11 Oct: suggestions need no ixigo; ixigo books what is picked). */
+const SuggestArgs = z.object({
+  title: z.string().min(1).max(80).describe('The card\'s title, e.g. "Hill escapes from Delhi in December".'),
+  line: CardLineArg,
+  places: z
+    .array(
+      z.object({
+        name: z.string().min(2).max(80).describe('The place as people know it, with its state or country: "Manali, Himachal Pradesh".'),
+        kind: z.string().min(2).max(30).describe('What it is, in a word or two: "Mountains", "Beaches", "Heritage city".'),
+        travel: z.string().min(2).max(40).describe('Rough travel time from the asker\'s home city: "1h flight", "8h drive", "overnight train".'),
+        fit: z.string().min(2).max(100).describe('One line on why it fits now: the group\'s budget and the month\'s weather, e.g. "Fits ₹25k each · snow in Dec".'),
+        why: z.array(z.string().min(2).max(100)).min(2).max(4).describe('Two to four short reasons it suits this group.'),
+        cost_each_rupees: z.int().min(500).max(1_000_000).describe('Your rough cost a person for the whole trip, getting there and stays, in rupees: it shows as an estimate.'),
+        nights: z.int().min(1).max(30).optional().describe('The nights that cost is for.'),
+        things_to_do: z.array(z.string().min(2).max(40)).min(3).max(6).describe('Three to six things the group can do there, a few words each.'),
+      }),
+    )
+    .min(5)
+    .max(8),
+  question: z.string().min(3).max(200).optional().describe("The vote's question, only when someone asked for another (\"Where do we go?\")."),
+  closes_in_hours: z.number().min(0.5).max(72).optional().describe('When the vote closes, only when someone asked for a time. Default: a day.'),
+  anonymous: z.boolean().optional().describe('true for a secret ballot, only when someone asks for one.'),
+});
+
 const VoteArgs = z.object({
   card_id: z
     .string()
@@ -1080,5 +1111,38 @@ export function travelTools(d: TravelToolDeps): QuickTool<any>[] {
       return { decision_id: r.decisionId, note: 'The vote card goes out with your line.' };
     },
   };
-  return [searchFlights, searchTrains, searchBuses, searchStays, showOptions, putToVote];
+  const suggestPlaces: QuickTool<z.infer<typeof SuggestArgs>> = {
+    name: 'suggest_places',
+    description:
+      'Puts up a place card of 5 to 8 places you pick yourself for where the trip could go, as the group\'s vote: for "plan a trip", ' +
+      '"where should we go", "Surprise us", "beaches in Dec", a vibe such as hills, or your hello on a trip with no place. Pick from what ' +
+      "you know, to fit this group: their home cities, the trip's month (else next month), its budget a head and its vibe, all in Right now. " +
+      'Each has its name with its state or country, its kind, a rough travel time from the asker\'s home city, a fit line (the budget and ' +
+      "the month's weather), 2 to 4 short reasons, your rough cost a person for the whole trip (the card shows it as an estimate; never " +
+      "call it a price or ixigo's), and 3 to 6 things to do, never a cafe, restaurant or shop by name. Go adds each place's real photo. " +
+      `It reads no page: it never needs ixigo. ${CARD_LINE}`,
+    input: SuggestArgs,
+    endsTurn: true,
+    async run(a, ctx) {
+      // Every place's photo at once, within the cover wait, before the card goes up; its credit kept in its facts.
+      const photos = await Promise.all(a.places.map((p) => (d.placePhoto ? coverWithin(d.placePhoto(ctx.tripId, p.name)) : Promise.resolve(null))));
+      const options = suggestedPlaces(a.places).map((o, i) => {
+        const photo = photos[i];
+        return photo ? { ...o, imageUrl: photo.url, facts: { ...o.facts, ...(photo.credit ? { photo_credit: photo.credit } : {}) } } : o;
+      });
+      const set = await d.results.save({ tripId: ctx.tripId, optionKind: 'place', source: 'task', query: { suggested: true }, options, checkedAt: d.now().toISOString() });
+      const vote: CardVote = {
+        ...(a.question ? { question: a.question } : {}),
+        ...(a.closes_in_hours ? { closesInHours: a.closes_in_hours } : {}),
+        ...(a.anonymous ? { anonymous: true } : {}),
+      };
+      const { cardId, shown, decisionId } = await putUpCard(set, options.map((_, i) => i + 1), { title: a.title, line: a.line, vote }, ctx, d);
+      return {
+        card_id: cardId, shown,
+        ...(decisionId ? { decision_id: decisionId } : {}),
+        note: decisionId ? "The card goes out with your line, as the group's vote: each place has Vote on it." : 'The card goes out with your line.',
+      };
+    },
+  };
+  return [searchFlights, searchTrains, searchBuses, searchStays, showOptions, putToVote, suggestPlaces];
 }

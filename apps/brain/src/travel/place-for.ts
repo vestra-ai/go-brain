@@ -95,6 +95,16 @@ export function createGuideOf(d: Pick<PlaceForDeps, 'engine' | 'images' | 'log'>
   };
 }
 
+/**
+ * A place's photo Go has kept already (place_details, by the words: the place as named, or the name before its first
+ * comma), reading no page: null when none is kept.
+ */
+export async function keptPhoto(pool: pg.Pool, words: string): Promise<string | null> {
+  const keys = [...new Set([norm(words), norm(words.split(',')[0] ?? '')])].filter((k) => k.length > 1);
+  const r = await pool.query<{ photo: string | null }>("select place->>'photo_url' as photo from place_details where words = any($1::text[])", [keys]);
+  return r.rows.find((x) => typeof x.photo === 'string' && x.photo !== '')?.photo ?? null;
+}
+
 export function createPlaceFor(d: PlaceForDeps): PlaceFor {
   const guideOf = createGuideOf(d);
   const resolvedOf = (k: KeptPlace): ResolvedPlace => ({ place: k.place, kind: k.kind, within: k.within });

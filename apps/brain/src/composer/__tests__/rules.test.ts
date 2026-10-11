@@ -46,7 +46,7 @@ describe("Go's rules: a travel agent who owns the outcome", () => {
   it('records a proposed date range as an open line and searches stays for it at once, the trip\'s dates unchanged until agreed', () => {
     expect(section('When you speak', 'How you write')).toContain(
       '- A date range someone proposes ("first week of December", "1 to 7 Dec?") is an open proposal: record it as an open line ("1 to 7 Dec?") and run search_stays at once ' +
-        "with those dates as check_in and check_out, the card's line saying they're for those dates. The trip's dates stay as they are until someone agrees or the organizer says so.",
+        "with those dates as check_in and check_out, the card's line saying they're for those dates. The trip's dates stay as they are until a vote picks them.",
     );
     expect(section('When you speak', 'How you write')).not.toContain('never search on it unless someone asks');
   });
@@ -179,7 +179,13 @@ describe('what stays, said once', () => {
     expect(votes).toContain("- Someone who said they're flexible on a vote has voted: never ask them to pick.");
     expect(votes).toContain('Never add it to a reply about something else ("…and the stay is still open for votes"), and never to a refusal.');
     expect(votes).toContain('the App posts its result: never say who won or the counts again. Take the next step');
-    expect(votes).toContain("- The title, place and dates change only on the organizer's word, two people agreeing in words, or a closed vote");
+    // Keshav, 11 Oct: "for change of place voting was right move but remove the organizer stuff"; and no polls for one.
+    expect(votes).toContain(
+      "- The title, place and dates change by the group's vote, applied the moment it closes: anyone asking to change one gets the vote opened at once (one tap each), never a refusal.",
+    );
+    expect(votes).toContain('A trip of one never gets a vote or poll: their word is the decision, applied at once.');
+    expect(GO_RULES).not.toContain('organizer says so');
+    expect(GO_RULES).not.toContain("organizer's word");
     expect(votes).toContain('- Never say who said, picked or agreed to what unless their own message in the chat says it.');
   });
 });
@@ -196,11 +202,13 @@ describe("ixigo's page is never the answer", () => {
 // Surprise us). Where the trip could go is a place card, the App's rail with Details and Vote, never words or buttons. An
 // area inside the place the trip has (North or South Goa) stays a quick reply (the lead, 11 Oct).
 describe('where the trip could go is a place card', () => {
-  it('runs plan.explore and puts its places up with show_options, never in words or offer_replies, the hello too', () => {
+  // Keshav, 11 Oct: suggestions need no ixigo. Go picks the places itself (suggest_places); ixigo books what is picked.
+  it('puts places Go picks itself up with suggest_places, never in words or offer_replies, the hello too', () => {
     expect(section('How you work', 'When you speak')).toContain(
-      "- Where the trip could go is always a place card (plan.explore from the asker's home city, the trip's month or next, then show_options), " +
-        'never words or offer_replies, for "Surprise us" and your hello too.',
+      '- Where the trip could go is always a place card: suggest_places, 5 to 8 places you pick for this group, never words or offer_replies, ' +
+        'for "Surprise us" and your hello too.',
     );
+    expect(GO_RULES).not.toContain('plan.explore');
   });
 
   it('keeps buttons for other picks, an area inside the place among them', () => {

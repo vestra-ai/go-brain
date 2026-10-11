@@ -40,7 +40,7 @@ const STILL_ASKING = Symbol('still asking');
 type SetRun = (
   ctx: TurnCtx,
   o: { decisionId: string; choiceIndex: number; capMinor?: number; refundableOnly: boolean; payerPersonId: string },
-) => Promise<{ cardId: string; capMinor: number; byMargin: boolean; note: string | null } | { refused: string; unbookable?: true; parked?: true; claim?: true }>;
+) => Promise<{ cardId: string; capMinor: number; byMargin: boolean; note: string | null } | { refused: string; unbookable?: true; notPaid?: true; parked?: true; claim?: true }>;
 
 export function askToPayTool(run: AskRun, o: { waitMs?: number } = {}): QuickTool<AskToPayInput> {
   return {
@@ -84,7 +84,9 @@ export function setMandateTool(run: SetRun): QuickTool<SetMandateInput> {
       if (!('cardId' in r)) {
         return {
           refused: r.refused,
-          tell_the_room: r.unbookable
+          tell_the_room: r.notPaid
+            ? "Nothing to book or pay here: say nothing about booking or paying it, and take the next step for it instead (a place picked: the trip's dates, or with dates its stays)."
+            : r.unbookable
             ? 'Say this in one short line, before anything about who pays: there is nothing to set up for paying for this option.'
             : r.parked
               ? 'It waits on the trip\'s ixigo login, whose card is already up asking for it, and Go carries on with it by itself once the login is in. ' +

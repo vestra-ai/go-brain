@@ -21,7 +21,7 @@ export const CHIME_RULES =
   'Answer a question the trip already answers once ("Dates are set: 6 to 9 Nov ✅. Want to change them?"), then never raise ' +
   'it again, even while the record lists it as open. When part of the group backs an option that is not a vote yet, offer a ' +
   'vote with the count ("3 of you said yes to Saudades. Want me to put it to a vote?"): never say locked in, confirmed or ' +
-  'decided until a vote closes or the organizer decides, and a "Leaning" line in the record is not a decision. Run a search ' +
+  'decided until a vote closes, and a "Leaning" line in the record is not a decision. Run a search ' +
   'only when someone asks for one ("find", "show", "any trains"); one person liking something ("Saudades looks perfect to ' +
   'me") is never a search.';
 
@@ -193,6 +193,9 @@ function pointsAt(m: Message, pack: TripPack): string | null {
   );
 }
 
+/** A ticket's kinds: each traveller's own pick, never a group's vote (travel/cards.ts PERSONAL_KINDS). */
+const PERSONAL_OPTION_KINDS: ReadonlySet<string> = new Set(['flight', 'train', 'bus']);
+
 export function renderTripChangeWake(item: DeskItem, pack: TripPack): string {
   const p = (item.payload ?? {}) as { type?: string; decisionId?: string; title?: string };
   // The group's stay is booked (money/finish.ts): each person's flights are next, never before it (Saket's test, 11 Oct).
@@ -217,10 +220,34 @@ export function renderTripChangeWake(item: DeskItem, pack: TripPack): string {
     // 3 votes"), so Go never says it again (the Server team's GO-TEAM-FINAL §8).
     const flexible = flexibleOf(d);
     const tally = `${d.options.map((op, k) => `${inlineData(op.label)} ${d.tally[k] ?? 0}`).join(', ')}; ${d.voted} of ${d.of} voted${flexible ? `, ${flexible} flexible` : ''}`;
+    // The card the vote is on says what it picked (Ankur, 12 Oct 00:14 IST: a place won, and Go said it couldn't be booked).
+    const card = pack.messages.find((m) => m.card?.kind === 'options' && m.card.decision_id === d.decision_id)?.card;
+    const kind = card?.kind === 'options' ? card.option_kind : null;
+    const closed = won ? `the vote ${inlineData(d.question)} closed: ${inlineData(won.label)} won (${tally}). ` : '';
+    const noMoney = 'never set_mandate or ask_to_pay, and never a word about booking or paying it';
+    if (won && kind === 'place') {
+      return (
+        closed +
+        `It picked where the trip goes, and Go saves it as the trip's place itself: never save it yourself, ${noMoney}. ` +
+        'The App already posted the result in the room: never say who won or the counts again. Take the next step yourself in one short line: ' +
+        "with the trip's dates set, put up its stays (search_stays); without them, ask for the dates in one question with offer_replies date buttons."
+      );
+    }
+    if (won && kind && kind !== 'stay' && !PERSONAL_OPTION_KINDS.has(kind)) {
+      return (
+        closed +
+        `It picked something nobody pays for: ${noMoney}. The App already posted the result in the room: never say who won or the counts again. ` +
+        'Say only the next step in one short line, or call stay_silent when there is none.'
+      );
+    }
     // An option is only a label (DecisionOption has no dates or place fields), so the model reads the winner and saves it.
     return won
-      ? `the vote ${inlineData(d.question)} closed: ${inlineData(won.label)} won (${tally}). ` +
-          `If it settled the trip's dates, save them with update_trip first, with decision_id "${d.decision_id}" (days without a year are the next ones from today). ` +
+      ? closed +
+          // Where the trip goes and its name too (Varkala, 11 Oct: "Where do we go?" closed on Morocco and a 7 to 0 rename
+          // passed, and Go said neither changed the trip, then sent the organizer to group settings the App doesn't have).
+          `If it settled where the trip goes, its dates or its name, save it with update_trip at once, with decision_id "${d.decision_id}" ` +
+          '(days without a year are the next ones from today; a country or region is its main city for visitors, and say which; a city ' +
+          'someone names in the winning country is that pick, with the same decision_id, never a second vote). ' +
           'If it settled where to stay (an area or a place to stay), save the winner as the stay, never as the destination: the destination is where the trip goes. ' +
           'Say it is the stay or picked, never "locked in": that reads as ixigo\'s Lock Price. ' +
           'The App already posted the result in the room: never say the counts again, or who won outside the stay\'s line below. ' +
@@ -250,8 +277,8 @@ export function renderSetupWake(item: DeskItem, pack?: TripPack): string {
       'you just joined this trip. Say hello to the group in one or two short lines and what you can do for them ' +
       '(find stays and flights, run votes, keep the plan, book when the group agrees). If someone asked you something ' +
       'in this turn, answer that first and keep the hello to a few words. Do not open a vote unless someone asks for one: ' +
-      'votes come later, when the group is choosing. Where the trip could go, if you suggest any, is a place card (the ixigo tool\'s ' +
-      'plan.explore, then show_options), never names in your words or in offer_replies. If the card can\'t come, say the hello anyway.'
+      'votes come later, when the group is choosing. Where the trip could go, if you suggest any, is a place card (suggest_places), ' +
+      'never names in your words or in offer_replies. If the card can\'t come, say the hello anyway.'
     );
   }
   return `setup: ${item.ref}`;
