@@ -744,6 +744,17 @@ describe('a login that lands with nothing waiting on it (Keshav, 9 Oct 14:52: "t
   });
 });
 
+// p2's audit, 11 Oct: every new trip's hello said "Nishanth Gunupudi, first link ixigo once…".
+describe('the login lines name the person by their first name', () => {
+  it("the hello's line, and the ask with no hello, say the first name; the card keeps the whole name", async () => {
+    const w = world({ statuses: [] });
+    const trip = { ...w.trip, people: w.trip.people.map((p) => (p.person_id === 'p_rahul' ? { ...p, name: 'Rahul Varma' } : p)) };
+    const hello = await w.login.helloCard({ tripId: w.tripId, wake: [greetWake], pack: goaPack({ trip }) });
+    expect(hello?.line).toBe('Rahul, link ixigo once with one tap and I can book for everyone.');
+    expect(JSON.stringify(hello?.card)).toContain('Rahul Varma');
+  });
+});
+
 describe("one login for all of a person's trips: their browser (tasks/browsers.ts; Keshav, 9 Oct: \"I dont want to login again and again\")", () => {
   it("a person whose browser is logged in already is not asked: Go's hello carries no login, and setup confirms it with one read", async () => {
     const b = fakeBrowser({ login: 'in', at: NOW, loggedInAt: new Date(NOW.getTime() - 3600_000) });
