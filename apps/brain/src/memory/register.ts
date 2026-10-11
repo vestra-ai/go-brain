@@ -6,7 +6,7 @@
  *  - 2 s after Go posts (the after-turn pass);
  *  - after a quiet spell (20 s, at most 60 s in a busy chat) for everything else;
  *  - the fold right after Go posts, and after 60 s of quiet (at most 10 minutes in a busy chat);
- *  - a sweep every 5 minutes that finishes anything a restart dropped.
+ *  - a sweep every 5 minutes that finishes anything a restart dropped, for every trip whose Server is not away.
  * A sure 👍 or 🙌 from the reflex is sent with add_reaction without any model, 3 s later unless the line is part of a burst to
  * Go. A sure ✅ on a message Jev is also sure holds a fact (Q7 and Q5) is sent inside the hook, before the notes pass, which
  * stays the fallback.
@@ -254,6 +254,10 @@ export function wireMemory(brain: Brain, d: WireDeps): {
         continue;
       }
       if (now - at < env.FOLD_QUIET_MS) continue;
+      // Its Server has been away for minutes (a closed drill; #390's away, as the minute refresh and the proactive sweep):
+      // both passes would only meet "no socket from the Server is open" (prod, 11 Oct: 9 of each in 48 min). It keeps its
+      // place, so they run once the Server is back.
+      if (await brain.door.link.away?.(tripId)) continue;
       runNotes(tripId);
       runFold(tripId);
       ran.push(tripId);

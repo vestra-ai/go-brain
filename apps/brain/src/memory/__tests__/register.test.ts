@@ -469,6 +469,24 @@ describe('a trip the Server no longer has', () => {
   });
 });
 
+// Prod, 11 Oct: for trips whose Server instance was away, the sweep's notes pass and fold each failed "no socket from the
+// Server is open", 9 times in 48 minutes. #390's away gates them, as it gates the minute refresh and the proactive sweep.
+describe('a trip whose Server is away', () => {
+  it('gets no notes pass and no fold from the sweep while its Server is away, and both once it is back', async () => {
+    const m = msg(95, 'p_priya', 'Sunday works too');
+    const w = setup('t_r17', [m], [JSON.stringify({ facts: [], lines: [] })]);
+    await db.pool.query(`INSERT INTO trips (trip_id) VALUES ('t_r17') ON CONFLICT DO NOTHING`);
+    await seedMessages(db.pool, 't_r17', [m]);
+    let away = true;
+    const asked: string[] = [];
+    Object.assign(w.link, { away: async (tripId: string) => (asked.push(tripId), away && tripId === 't_r17') });
+    expect(await w.wired.sweep()).not.toContain('t_r17');
+    expect(asked).toContain('t_r17');
+    away = false;
+    expect(await w.wired.sweep()).toContain('t_r17');
+  });
+});
+
 describe('registerMemory', () => {
   it('hands brain.onStop one stopper that clears the 5-minute sweep and the quiet timers', async () => {
     const w = setup('t_r9', [], []);
