@@ -72,7 +72,7 @@ function refuse(d: MoneyDeps, code: RefusalCode, words: Words, err?: unknown): R
 const CODES: ReadonlySet<string> = new Set<RefusalCode>([
   'decision_not_found', 'decision_not_closed', 'no_mandate', 'payer_has_not_confirmed', 'payer_declined', 'over_cap',
   'currency_mismatch', 'not_refundable', 'approval_outstanding', 'no_vote', 'wrong_offer', 'not_bookable', 'not_bookable_yet', 'already_paid',
-  'no_travel', 'hold_failed', 'rail_not_ready', 'vault_refused', 'server_down', 'closed', 'not_in_trip', 'already_booked',
+  'no_travel', 'hold_failed', 'rail_not_ready', 'vault_refused', 'server_down', 'closed', 'not_in_trip', 'already_booked', 'no_pick',
 ]);
 
 /** Fares Go does not book for the whole group this week (master §9 "Cut now"): they are per person. */
