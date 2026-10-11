@@ -5,7 +5,7 @@ import { looksLikeMoney, saysMoneyMoved } from '../reflex/money-line.js';
 import { plainlyNamesGo } from '../trips/names-go.js';
 import type { TripPack } from '../trips/pack.js';
 import { flexibleOf } from '../trips/votes.js';
-import { answersToGo, inlineData, personName } from './fence.js';
+import { answersToGo, followsGoAnswer, inlineData, personName } from './fence.js';
 
 /** For a line that says someone paid but no amount: record_expense would ask, but with no amount the model never calls it. */
 export const ASK_HOW_MUCH =
@@ -46,7 +46,8 @@ export function renderMessageWake(item: DeskItem, pack: TripPack): string {
  * the cache point, not in GO_RULES: the rules' cached bytes never change. A line saying someone paid or owes keeps its own instruction (record_expense from the rules, or ASK_HOW_MUCH); a
  * price or a budget ("villa under 8k a head") gets the note like any other line. A line by someone who named Go in
  * the same turn goes on with what they asked ("@Go one thing" ... "is there a good bakery near Anjuna?"), and so does a
- * line by someone answering a question Go asked them (answersToGo): it is a reply to Go, not the group talking.
+ * line by someone answering a question Go asked them (answersToGo), or going on from Go's answer to them (followsGoAnswer):
+ * it is a reply to Go, not the group talking.
  */
 export function quietNote(items: DeskItem[], pack: TripPack): string | null {
   const messages = items.flatMap((item) => {
@@ -57,7 +58,8 @@ export function quietNote(items: DeskItem[], pack: TripPack): string | null {
     return m && m.author.kind === 'person' ? [{ m, person: m.author.person_id, namesGo: p.namesGo === true || p.asksGo === true, actionable: p.actionable === true }] : [];
   });
   const answers = answersToGo(pack);
-  const named = new Set(messages.filter((x) => x.namesGo || answers.has(x.m.message_id)).map((x) => x.person));
+  const follows = followsGoAnswer(pack);
+  const named = new Set(messages.filter((x) => x.namesGo || answers.has(x.m.message_id) || follows.has(x.m.message_id)).map((x) => x.person));
   const seqs = messages.filter((x) => !named.has(x.person) && !saysMoneyMoved(x.m.text)).map((x) => x.m.seq);
   if (seqs.length === 0) return null;
   const refs = seqs.map((s) => `#${s}`);

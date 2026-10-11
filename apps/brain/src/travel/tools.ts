@@ -80,10 +80,13 @@ const Because = z
   .optional()
   .describe('Only when a time above comes from the trip, not from this ask: who it is for and why, in plain words, e.g. "Rahul can leave Friday after 6 pm".');
 
+/** A journey search's day: the one asked, else the trip's own, never a question back (p2's prod audit, 11 Oct #8). */
+const DAY = "YYYY-MM-DD: the day asked, else the trip's own (its start, or its end for the way back). Never ask for it when the trip has one.";
+
 export const FlightsArgs = z.object({
   from: Where.describe('City or airport code, e.g. "Delhi" or "DEL"; a city abroad with its airport code, e.g. "London (LHR)"'),
   to: Where.describe('City or airport code, e.g. "Goa" or "Dubai (DXB)"'),
-  date: z.iso.date().describe('YYYY-MM-DD'),
+  date: z.iso.date().describe(DAY),
   return_date: z.iso.date().optional()
     .describe('YYYY-MM-DD, the day back, for a round trip ("6 ko jaana 9 ko wapas"): both ways on one ixigo page, shown as pairs priced there and back. The times and stops given are the way there. Several legs (multi-city) are one search_flights a leg instead.'),
   depart_after: Clock.optional().describe('24-hour HH:MM. Someone who can only leave after 6 pm is "18:00".'),
@@ -106,7 +109,7 @@ export const FlightsArgs = z.object({
 export const JourneyArgs = z.object({
   from: Where.describe('City or station, e.g. "Jaipur"; for trains, a station with its Indian Railways code works too, e.g. "Udaipur City (UDZ)"'),
   to: Where.describe('City or station, e.g. "Goa"; for trains, a station with its code works too, e.g. "Madgaon (MAO)"'),
-  date: z.iso.date().describe('YYYY-MM-DD'),
+  date: z.iso.date().describe(DAY),
   depart_after: Clock.optional().describe('24-hour HH:MM'),
   depart_before: Clock.optional(),
   arrive_before: Clock.optional(),

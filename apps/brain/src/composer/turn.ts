@@ -2,6 +2,7 @@ import type Anthropic from '@anthropic-ai/sdk';
 import type pg from 'pg';
 import { limitRequestId, utcDay, type Budget } from '../budget.js';
 import type { DeskItem, TurnInput, TurnRunner } from '../desk/desk.js';
+import type { Message } from '../door/methods.js';
 import type { ServerLink } from '../door/server-link.js';
 import type { Log } from '../log.js';
 import { withholdCheck } from '../memory/reactions.js';
@@ -62,6 +63,18 @@ const isForGo = (i: DeskItem): boolean => {
   return i.kind === 'message' && (p?.namesGo === true || p?.asksGo === true);
 };
 const messageIdOf = (i: DeskItem): string => (i.payload as { messageId?: string } | null)?.messageId ?? i.ref;
+
+/**
+ * A line that landed while the turn wrote reaches the desk only once intake has read it (the reflex takes a moment), so
+ * the pre-post check waits for it a little, this long at a time, at most this often (prod, 11 Oct 08:26: "december I
+ * meant" landed 1 s before Go posted "Did you mean the first week of November?").
+ */
+const LATE_WAIT_MS = 300;
+const LATE_TRIES = 4;
+
+/** People's lines in the pack after the prompt's newest: what landed while the turn wrote (the pack takes each event). */
+const landedSince = (pack: TripPack, shownUpTo: number): Message[] =>
+  pack.messages.filter((m) => m.seq > shownUpTo && m.author.kind === 'person' && !m.deleted && !m.withheld);
 
 /** Reply to the one message that named Go when others spoke after it, so the thread stays clear. */
 function replyToFor(items: DeskItem[], pack: TripPack): string | null {
@@ -275,7 +288,14 @@ export function createComposer(d: ComposerDeps): Composer {
       // of its own, which sees what Go just said.
       // A direct answer has no exchange to go on: new lines wait for a turn of their own.
       if (!direct && !r.silent && r.text && ctx.mayPostText !== false && ctx.allowedTools === undefined && rounds < MAX_ROUNDS) {
+        // The desk's items for the lines that landed, waited for a little when a line is in the pack but not on the desk yet.
         const claimed = await d.claimNew(t.tripId, t.turnId);
+        for (let n = 0; n < LATE_TRIES; n++) {
+          const have = new Set(claimed.map(messageIdOf));
+          if (landedSince(pack, prompt.newestSeq).every((m) => have.has(m.message_id))) break;
+          await sleep(LATE_WAIT_MS);
+          claimed.push(...(await d.claimNew(t.tripId, t.turnId)));
+        }
         const passedOver = claimed.filter((i) => isForGo(i) && (seqOf(i, pack) ?? Number.POSITIVE_INFINITY) <= prompt.newestSeq);
         await d.release(t.turnId, passedOver.map((i) => i.id));
         pulled.push(...claimed.filter((i) => !passedOver.includes(i)));
@@ -283,7 +303,12 @@ export function createComposer(d: ComposerDeps): Composer {
         // A pulled message is this turn's to answer, so the next round's tools see it as part of what woke the turn: "I'll
         // pay for it" said as the vote closed is Rahul's claim (set_mandate), as it would be on a turn of its own.
         ctx.wake = [...t.items, ...pulled];
-        const fresh = linesFor(pulled, pack, prompt.forgotten, prompt.newestSeq);
+        // A line that landed and never reached the desk (intake left it to the people) is still read before the post.
+        const queued = new Set(pulled.map(messageIdOf));
+        const unqueued = landedSince(pack, prompt.newestSeq)
+          .filter((m) => !queued.has(m.message_id))
+          .map((m): DeskItem => ({ id: `landed:${m.message_id}`, tripId: t.tripId, kind: 'message', ref: m.message_id, dueAt: d.now(), payload: { messageId: m.message_id } }));
+        const fresh = linesFor([...pulled, ...unqueued], pack, prompt.forgotten, prompt.newestSeq);
         if (fresh.lines.length) {
           const more = await runLoop({
             ...base,

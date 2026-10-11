@@ -111,6 +111,32 @@ export function answersToGo(pack: TripPack): Map<string, number> {
   return out;
 }
 
+/**
+ * A person going on from Go's answer to them, without @Go (prod, 11 Oct 08:22: "also mention that he should be my
+ * roommate", right after Go answered that person, got silence). Go's latest message before it answered them (it replies
+ * to their message, or names them alone), nobody spoke in between, and it is the first thing they said since. Message id
+ * to Go's answer's number. A line that answers a question Go asked is answersToGo's, and keeps that mark.
+ */
+export function followsGoAnswer(pack: TripPack): Map<string, number> {
+  const out = new Map<string, number>();
+  const questions = answersToGo(pack);
+  let open: { seq: number; to: string } | null = null;
+  for (const m of pack.messages) {
+    const a = m.author;
+    if (m.deleted || a.kind === 'system') continue;
+    if (a.kind === 'go') {
+      const repliedTo = m.reply_to ? pack.messages.find((x) => x.message_id === m.reply_to)?.author : undefined;
+      const named = mentionsIn(m.text ?? '', pack.trip.people);
+      const to = repliedTo?.kind === 'person' ? repliedTo.person_id : named.length === 1 ? named[0]! : null;
+      open = to ? { seq: m.seq, to } : null;
+      continue;
+    }
+    if (open?.to === a.person_id && !m.reply_to && !questions.has(m.message_id)) out.set(m.message_id, open.seq);
+    open = null;
+  }
+  return out;
+}
+
 /** How one of Go's own earlier messages reads when it named someone who later had Go forget them in another trip. */
 export const HIDDEN_GO = '[hidden: it named someone who asked Go to forget them]';
 
@@ -124,6 +150,7 @@ export function roomView(pack: TripPack, forgotten: Forgotten, forgotElsewhere: 
   const names = new Map(pack.trip.people.map((p) => [p.person_id, personName(p.name)]));
   const seqs = new Map(pack.messages.map((m) => [m.message_id, m.seq]));
   const answers = answersToGo(pack);
+  const follows = followsGoAnswer(pack);
   // Paused people are named too: a name in Go's words is a name, whoever still hears from Go.
   const everyone = pack.trip.people.map((p) => ({ ...p, go_paused: false }));
   const namesForgotten = (m: Message): boolean => {
@@ -140,7 +167,7 @@ export function roomView(pack: TripPack, forgotten: Forgotten, forgotElsewhere: 
         ? null
         : namesForgotten(m)
           ? `#${m.seq} Go (you): ${HIDDEN_GO}`
-          : roomLabel(m, (id) => names.get(id) ?? 'Someone who left', (id) => seqs.get(id), (id) => answers.get(id)),
+          : roomLabel(m, (id) => names.get(id) ?? 'Someone who left', (id) => seqs.get(id), (id) => answers.get(id), (id) => follows.get(id)),
   };
 }
 
@@ -153,6 +180,7 @@ function roomLabel(
   nameOf: (personId: string) => string,
   seqOf: (messageId: string) => number | undefined,
   answerOf: (messageId: string) => number | undefined,
+  followOf: (messageId: string) => number | undefined = () => undefined,
 ): string | null {
   if (m.deleted || m.withheld) return null;
   const a = m.author;
@@ -163,6 +191,9 @@ function roomLabel(
   // A plain answer to a question Go asked this person: a reply to Go without the reply feature (answersToGo).
   const answers = answerOf(m.message_id);
   if (answers !== undefined) parts.push(`(answers Go's question #${answers})`);
+  // Going on from Go's answer to this person: for Go as well, without @Go (followsGoAnswer).
+  const follows = answers === undefined ? followOf(m.message_id) : undefined;
+  if (follows !== undefined) parts.push(`(follows Go's answer #${follows})`);
   // "Ask Go about this": the message it asks about is its subject.
   const about = m.about_message_id ? seqOf(m.about_message_id) : undefined;
   if (about !== undefined) parts.push(`(about #${about})`);
