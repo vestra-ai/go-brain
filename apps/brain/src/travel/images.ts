@@ -74,9 +74,13 @@ interface ImageResponse {
   body: { cancel(): Promise<void> } | null;
 }
 /** What fetching one hop needs; tests pass their own. */
-export type ImageFetch = (url: string, init: { signal: AbortSignal; redirect: 'manual' }) => Promise<ImageResponse>;
+export type ImageFetch = (url: string, init: { signal: AbortSignal; redirect: 'manual'; headers: { accept: string } }) => Promise<ImageResponse>;
 
 const EXT: Record<string, string> = { 'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp' };
+/** Asked of every source: a CDN that picks the format by it (ixigo's f_auto) sends one Go keeps, never AVIF. */
+const ACCEPT = 'image/webp,image/jpeg,image/png';
+/** A type some hosts send for a JPEG (ixigo's images host, 10 Oct atlas), as the standard one. */
+const ALIASES: Record<string, string> = { 'image/jpg': 'image/jpeg', 'image/pjpeg': 'image/jpeg' };
 export type ImageMime = 'image/jpeg' | 'image/png' | 'image/webp';
 
 export interface Images {
@@ -131,7 +135,7 @@ async function fetchImage(doFetch: ImageFetch, lookup: Lookup, first: string): P
     // to the addresses its own lookup checked (pinnedLookup).
     for (let hop = 0; hop <= MAX_REDIRECTS; hop += 1) {
       if (!isFetchableImageUrl(url) || !(await resolvesPublic(lookup, new URL(url).hostname))) return null;
-      const res = await doFetch(url, { signal: AbortSignal.timeout(FETCH_TIMEOUT_MS), redirect: 'manual' });
+      const res = await doFetch(url, { signal: AbortSignal.timeout(FETCH_TIMEOUT_MS), redirect: 'manual', headers: { accept: ACCEPT } });
       if (res.status >= 300 && res.status < 400) {
         const next = res.headers.get('location');
         await res.body?.cancel().catch(() => undefined);
@@ -139,7 +143,8 @@ async function fetchImage(doFetch: ImageFetch, lookup: Lookup, first: string): P
         url = new URL(next, url).toString();
         continue;
       }
-      const mime = (res.headers.get('content-type') ?? '').split(';')[0]!.trim().toLowerCase();
+      const said = (res.headers.get('content-type') ?? '').split(';')[0]!.trim().toLowerCase();
+      const mime = ALIASES[said] ?? said;
       if (!res.ok || !(mime in EXT)) return null;
       const bytes = Buffer.from(await res.arrayBuffer());
       if (bytes.length === 0 || bytes.length > MAX_BYTES) return null;
