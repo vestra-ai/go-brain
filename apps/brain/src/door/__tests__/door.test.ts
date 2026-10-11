@@ -18,6 +18,8 @@ let door: DoorImpl;
 let link: ServerLinkImpl;
 let base: string;
 const events: unknown[] = [];
+/** The trips the door heard a person act in (onTripActive). */
+const active: string[] = [];
 /** The meta each get_person was handed, by the person asked about. */
 const metas = new Map<string, unknown>();
 // A lane's own socket (P6's media stream works the same way): it answers each frame and records the path it was opened on.
@@ -38,6 +40,10 @@ beforeAll(async () => {
     now: () => new Date(),
     pingMs: 50,
     idleMs: 300,
+    onTripActive: (tripId) => {
+      active.push(tripId);
+      if (tripId === 't_hook_throws') throw new Error('hook failed');
+    },
   });
   door.handle('send_event', async (ev) => {
     events.push(ev);
@@ -119,6 +125,20 @@ describe('the door', () => {
   });
 
   // ?instance= names the replica; ?server=, the same on every replica of one Server, keys a person's browser.
+  // 10 Oct: a person opening the room (catch_up) or tapping names the trip before they type, so its computer can wake.
+  it("hears a person act in the trip a request names, before its handler, never from an event, and never in the answer's way", async () => {
+    const s = await connect();
+    active.length = 0;
+    await s.call('forget_person', { person_id: 'p_rahul', trip_id: 't_open' });
+    await s.call('forget_person', { person_id: 'p_rahul' });
+    await s.call('send_event', { event_id: 'ev_hook_1', type: 'trip.updated', trip_id: 't_event', occurred_at: '2026-10-10T10:00:00Z', seq: 1, by: { kind: 'system' }, data: { changed: ['title'] } });
+    // A hook that throws: the request is answered all the same (forget_person's own handler fails with 500 here).
+    const answered = await s.call('forget_person', { person_id: 'p_rahul', trip_id: 't_hook_throws' });
+    expect(answered).toHaveProperty('error');
+    expect(active).toEqual(['t_open', 't_hook_throws']);
+    await s.close();
+  });
+
   it("hands each request the socket's instance, and the Server's own name when the socket gives one", async () => {
     const named = await rawServer(`${base}/v1/socket?instance=named-${++n}&server=vestra-staging`, SECRET);
     await named.call('get_person', { person_id: 'p_meta_named' });

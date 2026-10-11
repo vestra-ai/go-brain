@@ -138,7 +138,8 @@ describe('an option input', () => {
       offer: async (optionId: string) => (optionId === 'opt_fl_1' ? { resultsId: 'r_fl', n: 1 } : null),
     } as unknown as Pick<ResultsStore, 'get' | 'card' | 'offer'>;
     const tool = ixigoTool({ book, engine: { answer: async (id: string) => { ran.push(id); throw new Error('no page'); } }, results, live: () => false })!;
-    expect(tool.description).toMatch(/\n\n- option\.facts \(option#\): What ixigo showed for one option on a card or in search results when Go read it: its fare, Lock Price/);
+    // The exam's re-run (10 Oct): the turn still said "I can't lock a price"; the line leads with the asks it answers.
+    expect(tool.description).toMatch(/\n\n- option\.facts \(option#\): Can we lock its price, is it refundable, how many seats are left: what ixigo showed for one option/);
     const turn = { tripId: 't_goa', turnId: 'turn_k', cards: [], stableId: (p: string) => `${p}_1` } as unknown as TurnCtx;
     const want = {
       recipe: 'option.facts', title: 'IndiGo 6E 2134', checked_at: '2026-10-10T09:00:00.000Z',

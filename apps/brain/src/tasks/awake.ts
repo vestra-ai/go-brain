@@ -37,7 +37,7 @@ export interface TripAwakeDeps {
 }
 
 export interface TripAwake {
-  /** The trip log's events (tripLog.onEvent): a person's new line is heard now; Go's own lines and the rest, never. */
+  /** The trip log's events (tripLog.onEvent): a person's new line, a new trip and a person joining are heard now; Go's own lines and the rest, never. */
   onEvent(ev: TripEvent): void;
   /** A person's line in the trip, at that time: its computer is held awake from now until AWAKE_QUIET_MS after it. */
   heard(tripId: string, at: Date): void;
@@ -93,7 +93,9 @@ export function createTripAwake(d: TripAwakeDeps): TripAwake {
 
   return {
     onEvent(ev) {
+      // A person's line; and a new trip or someone joining one, whose people are about to talk.
       if (ev.type === 'message.created' && ev.data.message.author.kind === 'person') heard(ev.trip_id, d.now());
+      else if (ev.type === 'trip.created' || ev.type === 'person.joined') heard(ev.trip_id, d.now());
     },
     heard,
     async catchUp() {

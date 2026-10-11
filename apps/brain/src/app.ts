@@ -91,6 +91,11 @@ export interface Brain {
     keepWarm(tripId: string): void;
     /** Holds the trip's computer awake keepMs once it is up (Bash's warm keep_ms), for the keepalive while people talk. */
     keepAwake?(tripId: string, keepMs: number): Promise<'ready' | 'waking'>;
+    /**
+     * A person is active in the trip before typing (they opened its room after a while, or tapped a card): its computer
+     * is held awake as when they post (tasks/awake.ts), so their first ask never waits for it to wake. Fire and forget.
+     */
+    roomActive?(tripId: string): void;
     start(tripId: string): Promise<'ready' | 'waking' | 'skipped'>;
     prime(tripId: string): Promise<void>;
     watch(tripId: string, signal: AbortSignal): Promise<ScreenStream>;
@@ -204,7 +209,11 @@ export async function buildBrain(env: Env, o: BuildOptions = {}): Promise<Built>
     },
   });
   const guard = createReplayGuard({ pool, now });
-  const door = createDoor({ http, secret: env.GO_SIGNING_SECRET, guard, link, log, now, pingMs: t.pingMs, idleMs: t.idleMs });
+  const door = createDoor({
+    http, secret: env.GO_SIGNING_SECRET, guard, link, log, now, pingMs: t.pingMs, idleMs: t.idleMs,
+    // Read at each request: the tasks lane sets the trip computer's hold after the door is made.
+    onTripActive: (tripId) => brain.recipeRunners?.roomActive?.(tripId),
+  });
   const taps = createTapRouter({ pool, cards, log });
   // send_event's answer waits on one write only, on connections of its own: never behind the work of earlier events on
   // the main pool (GO-TEAM-FINAL §6, 10 Oct: mandate.set took 2,142 ms, the promise is 2 s).

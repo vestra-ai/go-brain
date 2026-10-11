@@ -22,6 +22,11 @@ export interface DoorOptions {
   now: () => Date;
   pingMs?: number;
   idleMs?: number;
+  /**
+   * A person acting in a trip, as a Server request names it (opening its room after a while: catch_up; a tap: card_tap):
+   * often before any line they type. Never in a request's way: called once its params are read, and never throws.
+   */
+  onTripActive?: (tripId: string) => void;
 }
 
 export type DoorImpl = Door & { close(): void; openSockets(): number };
@@ -200,6 +205,15 @@ export function createDoor(o: DoorOptions): DoorImpl {
     }
     const parsed = C.parseParams(f.method, f.params);
     if (!parsed.ok) return errorFrame(f.id, parsed.code, parsed.message);
+    // A trip's events reach their own listeners (the trip log); any other request that names a trip is a person there.
+    const tripId = f.method === 'send_event' ? undefined : (parsed.params as { trip_id?: unknown }).trip_id;
+    if (typeof tripId === 'string') {
+      try {
+        o.onTripActive?.(tripId);
+      } catch (e) {
+        o.log.warn({ err: e instanceof Error ? e.message : 'unknown', method: f.method }, 'a trip-active hook failed');
+      }
+    }
     try {
       const result = await withLimit(handler(parsed.params as never, { ...from, frameId: f.id }), (def.answer_within ?? 2) * 1_000 - 200);
       const checked = (TO_GO_SCHEMAS[f.method as ToGoMethod][1] as z.ZodType).safeParse(result);

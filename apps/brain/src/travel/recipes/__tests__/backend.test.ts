@@ -313,6 +313,9 @@ function carded(engine: { answer: Answer }) {
       finish: async (ok: boolean) => {
         events.push(`${n}:finish:${ok ? 'done' : 'failed'}`);
       },
+      answered: () => {
+        events.push(`${n}:answered`);
+      },
     };
   };
   const b = createIxigoWebBackend({ book, engine, now, live: live as never, cardDelayMs: 0 });
@@ -371,6 +374,14 @@ describe("a live card belongs to its search's turn", () => {
     c.b.turnEnded({ tripId: 't_goa', turnId: 'turn_1', messageIds: ['m_41'] });
     c.b.turnEnded({ tripId: 't_goa', turnId: 'turn_1', messageIds: ['m_41'] });
     expect(c.events).toEqual(['1:failed', '1:finish:failed']);
+  });
+
+  // Exam #9, 10 Oct: Go answered well, and its cards were left failed beside the answer.
+  it('tells the cards of a turn that answered first, so they end done with their gap, never failed beside the answer', async () => {
+    const c = carded(scripted('fail').engine);
+    await expect(c.b.search('trains', TRAINS, EARLY)).rejects.toThrow();
+    c.b.turnEnded({ tripId: 't_goa', turnId: 'turn_1', messageIds: ['m_41'], answered: true });
+    expect(c.events).toEqual(['1:answered', '1:failed', '1:finish:failed']);
   });
 
   it("never fails the card on a pick: it says Go is choosing, waits through the turn's end, and the search after the pick goes on in it (8 Oct, D1)", async () => {
@@ -822,6 +833,41 @@ describe("a stays search by the group's decided budget", () => {
     const found = await b.search('stays', { to: 'Goa', checkIn: '2026-11-06', checkOut: '2026-11-09', budgetMinor: 450_000 }, { tripId: 't_band' });
     expect(found.results.map((r) => r.title)).toEqual(['Stay 1', 'Stay 2']);
     expect(runs.map((r) => r.budgetMinor)).toEqual([450_000, undefined]);
+  });
+
+  // The exam's re-run, 10 Oct: "a pool" as Private Pool with Entire house left no stay, three empty reads, and Go said
+  // "nothing came back". The strictest of ixigo's own filters (the fewest stays on its list) goes first, then the rest.
+  it("drops the strictest of ixigo's own filters when together they leave no stay, then the rest, and says which", async () => {
+    const offers = [
+      { kind: 'filter' as const, group: 'Accommodation Type', name: 'Entire house', code: 'AT_EH', count: 1 },
+      { kind: 'filter' as const, group: 'Facilities', name: 'Private Pool', code: 'FL_HF_23', count: 4 },
+    ];
+    const list = { recipeId: 'hotels.search', about: 'stays in Goa', offers, bands: [], at: 0 };
+    const backend = (fits: (asked: string[]) => boolean) => {
+      const runs: RunFor[] = [];
+      const answer: Answer = async (_id, _given, ro) => {
+        runs.push(ro);
+        const asked = ro.siteFilters ?? [];
+        return {
+          as: 'options', options: fits(asked) ? [stay(1, true)] : [], page: 'https://www.ixigo.com/hotels/search/result', checkedAt: '2026-10-10T15:45:00.000Z', ms: 900,
+          site: { filtered: asked, sorted: null, unknown: [], listed: true, list },
+        };
+      };
+      return { runs, b: createIxigoWebBackend({ book, engine: { answer }, now }) };
+    };
+    const ask = { to: 'Goa', checkIn: '2026-11-06', checkOut: '2026-11-09', siteFilters: ['Private Pool', 'Entire house'] };
+    // Entire house holds 1 stay on ixigo's list for the place, Private Pool 4: Entire house goes first.
+    const one = backend((asked) => asked.length < 2);
+    const found = await one.b.search('stays', ask, { tripId: 't_drop' });
+    expect(one.runs.map((r) => r.siteFilters)).toEqual([['Private Pool', 'Entire house'], ['Private Pool']]);
+    expect(found).toMatchObject({ dropped: ['Entire house'] });
+    expect(found.results.map((r) => r.title)).toEqual(['Stay 1']);
+    // Still none: the rest go too, and the page is read without them.
+    const all = backend((asked) => asked.length === 0);
+    const plain = await all.b.search('stays', ask, { tripId: 't_drop2' });
+    expect(all.runs.map((r) => r.siteFilters)).toEqual([['Private Pool', 'Entire house'], ['Private Pool'], undefined]);
+    expect(plain).toMatchObject({ dropped: ['Entire house', 'Private Pool'] });
+    expect(plain.results).toHaveLength(1);
   });
 
   // Jev's early read of a place is often its first, before ixigo's list (and so its bands) is known; the composer's
