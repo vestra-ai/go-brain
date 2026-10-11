@@ -112,6 +112,13 @@ export const LOGIN_COOKIE = 'at';
 const COOKIE_SITE = 'ixigo.com';
 /** How often Go reads the browser's `at` while the person logs in on Watch. One browser-level read: no page, no tab. */
 export const LOGIN_POLL_MS = 2_000;
+/**
+ * Past this long from the tap, the read comes every LOGIN_POLL_SLOW_MS: a login that has not landed in 30 s is a person
+ * reading a code, and every read is a request Bash counts against Go (11 Oct: about 50 a minute from two waits, and
+ * "Every /v1 key is resting" on the next Log in to ixigo).
+ */
+export const LOGIN_POLL_FAST_FOR_MS = 30_000;
+export const LOGIN_POLL_SLOW_MS = 5_000;
 /** A one-tap login shows "I'm logged in" only when Go has seen nothing land this long (Bash's read gone quiet, say). */
 export const SELF_CHECK_MS = 60_000;
 /** How often Go looks over the one-tap logins (sweep): a restart of Go loses at most this much of a person's wait. */
@@ -821,7 +828,8 @@ export function createIxigoLogin(d: LoginDeps): IxigoLogin {
   async function waitForLogin(row: LoginRow): Promise<void> {
     let fellBack = false;
     for (;;) {
-      await sleep(LOGIN_POLL_MS);
+      const sinceTap = row.oneTap ? d.now().getTime() - row.oneTap.tappedAt : 0;
+      await sleep(sinceTap < LOGIN_POLL_FAST_FOR_MS ? LOGIN_POLL_MS : LOGIN_POLL_SLOW_MS);
       const now = await get(row.tripId);
       if (now?.state !== 'logging_in' || now.attempt !== row.attempt || !now.oneTap) return;
       const waited = d.now().getTime() - now.oneTap.tappedAt;
