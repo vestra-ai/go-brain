@@ -52,6 +52,10 @@ describe('money words', () => {
     });
     // No link from the travel layer: just the first sentence.
     expect(refusalWords('not_bookable_yet', { payer: 'Rahul', what: 'Rajdhani 12432', kind: 'train' }).text).toBe("I can't book trains for the whole group yet.");
+    // Where Go books each person's own flight (BOOKING), a group flight says how theirs is booked, never "book on ixigo".
+    expect(refusalWords('not_bookable_yet', { payer: 'Rahul', what: 'IndiGo 6E 2134', kind: 'flight', link: 'https://www.ixigo.com/flights/6e-2134', own: true }).text).toBe(
+      "Flights are each person's own, so there's no one payment for the group: each of you taps I'll take this on your own flights card, and I book it.",
+    );
     expect(refusalWords('not_bookable_yet', { payer: 'Rahul', what: 'Volvo sleeper', kind: 'bus' }).text).toBe("I can't book buses for the whole group yet.");
   });
 

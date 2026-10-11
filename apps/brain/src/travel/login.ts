@@ -706,8 +706,9 @@ export function createIxigoLogin(d: LoginDeps): IxigoLogin {
       await show(await loggedIn(now, { carryOn: true }));
     } else {
       // The page is in front for them: the card says so. Then ixigo's Login and the mobile box, tapped on the page they
-      // watch (best effort: the page stays theirs if a tap finds nothing), and the page takes the keyboard.
-      await show(now);
+      // watch (best effort: the page stays theirs if a tap finds nothing), and the page takes the keyboard. A card that
+      // can't go out never keeps the taps from the page they are already looking at.
+      await show(now).catch((err: unknown) => d.log.warn({ err, tripId: row.tripId }, "travel: the ixigo login's card did not say the page is open"));
       await runner.tabSteps?.(row.tripId, LOGIN_TAB, [LOGIN_BUTTON[opened.device ?? 'phone'], MOBILE_BOX], tapsOf(opened.device))
         .catch((err: unknown) => d.log.warn({ err, tripId: row.tripId }, "travel: the ixigo login's taps did not run"));
     }
@@ -1004,9 +1005,11 @@ export function createIxigoLogin(d: LoginDeps): IxigoLogin {
           shown = { ...next, oneTap };
         }
         const before = shown.oneTap ? loginCookie(row.tripId).then((at) => (at === undefined ? undefined : keepCookie(shown, at))).catch(() => undefined) : null;
-        // The card first (opening), then the page: whatever the hand-off finds is said after it, never under it.
+        // The card first (opening), then the page: whatever the hand-off finds is said after it, never under it. The person
+        // is on Go's screen already, so a card that can't go out never keeps the page from them (prod, 11 Oct 08:13Z: the
+        // opening card's failure stopped the hand-off, and the screen stayed on a new tab).
         const page = (async () => {
-          await show(shown, 'opening');
+          await show(shown, 'opening').catch((err: unknown) => d.log.warn({ err, tripId: row.tripId }, "travel: the ixigo login's card did not say opening"));
           await handOff(shown, runner);
         })();
         track('hand-off', row.tripId, page);

@@ -68,7 +68,7 @@ export interface Said {
 }
 
 /** What Go says when it will not pay, in its own voice. The model may reword it; it may never offer another way to pay. */
-export function refusalWords(code: RefusalCode, c: { payer: string; what: string; amount?: string; cap?: string; kind?: string; link?: string }): Said {
+export function refusalWords(code: RefusalCode, c: { payer: string; what: string; amount?: string; cap?: string; kind?: string; link?: string; own?: boolean }): Said {
   const yes = (text: string): Said => ({ text, say: true });
   switch (code) {
     case 'decision_not_found':
@@ -111,7 +111,12 @@ export function refusalWords(code: RefusalCode, c: { payer: string; what: string
           : "I found this one on the web, so I can't book it here. Want me to call them instead?",
       );
     case 'not_bookable_yet': {
-      // A fare is per person, so one payment for the group would be wrong: the group books these on ixigo themselves.
+      // A fare is per person, so one payment for the group would be wrong. Where Go books each person's own flight
+      // (BOOKING on for the trip: own), each of them picks theirs on their own card and Go books it; otherwise the group
+      // books these on ixigo themselves.
+      if (c.own && (c.kind ?? 'flight') === 'flight') {
+        return yes("Flights are each person's own, so there's no one payment for the group: each of you taps I'll take this on your own flights card, and I book it.");
+      }
       const first = `I can't book ${c.kind === 'train' ? 'trains' : c.kind === 'bus' ? 'buses' : 'flights'} for the whole group yet.`;
       return yes(c.link ? `${first} Each of you can book on ixigo: View on ixigo, in its details on its card, opens it there.` : first);
     }
