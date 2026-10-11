@@ -80,6 +80,7 @@ export async function approveTap(t: TapDeps, tap: CardTapParams, card: C.Card): 
   // The bank has not answered about a charge: no new page, and never Start again.
   if (row.state === 'confirming') return refused(row.checking_at ? TOASTS.checking : TOASTS.confirming);
   if (row.state === 'expired') {
+    if (row.kind === 'ticket') return refused(TOASTS.ticketRunOut);
     startAgain(t, row, tap.tap_id);
     return done(TOASTS.restart);
   }
@@ -91,6 +92,7 @@ export async function approveTap(t: TapDeps, tap: CardTapParams, card: C.Card): 
   const holdGone = !row.hold_expires_at || row.hold_expires_at.getTime() <= now.getTime() + 60_000;
   if (approvalGone || holdGone) {
     await transition(t.d.pool, row.payment_id, ['waiting'], 'expired', { release_reason: 'expired' }, now);
+    if (row.kind === 'ticket') return refused(TOASTS.ticketRunOut);
     startAgain(t, row, tap.tap_id);
     return done(TOASTS.fresh);
   }
