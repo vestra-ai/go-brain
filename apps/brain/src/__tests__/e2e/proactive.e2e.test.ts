@@ -46,7 +46,9 @@ beforeAll(async () => {
   server = new FakeServer({ goUrl: `http://127.0.0.1:${port}`, secret: SECRET, instance: 'sim-p6' });
   await server.start();
   await server.createTrip(trip);
-  // Someone speaks after Go's hello, so the first nudge is not "two in a row" (any message of Go's is its last word).
+  // Someone speaks after Go's hello, so the first nudge is not "two in a row" (any message of Go's is its last word). The
+  // hello is the plain one (this script never writes one, #496): wait for it, so Priya's line comes after it.
+  await server.waitFor(() => server.writes.find((w) => w.method === 'post_message'), 10_000);
   await server.say('p_priya', 'Cannot wait for Goa!');
   await new Promise((resolve) => setTimeout(resolve, 500));
 }, 30_000);
