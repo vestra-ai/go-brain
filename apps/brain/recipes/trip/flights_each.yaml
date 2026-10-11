@@ -8,9 +8,12 @@ inputs:
   to: { kind: text, value: $trip.destination, about: where the trip goes }
   date: { kind: date, value: $trip.start, about: the day everyone flies }
   cabin: { kind: choice, optional: true, about: "economy, premium_economy or business" }
+  # One home city alone: the asker's own, for "my flights" (travel/flights-each.ts), never every city's page for one person.
+  from: { kind: text, optional: true, about: "one home city alone, for one person's own flights" }
 steps:
-  # Each member's home city, the cities most people come from first; a home in the trip's own place flies nowhere.
-  each: $trip.homes[$lowercase($) != $lowercase($$.to)]
+  # Each member's home city, the cities most people come from first; a home in the trip's own place flies nowhere. One
+  # city when from names it.
+  each: "$exists(from) ? [from] : $trip.homes[$lowercase($) != $lowercase($$.to)]"
   as: home
   run:
     # The city's flights page (paced: one flights page across every trip in 20 s), read once for everyone there: each

@@ -16,7 +16,7 @@ import type { Brain } from '../app.js';
 import type { CardTapParams } from '../door/methods.js';
 import type { DeskItem } from '../desk/desk.js';
 import type { TripPack } from '../trips/pack.js';
-import { PAY_FLIGHT, type FlightBooking } from './booking/flight-booking.js';
+import { PAY_FLIGHT, TRAVELLER_FEMALE, TRAVELLER_MALE, type FlightBooking } from './booking/flight-booking.js';
 import { BOOK_MINE, budgetSheet, buildConfirmMineCard, CHANGE_MINE, clip, ixigoPage, PERSONAL_KINDS } from './cards.js';
 import { stableId } from './ids.js';
 import type { Images } from './images.js';
@@ -30,7 +30,7 @@ export interface TravelTapDeps {
   results: ResultsStore;
   pool: Brain['pool'];
   /** Go booking a person's own flight itself (BOOKING, booking/flight-booking.ts); absent, "Book it" opens ixigo. */
-  booking?: Pick<FlightBooking, 'onFor' | 'start' | 'pay'>;
+  booking?: Pick<FlightBooking, 'onFor' | 'start' | 'pay' | 'gender'>;
   /** A person's name in the trip, for the room's words about their booking. */
   nameOf?: (tripId: string, personId: string) => Promise<string>;
   link: Brain['door']['link'];
@@ -170,6 +170,22 @@ export function registerTravelTaps(taps: Brain['taps'], d: TravelTapDeps): { see
     return d.booking.pay({ tripId: tap.trip_id, cardId: tap.card_id, personId: tap.person_id, tapId: tap.tap_id });
   });
   // The flights link card: its own ixigo page, from the card itself.
+  // Their gender on a booking's one ask (flight-booking.ts genderAsk): kept for that booking, which carries on by itself;
+  // the card then shows it answered, with no buttons.
+  for (const [action, gender] of [[TRAVELLER_MALE, 'male'], [TRAVELLER_FEMALE, 'female']] as const) {
+    taps.on('notice', action, async (tap, card) => {
+      const forWho = 'for_person_ids' in card ? (card.for_person_ids ?? []) : [];
+      if (!d.booking || !forWho.includes(tap.person_id)) return { result: 'refused', toast: 'This one is for someone else' };
+      const r = await d.booking.gender({ tripId: tap.trip_id, cardId: tap.card_id, personId: tap.person_id, gender });
+      if (r.result === 'done' && card.kind === 'notice') {
+        const answered = { ...card, actions: [], body: 'Thanks. Go carries on with your booking.', fallback_text: 'Thanks. Go carries on with your booking.' };
+        void d.link.request('replace_card', { trip_id: tap.trip_id, card: answered })
+          .catch((err: unknown) => d.log.warn({ err, cardId: tap.card_id }, "travel: a booking's answered ask stayed as it was"));
+      }
+      return r.result === 'done' ? { result: 'done', toast: r.toast } : { result: 'refused', toast: r.toast };
+    });
+  }
+
   taps.on('notice', 'see_on_ixigo', async (_tap, card) => {
     const url = card.kind === 'notice' ? ixigoPage(card.source?.url) : null;
     if (!url) return { result: 'refused', toast: 'This card has no ixigo page' };

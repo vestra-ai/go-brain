@@ -65,6 +65,8 @@ describe('registerTravel', () => {
     expect(lb.tools.list().map((t) => t.name)).toEqual(['search_flights', 'search_trains', 'search_buses', 'search_stays', 'show_options', 'put_to_vote', 'set_budget', 'ixigo', 'ixigo_login', 'compare_ways_there', 'search_flights_each', 'watch_ixigo', 'stop_watch', 'book_flight']);
     expect([...lb.taps.handlers.keys()].sort()).toEqual([
       'notice/ixigo_logged_in', 'notice/ixigo_login', 'notice/ixigo_logout', 'notice/ixigo_not_now', 'notice/ixigo_watch', 'notice/pay_flight', 'notice/see_on_ixigo',
+      // A booking's one ask for a traveller's gender (flight-booking.ts genderAsk).
+      'notice/traveller_female', 'notice/traveller_male',
       'options/add_budget', 'options/book_mine', 'options/change', 'options/flights_home', 'options/more_options', 'options/open', 'options/pick', 'options/see_all', 'options/vote',
       // The rooms card's pick (REV4 B5, rooms-card.ts).
       'rooms/pick',

@@ -414,7 +414,7 @@ describe('the search wake line', () => {
   });
 
   it('a search that failed is said in one line and offered again, never handed to a job (staging, 9 Oct: start_task on a blank page)', async () => {
-    const w = setup(async () => { throw new TravelError('unreachable', "Someone is using the trip's computer's browser. Try again in a moment."); }, null);
+    const w = setup(async () => { throw new TravelError('unreachable', "Someone is using the trip's computer's browser."); }, null);
     const out = await w.run();
     expect(out).toMatchObject({ count: 0, error: 'unreachable', tell_the_room: expect.stringContaining('Never start_task for it') });
     expect(renderSearchWake(item({ source: 'travel_search', search: 'buses', count: 0, resultsId: null, summary: '', error: 'unreachable' }))).toContain('Never start_task');

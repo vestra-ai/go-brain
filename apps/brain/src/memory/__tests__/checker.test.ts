@@ -228,6 +228,14 @@ describe('checkLine: the plan already has it', () => {
     // A line Go opened before can still be changed (closed); the check is only on opening one.
     expect(checkLine(lineP({ kind: 'open', text: 'Budget per person?', proof: [dates.message_id], line_id: 'ln_old', status: 'done' }), e())).not.toEqual(refused);
   });
+
+  // Prod, 11 Oct: "Group budget ₹20,000 per person", agreed, sat in the record next to the App's ₹20,000.
+  it('never writes an agreed line about the budget either: the App holds the one the group agreed', () => {
+    const rahul = msg(181, 'p_rahul', 'budget is 20k each, final');
+    const withRahul = env({ pack: packOf([...messages, dates, rahul], goaTrip()) });
+    expect(checkLine(lineP({ kind: 'agreed', text: 'Group budget ₹20,000 per person', proof: [rahul.message_id] }), withRahul))
+      .toEqual({ ok: false, reason: "the trip's budget is kept in the App, never in the record" });
+  });
 });
 
 describe('checkLine: an ask to Go is answered, never an open line', () => {

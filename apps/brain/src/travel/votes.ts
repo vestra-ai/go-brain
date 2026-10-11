@@ -13,6 +13,7 @@ import type * as C from '@go/contract';
 import type { ServerLink } from '../door/server-link.js';
 import { clip, formatInr, ixigoPage, PERSONAL_KINDS, placeKindNotAll, stayLine, type OptionsCardT } from './cards.js';
 import type { OptionFields, OptionKind, ResultOption, ResultsStore } from './results.js';
+import { stableId } from './ids.js';
 import type { StoredOffer } from './travel.js';
 
 /** How long a vote runs unless asked otherwise: a day, as it opens with its card, before anyone has looked (the lead, 11 Oct). */
@@ -98,13 +99,33 @@ async function cardVoteOptions(results: Pick<ResultsStore, 'offersOnCard' | 'opt
  */
 async function openVoteOfKind(
   d: { results: Pick<ResultsStore, 'votesOfKind'>; link: Pick<ServerLink, 'request'> }, tripId: string, kind: OptionKind, cardId: string, key: string,
-): Promise<{ decisionId: string; count: number } | null> {
+): Promise<{ decisionId: string; count: number; voted: number } | null> {
   const ids = await d.results.votesOfKind(tripId, kind, cardId, key);
   if (ids.length === 0) return null;
   const trip = await d.link.request('read_trip', { trip_id: tripId });
   const vote = trip.decisions.filter((dec) => ids.includes(dec.decision_id) && dec.status === 'open').at(-1);
-  return vote ? { decisionId: vote.decision_id, count: vote.options.length } : null;
+  return vote ? { decisionId: vote.decision_id, count: vote.options.length, voted: vote.voted } : null;
 }
+
+/** A search as a vote is about: its place and its dates ("varkala|2026-12-01|2026-12-07"). */
+const searchKey = (q: Record<string, unknown>): string =>
+  [q['area'] ?? q['to'] ?? '', q['checkIn'] ?? q['date'] ?? '', q['checkOut'] ?? ''].map((v) => String(v).trim().toLowerCase()).join('|');
+
+const dayMonth = (iso: string): string => new Intl.DateTimeFormat('en-GB', { timeZone: 'UTC', day: 'numeric', month: 'short' }).format(new Date(`${iso}T00:00:00Z`));
+/** A search in words, as a vote line says it: "Varkala, 7 to 12 Dec"; what it doesn't have, left out. */
+function searchWords(q: Record<string, unknown>): string {
+  const place = typeof q['area'] === 'string' ? q['area'] : typeof q['to'] === 'string' ? q['to'] : null;
+  const from = typeof q['checkIn'] === 'string' ? q['checkIn'] : null;
+  const to = typeof q['checkOut'] === 'string' ? q['checkOut'] : null;
+  let dates: string | null = null;
+  if (from && to) {
+    const [a, b] = [dayMonth(from), dayMonth(to)];
+    dates = a.split(' ')[1] === b.split(' ')[1] ? `${a.split(' ')[0]} to ${b}` : `${a} to ${b}`;
+  }
+  return [place, dates].filter((x): x is string => !!x).join(', ');
+}
+
+const NOUNS: Partial<Record<OptionKind, string>> = { stay: 'stays', place: 'places', food: 'places to eat', activity: 'things to do' };
 
 function voteCardFor(id: string, decisionId: string, question: string, options: VoteOption[]): VoteCard {
   const listed = options.map((op) => (op.price_minor !== undefined ? `${op.label} ${formatInr(op.price_minor)}` : op.label)).join(', ');
@@ -145,15 +166,30 @@ export async function openVoteFromCard(
     // Best effort: a trip the Server can't read now still gets the card's vote.
     const open = o.onCard ? await openVoteOfKind(d, o.tripId, row.optionKind, o.cardId, o.key).catch(() => null) : null;
     if (open) {
-      // Every option of the card, each by its own option_ref, so each of its Vote buttons is a vote (a stay an earlier
-      // card shows too is on that card under its own).
-      if (open.count + each.length > VOTE_MOST) {
-        await d.results.releaseVote(o.cardId, o.key);
-        return { ok: false, reason: 'already_voting', decisionId: open.decisionId };
+      // The open vote's search and this card's: another place or other dates (the trip's dates changed) make it stale.
+      const was = await d.results.searchOfVote(o.tripId, open.decisionId).catch(() => null);
+      const now = (await d.results.get(o.tripId, row.resultsId))?.query ?? null;
+      const stale = was !== null && now !== null && searchKey(was) !== searchKey(now);
+      // The same search with room: every option of the card joins it, each by its own option_ref, so each of its Vote
+      // buttons is a vote (a stay an earlier card shows too is on that card under its own).
+      if (!stale && open.count + each.length <= VOTE_MOST) {
+        await d.link.request('add_vote_options', { request_id: o.requestId, trip_id: o.tripId, decision_id: open.decisionId, options: each });
+        await d.results.setDecision(o.cardId, open.decisionId);
+        return { ok: true, decisionId: open.decisionId, voteCard: voteCardFor(o.voteCardId, open.decisionId, question, options), size: open.count + each.length };
       }
-      await d.link.request('add_vote_options', { request_id: o.requestId, trip_id: o.tripId, decision_id: open.decisionId, options: each });
-      await d.results.setDecision(o.cardId, open.decisionId);
-      return { ok: true, decisionId: open.decisionId, voteCard: voteCardFor(o.voteCardId, open.decisionId, question, options), size: open.count + each.length };
+      // Stale, or full with nobody voted: it closes, said plainly, and this card opens its own vote. Full with votes in
+      // it: it stays open as it is, and this card still opens its own (Keshav's Varkala trip, 11 Oct: a card for the new
+      // dates joined the old dates' full vote and went up with no vote at all).
+      if (stale || open.voted === 0) {
+        const noun = NOUNS[row.optionKind] ?? 'options';
+        const line = stale
+          ? `The earlier ${noun} vote was for ${searchWords(was!) || 'another search'}; this card is the vote for ${searchWords(now!) || 'this one'}.`
+          : `The earlier ${noun} vote had no room left; this card is the new vote.`;
+        // Best effort: the new card's vote opens whatever the Server says to these.
+        await d.link.request('close_vote', { request_id: stableId('go_close_replaced', open.decisionId), trip_id: o.tripId, decision_id: open.decisionId })
+          .then(() => d.link.request('post_message', { request_id: stableId('go_vote_replaced', open.decisionId, o.cardId), trip_id: o.tripId, text: line }))
+          .catch(() => undefined);
+      }
     }
     const closesAt = new Date(d.now().getTime() + (o.closesInHours ?? VOTE_HOURS) * 3_600_000).toISOString();
     const opened = await d.link.request('open_vote', {

@@ -5,6 +5,7 @@
  * and say so. Neither key is ever the model's word.
  */
 import type { TicketAsk, TicketCard, TicketLink } from './ask.js';
+import type { TravelDetails } from './vault-client.js';
 
 export interface Pay {
   /** optionRef is the winning vote option's option_ref (an options card's option_id), never a travel offer id. */
@@ -22,6 +23,11 @@ export interface Pay {
    * id, or the words to say. Paid, it comes through onPaid like any payment, and the card shows paid.
    */
   requestTicketCard(tripId: string, o: TicketAsk): Promise<TicketCard>;
+  /**
+   * A traveller's own travel details from their vault (vault-client.ts), for a ticket of their own Go is booking: typed
+   * only into that booking's own form on ixigo, never a log, the model, memory or a card. Null when they kept none.
+   */
+  travelDetails?(i: { tripId: string; personId: string; booking: { ref: string; travellerPersonId: string; purpose: string } }): Promise<TravelDetails | null>;
   /** apps/vault calls POST /internal/vault/paid (signed with VAULT_SHARED_SECRET); P5 finishes the booking. */
   onPaid(fn: (p: { tripId: string; approvalId: string; railRef: string }) => Promise<void>): void;
   /** Payments that went through without both keys, counted from the vault's unlock log and Go's payments. Always 0. */
