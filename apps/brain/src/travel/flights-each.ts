@@ -9,7 +9,9 @@
  * final round, 10 Oct: one card per traveller, theirs alone to act on, no vote), even two from one city. Each city's
  * cards go up as its page lands, the first in about 5 s, behind a live card ticking off the cities. A city whose page
  * doesn't come never gets a link card (G1, 11 Oct): each of its people hears, theirs alone, that Go couldn't load their
- * flights and will try again in a minute, and Go tries that city again (try-again.ts, eachTryAgain).
+ * flights and will try again in a minute, and Go tries that city again (try-again.ts, eachTryAgain). That is the one line a
+ * person hears for it: never again for an ask again or a later try (p2's re-audit of Keshav's Varkala trip, 11 Oct: 20
+ * private lines in four rounds a minute apart, 15 to people who never asked). "My flights" is the asker's alone (asker.ts).
  */
 import { z } from 'zod';
 import type * as C from '@go/contract';
@@ -27,9 +29,10 @@ import { leaveWindow, type LeaveWindow } from './leave-window.js';
 import { TravelError } from './mcp-travel.js';
 import { CARD_DELAY_MS, TRAVEL_WAIT_MS } from './recipes/backend.js';
 import { norm } from './recipes/places.js';
+import { askedBy } from './asker.js';
 import { toResultOption, type ResultOption, type ResultsStore } from './results.js';
 import type { TravelKind, TravelOption, TravelQuery } from './travel.js';
-import { notLoadedLine, stillNotLoadedLine, TRIES, tryAgain, waitFor, type TryAgainItem } from './try-again.js';
+import { notLoadedLine, TRIES, tryAgain, waitFor, type TryAgainItem } from './try-again.js';
 import { waysLiveCard } from './ways-there.js';
 
 export const FLIGHTS_EACH = 'trip.flights_each';
@@ -46,6 +49,22 @@ const EACH_TOOL_MS = TRAVEL_WAIT_MS + 2_000;
  */
 export function eachDeadlineMs(cities: number): number {
   return Math.min(240_000, 30_000 + cities * 30_000);
+}
+
+/** How long a person told their city's flights didn't load hears nothing more of it: an ask again, a second search. */
+export const TOLD_MS = 30 * 60_000;
+/**
+ * Who was told, by trip, person, city and day, and when (told: bounded, the oldest first out): true, and kept, the first
+ * time in TOLD_MS this person hears their city's flights didn't load for this day.
+ */
+function firstTell(told: Map<string, number>, tripId: string, personId: string, home: string, date: string, nowMs: number): boolean {
+  const key = `${tripId}|${personId}|${norm(home)}|${date}`;
+  const at = told.get(key);
+  if (at !== undefined && nowMs - at < TOLD_MS) return false;
+  told.delete(key);
+  told.set(key, nowMs);
+  while (told.size > 5_000) told.delete(told.keys().next().value!);
+  return true;
 }
 
 type Person = C.Person;
@@ -179,7 +198,9 @@ export function eachTryAgain(d: Omit<FlightsEachDeps, 'live'>): (t: TryAgainItem
   return (t, pack) => {
     const each = t.payload.each;
     if (!each) return;
-    const groups = planEach(pack.trip.people, each.to, each.date).groups.filter((g) => norm(g.home) === norm(each.home));
+    // The search's own people (one asked for theirs alone), from that city.
+    const people = each.people ? pack.trip.people.filter((p) => each.people!.includes(p.person_id)) : pack.trip.people;
+    const groups = planEach(people, each.to, each.date).groups.filter((g) => norm(g.home) === norm(each.home));
     if (groups.length === 0) return;
     const at = { to: each.to, date: each.date };
     const run = async (): Promise<void> => {
@@ -210,9 +231,11 @@ export function eachTryAgain(d: Omit<FlightsEachDeps, 'live'>): (t: TryAgainItem
         await tryAgain({ ...d, desk: d.desk }, t.tripId, 'flights', { ...t.payload, n: t.payload.n + 1 });
         return;
       }
-      for (const g of groups) {
-        const ids = g.people.map((p) => p.personId);
-        await postFor(d, t.tripId, stableId('go_each', t.id, ...ids, 'gave_up'), null, notLoadedFor(g, stillNotLoadedLine), ids);
+      // The last try didn't land either. Never a line to everyone again: one closing line, to the person who asked when the
+      // city is theirs, so "I'll try again in a minute" never reads as Go forgetting (the lead, 11 Oct).
+      d.log?.warn({ tripId: t.tripId, home: each.home }, "travel: a city's flights didn't load after its tries");
+      if (each.asker && groups.some((g) => g.people.some((p) => p.personId === each.asker))) {
+        await postFor(d, t.tripId, stableId('go_each', t.id, each.asker, 'closing'), null, `Still couldn't load your ${each.home} flights. Say 'my flights' again whenever you want.`, [each.asker]);
       }
     };
     run().catch((err: unknown) => d.log?.warn({ err: String(err).slice(0, 200), tripId: t.tripId }, "travel: a city's flights try again failed"));
@@ -223,15 +246,19 @@ const Args = z.object({
   date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional().describe("YYYY-MM-DD, only when the ask names a day other than the trip's start"),
   to: z.string().min(2).max(60).optional().describe("Only when the ask names a place other than the trip's destination"),
   cabin: z.enum(['economy', 'premium_economy', 'business']).optional().describe('Only when the ask names a cabin'),
+  person_ids: z.array(z.string().min(1).max(80)).min(1).max(30).optional()
+    .describe('Whose flights: the asker\'s alone for "my flights"; leave it out only when they asked for everyone\'s, or ours'),
 });
 
 export function flightsEachTool(d: FlightsEachDeps): QuickTool<z.infer<typeof Args>> {
+  const told = new Map<string, number>();
   return {
     name: 'search_flights_each',
     description:
       "Finds each person's own flights to the trip from their home city, on the trip's day: one card for each city and leaving time, " +
       "for those people alone, each picking their own (a ticket is never a group vote). Each person's leaving time narrows their flights. " +
-      'Use it when the group asks for everyone\'s flights, or each person\'s; use search_flights for one route someone names. ' +
+      'Use it for someone\'s own flights ("my flights": person_ids [theirs]), or when the group asks for everyone\'s or ours; ' +
+      'use search_flights for one route someone names. ' +
       'The day, the destination, the home cities and the leaving times come from the trip.',
     input: Args,
     timeoutMs: EACH_TOOL_MS,
@@ -241,7 +268,12 @@ export function flightsEachTool(d: FlightsEachDeps): QuickTool<z.infer<typeof Ar
       const to = a.to ?? trip.destination?.name ?? null;
       const date = a.date ?? trip.dates?.start ?? null;
       if (!to || !date) return { error: 'needs_more', note: `Ask the group in one line for ${!to ? 'where the trip goes' : 'the day they fly'}.` };
-      const plan = planEach(trip.people, to, date);
+      // "My flights" is the asker's alone, whoever else the model names; only everyone's or ours fans out (asker.ts).
+      const asked = askedBy(ctx);
+      const scope = asked?.own ? [asked.personId] : (a.person_ids ?? null);
+      const people = scope ? trip.people.filter((p) => scope.includes(p.person_id)) : trip.people;
+      if (people.length === 0) return { error: 'unknown_person', note: 'person_ids names nobody in the trip: give the person_id of each person whose flights to find.' };
+      const plan = planEach(people, to, date);
       const asks = [
         ...(plan.noHome.length > 0 ? [`${listOf(plan.noHome.map(firstName))}, where do you fly from?`] : []),
         ...plan.unread.map((u) => `${firstName(u.name)}, "${clip(u.text, 40)}" isn't a time, so your card has every flight.`),
@@ -307,11 +339,17 @@ export function flightsEachTool(d: FlightsEachDeps): QuickTool<z.infer<typeof Ar
           // A minute, or past ixigo's own quiet when ixigo refused a flights page: the line says which.
           const wait = waitFor(d, 'flights', { from: e.entry, to, date });
           for (const g of groupsOf(e.entry)) {
-            const only = g.people.map((p) => p.personId);
-            post(`${only.join(',')}|not_loaded`, null, notLoadedFor(g, (what) => notLoadedLine(what, wait)), only);
+            // Their one line for it: someone told lately (an ask again, a second search) hears nothing new while Go tries.
+            const nowMs = d.now().getTime();
+            const fresh = g.people.filter((p) => firstTell(told, ctx.tripId, p.personId, e.entry, date, nowMs));
+            if (fresh.length === 0) continue;
+            const only = fresh.map((p) => p.personId);
+            post(`${only.join(',')}|not_loaded`, null, notLoadedFor({ ...g, people: fresh }, (what) => notLoadedLine(what, wait)), only);
           }
           if (d.desk) {
-            const each = { home: e.entry, to, date, ...(a.cabin ? { cabin: a.cabin } : {}) };
+            const each = {
+              home: e.entry, to, date, ...(a.cabin ? { cabin: a.cabin } : {}), ...(scope ? { people: scope } : {}), ...(asked ? { asker: asked.personId } : {}),
+            };
             posts.push(
               tryAgain({ ...d, desk: d.desk }, ctx.tripId, 'flights', { key: stableId('each', ctx.turnId, norm(e.entry)), what: `flights from ${e.entry}`, n: 1, each })
                 .then(() => undefined)
@@ -320,7 +358,10 @@ export function flightsEachTool(d: FlightsEachDeps): QuickTool<z.infer<typeof Ar
           }
         }
       };
-      const running = d.engine.answer(FLIGHTS_EACH, { to, date, ...(a.cabin ? { cabin: a.cabin } : {}) }, {
+      // One person's own (or a few from one city): that city's page alone, never every city's.
+      const homes = [...new Set(plan.groups.map((g) => g.home))];
+      const from = scope && homes.length === 1 ? homes[0] : undefined;
+      const running = d.engine.answer(FLIGHTS_EACH, { to, date, ...(a.cabin ? { cabin: a.cabin } : {}), ...(from ? { from } : {}) }, {
         tripId: ctx.tripId,
         signal: timeUp.signal,
         // Each city's page waits its turn as often as it takes: a traveller gets their flights, never a link for a wait.
