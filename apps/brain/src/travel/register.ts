@@ -411,7 +411,8 @@ export const registerTravel: RegisterLane = async (brain) => {
   // A place a vote picked becomes the trip's, its title following when it named the old place (rev 5 R2).
   brain.context.addTurnCard(placeOnClose({
     results, log: brain.log,
-    save: (pack, change, requestId) => saveTrip({ pool: brain.pool, now: brain.now, travel: () => brain.travel }, { link: brain.door.link, tripId: pack.trip.trip_id, pack, requestId }, change),
+    // The vote decided it.
+    save: (pack, change, requestId) => saveTrip({ pool: brain.pool, now: brain.now, travel: () => brain.travel }, { link: brain.door.link, tripId: pack.trip.trip_id, pack, requestId }, { ...change, agreed: true }),
   }));
   brain.taps.on('rooms', ROOMS_PICK, roomsTap(rooms));
   const early = createEarlyStart({

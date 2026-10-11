@@ -96,7 +96,10 @@ const SAID_AS: Readonly<Record<string, string>> = {
   dogs: 'pet', bbq: 'barbeque', barbecue: 'barbeque', children: 'kids', pub: 'bar', tv: 'television', wheelchair: 'abled',
 };
 /** Words that say nothing of what a stay has ("a gym", "free wifi", "good parking"). */
-const FILLER = new Set(['a', 'an', 'the', 'with', 'has', 'have', 'having', 'free', 'good', 'nice', 'own', 'some', 'access', 'facility', 'facilities']);
+const FILLER = new Set([
+  'a', 'an', 'the', 'with', 'has', 'have', 'having', 'free', 'good', 'nice', 'own', 'some', 'access', 'facility', 'facilities',
+  'only', 'rated', 'hotel', 'hotels', 'stay', 'stays', 'property', 'properties',
+]);
 const wordsOf = (s: string): string[] => plain(s).split(/[^a-z0-9]+/).filter((w) => w.length > 0);
 const sameWord = (a: string, b: string): boolean => a === b || `${a}s` === b || a === `${b}s`;
 
@@ -113,9 +116,13 @@ export function meansOffer(asked: string, name: string): boolean {
   return want.every((w) => own.some((o) => sameWord(o, w)));
 }
 
-/** The filter that means what was asked, the one whose name says least besides ("Parking" before "Parking Available"). */
+/**
+ * The filter that means what was asked, the one whose name says least besides ("Parking" before "Parking Available"). A
+ * bare number is read with its heading (offerWords): "5 star only" is ixigo's Star Rating 5, never a user rating's "5+"
+ * (p2's audit, 11 Oct: "5 star only" in Varkala went unfiltered and a ₹3,053 stay was called 5-star).
+ */
 const meant = (offers: Offer[], asked: string): Offer | undefined =>
-  offers.filter((o) => o.kind === 'filter' && meansOffer(asked, o.name)).sort((a, b) => wordsOf(a.name).length - wordsOf(b.name).length)[0];
+  offers.filter((o) => o.kind === 'filter' && meansOffer(asked, offerWords(o))).sort((a, b) => wordsOf(offerWords(a)).length - wordsOf(offerWords(b)).length)[0];
 
 /**
  * The names asked for, as the site lists them: each matches an offer of that kind by its name, its words, or its heading

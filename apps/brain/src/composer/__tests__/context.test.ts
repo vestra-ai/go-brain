@@ -352,7 +352,8 @@ describe('why Go woke, and the trip block', () => {
     expect(hello).not.toMatch(/open_vote|first vote/);
     expect(c.renderWake(wake({ kind: 'trip_change', ref: 'decision:d_stay', payload: { type: 'decision.closed', decisionId: 'd_stay' } }), p)).toBe(
       'the vote <data>Where do we stay?</data> closed: <data>Villa Sol</data> won (<data>Villa Sol</data> 3, <data>Casa Azul</data> 1; 4 of 5 voted). ' +
-        "If it settled the trip's dates, save them with update_trip first (days without a year are the next ones from today). If it settled where to stay (an area or a place to stay), save the winner as the stay, never as the destination: the destination is where the trip goes. " +
+        'If it settled the trip\'s dates, save them with update_trip first, with decision_id "d_stay" (days without a year are the next ones from today). ' +
+        "If it settled where to stay (an area or a place to stay), save the winner as the stay, never as the destination: the destination is where the trip goes. " +
         'The App already posted the result in the room: never say who won or the counts again. ' +
         'Then say only the next step, in one short line (booking it, the next thing to settle), or call stay_silent when there is none.',
     );
