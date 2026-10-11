@@ -31,7 +31,7 @@ export interface PayFixture {
   registerFor(personId: string): Promise<TestAuthenticator>;
   cardFor(personId: string): Promise<CardSummary>;
   /** ticketFor: 1.3's personal approval for that person's own pick (no vote), who is its payer. */
-  payLinkFor(o?: { jti?: string; sameApproval?: boolean; payer?: string; ticketFor?: string; kind?: 'fake' | 'stripe_test' }): Promise<{ token: string; jti: string }>;
+  payLinkFor(o?: { jti?: string; sameApproval?: boolean; payer?: string; ticketFor?: string; kind?: 'fake' | 'stripe_test'; groupAgreed?: boolean }): Promise<{ token: string; jti: string }>;
   approve(token: string, who: TestAuthenticator): Promise<ApproveResult>;
   drop(): Promise<void>;
 }
@@ -112,6 +112,7 @@ export async function payFixture(): Promise<PayFixture> {
         trip_id: 't_goa',
         payer_person_id: payer,
         payer_name: payer,
+        ...(o.groupAgreed !== undefined ? { group_agreed: o.groupAgreed } : {}),
         hold: {
           hold_id: `hold_${jti}`,
           amount_minor: 5420000,

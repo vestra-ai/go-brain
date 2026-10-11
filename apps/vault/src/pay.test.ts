@@ -2,6 +2,8 @@ import { verifyRequest } from '@go/contract';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type pg from 'pg';
 import { approvePayment, payInfo, payOptions } from './pay.js';
+import { VAULT_JS } from './pages/assets.js';
+import { payPage } from './pages/html.js';
 import { payFixture, type PayFixture } from './testing/pay-fixtures.js';
 import { TEST_SHARED_SECRET } from './testing/vault-test-env.js';
 import type { TestAuthenticator } from './testing/test-authenticator.js';
@@ -55,6 +57,18 @@ describe('a payment with both keys', () => {
     await f.approve(token, rahul);
     expect(f.lines.length).toBeGreaterThan(0);
     expect(f.lines.join('\n')).not.toContain('pm_card_visa');
+  });
+
+  // The fine print says "The group agreed to this first" only when it did: never on a person's own ticket or a trip of one.
+  it('says the group agreed first only when Go says so, or, on an older link, when the approval names a vote', async () => {
+    const info = async (o: Parameters<PayFixture['payLinkFor']>[0]) => payInfo(f.d, (await f.payLinkFor(o)).token);
+    expect(await info({ groupAgreed: true })).toMatchObject({ state: 'ready', group_agreed: true });
+    expect(await info({ groupAgreed: false })).toMatchObject({ state: 'ready', group_agreed: false });
+    expect(await info({ ticketFor: 'p_rahul' })).toMatchObject({ state: 'ready', group_agreed: false });
+    expect(await info({})).toMatchObject({ state: 'ready', group_agreed: true });
+    const page = payPage();
+    expect(page).toContain('<span id="pay-agreed" hidden>The group agreed to this first. </span>It works once, for this amount only.');
+    expect(VAULT_JS).toContain("show('pay-agreed', d.group_agreed === true)");
   });
 
   it('shows the payer what the Server approved', async () => {

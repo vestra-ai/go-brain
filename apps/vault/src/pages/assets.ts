@@ -207,6 +207,8 @@ export const VAULT_JS = `(() => {
     $('amount').textContent = d.amount_label;
     $('merchant').textContent = d.merchant;
     $('purpose').textContent = d.purpose;
+    // Only when the group agreed first: never on a person's own ticket or a trip of one.
+    show('pay-agreed', d.group_agreed === true);
     if (d.refundable_label) { $('refund').textContent = d.refundable_label; show('refund'); }
     $('card').textContent = d.card_label;
     $('approve-btn').textContent = 'Approve with ' + (apple ? 'Face ID' : 'your passkey');
