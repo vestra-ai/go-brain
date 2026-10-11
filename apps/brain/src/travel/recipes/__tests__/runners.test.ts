@@ -7,6 +7,7 @@ import {
   BASH_MAX_BYTES, BUSY_TRIES, CHALLENGE_TRIES, CHALLENGE_WAIT_MS, CHALLENGED, ChallengedError, challenged, challengeTime, createBrowserFetchRunner, DEFAULT_SLOTS, FAST_TIMEOUT_MS, FAST_UNSUPPORTED_MS, FETCH_TIMEOUT_MS, FRAME_WIDTH, HANDOFF_IN_USE_TRIES, IN_USE_PATIENCE_MS, IN_USE_WAIT_MS, LOOK_AFTER_MS, LOOK_UNSUPPORTED_MS, NEAR_UNSUPPORTED_MS, NearUnsupportedError, STAGE_MS, STAGE_TAB,
   LOOK_SETTLE_MS, LOOK_TIMEOUT_MS, NothingCaughtError, OUT_OF_CREDIT, PAYMENT_PAGE_BLOCKED, PRIME_TIMEOUT_MS, SSE_UNSUPPORTED_MS, WARM_TAB_MS, type FetchTrace,
   bashCaptures, OPTIONAL_GRACE_MS,
+  COOKIES_SHARE_MS,
 } from '../runners.js';
 import { capture, fixture } from './fixtures.js';
 
@@ -766,6 +767,22 @@ describe("the browser fetch: how the recipe engine reads a page in the trip's br
       });
       expect(await createBrowserFetchRunner(old.deps).cookies!('t1', 'ixigo.com', ['at'])).toBeNull();
     }
+  });
+
+  // 11 Oct: two one-tap waits read their browser every 2 s each, about 50 reads a minute, and Bash rested every Go key.
+  it("shares one browser's cookie read between the waits of its trips: one out, or answered within COOKIES_SHARE_MS", async () => {
+    const w = world(() => ({ object: 'browser_cookies', cookies: [], woke: false }));
+    const runner = createBrowserFetchRunner({ ...w.deps, browser: { userFor: async () => 'u-rahul', again: async () => 'u-rahul' } });
+    await Promise.all([runner.cookies!('t1', 'ixigo.com', ['at']), runner.cookies!('t2', 'ixigo.com', ['at'])]);
+    expect(w.calls).toHaveLength(1);
+    await runner.cookies!('t2', 'ixigo.com', ['at']);
+    expect(w.calls).toHaveLength(1);
+    // Other names are another read; and the same once the shared answer is old.
+    await runner.cookies!('t1', 'ixigo.com', ['lt']);
+    expect(w.calls).toHaveLength(2);
+    await w.deps.sleep(COOKIES_SHARE_MS);
+    await runner.cookies!('t1', 'ixigo.com', ['at']);
+    expect(w.calls).toHaveLength(3);
   });
 
   // The App team, 10 Oct: "the login showed a laptop view of the browser instead of the mobile view". A desktop hand-off

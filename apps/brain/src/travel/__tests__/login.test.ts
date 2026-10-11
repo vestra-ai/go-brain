@@ -11,7 +11,7 @@ import { BOOK_DIR, checkRecipe, loadBook, type Book } from '../book/book.js';
 import { createEngine } from '../book/engine.js';
 import type { DeskItem } from '../../desk/desk.js';
 import {
-  cardIsTheAsk, createIxigoLogin, HANDOFF_MS, HANDOFF_PAGE_MS, HELLO_WAIT_MS, IDENTITY, ixigoLoginTool, LOGIN_CALLS, LOGIN_POLL_MS, LOGIN_TAB, LOGIN_URL, loginFrom, RECHECK_MS, renderLoginResume,
+  cardIsTheAsk, createIxigoLogin, HANDOFF_MS, HANDOFF_PAGE_MS, HELLO_WAIT_MS, IDENTITY, ixigoLoginTool, LOGIN_CALLS, LOGIN_POLL_FAST_FOR_MS, LOGIN_POLL_MS, LOGIN_POLL_SLOW_MS, LOGIN_TAB, LOGIN_URL, loginFrom, RECHECK_MS, renderLoginResume,
   SELF_CHECK_MS, USERINFO, WALLET,
 } from '../login.js';
 import { TravelError } from '../mcp-travel.js';
@@ -1338,6 +1338,18 @@ describe("one tap: Go's screen opens with the log in, and Go sees the login land
     expect(w.tabStepCalls[0]!.steps[0]).toEqual({ op: 'click', role: 'button', name: 'Log in/Sign up' });
     expect(await w.state()).toBe('logged_in');
     expect(w.releases).toEqual([LOGIN_TAB]);
+  });
+
+  // 11 Oct: about 50 reads a minute from two waits, and the next Log in to ixigo found every Go key resting.
+  it('reads every LOGIN_POLL_MS for LOGIN_POLL_FAST_FOR_MS from the tap, then every LOGIN_POLL_SLOW_MS', async () => {
+    const w = world({ cookies: (n) => (n < 20 ? [] : at(AT)), statuses: [200] });
+    await w.setup();
+    await w.tap('ixigo_login', 'p_rahul');
+    expect(await w.state()).toBe('logged_in');
+    const reads = w.cookieReads.map((r) => r.at);
+    const gaps = reads.slice(1).map((t, i) => t - reads[i]!);
+    gaps.forEach((g, i) => expect(g).toBe(reads[i]! - reads[0]! < LOGIN_POLL_FAST_FOR_MS ? LOGIN_POLL_MS : LOGIN_POLL_SLOW_MS));
+    expect(gaps).toContain(LOGIN_POLL_SLOW_MS);
   });
 
   it('an `at` the browser had counts once its expiry moves or it went and came back; a read Bash could not answer compares nothing', async () => {
