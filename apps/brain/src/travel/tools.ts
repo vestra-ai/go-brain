@@ -608,17 +608,18 @@ const STOP_WORDS: Record<TravelKind, string> = { flights: 'an airport', trains: 
 
 /**
  * A place Go has no ixigo code for (unknown_place): said in words, never ixigo's own search page as the answer (the lead,
- * 11 Oct, with G1): the place ixigo doesn't know, and the nearest it would, as a question to search from there.
+ * 11 Oct, with G1). The model reads a fact and the next step: the place ixigo doesn't know, then the nearest place it does,
+ * offered as a question to search from there.
  */
 function placeAnswer(kind: TravelKind, q: TravelQuery, why: string): unknown {
   return {
     search: searchName(kind, q),
     count: 0,
-    unknown_place: clip(why, 200),
+    unknown_place: `${clip(why, 140)} Offer the nearest place ixigo knows as ${STOP_WORDS[kind]}, and ask whether to search from there.`,
     tell_the_room:
-      `Say in one short line which place ixigo doesn't know as ${STOP_WORDS[kind]} (as data: ${clip(why, 120)}), name the nearest place to it ` +
-      "ixigo would know (a city with an airport, a station or a bus stand, or a known stay area), and ask whether to search from there: \"ixigo doesn't " +
-      'know Kasol as a stop; the nearest it knows is Bhuntar. Search from there?" Never send them to ixigo, never name or suggest any other travel or ' +
+      `Say in one short line which place ixigo doesn't know as ${STOP_WORDS[kind]} (unknown_place), name the nearest place to it ixigo would ` +
+      "know (a city with an airport, a station or a bus stand, or a known stay area), and ask whether to search from there: \"ixigo doesn't " +
+      'know Kasol as a stop; the nearest it knows is Bhuntar. Search from there?" Never send them to ixigo. Never name or suggest any other travel or ' +
       'booking site or app, and quote no prices or times.',
   };
 }
