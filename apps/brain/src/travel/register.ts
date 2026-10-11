@@ -11,7 +11,7 @@ import { bookingOnFor, createFlightBooking } from './booking/flight-booking.js';
 import { tripToday } from './dates.js';
 import { readTravelEnv } from './env.js';
 import { FakeIxigoStore } from './fake-ixigo/data.js';
-import { flightsEachTool } from './flights-each.js';
+import { eachTryAgain, flightsEachTool } from './flights-each.js';
 import { showHeadStartStays } from './head-start-wake.js';
 import { createImages, registerImageRoute } from './images.js';
 import { createIxigoLogin, ixigoLoginTool, LOGIN_SWEEP_MS, renderLoginResume } from './login.js';
@@ -21,7 +21,7 @@ import { registerLive } from './live.js';
 import { openRecipeCards, startLiveSearch } from './live-search.js';
 import { createHttpMcpCaller } from './mcp-caller.js';
 import { createFakeTravel, createIxigoTravel } from './mcp-travel.js';
-import { createIxigoWebBackend, LINK_ONLY_KINDS, searchKindOf } from './recipes/backend.js';
+import { createIxigoWebBackend, LINK_ONLY_KINDS, searchKindOf, searchRecipeOf } from './recipes/backend.js';
 import { createOffers } from './recipes/offers.js';
 import { offersNow } from './recipes/offers-now.js';
 import { createEarlyStart } from './recipes/early.js';
@@ -35,14 +35,14 @@ import { createResultsStore } from './results.js';
 import { createRoomsCards, ROOMS_PICK, roomsCardOnClose, roomsTap } from './rooms-card.js';
 import { createRunLog } from './runs.js';
 import { createScreenFeed } from './screen-feed.js';
-import { renderSearchWake, searchWakeAnswer } from './search-wake.js';
+import { renderSearchWake, searchWakeAnswer, tryAgainAnswer } from './search-wake.js';
 import { registerTravelTaps, renderOptionsTap } from './taps.js';
 import { travelTools } from './tools.js';
 import { budgetNow, budgetTool, createTripBudgets, stayCap } from './trip-budget.js';
 import { showBusDrops } from './bus-drops.js';
 import { optionDetailsHandler } from './option-details.js';
 import { showPickPhotos, type TopPick } from './pick-photos.js';
-import type { TravelKind } from './travel.js';
+import type { TravelKind, TravelQuery } from './travel.js';
 import { createIxigoWarm, createStaysHeadStart, IXIGO_WARM_STEP, STAYS_HEAD_START_STEP, startComputerAtSetup, wakeForCheck, warmForTravel } from './warm.js';
 import { waysThereTool } from './ways-there.js';
 import { createWebStays, stayOf } from './web-stays.js';
@@ -293,7 +293,9 @@ export const registerTravel: RegisterLane = async (brain) => {
   // kept), never Go dropping a stay.
   const budgets = createTripBudgets({ pool: brain.pool, now: brain.now });
   const stayBudget = async (tripId: string): Promise<number | null> => stayCap(await budgets.get(tripId, (await brain.packs.get(tripId)).trip));
-  for (const t of travelTools({ travel, results, images, now: brain.now, desk: brain.desk, log: brain.log, warmForTravel: warm, today, showPick, stayBudget, groupStay })) brain.tools.register(t);
+  // When ixigo's own quiet on a search's page ends (it refused one): Go's tries again wait past it (try-again.ts).
+  const ixigoQuiet = (kind: TravelKind, q: TravelQuery): number | null => engine.ixigoQuietUntil(searchRecipeOf(kind, q));
+  for (const t of travelTools({ travel, results, images, now: brain.now, desk: brain.desk, ixigoQuiet, log: brain.log, warmForTravel: warm, today, showPick, stayBudget, groupStay })) brain.tools.register(t);
   brain.tools.register(budgetTool({ budgets, pool: brain.pool, now: brain.now, log: brain.log }));
   brain.context.addNow(budgetNow({ budgets, trip: async (tripId) => (await brain.packs.get(tripId)).trip }));
   // A recipe's live card: its runs on the stage, as a search's are, so the room watches every page Go opens. Kept while
@@ -320,10 +322,10 @@ export const registerTravel: RegisterLane = async (brain) => {
       slots: () => Number(brain.switches.get('BROWSER_FETCH_SLOTS')),
     }),
   );
-  // Each person's own flights from their home city, on cards for them alone (B7): one page per city, posted as it lands.
-  brain.tools.register(
-    flightsEachTool({ engine, results, link: brain.door.link, now: brain.now, log: brain.log, live: () => brain.switches.get('TRAVEL_MODE') === 'ixigo_web' }),
-  );
+  // Each person's own flights from their home city, on cards for them alone (B7): one page per city, posted as it lands,
+  // and a city whose page didn't come tried again (try-again.ts).
+  const eachDeps = { engine, results, link: brain.door.link, now: brain.now, desk: brain.desk, ixigoQuiet, log: brain.log, live: () => brain.switches.get('TRAVEL_MODE') === 'ixigo_web' };
+  brain.tools.register(flightsEachTool(eachDeps));
   // Watches the group asks for on ixigo ("tell us when it confirms"): the tools, and the checks every 30 s that find
   // the due ones. What comes true goes through the proactive bar as the group's ask (RECIPE_WATCHES turns it all off).
   // A watch's first check reads what Go's searches keep before a page, and one already so puts its card up.
@@ -381,9 +383,11 @@ export const registerTravel: RegisterLane = async (brain) => {
   }));
   // The sites' own filter lists the trip's searches brought: the model maps the ask onto them (site_filters).
   brain.context.addNow(offersNow({ offers }));
+  // The tries again Go promised when ixigo didn't load a search (G1, 11 Oct): first, so each starts whatever else woke Go.
+  brain.context.addDirect(tryAgainAnswer({ travel, results, desk: brain.desk, ixigoQuiet, now: brain.now, log: brain.log, each: eachTryAgain(eachDeps) }));
   // A plain search ask whose early search found options answers with no model call: the card and a line from its data.
   // One still running is handed over, and the turn says nothing more: the live card covers the wait.
-  brain.context.addDirect(earlyAnswer({ early, results, images, travel, today, now: brain.now, desk: brain.desk, log: brain.log }));
+  brain.context.addDirect(earlyAnswer({ early, results, images, travel, today, now: brain.now, desk: brain.desk, ixigoQuiet, log: brain.log }));
   // A search that outlived its turn wakes Go with its options, and that wake puts them up itself: card and line.
   brain.context.addDirect(searchWakeAnswer({ results, images, showPick }));
   brain.context.addWake('search', renderSearchWake);

@@ -2,13 +2,16 @@ import * as C from '@go/contract';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { SAY_NOTHING } from '../../composer/tools.js';
 import { withSchema } from '../../db/test-db.js';
+import type { DeskItem } from '../../desk/desk.js';
 import { eventually, makeLaneBrain, type LaneBrain } from '../../tasks/testing/lane-brain.js';
 import { goaPack } from '../../tasks/testing/goa.js';
 import type { EngineAnswer, RunFor } from '../book/engine.js';
-import { eachDeadlineMs, flightsEachTool, flightsFor, FLIGHTS_EACH, planEach } from '../flights-each.js';
+import { eachDeadlineMs, eachTryAgain, flightsEachTool, flightsFor, FLIGHTS_EACH, planEach } from '../flights-each.js';
+import { TravelError } from '../mcp-travel.js';
 import type { RecipeOption } from '../recipes/recipe.js';
 import { createResultsStore, type ResultsStore } from '../results.js';
 import { registerTravelTaps } from '../taps.js';
+import type { TryAgainItem } from '../try-again.js';
 
 let db: Awaited<ReturnType<typeof withSchema>>;
 let lb: LaneBrain;
@@ -63,10 +66,14 @@ function tellAll(run: RunFor): void {
 }
 
 const asked: Array<{ id: string; given: Record<string, unknown> }> = [];
-const toolWith = (answer: (o: RunFor) => Promise<EngineAnswer>, o: { live?: boolean; waitMs?: number } = {}) =>
+/** The tries again a city whose page didn't come put on the desk. */
+const puts: DeskItem[] = [];
+const desk = { put: async (item: Omit<DeskItem, 'id'> & { id?: string }) => { puts.push({ ...item, id: item.id! }); } };
+const toolWith = (answer: (o: RunFor) => Promise<EngineAnswer>, o: { live?: boolean; waitMs?: number; ixigoQuiet?: () => number | null } = {}) =>
   flightsEachTool({
     engine: { answer: async (id, given, run) => (asked.push({ id, given }), id === FLIGHTS_EACH ? answer(run) : Promise.reject(new Error(id))) },
-    results, link: lb.link, now: lb.brain.now, live: () => o.live ?? true, waitMs: o.waitMs ?? 5_000, cardDelayMs: 60_000,
+    results, link: lb.link, now: lb.brain.now, desk, live: () => o.live ?? true, waitMs: o.waitMs ?? 5_000, cardDelayMs: 60_000,
+    ...(o.ixigoQuiet ? { ixigoQuiet: o.ixigoQuiet } : {}),
   });
 type Posted = { text: string; card: C.Card; visibleTo: string[] | undefined };
 const postedSince = (from: number): Posted[] =>
@@ -103,7 +110,7 @@ describe("each person's own flights, from their home city", () => {
     expect(flightsFor(priya!, DELHI)).toMatchObject({ fit: 5, shown: [{ title: 'IndiGo 6E2001' }, { title: 'Air India AI101' }, { title: 'IndiGo 6E2134' }] });
   });
 
-  it('posts a card for each city and window, for its people alone, a link for a city whose page did not come, and ends the turn quietly', async () => {
+  it('posts a card for each city and window, for its people alone, a plain line and a try again for a city whose page did not come, and ends the turn quietly', async () => {
     const ctx = lb.ctx({ turnId: 'turn_each1' });
     const from = lb.link.requests.length;
     const out = await toolWith(async (run) => (tellAll(run), COMPARE)).run({ cabin: 'economy' }, ctx);
@@ -111,9 +118,8 @@ describe("each person's own flights, from their home city", () => {
     expect(out).toMatchObject({ answered: false, tell_the_room: SAY_NOTHING });
     expect([ctx.cards, ctx.lines]).toEqual([[], []]);
     const posted = postedSince(from);
-    const byTitle = new Map(posted.map((p) => [(p.card as { title: string }).title, p]));
+    const byTitle = new Map(posted.filter((p) => p.card).map((p) => [(p.card as { title: string }).title, p]));
     expect([...byTitle.keys()].sort()).toEqual([
-      'Flights for Arjun, Bangalore to North Goa',
       'Flights for Kabir, Delhi to North Goa, Fri 6 Nov, after 5 pm',
       'Flights for Meher, Mumbai to North Goa, Fri 6 Nov',
       'Flights for Priya, Delhi to North Goa, Fri 6 Nov',
@@ -126,15 +132,61 @@ describe("each person's own flights, from their home city", () => {
     // Every button is Rahul's alone, and a ticket has no vote.
     expect(card.actions?.map((a) => [a.action_id, a.only_for_person_ids])).toEqual([['pick', ['p_rahul']], ['open', ['p_rahul']]]);
     expect(rahul.text).toBe('Rahul, your flights from Delhi on Fri 6 Nov, after 6 pm: 3 fit, from ₹6,000 a person. Tap "I\'ll take this" on yours.');
-    // Bangalore's page didn't come: Arjun gets ixigo's own page, pinned to him.
-    const arjun = byTitle.get('Flights for Arjun, Bangalore to North Goa')!;
-    expect(arjun.card).toMatchObject({ kind: 'notice', for_person_ids: ['p_arjun'], source: { url: expect.stringContaining('from=BLR') } });
-    expect([arjun.visibleTo, rahul.visibleTo]).toEqual([['p_arjun'], ['p_rahul']]);
-    expect((arjun.card as { actions: Array<{ only_for_person_ids?: string[] }> }).actions.map((a) => a.only_for_person_ids)).toEqual([['p_arjun']]);
-    expect(arjun.text).toMatch(/^Arjun, Go couldn't read the flights from Bangalore just now/);
+    // Bangalore's page didn't come: never a link card (G1, 11 Oct). Arjun hears it plainly, his alone, and Bangalore is
+    // tried again in a minute.
+    const arjun = posted.find((p) => !p.card)!;
+    expect(arjun).toEqual({ text: "Arjun, I couldn't load your flights from Bangalore just now; I'll try again in a minute.", card: undefined, visibleTo: ['p_arjun'] });
+    expect(rahul.visibleTo).toEqual(['p_rahul']);
+    expect(posted.filter((p) => !p.card)).toHaveLength(1);
+    expect(puts.at(-1)).toMatchObject({
+      tripId: 't_goa', kind: 'search', ref: 'flights',
+      payload: { source: 'travel_try_again', n: 1, what: 'flights from Bangalore', each: { home: 'Bangalore', to: 'North Goa', date: '2026-11-06', cabin: 'economy' } },
+    });
     // Rahul's pick on his card is his own: his confirm, never a vote.
     expect(await lb.taps.tap('options', 'pick', { tap_id: 'tap_each1', trip_id: 't_goa', card_id: card.card_id, action_id: 'pick', person_id: 'p_rahul', option_id: card.options[0]!.option_id }, card))
       .toEqual({ result: 'done', toast: "It's yours to confirm" });
+  });
+
+  // The lead, 11 Oct: never ask ixigo again inside its own quiet (it refused a page: a 403, a 429, Cloudflare's check).
+  it("tells that city's travellers ixigo asked us to slow down, theirs alone, and puts the city's try just past ixigo's quiet", async () => {
+    const quietEnds = lb.brain.now().getTime() + 10 * 60_000;
+    const from = lb.link.requests.length;
+    await toolWith(async (run) => (tellAll(run), COMPARE), { ixigoQuiet: () => quietEnds }).run({}, lb.ctx({ turnId: 'turn_each_q' }));
+    expect(postedSince(from).filter((p) => !p.card)).toEqual([{
+      text: "Arjun, I couldn't load your flights from Bangalore: ixigo asked us to slow down, so I'll try again in about 10 minutes.", card: undefined, visibleTo: ['p_arjun'],
+    }]);
+    expect(puts.at(-1)).toMatchObject({ id: expect.stringMatching(new RegExp(`:1:${quietEnds}$`)), dueAt: new Date(quietEnds + 5_000), payload: { n: 1, each: { home: 'Bangalore' } } });
+  });
+
+  it("tries that city again: its people's cards, theirs alone, when it lands; the next try when it doesn't; Go's last word after the last", async () => {
+    const tryOf = (n: number): TryAgainItem => ({
+      id: `try_again:t_goa:each_blr:${n}`, tripId: 't_goa', kind: 'search', ref: 'flights', dueAt: lb.brain.now(),
+      payload: { source: 'travel_try_again', key: 'each_blr', what: 'flights from Bangalore', n, each: { home: 'Bangalore', to: 'North Goa', date: '2026-11-06' } },
+    });
+    const runs: Array<[string, Record<string, unknown>, RunFor]> = [];
+    const tries = (answer: () => Promise<EngineAnswer>) =>
+      eachTryAgain({ engine: { answer: async (id, given, run) => (runs.push([id, given, run]), answer()) }, results, link: lb.link, now: lb.brain.now, desk });
+    // It lands: Arjun's own card, his alone, from Bangalore's page read through ixigo's quiet.
+    let from = lb.link.requests.length;
+    tries(async () => options([flight('IndiGo 6E6301', '6E', 4_200, '10:00', 'BLR')]))(tryOf(1), goaPack());
+    await eventually(() => postedSince(from).length === 1);
+    expect(runs.at(-1)).toEqual(['flights.results', { from: 'Bangalore', to: 'North Goa', date: '2026-11-06' }, { tripId: 't_goa', retry: true }]);
+    const landed = postedSince(from)[0]!;
+    expect(landed.visibleTo).toEqual(['p_arjun']);
+    expect(C.OptionsCard.parse(landed.card)).toMatchObject({ title: 'Flights for Arjun, Bangalore to North Goa, Fri 6 Nov', for_person_ids: ['p_arjun'] });
+    expect(landed.text).toMatch(/^Arjun, your flights from Bangalore on Fri 6 Nov: 1 fits, from ₹4,200 a person\./);
+    // It doesn't: the next try goes on the desk, a minute out, and nobody hears anything yet.
+    const before = puts.length;
+    from = lb.link.requests.length;
+    tries(async () => { throw new TravelError('unreachable', "ixigo's page call answered 403."); })(tryOf(1), goaPack());
+    await eventually(() => puts.length === before + 1);
+    expect(puts.at(-1)).toMatchObject({ id: 'try_again:t_goa:each_blr:2', dueAt: new Date(lb.brain.now().getTime() + 60_000), payload: { n: 2, key: 'each_blr' } });
+    expect(postedSince(from)).toEqual([]);
+    // The last try doesn't either: Go's last word, Arjun's alone, and never a link.
+    tries(async () => link('BLR'))(tryOf(2), goaPack());
+    await eventually(() => postedSince(from).length === 1);
+    expect(postedSince(from)).toEqual([{ text: "Arjun, I tried again and still couldn't load your flights from Bangalore. Ask me in a bit and I'll look once more.", card: undefined, visibleTo: ['p_arjun'] }]);
+    expect(puts).toHaveLength(before + 1);
   });
 
   it('four travellers from four cities get four cards, each theirs alone to act on, none with a vote (the Server team, 10 Oct)', async () => {

@@ -13,7 +13,7 @@ import { keepPlace } from '../recipes/places-store.js';
 import type { OnProgress } from '../recipes/progress.js';
 import { asOffers, bandsFor, offerWords, pickOffers, type Offer, type OfferList, type Offers } from '../recipes/offers.js';
 import { IXIGO, matches, type Capture, type CaptureSpec, type FetchPlan, type RecipeOption } from '../recipes/recipe.js';
-import { FETCH_TIMEOUT_MS, NearUnsupportedError, type ReadOptions, type RecipeRunner } from '../recipes/runners.js';
+import { ChallengedError, FETCH_TIMEOUT_MS, NearUnsupportedError, type ReadOptions, type RecipeRunner } from '../recipes/runners.js';
 import type { TravelKind } from '../travel.js';
 import type { Book } from './book.js';
 import { evaluate } from './expr.js';
@@ -255,6 +255,13 @@ export interface RunFor {
    * its filters): the page is asked once, and throws NothingCaughtError (runners.ts).
    */
   fallsBack?: boolean;
+  /**
+   * A try again Go promised the room (try-again.ts: ixigo didn't load the search, so Go said it would try in a minute):
+   * the page goes through Go's own quiet after a failed load, so the try asks ixigo itself. Never through the gap, and
+   * never through ixigo's own quiet (ixigo refused: a 403, a 429, Cloudflare's check), which would risk the shared address
+   * for every trip: try-again.ts puts such a try after it (ixigoQuietUntil).
+   */
+  retry?: boolean;
   /** The site's own filters and sort the run asks for, by their names on the list the recipe's page offers (offers.ts). */
   siteFilters?: string[];
   siteSort?: string;
@@ -367,15 +374,28 @@ export function createEngine(d: EngineDeps) {
    * Each paced recipe's (pace) last page load and the end of its quiet after one failed, in ms. One per process, for every
    * trip at once: ixigo sees all of our boxes as one address.
    */
-  const paces = new Map<string, { at: number; quietUntil: number }>();
+  /** Each paced recipe's last load, its quiet after a failed one, and whether ixigo itself refused that one (byIxigo). */
+  const paces = new Map<string, { at: number; quietUntil: number; byIxigo: boolean }>();
 
-  /** Whether a paced recipe's page may not load now: within its gap of the last load, or in its quiet after a failure. */
-  function pacedOut(id: string): boolean {
+  /**
+   * Whether a paced page is in its quiet for this run: ixigo's own (it refused the last load) holds every run; Go's own (the
+   * load failed some other way: a timeout, the trip's browser busy) holds all but a promised try again (RunFor.retry).
+   */
+  const inQuiet = (p: { quietUntil: number; byIxigo: boolean }, now: number, retry: boolean): boolean => now < p.quietUntil && (p.byIxigo || !retry);
+
+  /** Whether a paced recipe's page may not load now: within its gap of the last load, or in its quiet (inQuiet). */
+  function pacedOut(id: string, retry = false): boolean {
     const pace = d.book.get(id)?.pace;
     const p = paces.get(id);
     if (!pace || !p) return false;
     const now = d.now().getTime();
-    return now < p.quietUntil || now - p.at < pace.gap_seconds * 1_000;
+    return inQuiet(p, now, retry) || now - p.at < pace.gap_seconds * 1_000;
+  }
+
+  /** When ixigo's own quiet on a paced recipe's page ends, in ms: it refused the last load. Null when none is on. */
+  function ixigoQuietUntil(id: string): number | null {
+    const p = paces.get(id);
+    return p?.byIxigo && d.now().getTime() < p.quietUntil ? p.quietUntil : null;
   }
 
   /** One run, in the log and the numbers: recipe, speed, how long, and how it ended. */
@@ -883,6 +903,8 @@ export function createEngine(d: EngineDeps) {
         strip.line = line(o.tripId, { recipe_id: recipe.id, label: labelOf(recipe, given), speed: 'page', fell_from: fell.id, ...stepOf(o) });
       }
     }
+    // Whether ixigo itself refused one of this run's page loads (readOnce): its quiet, if the run fails, is ixigo's.
+    let refusedByIxigo = false;
     const readOnce = async (site: Site, bindings: Record<string, unknown>, page: string): Promise<EngineAnswer> => {
       const plan = withOffers(await fetchPlanOf(recipe, inputs, bindings), recipe, site);
       const started = d.now().getTime();
@@ -918,6 +940,8 @@ export function createEngine(d: EngineDeps) {
       // Never an account's page on the stage, whatever the caller asked.
       const onStage = account ? null : o.clickFrom ? await clicked(o.tripId, runner, plan, o.clickFrom, readFor) : o.staged ? await staged(o.tripId, runner, plan, readFor) : null;
       const got = onStage ?? (await runner.read(o.tripId, page, plan, readFor));
+      // ixigo answered a call with its own no (a 403, or "too many requests"): a quiet after this load is ixigo's (pacedOut).
+      if (got.captures.some((c) => c.status === 403 || c.status === 429)) refusedByIxigo = true;
       refusePayments(got.finalUrl);
       o.onProgress?.({ type: 'captured', ms: d.now().getTime() - started });
       await keepOffers(recipe, site, inputs, got.captures, o.tripId);
@@ -956,17 +980,19 @@ export function createEngine(d: EngineDeps) {
     // one held back fails at once, and its caller has another way (the link to ixigo's own page).
     const pace = recipe.pace;
     if (!pace) return readPage();
-    if (pacedOut(recipe.id)) {
+    if (pacedOut(recipe.id, o.retry)) {
       const p = paces.get(recipe.id)!;
       const now = d.now().getTime();
-      throw new PacedOutError(recipe.id, now < p.quietUntil ? null : Math.max(0, p.at + pace.gap_seconds * 1_000 - now));
+      throw new PacedOutError(recipe.id, inQuiet(p, now, o.retry === true) ? null : Math.max(0, p.at + pace.gap_seconds * 1_000 - now));
     }
-    paces.set(recipe.id, { at: d.now().getTime(), quietUntil: 0 });
+    paces.set(recipe.id, { at: d.now().getTime(), quietUntil: 0, byIxigo: false });
     try {
       return await readPage();
     } catch (err) {
       // ixigo refused or didn't answer: quiet. A run our own time cut short (a composite's) says nothing about ixigo.
-      if (!o.signal?.aborted) paces.set(recipe.id, { at: d.now().getTime(), quietUntil: d.now().getTime() + pace.quiet_minutes * 60_000 });
+      if (!o.signal?.aborted) {
+        paces.set(recipe.id, { at: d.now().getTime(), quietUntil: d.now().getTime() + pace.quiet_minutes * 60_000, byIxigo: refusedByIxigo || err instanceof ChallengedError });
+      }
       throw err;
     }
   }
@@ -1187,6 +1213,8 @@ export function createEngine(d: EngineDeps) {
     },
     /** Whether a paced recipe's page may not load now (pace): its caller goes another way at once, loading nothing. */
     pacedOut,
+    /** When ixigo's own quiet on a paced page ends (it refused the last load): a promised try again waits past it. */
+    ixigoQuietUntil,
     /**
      * A place as ixigo's box answers it for the words: the suggestion a person would pick, with what it shows (its
      * region, its country) and the place it stands for (place-for.ts reads its coordinates). Null when ixigo knows none,

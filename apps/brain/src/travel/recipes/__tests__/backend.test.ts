@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { loadBook } from '../../book/book.js';
 import { createEngine, type Engine, type RunFor } from '../../book/engine.js';
 import { TravelError } from '../../mcp-travel.js';
-import { CARD_DELAY_MS, CHALLENGE_COOL_MS, CHOOSING_MS, createIxigoWebBackend, NARROW_MIN, TRAVEL_WAIT_MS } from '../backend.js';
+import { CARD_DELAY_MS, CHALLENGE_COOL_MS, CHOOSING_MS, createIxigoWebBackend, NARROW_MIN, NOT_LOADED, TRAVEL_WAIT_MS } from '../backend.js';
 import type { RecipeOption } from '../recipe.js';
 import { NothingCaughtError } from '../runners.js';
 import { capture, fixture } from './fixtures.js';
@@ -227,22 +227,25 @@ describe('the ixigo_web backend', () => {
     function flightsEngine(o: { results?: 'options' | 'empty' | 'refused' | 'unknown_place'; live?: unknown } = {}) {
       const real = linkEngine(4, []);
       const runs: string[] = [];
+      const retried: boolean[] = [];
       const state = { paced: false, results: o.results ?? 'options' };
       const engine = {
         answer: (async (id, given, r) => {
           runs.push(id);
+          if (id === 'flights.results') retried.push(r.retry === true);
           if (id === 'flights.search') return real.answer(id, given, r);
           if (state.results === 'refused') throw new TravelError('refused', "ixigo's page did not send flights between two airports on a date.");
           if (state.results === 'unknown_place') throw new TravelError('unknown_place', 'ixigo knows no airport for "Atlantis".');
           return { as: 'options', options: state.results === 'empty' ? [] : [FLIGHT], page: 'https://www.ixigo.com/x', checkedAt: '2026-10-07T12:00:03.000Z', ms: 4_100 };
         }) as Answer,
-        pacedOut: (id: string) => id === 'flights.results' && state.paced,
+        pacedOut: (id: string, retry?: boolean) => id === 'flights.results' && state.paced && !retry,
       };
-      return { backend: createIxigoWebBackend({ book, engine, now, ...(o.live ? { live: o.live as never, cardDelayMs: 0 } : {}) }), runs, state };
+      return { backend: createIxigoWebBackend({ book, engine, now, ...(o.live ? { live: o.live as never, cardDelayMs: 0 } : {}) }), runs, retried, state };
     }
 
-    // Keshav's live test, 10 Oct: "DIDN'T WORK · Searching flights on ixigo", then the link card that answered the group.
-    it("ends a refused page's live card calm and done, saying the link answered: never \"Didn't work\" when the group got something", async () => {
+    // Keshav's live test, 10 Oct: "DIDN'T WORK · Searching flights on ixigo" over Go's own answer. Since G1 (11 Oct) that
+    // answer is Go's plain line that it couldn't load them and will try again: the card says the same, calm.
+    it("ends a refused page's live card calm and done, saying ixigo didn't load it: never \"Didn't work\" over Go's own line", async () => {
       const seen: string[] = [];
       const live = () => ({
         progress: (e: { type: string; text?: string }) => {
@@ -254,7 +257,7 @@ describe('the ixigo_web backend', () => {
       });
       const f = flightsEngine({ results: 'refused', live });
       await expect(f.backend.search('flights', FLIGHTS, { tripId: 't_goa', turnId: 'turn_calm' })).rejects.toMatchObject({ code: 'link_only' });
-      expect(seen).toEqual([expect.stringMatching(/^answered: Here's ixigo's page, set /), 'done']);
+      expect(seen).toEqual([`answered: ${NOT_LOADED}`, 'done']);
     });
 
     it("reads flights from their page, and keeps them: asked again while the page is paced, the kept flights answer", async () => {
@@ -275,6 +278,15 @@ describe('the ixigo_web backend', () => {
         // Held back, no page loads: the link alone.
         expect(f.runs, way).toEqual(way === 'paced' ? ['flights.search'] : ['flights.results', 'flights.search']);
       }
+    });
+
+    // G1, 11 Oct: Go's promised try again asks ixigo through the quiet (the engine still keeps the gap: recipes.test.ts).
+    it('passes a promised try again on to the engine, so a page held back loads for it', async () => {
+      const f = flightsEngine();
+      f.state.paced = true;
+      const found = await f.backend.search('flights', FLIGHTS, { tripId: 't_goa', retry: true });
+      expect(found.results.map((r) => r.title)).toEqual(['IndiGo 6E357']);
+      expect([f.runs, f.retried]).toEqual([['flights.results'], [true]]);
     });
 
     it('says a place ixigo does not know as before, and waits for nothing while the page is paced', async () => {
