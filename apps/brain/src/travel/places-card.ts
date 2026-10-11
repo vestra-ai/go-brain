@@ -358,12 +358,15 @@ export function placeOnClose(d: {
       return saved?.ok === true;
     };
     if (await saveAs(offer.title, () => stableId('go_trip', tripId, decision.decision_id))) return null;
+    // The card names a place with its state ("Manali, Himachal Pradesh"), which ixigo's place box doesn't pin, while the
+    // city alone it does (prod, 12 Oct: Manali and Jaipur won, and the trips never got a place while Go said they had).
+    const picked = offer.title.split(',')[0]!.trim();
+    if (picked && picked !== offer.title.trim() && (await saveAs(picked, () => stableId('go_trip', tripId, decision.decision_id, 'city')))) return null;
     // A region or a country ixigo can't pin (p1-a, 11 Oct: Morocco won, and the trip never moved): the town the group
     // would stay in there, as the place Go picked it with (suggest_places stay_in), and one line naming it. The App
     // posted who won already.
     const option = d.results.get ? (await d.results.get(tripId, offer.resultsId).catch(() => null))?.options[offer.n - 1] : undefined;
     const stayIn = typeof option?.facts['stay_in'] === 'string' ? option.facts['stay_in'].trim() : '';
-    const picked = offer.title.split(',')[0]!.trim();
     if (!stayIn || stayIn.toLowerCase() === picked.toLowerCase()) return null;
     if (!(await saveAs(stayIn, () => stableId('go_trip', tripId, decision.decision_id, 'stay_in')))) return null;
     return { line: clip(`The trip is set to ${stayIn}, the town most people stay in for ${picked}.`, 200) };
