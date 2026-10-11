@@ -362,6 +362,8 @@ describe("the card's live view", () => {
     const r = room();
     const v = viewing(r);
     const live = startLiveSearch(v.deps, 't_goa', { runKey: 'k_live', ...FLIGHTS });
+    // The first post goes once its view is in (it waits for it, briefly): an update that comes sooner folds into it.
+    await new Promise((resolve) => setTimeout(resolve, 10));
     live.progress({ type: 'captured', ms: 900 });
     await live.finish(true);
     expect(r.sent[0]!.method).toBe('post_message');
