@@ -66,7 +66,7 @@ export function candidates(pack: TripPack, lines: C.RecordLine[], personId: stri
     const proof = l.proof[0]?.message_id;
     const mine = l.person_ids.includes(personId);
     if (l.kind === 'decided' && l.status === 'active') {
-      const vote = l.decision_id ? cardMsg((c) => c.kind === 'vote' && c.decision_id === l.decision_id) : undefined;
+      const vote = l.decision_id ? cardMsg((c) => (c.kind === 'vote' || c.kind === 'options') && c.decision_id === l.decision_id) : undefined;
       out.push(item('decided', `Decided: ${l.text}`, at, false, vote ?? proof));
     } else if (l.kind === 'booked' && l.status === 'active') {
       const booking = pack.trip.bookings.find((b) => b.booking_id === l.booking_id);
@@ -88,7 +88,7 @@ export function candidates(pack: TripPack, lines: C.RecordLine[], personId: stri
   for (const d of pack.trip.decisions) {
     if (d.status !== 'open' || d.anonymous || !d.votes) continue;
     if (d.votes.some((v) => v.person_id === personId)) continue;
-    const vote = cardMsg((c) => c.kind === 'vote' && c.decision_id === d.decision_id);
+    const vote = cardMsg((c) => (c.kind === 'vote' || c.kind === 'options') && c.decision_id === d.decision_id);
     out.push(item('needs_you', `Vote: ${d.question}`, Date.parse(d.opened_at), true, vote));
   }
 

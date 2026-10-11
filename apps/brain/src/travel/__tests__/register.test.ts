@@ -7,7 +7,7 @@ import { buildFlightsLinkCard, buildOptionsCard, SEE_ALL_ACTION } from '../cards
 import { stableId } from '../ids.js';
 import { picksOf } from '../picks.js';
 import { registerTravel } from '../register.js';
-import { createResultsStore, type ResultOption } from '../results.js';
+import { createResultsStore, MORE_CARD, type ResultOption } from '../results.js';
 
 let db: Awaited<ReturnType<typeof withSchema>>;
 let lb: LaneBrain;
@@ -209,8 +209,15 @@ describe('registerTravel', () => {
       voteIs('open', 20);
       expect(await more('tap_m2')).toEqual({ result: 'done', toast: 'This vote has 20 options, the most one vote takes' });
       voteIs('open', 10);
+      // The Server refuses the add: the new card is dropped, so its stays were never shown, and the next tap offers them.
+      const adds = lb.link.sent('add_vote_options').length;
+      lb.link.failNext = { method: 'add_vote_options', error: new Error('409 conflict: the vote closed') };
+      expect(await more('tap_m3a')).toEqual({ result: 'done' });
+      await eventually(() => lb.link.sent('add_vote_options').length > adds);
+      await eventually(async () => (await results.card('t_goa', stableId(MORE_CARD, 'tap_m3a'))) === null);
+      expect(lb.link.sent('post_message').some((p) => (p.card as { card_id?: string } | undefined)?.card_id === stableId(MORE_CARD, 'tap_m3a'))).toBe(false);
       expect(await more('tap_m3')).toEqual({ result: 'done' });
-      const cardId = stableId('c_more', 'tap_m3');
+      const cardId = stableId(MORE_CARD, 'tap_m3');
       const posted = () => lb.link.sent('post_message').find((p) => (p.card as { card_id?: string } | undefined)?.card_id === cardId);
       await eventually(() => posted() !== undefined);
       const next = C.OptionsCard.parse(posted()!.card);

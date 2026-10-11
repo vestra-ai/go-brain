@@ -433,7 +433,8 @@ export async function putUpCard(
   if (!PERSONAL_KINDS.has(set.optionKind) && picks.length >= 2 && !shown.decision_id) {
     const voted = await openVoteFromCard(
       { results: d.results, link: ctx.link, now: d.now ?? (() => new Date()) },
-      { tripId: ctx.tripId, cardId, key: ctx.turnId, requestId: ctx.stableId('go_vote'), voteCardId: ctx.stableId('c_vote'), onCard: true, ...given.vote },
+      // Its ids from the card, so a rerun that skips an earlier card's vote never gives this one that card's request.
+      { tripId: ctx.tripId, cardId, key: ctx.turnId, requestId: stableId('go_vote', cardId), voteCardId: stableId('c_vote', cardId), onCard: true, ...given.vote },
     ).catch((err: unknown) => {
       d.log?.warn({ err: String(err).slice(0, 200), cardId }, 'travel: a card went up without its vote');
       return null;

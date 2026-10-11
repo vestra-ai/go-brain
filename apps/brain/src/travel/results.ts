@@ -62,6 +62,12 @@ export interface OptionsCardRow {
   voteKey: string | null;
 }
 
+/**
+ * The prefix of a "See more" card's id (taps.ts, rev 5 R4): more of a card already up, never the trip's newest card of its
+ * kind for what reads that (topPick, recipes/option-on-card.ts).
+ */
+export const MORE_CARD = 'c_more';
+
 /** An option as "See more" tells it from the others: its own page, else its name and when it leaves. */
 const optionKey = (o: ResultOption): string => o.sourceUrl ?? `${o.title}|${o.journey?.depart_at ?? ''}`;
 
@@ -102,8 +108,10 @@ export interface ResultsStore {
    */
   setCardDecision(tripId: string, cardId: string, decisionId: string, more: boolean): Promise<OptionsCardT | null>;
   releaseVote(cardId: string, key: string): Promise<void>;
-  /** The votes opened on the trip's other cards of this kind of option, by their decision ids. */
-  votesOfKind(tripId: string, kind: OptionKind, exceptCardId: string): Promise<string[]>;
+  /** The votes opened on the trip's other cards of this kind of option, by their decision ids, but those this key opened. */
+  votesOfKind(tripId: string, kind: OptionKind, exceptCardId: string, exceptKey: string): Promise<string[]>;
+  /** A card that never went up ("See more" that failed before its options joined the vote): gone, its options unshown again. */
+  dropCard(tripId: string, cardId: string): Promise<void>;
   /** Every option of a search that a card has shown, as the search gave it: what "See more" never shows again. */
   shownFrom(tripId: string, resultsId: string): Promise<ResultOption[]>;
   offer(optionId: string): Promise<StoredOffer | null>;
@@ -277,13 +285,19 @@ export function createResultsStore(pool: pg.Pool): ResultsStore {
       return rows[0]?.card ?? null;
     },
 
-    async votesOfKind(tripId, kind, exceptCardId) {
+    async votesOfKind(tripId, kind, exceptCardId, exceptKey) {
       const { rows } = await pool.query<{ decision_id: string }>(
         `select distinct decision_id from options_cards
-         where trip_id = $1 and option_kind = $2 and card_id <> $3 and decision_id is not null and decision_id not like 'pending:%'`,
-        [tripId, kind, exceptCardId],
+         where trip_id = $1 and option_kind = $2 and card_id <> $3 and decision_id is not null and decision_id not like 'pending:%'
+           and vote_key is distinct from $4`,
+        [tripId, kind, exceptCardId, exceptKey],
       );
       return rows.map((r) => r.decision_id);
+    },
+
+    async dropCard(tripId, cardId) {
+      await pool.query('delete from travel_offers where trip_id = $1 and card_id = $2', [tripId, cardId]);
+      await pool.query('delete from options_cards where trip_id = $1 and card_id = $2', [tripId, cardId]);
     },
 
     async shownFrom(tripId, resultsId) {
@@ -308,8 +322,8 @@ export function createResultsStore(pool: pg.Pool): ResultsStore {
     async topPick(tripId, kind) {
       // A card's picks are saved together, so they share a created_at: the lowest number is its top pick.
       const { rows } = await pool.query<{ kind: string; title: string; option: ResultOption }>(
-        'select kind, title, option from travel_offers where trip_id = $1 and kind = $2 order by created_at desc, n asc limit 1',
-        [tripId, kind],
+        'select kind, title, option from travel_offers where trip_id = $1 and kind = $2 and not starts_with(card_id, $3) order by created_at desc, n asc limit 1',
+        [tripId, kind, `${MORE_CARD}_`],
       );
       return rows[0] ? placeOfRow(rows[0]) : null;
     },

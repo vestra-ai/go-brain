@@ -269,7 +269,7 @@ describe.skipIf(DATABASE_URL === undefined)('the demo, end to end, with every la
     expect(jobState()).toBe('running');
   }, 120_000);
 
-  it('2:20 the job comes back: three villas as an options card, bookable at their whole-stay prices, and Priya taps "Put it to a vote"', async () => {
+  it("2:20 the job comes back: three villas as an options card that is the group's vote, bookable at their whole-stay prices", async () => {
     chapter('2:20 The villas, and the vote');
     const from = lastSeq();
     // The job searches Go's stays first, as the real one does: Go keeps what it showed for the trip.
@@ -286,13 +286,11 @@ describe.skipIf(DATABASE_URL === undefined)('the demo, end to end, with every la
     // The same path as the real flow: each option is the fake ixigo offer the job picked, at the whole stay.
     const offers = await Promise.all(card.options.map((o) => d().room.built.brain.travel!.offer(o.option_id)));
     expect(offers.map((o) => [o?.offerId, o?.priceMinor])).toEqual(DEMO_VILLAS.options.map((v) => [v.offer_id, v.total_paise]));
+    // The card is the vote (rev 5 R5), opened with it: Vote on each option, no button of its own, and no vote card beside it.
+    expect(card.actions ?? []).toEqual([]);
+    expect(card.decision_id).toEqual(expect.any(String));
     expect(go().filter((m) => m.seq > from && m.card?.kind === 'vote')).toEqual([]);
-    // The stage's way: the card's own button opens the vote in code, with no model turn.
-    expect(await tap(card.card_id, 'vote', DEMO_FRIEND)).toMatchObject({ result: 'done', toast: 'Putting it to a vote' });
-    const vote = await goAfter(shown.seq, kindIs('vote'));
-    mark('vote', vote);
-    expect(await tap(card.card_id, 'vote', DEMO_FRIEND)).toMatchObject({ result: 'done', toast: 'Already up for a vote' });
-    decisionId = (vote.card as Card<'vote'>).decision_id;
+    decisionId = card.decision_id!;
     const decision = fake().trip().decisions.find((x) => x.decision_id === decisionId);
     expect(decision?.options.map((o) => o.label)).toEqual(['Villa Sol', 'The Palms Villa', 'Ocean Breeze Villa']);
     expect(decision?.options.map((o) => o.price_minor)).toEqual(DEMO_VILLAS.options.map((v) => v.total_paise));
@@ -450,7 +448,7 @@ describe.skipIf(DATABASE_URL === undefined)('the demo, end to end, with every la
 
   it("the beats landed in the run sheet's order, each of Go's writes was done once, and nothing Go sent has a dash", () => {
     expect(seqs.map(([beat]) => beat)).toEqual([
-      'greeting', 'flights', 'villa_start', 'call_line', 'weather', 'call_card', 'call_outcome', 'villa_done', 'vote', 'claim', 'mandate', 'pay_card', 'ticket',
+      'greeting', 'flights', 'villa_start', 'call_line', 'weather', 'call_card', 'call_outcome', 'villa_done', 'claim', 'mandate', 'pay_card', 'ticket',
       'notice', 'refusal_en', 'refusal_hi', 'memory',
     ]);
     for (let k = 1; k < seqs.length; k++) expect(seqs[k]?.[1] ?? 0, seqs[k]?.[0]).toBeGreaterThan(seqs[k - 1]?.[1] ?? 0);

@@ -20,7 +20,7 @@ import { BOOK_MINE, budgetSheet, buildConfirmMineCard, buildOptionsCard, CHANGE_
 import { stableId } from './ids.js';
 import type { Images } from './images.js';
 import { recordPick, wayOf } from './picks.js';
-import { unseenNumbers, type ResultsStore } from './results.js';
+import { MORE_CARD, unseenNumbers, type ResultsStore } from './results.js';
 import { cardPicks } from './tools.js';
 import type { StoredOffer } from './travel.js';
 import { addToVote, openVoteFromCard, VOTE_MOST } from './votes.js';
@@ -44,6 +44,10 @@ export interface TravelTapDeps {
 export const OPEN_FOR_MS = 10 * 60_000;
 
 export function registerTravelTaps(taps: Brain['taps'], d: TravelTapDeps): void {
+  // The searches whose "See more" is running: a second tap meanwhile (a double tap, two people, another card of the same
+  // search) would add the same stays again.
+  const moreRunning = new Set<string>();
+
   taps.on('options', 'vote', async (tap) => {
     const row = await d.results.card(tap.trip_id, tap.card_id);
     if (!row) return { result: 'refused', toast: 'Those options are no longer here' };
@@ -156,28 +160,49 @@ export function registerTravelTaps(taps: Brain['taps'], d: TravelTapDeps): void 
     const decisionId = row?.card.decision_id ?? null;
     const images = d.images;
     if (!row || !set || !decisionId || !images) return { result: 'refused', toast: 'Those options are no longer here' };
-    const unseen = unseenNumbers(set, await d.results.shownFrom(tap.trip_id, set.resultsId));
-    if (unseen.length === 0) return { result: 'done', toast: "That's everything ixigo listed for this search" };
-    const trip = await d.link.request('read_trip', { trip_id: tap.trip_id });
-    const vote = trip.decisions.find((x) => x.decision_id === decisionId);
-    if (vote?.status !== 'open') return { result: 'done', toast: 'The vote has closed' };
-    if (vote.options.length >= VOTE_MOST) return { result: 'done', toast: `This vote has ${VOTE_MOST} options, the most one vote takes` };
-    const numbers = unseen.slice(0, Math.min(10, VOTE_MOST - vote.options.length));
-    const people = typeof set.query['guests'] === 'number' ? set.query['guests'] : trip.people.length;
-    // Outside a turn, ids come from the tap, so a repeat does each write once.
-    const more = async (): Promise<void> => {
-      const cardId = stableId('c_more', tap.tap_id);
-      const picks = await cardPicks(set, numbers, cardId, people, { images });
-      const card = buildOptionsCard({ cardId, title: `More: ${row.title}`, optionKind: row.optionKind, checkedAt: set.checkedAt, picks });
-      await d.results.saveCard({ cardId, tripId: tap.trip_id, resultsId: set.resultsId, title: card.title, optionKind: row.optionKind, card }, picks, set.checkedAt);
-      // Its own "See more" while the search has more and the vote has room after these.
-      const left = unseen.length > numbers.length && vote.options.length + numbers.length < VOTE_MOST;
-      const voting = await addToVote({ results: d.results, link: d.link }, { tripId: tap.trip_id, cardId, decisionId, requestId: stableId('go_more', tap.tap_id), more: left });
-      if (voting) await d.link.request('post_message', { trip_id: tap.trip_id, request_id: stableId('go_more_card', tap.tap_id), card: voting });
-    };
-    // The card goes up after the answer: a page of photos and two requests to the Server must not hold the 3 s tap answer.
-    void more().catch((err: unknown) => d.log.error({ err, cardId: tap.card_id }, 'travel: See more failed'));
-    return { result: 'done' };
+    if (moreRunning.has(set.resultsId)) return { result: 'done', toast: 'More are on the way' };
+    // Claimed before anything waits, until its card is up or it gives up: a second tap meanwhile never adds the same stays.
+    moreRunning.add(set.resultsId);
+    let running = false;
+    try {
+      const unseen = unseenNumbers(set, await d.results.shownFrom(tap.trip_id, set.resultsId));
+      if (unseen.length === 0) return { result: 'done', toast: "That's everything ixigo listed for this search" };
+      const trip = await d.link.request('read_trip', { trip_id: tap.trip_id });
+      const vote = trip.decisions.find((x) => x.decision_id === decisionId);
+      if (vote?.status !== 'open') return { result: 'done', toast: 'The vote has closed' };
+      if (vote.options.length >= VOTE_MOST) return { result: 'done', toast: `This vote has ${VOTE_MOST} options, the most one vote takes` };
+      const numbers = unseen.slice(0, Math.min(10, VOTE_MOST - vote.options.length));
+      const people = typeof set.query['guests'] === 'number' ? set.query['guests'] : trip.people.length;
+      // Outside a turn, ids come from the tap, so a repeat does each write once.
+      const cardId = stableId(MORE_CARD, tap.tap_id);
+      const more = async (): Promise<void> => {
+        let added = false;
+        try {
+          const picks = await cardPicks(set, numbers, cardId, people, { images });
+          const title = `More: ${row.title.replace(/^More: /, '')}`;
+          const card = buildOptionsCard({ cardId, title, optionKind: row.optionKind, checkedAt: set.checkedAt, picks });
+          await d.results.saveCard({ cardId, tripId: tap.trip_id, resultsId: set.resultsId, title: card.title, optionKind: row.optionKind, card }, picks, set.checkedAt);
+          await addToVote({ results: d.results, link: d.link }, { tripId: tap.trip_id, cardId, decisionId, requestId: stableId('go_more', tap.tap_id) });
+          added = true;
+          // Its own "See more" while the search has more and the vote has room after these.
+          const left = unseen.length > numbers.length && vote.options.length + numbers.length < VOTE_MOST;
+          const voting = await d.results.setCardDecision(tap.trip_id, cardId, decisionId, left);
+          if (voting) await d.link.request('post_message', { trip_id: tap.trip_id, request_id: stableId('go_more_card', tap.tap_id), card: voting });
+        } catch (err) {
+          // Options that never joined the vote were never shown: the next See more offers them again.
+          if (!added) await d.results.dropCard(tap.trip_id, cardId).catch(() => undefined);
+          throw err;
+        } finally {
+          moreRunning.delete(set.resultsId);
+        }
+      };
+      // The card goes up after the answer: a page of photos and two requests to the Server must not hold the 3 s tap answer.
+      running = true;
+      void more().catch((err: unknown) => d.log.error({ err, cardId: tap.card_id }, 'travel: See more failed'));
+      return { result: 'done' };
+    } finally {
+      if (!running) moreRunning.delete(set.resultsId);
+    }
   });
 
   // A card of stays from before rev 5 shows a few: this opens the whole list the search read on ixigo.com.

@@ -95,8 +95,11 @@ async function cardVoteOptions(results: Pick<ResultsStore, 'offersOnCard' | 'opt
  * nobody has voted on it yet, so two open votes never pick two winners. One with a vote stays, and closes by its time.
  * Go closing it wakes no turn (trips/intake.ts: closed_by_go).
  */
-async function closeIdleVotes(d: { results: Pick<ResultsStore, 'votesOfKind'>; link: Pick<ServerLink, 'request'> }, tripId: string, kind: OptionKind, cardId: string): Promise<void> {
-  const ids = await d.results.votesOfKind(tripId, kind, cardId);
+async function closeIdleVotes(
+  d: { results: Pick<ResultsStore, 'votesOfKind'>; link: Pick<ServerLink, 'request'> }, tripId: string, kind: OptionKind, cardId: string, key: string,
+): Promise<void> {
+  // Never a vote this same key opened: two cards in one reply are two votes the group just got, both new.
+  const ids = await d.results.votesOfKind(tripId, kind, cardId, key);
   if (ids.length === 0) return;
   const trip = await d.link.request('read_trip', { trip_id: tripId });
   for (const dec of trip.decisions) {
@@ -140,7 +143,7 @@ export async function openVoteFromCard(
   if (!(await d.results.claimVote(o.cardId, o.key))) return { ok: false, reason: 'already_voting' };
   try {
     // Best effort: a trip the Server can't read now still gets the card's vote.
-    if (o.onCard) await closeIdleVotes(d, o.tripId, row.optionKind, o.cardId).catch(() => undefined);
+    if (o.onCard) await closeIdleVotes(d, o.tripId, row.optionKind, o.cardId, o.key).catch(() => undefined);
     const closesAt = new Date(d.now().getTime() + (o.closesInHours ?? VOTE_HOURS) * 3_600_000).toISOString();
     const opened = await d.link.request('open_vote', {
       trip_id: o.tripId, request_id: o.requestId, question, kind: 'choice', anonymous: o.anonymous ?? false, options, closes_at: closesAt,
@@ -154,17 +157,16 @@ export async function openVoteFromCard(
 }
 
 /**
- * "See more" (rev 5 R4): a new card's options join the vote of the card it came from, then the new card names that vote
- * (and has "See more" itself while its search has more): the card as kept now, or null when there is no such card. The
- * caller has checked the vote is open and has room (20 options in all, the contract's); votes already cast stay.
+ * "See more" (rev 5 R4): a new card's options join the vote of the card it came from; the caller then writes the vote
+ * into the new card (results.setCardDecision). The caller has checked the vote is open and has room (20 options in all,
+ * the contract's); votes already cast stay. Throws when the card is gone or the Server refuses.
  */
 export async function addToVote(
   d: { results: ResultsStore; link: Pick<ServerLink, 'request'> },
-  o: { tripId: string; cardId: string; decisionId: string; requestId: string; more: boolean },
-): Promise<OptionsCardT | null> {
+  o: { tripId: string; cardId: string; decisionId: string; requestId: string },
+): Promise<void> {
   const row = await d.results.card(o.tripId, o.cardId);
-  if (!row) return null;
+  if (!row) throw new Error(`no card ${o.cardId} to add to the vote`);
   const { options } = await cardVoteOptions(d.results, row);
   await d.link.request('add_vote_options', { request_id: o.requestId, trip_id: o.tripId, decision_id: o.decisionId, options });
-  return d.results.setCardDecision(o.tripId, o.cardId, o.decisionId, o.more);
 }
