@@ -15,6 +15,16 @@ export interface TripPack {
   seq: number;
 }
 
+/**
+ * A message as the model names it: "#57" or "57", the number the chat shows it under, or its message id. The model only
+ * ever sees the numbers, so a tool that looked messages up by id alone never found one (Varkala, 11 Oct: the organizer's
+ * "Yes please do it @Go", cited as proof for the title, was no message in the trip, and the change was refused).
+ */
+export function messageByRef(messages: readonly Message[], ref: string): Message | undefined {
+  const n = /^#?(\d+)$/.exec(ref.trim());
+  return n ? messages.find((m) => m.seq === Number(n[1])) : messages.find((m) => m.message_id === ref);
+}
+
 export interface Packs {
   get(tripId: string): Promise<TripPack>;
   invalidate(tripId: string): void;

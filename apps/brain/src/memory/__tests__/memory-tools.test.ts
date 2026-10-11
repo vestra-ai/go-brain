@@ -99,6 +99,15 @@ describe('quick tools', () => {
     expect(adds.map((x) => x.params.request_id)).toEqual(['go_record_turn_1_1', 'go_record_turn_1_2']);
   });
 
+  // Varkala, 11 Oct: the model names messages by the chat's numbers ("#593"), never their ids.
+  it('record() reads the proof by the numbers the chat shows', async () => {
+    const link = fakeLink();
+    expect(await tool('record').run({ kind: 'agreed', text: 'North Goa for the trip', person_ids: [], proof_message_ids: ['#122', '124'] }, ctx(link)))
+      .toMatchObject({ saved: expect.stringMatching(/^r_/), kind: 'agreed' });
+    expect(await tool('record').run({ kind: 'agreed', text: 'North Goa for the trip', person_ids: [], proof_message_ids: ['#999'] }, ctx(link)))
+      .toEqual({ refused: 'a proof is not a message in this trip', tell_the_room: SAY_NOTHING });
+  });
+
   it('record() closes the open question an agreed line settles: its question is among the proof (Server, 6 Oct)', async () => {
     await mirrorLine(db.pool, 't_goa', rl({ line_id: 'r_north', kind: 'open', text: 'North Goa this time?', proof: [{ message_id: 'm_0122', person_id: 'p_priya' }] }), 125);
     try {
@@ -145,6 +154,9 @@ describe('right now blocks', () => {
     );
     expect(text).toBe(['The trip record:', 'Doing: <data>Kabir books the <airport> cab</data> (on it: Kabir, by 2026-11-05)', 'Decided: <data>6 to 9 Nov</data>'].join('\n'));
     expect(renderRecord([], pack)).toBeNull();
+    // A vote's result keeps its id, for update_trip's decision_id: the 7 to 0 rename had closed long before (Varkala, 11 Oct).
+    expect(renderRecord([rl({ line_id: 'r_name', kind: 'decided', text: 'Rename the trip to Bakchod launde? Yes', source: 'vote', decision_id: 'd_name' })], pack))
+      .toBe(['The trip record:', 'Decided: <data>Rename the trip to Bakchod launde? Yes</data> (vote d_name)'].join('\n'));
   });
 
   it('shows a choice part of the group backs, without the organizer, as leaning and not decided (the 10 Oct live proof)', () => {

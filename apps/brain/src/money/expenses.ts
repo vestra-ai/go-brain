@@ -2,8 +2,9 @@ import * as C from '@go/contract';
 import type { Pool } from 'pg';
 import { z } from 'zod';
 import type { QuickTool, TurnCtx } from '../composer/tools.js';
-import type { Message, Trip } from '../door/methods.js';
+import type { Trip } from '../door/methods.js';
 import { reactOnce } from '../memory/reactions.js';
+import { messageByRef } from '../trips/pack.js';
 import { rid } from './ids.js';
 import { clip, money, plain } from './words.js';
 
@@ -11,12 +12,6 @@ import { clip, money, plain } from './words.js';
  * What people in the chat say they paid for the group, kept as the trip's expenses on the Server, and who owes whom read
  * back from the Server. Go records and reads; it never moves money between people, and nothing here reaches the vault.
  */
-
-/** "#57", "57" or a message id. */
-function findMessage(messages: Message[], ref: string): Message | undefined {
-  const n = /^#?(\d+)$/.exec(ref.trim());
-  return n ? messages.find((m) => m.seq === Number(n[1])) : messages.find((m) => m.message_id === ref);
-}
 
 const AMOUNT = /(?:₹|rs\.?|inr)?\s*(\d{1,3}(?:,\d{2,3})+|\d+(?:\.\d+)?)\s*(k|thousand|lakh|lac|l)?\b/gi;
 const UNITS: Record<string, number> = { k: 1_000, thousand: 1_000, l: 100_000, lakh: 100_000, lac: 100_000 };
@@ -67,7 +62,7 @@ const ASK = 'Do not record anything. Ask the person one short question to get it
  * it once. The payer is always the person who wrote the message; the amount must be one the message says.
  */
 export async function recordExpense(ctx: Pick<TurnCtx, 'tripId' | 'link' | 'pack' | 'outcome'>, a: RecordExpenseInput, pool: Pool): Promise<object> {
-  const m = findMessage(ctx.pack.messages, a.message_id);
+  const m = messageByRef(ctx.pack.messages, a.message_id);
   if (!m || m.deleted || m.withheld || m.author.kind !== 'person' || !m.text) return { refused: `There is no message ${a.message_id} from a person to record.`, tell_the_room: ASK };
   const trip = ctx.pack.trip;
   const payer = m.author.person_id;

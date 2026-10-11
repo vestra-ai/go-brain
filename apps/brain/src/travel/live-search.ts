@@ -152,7 +152,7 @@ export function startLiveSearch(d: LiveSearchDeps, tripId: string, o: LiveFor): 
   let posted = false;
   let postFailed = false;
   let ended = false;
-  /** Its turn answered: the card is done from then, whatever its read does. */
+  /** Its turn answered: its words say Go answered without it if its read fails. A failed read is never Done. */
   let answeredAt = false;
   let queued = false;
   let chain: Promise<void> = Promise.resolve();
@@ -250,7 +250,9 @@ export function startLiveSearch(d: LiveSearchDeps, tripId: string, o: LiveFor): 
   function settle(ok: boolean): void {
     ended = true;
     closeView();
-    card.state = ok || answeredAt ? 'done' : 'failed';
+    // A read that failed shows failed, even when Go answered without it (the lead, 11 Oct: Ankur's card said Done over
+    // "Opening ixigo, Step 1 of 3").
+    card.state = ok ? 'done' : 'failed';
     card.steps = card.steps.map((s) => ({ ...s, state: ok ? 'done' : s.state === 'doing' ? 'failed' : s.state }));
     card.fallback_text = fallbackOf(ok);
     push();
@@ -383,13 +385,10 @@ export function startLiveSearch(d: LiveSearchDeps, tripId: string, o: LiveFor): 
     answered() {
       if (answeredAt) return;
       answeredAt = true;
-      // A card that already ended failed is done, its failed step the gap; one still running is done now, and its read
-      // ends its steps, done or failed, when it ends.
-      if (card.state === 'failed' || !ended) {
-        // Done in the room: nothing more to watch, while the read itself may go on.
-        closeView();
-        card.state = 'done';
-        card.fallback_text = ended ? fallbackOf(false) : recipe ? `Go checked ${recipe} on ixigo.` : `Go searched ${noun} on ixigo.`;
+      // A card that already ended failed stays failed, its words saying Go answered without it; one still running ends,
+      // done or failed, when its read does.
+      if (card.state === 'failed') {
+        card.fallback_text = fallbackOf(false);
         push();
       }
     },

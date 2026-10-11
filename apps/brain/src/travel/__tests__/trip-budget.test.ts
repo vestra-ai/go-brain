@@ -213,6 +213,18 @@ describe('set_budget: the group\'s yes only', () => {
     expect(tapped).toMatchObject({ saved: 'up to ₹20,000 per person for the whole trip' });
   });
 
+  // Varkala, 11 Oct: the model names messages by the chat's numbers ("#593"), never their ids.
+  it('reads the proof by the numbers the chat shows', async () => {
+    link = new FakeLink();
+    olderServer();
+    const byNumber = await tool().run(
+      { amount_rupees: 20_000, proof_message_ids: ['#1', '3'] },
+      ctxWith([msg('m_1', 'p_rahul', [], 'villa under 20k a head'), offer('m_go'), msg('m_2', 'p_rahul', [], 'yes')], { tripId: 't_set_numbers' }),
+    );
+    expect(byNumber).toMatchObject({ saved: 'up to ₹20,000 per person for the whole trip' });
+    expect(link.sent('add_reaction').map((p) => p.message_id)).toEqual(['m_2']);
+  });
+
   // Keshav's ruling: a bare 👍 is never a decision. Not as a reaction on the figure or on Go's offer, and not sent alone.
   it('never keeps it on a 👍: on the figure, on Go\'s offer, or sent as a message of its own', async () => {
     link = new FakeLink();

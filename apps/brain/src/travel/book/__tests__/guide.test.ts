@@ -296,8 +296,8 @@ describe('the ixigo tool', () => {
     expect(tool.description).toContain('\n\n- trains.alternate_dates (from, to, date): ');
     // A choice's values are said, since the model can't guess them; nothing else about an input.
     expect(tool.description).toContain(
-      '- plan.explore (origin, month, theme?, scope?, weather?, max_budget?): Where to go from a city in a month. theme: a theme chip on the page: religious, ' +
-        'cultural, nature, food, festivals, historical, shopping, beaches, mountains, outdoors, nightlife, luxury, wellness, romance, night skies, sports or ' +
+      '- plan.explore (origin, month?, theme?, scope?, weather?, max_budget?): Where to go from a city in a month. theme: the kind of trip: religious, ' +
+        'cultural, nature, food, festivals, historical, shopping, beaches, mountains (hills), outdoors, nightlife, luxury, wellness, romance, night skies, sports or ' +
         "offbeat. scope: domestic, international or visa-free: the page's own buttons. weather: rain, no rain, snow, pollution free, colder or warmer: the " +
         "page's Weather & AQI buttons.",
     );
@@ -317,9 +317,9 @@ describe('the ixigo tool', () => {
     expect(out).toMatchObject({ recipe: 'plan.explore', error: 'needs_more' });
     expect(out['inputs']).toEqual({
       origin: 'the city the group would start from, such as Delhi or Bengaluru',
-      month: 'any day in the month they would travel',
+      month: 'optional; any day in the month they would travel; left out, next month',
       theme:
-        'optional; a theme chip on the page: religious, cultural, nature, food, festivals, historical, shopping, beaches, mountains, outdoors, nightlife, luxury, wellness, romance, night skies, sports or offbeat',
+        'optional; the kind of trip: religious, cultural, nature, food, festivals, historical, shopping, beaches, mountains (hills), outdoors, nightlife, luxury, wellness, romance, night skies, sports or offbeat',
       scope: "optional; domestic, international or visa-free: the page's own buttons",
       weather: "optional; rain, no rain, snow, pollution free, colder or warmer: the page's Weather & AQI buttons",
       max_budget: 'optional; the most a person would spend on the trip, getting there and stays included, in paise',
