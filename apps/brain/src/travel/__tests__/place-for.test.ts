@@ -11,17 +11,20 @@ import { capture } from '../recipes/__tests__/fixtures.js';
 const { book } = loadBook();
 const sample = (name: string): string => readFileSync(`${BOOK_DIR}samples/${name}`, 'utf8');
 
-/** place_details as a map, the way the table keeps it: by the words, once. */
+/** place_details as a map, the way the table keeps it: by the words, the last learned. */
 function memoryPool() {
-  const rows = new Map<string, { place: unknown; kind: string; within: string[] }>();
+  const rows = new Map<string, { place: unknown; kind: string; within: string[]; best_months: number[] | null }>();
+  const writes: string[] = [];
   return {
     rows,
+    writes,
     query: async (sql: string, params: unknown[]) => {
       if (sql.startsWith('select')) {
         const row = rows.get(params[0] as string);
         return { rows: row ? [row] : [] };
       }
-      if (!rows.has(params[0] as string)) rows.set(params[0] as string, { place: params[1], kind: params[2] as string, within: params[3] as string[] });
+      writes.push(params[0] as string);
+      rows.set(params[0] as string, { place: params[1], kind: params[2] as string, within: params[3] as string[], best_months: params[4] as number[] | null });
       return { rows: [] };
     },
   };
@@ -87,7 +90,8 @@ describe("a destination's photos (the Server team's 10 Oct B3)", () => {
     const guideEngine = createEngine({ book, runner: () => runner, trip: async () => ({ people: 4, homes: [] }), now: () => new Date('2026-10-08T12:00:00Z') });
     const engine = { suggest: async () => goa, answer: guideEngine.answer };
     const images = { rehostUrl: async (u: string) => `https://go.test/img/${u.split('/').at(u.endsWith('/public') ? -2 : -1)!.slice(0, 12)}.jpg` };
-    const got = await createPlaceFor({ pool: memoryPool() as never, engine: engine as never, images })('Goa', { tripId: 't_goa' });
+    const pool = memoryPool();
+    const got = await createPlaceFor({ pool: pool as never, engine: engine as never, images })('Goa', { tripId: 't_goa' });
     const photos = got!.place.photos!;
     expect(photos).toHaveLength(12);
     expect(photos.slice(0, 4)).toEqual([
@@ -98,6 +102,66 @@ describe("a destination's photos (the Server team's 10 Oct B3)", () => {
     ]);
     expect(got!.place.photo_url).toBe('https://go.test/img/goa.jpg');
     expect(C.Place.parse(got!.place)).toEqual(got!.place);
+    // Its best months are kept beside it (rev 5 R6): the guide's "November - March".
+    expect(pool.rows.get('goa')!.best_months).toEqual([1, 2, 3, 11, 12]);
+  });
+});
+
+describe("a place's best months (rev 5 R6, for place_info)", () => {
+  const goa: Suggestion = { name: 'Goa', line: 'India', all: false, country: 'India', placeName: 'Goa', place: { locationId: 48569, locationType: 'S', lat: 15.3, lng: 74.08 } };
+  const months = (best_months: number[]): EngineAnswer => ({ ...guide(null), rows: [{ destination: 'Goa, India', photo: 'https://imagedelivery.net/x/goa/public', best_months }] });
+  const images = { rehostUrl: async () => 'https://go.test/img/goa.jpg' };
+  const before = { place: { name: 'Goa', place_id: 'ixigo:48569' }, kind: 'state', within: [], best_months: null };
+
+  it('learns a place kept before its months once more: its photo and months now, then nothing loads again', async () => {
+    const pool = memoryPool();
+    pool.rows.set('goa', before);
+    const asked: string[] = [];
+    const engine = {
+      suggest: async (_id: string, words: string) => {
+        asked.push(`box:${words}`);
+        return goa;
+      },
+      answer: async (_id: string, given: Record<string, unknown>) => {
+        asked.push(`guide:${String(given['place'])}`);
+        return months([1, 2, 3, 11, 12]);
+      },
+    };
+    const placeFor = createPlaceFor({ pool: pool as never, engine: engine as never, images });
+    const got = await placeFor('Goa', { tripId: 't_goa' });
+    expect(got!.place).toMatchObject({ name: 'Goa', lat: 15.3, lng: 74.08, photo_url: 'https://go.test/img/goa.jpg' });
+    expect(pool.rows.get('goa')!.best_months).toEqual([1, 2, 3, 11, 12]);
+    expect(asked).toEqual(['box:Goa', 'guide:Goa']);
+    expect(await placeFor('goa', { tripId: 't_other' })).toEqual(got);
+    expect(asked).toHaveLength(2);
+  });
+
+  it('keeps what was kept when no guide answers this time, and tries again the next; a guide with no months is learned as none', async () => {
+    const pool = memoryPool();
+    pool.rows.set('goa', before);
+    let guideUp = false;
+    const engine = {
+      suggest: async () => goa,
+      answer: async () => {
+        if (!guideUp) throw new TravelError('refused', 'ixigo did not answer in time.');
+        return months([]);
+      },
+    };
+    const placeFor = createPlaceFor({ pool: pool as never, engine: engine as never, images });
+    expect(await placeFor('Goa', { tripId: 't_goa' })).toEqual({ place: before.place, kind: 'state', within: [] });
+    expect(pool.writes).toEqual([]);
+    guideUp = true;
+    expect((await placeFor('Goa', { tripId: 't_goa' }))!.place.photo_url).toBe('https://go.test/img/goa.jpg');
+    expect(pool.rows.get('goa')!.best_months).toEqual([]);
+    expect(pool.writes).toEqual(['goa']);
+  });
+
+  it("keeps what was kept when ixigo's box no longer knows the words", async () => {
+    const pool = memoryPool();
+    pool.rows.set('goa', before);
+    const placeFor = createPlaceFor({ pool: pool as never, engine: { suggest: async () => null, answer: async () => months([1]) } as never, images });
+    expect(await placeFor('Goa', { tripId: 't_goa' })).toEqual({ place: before.place, kind: 'state', within: [] });
+    expect(pool.writes).toEqual([]);
   });
 });
 

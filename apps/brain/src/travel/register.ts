@@ -29,6 +29,7 @@ import { earlyAnswer, earlyReadNow, earlySearchNow, jevPickNow } from './recipes
 import { loadLearnedPlaces } from './recipes/places-store.js';
 import { optionOnCard } from './recipes/option-on-card.js';
 import { createPlaceFor } from './place-for.js';
+import { placeInfoHandler, registerPlaceLearn } from './place-info.js';
 import { createGroupStay } from './group-stay.js';
 import { createResultsStore } from './results.js';
 import { createRoomsCards, ROOMS_PICK, roomsCardOnClose, roomsTap } from './rooms-card.js';
@@ -39,6 +40,7 @@ import { registerTravelTaps, renderOptionsTap } from './taps.js';
 import { travelTools } from './tools.js';
 import { budgetNow, budgetTool, createTripBudgets, stayCap } from './trip-budget.js';
 import { showBusDrops } from './bus-drops.js';
+import { optionDetailsHandler } from './option-details.js';
 import { showPickPhotos, type TopPick } from './pick-photos.js';
 import type { TravelKind } from './travel.js';
 import { createIxigoWarm, createStaysHeadStart, IXIGO_WARM_STEP, STAYS_HEAD_START_STEP, startComputerAtSetup, wakeForCheck, warmForTravel } from './warm.js';
@@ -225,6 +227,8 @@ export const registerTravel: RegisterLane = async (brain) => {
   brain.tripLog.onEvent((ev) => headStart.onEvent(ev));
   const stopHeadStarts = (): void => headStart.stop();
   brain.onStop(stopHeadStarts);
+  // A destination Go sets carries ixigo's place: its id, where it is, its time zone, its guide photos and best months.
+  const placeFor = createPlaceFor({ pool: brain.pool, engine, images, log: brain.log });
   const travel = createTravelLayer({
     switches: brain.switches,
     now: brain.now,
@@ -240,9 +244,12 @@ export const registerTravel: RegisterLane = async (brain) => {
       // BOOKING: the group's voted stay on ixigo's own pages, on the stage, up to Pay.
       bookingOn: (tripId) => bookingOnFor({ pool: brain.pool, switches: brain.switches }, tripId),
     }),
-    // A destination Go sets carries ixigo's place: its id, where it is, its time zone and its guide photo.
-    placeFor: createPlaceFor({ pool: brain.pool, engine, images, log: brain.log }),
+    placeFor,
   });
+  // The Server team's rev 5 (R6): what a place is like, for the ideas on the home screen, from the places Go has learned;
+  // the operator learns one ahead through a trip of their own (place-info.ts).
+  brain.door.handle('place_info', placeInfoHandler({ pool: brain.pool }));
+  registerPlaceLearn(brain.http, { adminToken: brain.env.ADMIN_TOKEN, pool: brain.pool, placeFor, live: () => brain.switches.get('TRAVEL_MODE') === 'ixigo_web' });
   const today = tripToday(brain.pool, brain.now);
   // A stays card's top pick opened on the stage, as a person opens it: its card clicked on the results by its name, its
   // page by its address if the click brings nothing (a watched read: a progress to follow puts it on the stage). Its
@@ -284,6 +291,13 @@ export const registerTravel: RegisterLane = async (brain) => {
         }
       });
   };
+  // The Server team's rev 5 (R9): an option's Details as a person opens them, from what Go has read and kept, in 3 s; what
+  // isn't read yet is read in the background and the answer says it is partial (option-details.ts).
+  brain.door.handle('get_option_details', optionDetailsHandler({
+    results, engine, log: brain.log,
+    people: async (tripId) => (await brain.packs.get(tripId)).trip.people.map((p) => p.person_id),
+    live: () => brain.switches.get('TRAVEL_MODE') === 'ixigo_web',
+  }));
   // Where the group stays (booked, else the vote's winner, else the latest stays card's top pick): each bus's nearest drop.
   const groupStay = createGroupStay({ trip: async (tripId) => (await brain.packs.get(tripId)).trip, results });
   // The budget the group decided: the group's in the App, or one kept with set_budget, and in "Right now" for every turn,

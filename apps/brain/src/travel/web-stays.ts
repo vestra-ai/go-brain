@@ -12,7 +12,7 @@
 import { createHash } from 'node:crypto';
 import type { ServerLink } from '../door/server-link.js';
 import { bookingLiveCard } from './booking/flight-booking.js';
-import { chooseRate, stayRates, type StayRate } from './booking/stay-rates.js';
+import { chooseRate, sameRoom, stayRates, stayReview, type StayRate } from './booking/stay-rates.js';
 import { formatInr } from './cards.js';
 import { stableId } from './ids.js';
 import { TravelError } from './mcp-travel.js';
@@ -106,6 +106,14 @@ export function listingWholeStay(body: string, hotelId: string, nights: number, 
 
 /** A stay page's rooms call, as hotels.rooms captures it. */
 const roomsCall = (hotelId: string): string => `/accommodations/details/${hotelId}/rooms$`;
+/** The review page's call, which a stay's Reserve opens (H2, 10 Oct); its offers call ends /review/offers, so never this. */
+export const REVIEW_CALL = '/accommodations/booking/review$';
+
+/** A room by its own name, without the extras ixigo writes after it ("Queen Cottage with Balcony - Happy Hours…"). */
+const roomName = (room: string): string => room.split(' - ')[0]!.trim();
+
+/** What the hold is made at: the room ixigo reserved, and its review's price and coupon. */
+type Staged = Pick<StayRate, 'room' | 'totalMinor' | 'coupon'>;
 
 export function createWebStays(d: WebStaysDeps): WebStays {
   const optionOf = async (offerId: string): Promise<StoredOffer & { sourceUrl: string }> => {
@@ -140,11 +148,14 @@ export function createWebStays(d: WebStaysDeps): WebStays {
 
   /**
    * The lead, 10 Oct: every "Book" ends in Go doing it, where the room watches. The group's voted stay, on ixigo's own
-   * pages on the stage: the stay's page, its rooms read and the rate chosen in code (stay-rates.ts: the cheapest whole
-   * stay), ixigo's own coupon on that rate kept and said. Its price is the hold's. The live card ticks each step for the
-   * room (the stay is the group's). Null when the page didn't give a rate: the caller reads the price as before.
+   * pages. On the stage: the stay's page, its rooms read and the rate chosen in code (stay-rates.ts: the cheapest whole
+   * stay), ixigo's own coupon on it. Then privately, never on the stage (ixigo fills its review with the account owner's
+   * name, email and mobile, H2): the stay's page again in a tab the room never sees, its Reserve pressed after the room's
+   * name, and ixigo's review read for its price and coupon, which are the hold's. The lead guest stays the one ixigo
+   * fills in; nothing is typed, and nothing past the review is pressed. The live card ticks each step for the room (the
+   * stay is the group's), the fare and coupon on it. Null when a step fails: the caller reads the price as before.
    */
-  async function stageHold(o: StoredOffer & { sourceUrl: string }): Promise<StayRate | null> {
+  async function stageHold(o: StoredOffer & { sourceUrl: string }): Promise<Staged | null> {
     const stay = stayOf(o.sourceUrl);
     const runner = d.runner();
     if (!stay || !runner || !d.link) return null;
@@ -152,31 +163,45 @@ export function createWebStays(d: WebStaysDeps): WebStays {
     const live = bookingLiveCard(
       { link: d.link, now: d.now, log: d.log ?? { warn: () => undefined } },
       o.tripId, stableId('c_stay', o.optionId, d.now().getTime()), `Booking ${o.title} for the group`,
-      [`Opening ${o.title} on ixigo`, 'Choosing the rooms', "ixigo's coupon", 'Ready to pay'], null,
+      [`Opening ${o.title} on ixigo`, 'Choosing the rooms', "ixigo's coupon", 'Reserving it on ixigo, privately', 'Ready to pay'], null,
     );
+    const failed = async (i: number): Promise<null> => {
+      await live.step(i, 'failed');
+      await live.finish(false);
+      return null;
+    };
+    const parsed = <T>(bodies: string[], read: (body: unknown) => T): T[] => bodies.flatMap((b) => {
+      try {
+        return [read(JSON.parse(b))];
+      } catch {
+        return [];
+      }
+    });
+
     await live.step(0, 'doing');
     const read = await runner
       .read(o.tripId, o.sourceUrl, { capture: [{ match: roomsCall(stay.hotelId), required: true }], timeoutMs: 20_000 }, { stage: true, tag })
       .catch(() => null);
-    const rates = read ? bodiesFor(read.captures, roomsCall(stay.hotelId)).flatMap((b) => {
-      try {
-        return stayRates(JSON.parse(b));
-      } catch {
-        return [];
-      }
-    }) : [];
-    const rate = chooseRate(rates);
-    if (!rate) {
-      await live.step(0, 'failed');
-      await live.finish(false);
-      return null;
-    }
+    const rate = chooseRate(read ? parsed(bodiesFor(read.captures, roomsCall(stay.hotelId)), stayRates).flat() : []);
+    if (!rate) return failed(0);
     await live.step(0, 'done');
-    await live.step(1, 'done');
-    await live.step(2, 'done');
-    await live.step(3, 'done');
+    await live.step(1, 'done', `${roomName(rate.room)}: ${formatInr(rate.totalMinor)} for the stay`);
+    await live.step(2, 'done', rate.coupon ? `ixigo's ${rate.coupon.code}${rate.coupon.savingMinor ? `: ${formatInr(rate.coupon.savingMinor)} off` : ''}` : 'No coupon from ixigo on it');
+
+    await live.step(3, 'doing');
+    const reserved = await runner
+      .read(
+        o.tripId, o.sourceUrl,
+        { capture: [{ match: REVIEW_CALL, required: true }], steps: [{ op: 'click', role: 'button', text: 'Reserve', near_text: roomName(rate.room) }], timeoutMs: 30_000 },
+        { private: true, tag },
+      )
+      .catch(() => null);
+    const review = reserved ? parsed(bodiesFor(reserved.captures, REVIEW_CALL), stayReview).find((r) => r !== null) ?? null : null;
+    if (!review || !sameRoom(review, rate)) return failed(3);
+    await live.step(3, 'done', `ixigo's review: ${formatInr(review.totalMinor)}${review.coupon ? `, ${review.coupon.code} on it` : ''}`);
+    await live.step(4, 'done');
     await live.finish(true);
-    return rate;
+    return { room: rate.room, totalMinor: review.totalMinor, coupon: review.coupon };
   }
 
   return {
@@ -201,8 +226,7 @@ export function createWebStays(d: WebStaysDeps): WebStays {
       if (!login.ok) throw new TravelError('refused', login.note);
       // BOOKING: the stay's own page on the stage, its rate chosen and ixigo's coupon on it kept; its price is the hold's.
       const staged = d.bookingOn && (await d.bookingOn(o.tripId).catch(() => false)) ? await stageHold(o).catch(() => null) : null;
-      // The room by its own name, without the extras ixigo writes after it ("Queen Cottage with Balcony - Happy Hours…").
-      const room = staged ? `, ${staged.room.split(' - ')[0]!.trim()}` : '';
+      const room = staged ? `, ${roomName(staged.room)}` : '';
       const saving = staged?.coupon?.savingMinor ? ` ${formatInr(staged.coupon.savingMinor)} off` : '';
       const coupon = staged?.coupon ? `, ${staged.coupon.code}${saving}` : '';
       // ixigo's price now; when the list didn't have the stay this time, the price Go showed it at, which the vote used.
