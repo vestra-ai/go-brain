@@ -10,7 +10,7 @@ import { returnsSchema } from '../returns.js';
 import { createTaskStore, type TaskStore } from '../store.js';
 import { createTasks, type TaskBrief, type TasksService } from '../tasks.js';
 import { FakeV1 } from '../testing/fake-v1.js';
-import { makeLaneBrain, type LaneBrain } from '../testing/lane-brain.js';
+import { eventually, makeLaneBrain, type LaneBrain } from '../testing/lane-brain.js';
 import { createV1Client } from '../v1-client.js';
 
 const KEYS = [`vk_test_${'a'.repeat(43)}`];
@@ -293,6 +293,23 @@ describe('stopping a job', () => {
     await tasks.stop(r.taskId);
     await tasks.settled();
     expect(fake.tasks.get(t.id)?.stopped).toBe(true);
+    expect(await store.get(r.taskId)).toMatchObject({ state: 'stopped', v1TaskId: t.id });
+  });
+
+  // 11 Oct: a stop that lands before /v1 started the job, whose "started" then never reaches Go (a stream reconnect),
+  // stopped it on /v1 only at the sweep, two minutes on, the job working all the while.
+  it("looks the job up again soon when the stop lands before /v1 started it and /v1's started never reaches Go", async () => {
+    const v1 = createV1Client({ baseUrl: fake.url, keys: KEYS, adminKey: ADMIN, sleep: async () => undefined });
+    const computer = createComputer({ pool: db.pool, v1, tokens: createTokenStore(db.pool, lb.clock.now), env: { VESTRA_DEPLOYMENT_ID: 'dep_go', VESTRA_MCP_SERVER_ID: 'mcp_go' }, now: lb.clock.now, log: lb.brain.log });
+    const own = createTasks({ store, v1, computer, cards, link: lb.link, desk: lb.desk, packs: lb.brain.packs, now: lb.clock.now, log: lb.brain.log, follow: () => undefined, stopLookupMs: [30, 100] });
+    const r = await own.start('t_s4', { ...VILLAS, key: 'stop4' });
+    await own.settled();
+    await own.stop(r.taskId);
+    await own.settled();
+    const row = (await store.get(r.taskId))!;
+    // /v1 starts the job only now, and no task.started reaches Go: no stream, no sweep.
+    const t = fake.startTask(row.conversationId!, row.v1TurnId!, row.title);
+    await eventually(() => fake.tasks.get(t.id)?.stopped === true, 2_000);
     expect(await store.get(r.taskId)).toMatchObject({ state: 'stopped', v1TaskId: t.id });
   });
 
