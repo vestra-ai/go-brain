@@ -351,7 +351,7 @@ describe('why Go woke, and the trip block', () => {
     expect(hello).toContain('answer that first');
     expect(hello).toContain('Do not open a vote unless someone asks for one');
     // Keshav, 11 Oct: a hello that suggests where the trip could go puts it on a place card, never in words or buttons.
-    expect(hello).toContain("Where the trip could go, if you suggest any, is a place card (the ixigo tool's plan.explore, then show_options), never names in your words or in offer_replies.");
+    expect(hello).toContain('Where the trip could go, if you suggest any, is a place card (suggest_places), never names in your words or in offer_replies.');
     // Prod drill, 11 Oct: a hello whose card failed went silent; the hello is said anyway.
     expect(hello).toContain("If the card can't come, say the hello anyway.");
     expect(hello).not.toMatch(/open_vote|first vote/);
