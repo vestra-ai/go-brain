@@ -299,7 +299,7 @@ describe.skipIf(DATABASE_URL === undefined)('the demo, end to end, with every la
     expect(cardNow(workingId)).toMatchObject({ state: 'done' });
   }, 30_000);
 
-  it('2:30 all five vote and the vote closes: Go says who won, never who pays, and the card asks who books it for everyone', async () => {
+  it('2:30 all five vote and the vote closes: Go says the stay and its booking, never who pays, and the card asks who books it for everyone', async () => {
     chapter('2:30 Everyone votes');
     const from = lastSeq();
     for (const person of DEMO_PEOPLE) {

@@ -1,7 +1,7 @@
 import * as C from '@go/contract';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type { DeskItem } from '../../desk/desk.js';
-import { claimCardOnClose, claimTap } from '../claim-taps.js';
+import { claimCardOnClose, claimTap, stayClosedAnswer } from '../claim-taps.js';
 import { claimCard, claimCardId, createClaims, type Claims } from '../claims.js';
 import { Later, type MoneyDeps } from '../deps.js';
 import { setMandate } from '../mandate.js';
@@ -214,5 +214,62 @@ describe('the card on the closed vote', () => {
     expect(await rider({ tripId: 't_goa', turnId: 'turn_close', wake: [closed], pack: pack() })).toBeNull();
     const withMandate = { trip: goaTrip('mandate'), messages: [], seq: 1 };
     expect(await rider({ tripId: 't_goa', turnId: 'turn_close', wake: [closed], pack: withMandate })).toBeNull();
+  });
+
+  // Saket's test, 11 Oct: a trip of one got "One person books for all" and an I'll book it. Nobody to ask who pays.
+  it('a trip of one gets no card: its booking goes up for them by itself, once, opening with the stay', async () => {
+    const base = goaTrip('closed');
+    const solo = await moneyKit({ trip: { ...base, people: base.people.slice(0, 1), dates: { start: '2026-11-06', end: '2026-11-09' } } });
+    try {
+      const soloClaims = createClaims(solo.pool, solo.now);
+      const later = new Later();
+      const soloPack = () => ({ trip: solo.server.trip('t_goa'), messages: [], seq: 1 });
+      const deps = { d: { ...solo.deps, claims: soloClaims }, claims: soloClaims, packs: { get: async () => soloPack() }, later };
+      // The closed vote's own turn says nothing (its direct answer first, as a turn runs it): the booking's message is the one line.
+      const ctx = turnCtx('t_goa', solo.server, solo.server.trip('t_goa'));
+      expect(await stayClosedAnswer(deps)({ tripId: 't_goa', wake: [closed], pack: soloPack(), ctx })).toBe(true);
+      expect(ctx.lines).toEqual([]);
+      const rider = claimCardOnClose(deps);
+      expect(await rider({ tripId: 't_goa', turnId: 'turn_close', wake: [closed], pack: soloPack() })).toBeNull();
+      // A rerun of the turn starts nothing again.
+      expect(await rider({ tripId: 't_goa', turnId: 'turn_close', wake: [closed], pack: soloPack() })).toBeNull();
+      await later.settled();
+      expect(solo.server.writesOf('set_mandate').map((w) => w.params)).toEqual([expect.objectContaining({ payer_person_id: 'p_rahul' })]);
+      const posts = solo.server.writesOf('post_message');
+      expect(posts).toHaveLength(1);
+      expect(posts[0]?.params).toMatchObject({ text: expect.stringMatching(/^Villa Sol it is\. .*Tap Yes, book it when you're ready\.$/), card: { kind: 'mandate' } });
+      expect(String(posts[0]?.params.text)).not.toMatch(/for all|everyone|split|group/i);
+      expect(solo.server.cards.has('c_claim_d_villa')).toBe(false);
+    } finally {
+      await solo.drop();
+    }
+  });
+});
+
+// Saket's test, 11 Oct: the stays vote closed and Go put up his flights card and the stay's I'll book it at once, with
+// "tell me when you want the stay booked". The stay comes first; each person's flights once it is booked.
+describe('a closed stays vote, alone on the turn', () => {
+  const closed: DeskItem = { id: 'change:ev_1', tripId: 't_goa', kind: 'trip_change', ref: 'decision:d_villa', dueAt: new Date(), payload: { type: 'decision.closed', decisionId: 'd_villa' } };
+  const pack = () => ({ trip: k.server.trip('t_goa'), messages: [], seq: 1 });
+
+  it('saves the stay and says one plain line, the card riding on it: no model round, no flights, no "tell me when"', async () => {
+    const ctx = turnCtx('t_goa', k.server, k.server.trip('t_goa'));
+    const answer = stayClosedAnswer({ d, claims, packs: packs(), later: new Later() });
+    expect(await answer({ tripId: 't_goa', wake: [closed], pack: pack(), ctx })).toBe(true);
+    expect(ctx.lines).toEqual(["Villa Sol it is. Tap I'll book it to book it."]);
+    expect(k.server.writesOf('update_trip').map((w) => w.params)).toEqual([expect.objectContaining({ trip_id: 't_goa', stay: 'Villa Sol' })]);
+    // The claim card rides on that line (claimCardOnClose), on the same turn.
+    const rider = claimCardOnClose({ d, claims, packs: packs(), later: new Later() });
+    expect(await rider({ tripId: 't_goa', turnId: ctx.turnId, wake: [closed], pack: pack() })).toMatchObject({ card: { card_id: 'c_claim_d_villa' } });
+  });
+
+  it('leaves anything else to the model: something else on the turn, or a winner Go cannot book', async () => {
+    const answer = stayClosedAnswer({ d, claims, packs: packs(), later: new Later() });
+    const said: DeskItem = { id: 'msg:m_1', tripId: 't_goa', kind: 'message', ref: 'm_1', dueAt: new Date(), payload: {} };
+    expect(await answer({ tripId: 't_goa', wake: [closed, said], pack: pack(), ctx: turnCtx('t_goa', k.server, k.server.trip('t_goa')) })).toBe(false);
+    k.travel.options.set('opt_villa_sol', 'ixigo:flight:6e-2134');
+    k.travel.offers.set('ixigo:flight:6e-2134', { amountMinor: 592000, currency: 'INR', merchant: 'ixigo: IndiGo 6E 2134', refundableUntil: null, title: 'IndiGo 6E 2134', kind: 'flight' });
+    expect(await answer({ tripId: 't_goa', wake: [closed], pack: pack(), ctx: turnCtx('t_goa', k.server, k.server.trip('t_goa')) })).toBe(false);
+    expect(k.server.writesOf('update_trip')).toEqual([]);
   });
 });

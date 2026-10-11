@@ -46,7 +46,7 @@ export function fakeBrain(o: {
       invalidate: () => undefined,
     },
     tools: { register: (t: QuickTool<any>) => void seen.tools.push(t), list: () => seen.tools },
-    context: { addNow: (p: NowProvider) => void seen.nows.push(p), addWake: () => undefined, addTurnCard: () => undefined },
+    context: { addNow: (p: NowProvider) => void seen.nows.push(p), addWake: () => undefined, addTurnCard: () => undefined, addDirect: () => undefined },
     switches: { get: (name: string) => (switches as Record<string, string>)[name] ?? '', set: async () => undefined },
     ...(o.travel ? { travel: o.travel } : {}),
   } as unknown as Brain;
