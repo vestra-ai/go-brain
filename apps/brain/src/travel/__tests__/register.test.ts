@@ -10,6 +10,10 @@ import { registerTravel } from '../register.js';
 import { SocketCallError } from '../../door/rpc.js';
 import { createResultsStore, MORE_CARD, type ResultOption } from '../results.js';
 import { ALL_SHOWN } from '../taps.js';
+import { asksForMore } from '../typed-more.js';
+import { msg } from '../../__tests__/fixtures/goa.js';
+import type { DeskItem } from '../../desk/desk.js';
+import type { Message } from '@go/contract';
 import type { TravelOption } from '../travel.js';
 
 let db: Awaited<ReturnType<typeof withSchema>>;
@@ -383,6 +387,60 @@ describe('registerTravel', () => {
     } finally {
       travel.search = realSearch;
       lb.link.request = realRequest;
+    }
+  });
+
+  // The lead, 11 Oct: a typed "show more" at 07:58 closed the card's vote and opened a new one.
+  it('takes a typed "show more" right after an options card as its See more: the next stays in the same vote, with no model round', async () => {
+    expect(['more', 'show more', '@Go show more please', 'See more options', 'more?', 'aur dikhao', 'give me some more'].map(asksForMore)).toEqual(Array(7).fill(true));
+    expect(['no more', 'show more villas with a pool', 'more people are coming', 'any more?'].map(asksForMore)).toEqual(Array(4).fill(false));
+    const results = createResultsStore(db.pool);
+    const options: ResultOption[] = Array.from({ length: 12 }, (_, i) => ({
+      kind: 'stay', title: `Calangute ${i + 1}`, priceMinor: 500_000, totalMinor: 1_500_000, currency: 'INR', priceNote: 'per night, per room',
+      highlights: [], facts: { nights: 3 }, sourceUrl: `https://www.ixigo.com/hotels/${9500 + i}/details?hName=Calangute%20${i + 1}`,
+    }));
+    const set = await results.save({ tripId: 't_goa', optionKind: 'stay', source: 'search', query: { area: 'calangute', guests: 5 }, options, checkedAt: '2026-10-07T12:00:00.000Z' });
+    const shownCtx = lb.ctx({ turnId: 'turn_tm1' });
+    const shown = (await lb.tools.run('show_options', { line: 'Stays in Calangute.', results_id: set.resultsId, title: 'Stays in Calangute' }, shownCtx)) as any;
+    const first = C.OptionsCard.parse(shownCtx.cards[0]);
+    // The chat: Go's card, then what they said after it.
+    const chat = (...said: Message[]) => ({ ...goaPack(), messages: [...goaPack().messages, msg(95, null, 'Stays in Calangute.', { card: first }), ...said] });
+    const direct = async (said: Message, pack: ReturnType<typeof chat>) => {
+      const wake: DeskItem[] = [{ id: `msg:t_goa:${said.message_id}`, tripId: 't_goa', kind: 'message', ref: said.message_id, dueAt: new Date(), payload: { messageId: said.message_id, seq: said.seq } }];
+      const turn = lb.ctx({ turnId: `turn_${said.message_id}` });
+      for (const fn of lb.context.directs) if (await fn({ tripId: 't_goa', wake, pack, ctx: turn })) return turn;
+      return null;
+    };
+    const real = lb.link.request.bind(lb.link);
+    lb.link.request = (async (method: string, params: unknown) =>
+      method === 'read_trip'
+        ? { ...GOA_TRIP, decisions: [{ decision_id: shown.decision_id, status: 'open', options: Array.from({ length: 10 }, (_, i) => ({ label: `S${i}` })) }] }
+        : real(method as 'post_message', params as never)) as typeof lb.link.request;
+    try {
+      // More than "more" goes to the model.
+      const other = msg(96, 'p_meher', 'show more villas with a pool');
+      expect(await direct(other, chat(other))).toBeNull();
+      const votes = [lb.link.sent('open_vote').length, lb.link.sent('close_vote').length];
+      const ask = msg(97, 'p_meher', '@Go show more');
+      const turn = await direct(ask, chat(ask));
+      // Answered with no line: the card follows, as a tap's does.
+      expect(turn).toMatchObject({ answered: true, lines: [] });
+      const cardId = stableId(MORE_CARD, ask.message_id);
+      const posted = () => lb.link.sent('post_message').find((p) => (p.card as { card_id?: string } | undefined)?.card_id === cardId);
+      await eventually(() => posted() !== undefined);
+      const next = C.OptionsCard.parse(posted()!.card);
+      expect(next.options.map((o) => o.title)).toEqual(['Calangute 11', 'Calangute 12']);
+      // In the same vote: none opened, none closed.
+      expect(next.decision_id).toBe(shown.decision_id);
+      expect([lb.link.sent('open_vote').length, lb.link.sent('close_vote').length]).toEqual(votes);
+      // Its See more handed on to the new card, the last thing it does before the next "more" may run.
+      await eventually(() => lb.link.sent('replace_card').some((p) => (p.card as { card_id: string }).card_id === first.card_id));
+      await new Promise((r) => setTimeout(r, 20));
+      // Nothing more: said in the line, as the tap toasts it.
+      const again = msg(98, 'p_meher', 'more');
+      expect(await direct(again, chat(ask, again))).toMatchObject({ answered: true, lines: [`${ALL_SHOWN}.`] });
+    } finally {
+      lb.link.request = real;
     }
   });
 
