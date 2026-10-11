@@ -173,18 +173,71 @@ export function noFlightsText(
 }
 
 /**
- * What Go does next when ixigo has no flights on a route (Keshav, 12 Oct: "if there is no airport in source or
- * destination, Go should be smart enough to give the closest airport"): the same search again at once from or to the
- * nearest other airport with flights, said in one line, never "couldn't load". how: the call that searches again.
+ * The nearest airport with flights to places whose own airport has few or none, with the road from it: the cases we know
+ * (Keshav, 12 Oct: "Go should be smart enough to give the closest airport"; Delhi to Kullu, Manali's airport, had no
+ * flights on 13 Nov, Delhi to Chandigarh 45). By the place's words, its airport's code or its airport's city.
  */
-export function nearestAirportAsk(how: string): string {
-  return (
-    'Search again now with the nearest other airport that has flights in place of the end with none, the trip\'s place or a ' +
-    'home (a small airport\'s nearest bigger one: Manali Chandigarh, Coorg Mangalore, Munnar Kochi, Spiti Chandigarh): ' +
-    `${how}. Say it in one line, the none first and then the airport: "ixigo has no flights from Delhi to Kullu (Manali's ` +
-    'airport) on Fri 13 Nov, so here are flights to Chandigarh, the nearest airport to Manali with flights that day." When this search already was ' +
-    'that nearest airport, say neither has flights that day and offer a bus. Never say it didn\'t load, and never that you\'ll try again.'
-  );
+const NEAREST_WITH_FLIGHTS: Record<string, { city: string; road: string }> = {
+  manali: { city: 'Chandigarh', road: 'about 7 h' },
+  kullu: { city: 'Chandigarh', road: 'about 6 h' },
+  kuu: { city: 'Chandigarh', road: 'about 6 h' },
+  bhuntar: { city: 'Chandigarh', road: 'about 6 h' },
+  munnar: { city: 'Kochi', road: 'about 4 h' },
+  coorg: { city: 'Mangalore', road: 'about 4 h' },
+  kodagu: { city: 'Mangalore', road: 'about 4 h' },
+  madikeri: { city: 'Mangalore', road: 'about 4 h' },
+  varkala: { city: 'Thiruvananthapuram', road: 'about 1.5 h' },
+};
+
+/**
+ * The nearest other airport with flights for an end ixigo had none on, or null: never the airport it already searched.
+ * The road is said only when the place's own words found it (Manali's 7 h is not Kasol's).
+ */
+export function nearestWithFlights(words: string, searched?: { code: string; city: string }): { city: string; road?: string } | null {
+  const own = NEAREST_WITH_FLIGHTS[norm(words)];
+  const hit = own ?? (searched ? (NEAREST_WITH_FLIGHTS[searched.code.toLowerCase()] ?? NEAREST_WITH_FLIGHTS[norm(searched.city)]) : undefined);
+  if (!hit || (searched && norm(hit.city) === norm(searched.city))) return null;
+  return own ? hit : { city: hit.city };
+}
+
+/** What Go says and offers when ixigo has no flights on a route: the line, and its two taps, theirs to answer. */
+export interface NoFlightsOffer {
+  text: string;
+  replies: Array<{ label: string; text: string }>;
+}
+
+/**
+ * ixigo has no flights on a route (its "No flights found"): Go says so and offers the nearest other airport with flights,
+ * one tap, or a bus (Keshav, 12 Oct: "Rahul, ixigo has no flights from Delhi to Kullu (Manali's airport) on Fri 13 Nov.
+ * Should I look at flights to Chandigarh, the nearest airport with flights? It's about 7 h by road to Manali."). The
+ * trip's end first, then the home's. A tap comes back as the tapper's own message, which asks for that search. With no
+ * nearer airport known, the bus alone. Never "couldn't load", never a try again.
+ */
+export function noFlightsOffer(
+  from: string, to: string, date: string,
+  none: { from?: { words: string; code: string; city: string }; to?: { words: string; code: string; city: string } },
+  nearest: { there: { city: string; road?: string } | null; home: { city: string; road?: string } | null } = {
+    there: nearestWithFlights(none.to?.words ?? to, none.to),
+    home: nearestWithFlights(none.from?.words ?? from, none.from),
+  },
+): NoFlightsOffer {
+  const said = noFlightsText(from, to, date, none);
+  const bus = { label: 'A bus instead', text: `A bus from ${from} to ${to} instead` };
+  const { there } = nearest;
+  const home = there ? null : nearest.home;
+  if (there) {
+    return {
+      text: `${said} Should I look at flights to ${there.city}, the nearest airport with flights?${there.road ? ` It's ${there.road} by road to ${to}.` : ''}`,
+      replies: [{ label: clip(`Yes, ${there.city}`, 40), text: `My flights to ${there.city}, the nearest airport to ${to}` }, bus],
+    };
+  }
+  if (home) {
+    return {
+      text: `${said} Should I look at flights from ${home.city}, the nearest airport with flights?${home.road ? ` It's ${home.road} by road from ${from}.` : ''}`,
+      replies: [{ label: clip(`Yes, ${home.city}`, 40), text: `My flights from ${home.city}, the nearest airport to ${from}` }, bus],
+    };
+  }
+  return { text: noFlightsLine(from, to, date, none), replies: [] };
 }
 
 /** "6 to 9 Nov", or "30 Nov to 2 Dec". */

@@ -10,7 +10,8 @@ import type { Desk } from '../desk/desk.js';
 import { dateAs } from './book/expr.js';
 import { buildOptionsCard, clip, formatInr, ixigoPage, PERSONAL_KINDS, placeKindNotAll, stayNight, stayNote, stayWhole, subtitleFor } from './cards.js';
 import { localDay } from '../proactive/clock.js';
-import { answerLine, answerTitle, directPicks, droppedWords, ledBy, leftOff, loadWhat, nearestAirportAsk, noFlightsText, plainAsk } from './answer.js';
+import { answerLine, answerTitle, directPicks, droppedWords, ledBy, leftOff, loadWhat, plainAsk } from './answer.js';
+import { noFlightsOfferFor, type NearestAirport } from './nearest-airport.js';
 import { flightDetails, stayDetails, trainDetails } from './details.js';
 import { guideName, placeDetails, suggestedPlaces, type PlacePick } from './places-card.js';
 import { DEFAULT_TRIP_TZ } from './dates.js';
@@ -40,6 +41,8 @@ export interface TravelToolDeps {
    * own price bands by it. Absent, no search does.
    */
   stayBudget?: (tripId: string) => Promise<number | null>;
+  /** The nearest other airport with flights, for a route ixigo had none on (nearest-airport.ts). */
+  nearest?: NearestAirport;
   travel: Travel;
   results: ResultsStore;
   images: Images;
@@ -416,7 +419,9 @@ async function runSearch(kind: TravelKind, given: TravelQuery, ctx: TurnCtx, d: 
   if (found.results.length > 0 && !found.earlier && leftToPick(q, found).length === 0 && plainAsk(kind, q, { wake: ctx.wake, pack: ctx.pack, ...(ctx.roundTools ? { roundTools: ctx.roundTools } : {}), today: await todayOf(d, ctx.tripId) }).ok) {
     return answerItself(kind, q, found, ctx, d);
   }
-  return searchAnswer(kind, q, found, ctx.tripId, d);
+  const { replies, ...answer } = await searchAnswer(kind, q, found, ctx.tripId, d);
+  if (replies?.length) ctx.quickReplies = replies;
+  return answer;
 }
 
 /**
@@ -651,7 +656,7 @@ export function handOver(
   q: TravelQuery,
   pending: Promise<TravelSearch>,
   o: { tripId: string; fallbackId: string; tryNo?: number },
-  d: Pick<TravelToolDeps, 'desk' | 'now' | 'log' | 'ixigoQuiet'> & { results: Pick<ResultsStore, 'save'> },
+  d: Pick<TravelToolDeps, 'desk' | 'now' | 'log' | 'ixigoQuiet' | 'nearest'> & { results: Pick<ResultsStore, 'save'> },
 ): void {
   const desk = d.desk;
   if (!desk) return;
@@ -668,10 +673,11 @@ export function handOver(
         // Something left to pick goes to the model, which picks it; so do stays with the nearest saved after too few fits,
         // which the model says plainly. The rest posts its card with no model call.
         const pick = leftToPick(q, found).length > 0 || (kind === 'stays' && ((found.nearest?.length ?? 0) > 0 || !!found.earlier));
-        // ixigo's own "No flights found": the model searches the nearest other airport with flights next (its note).
+        // ixigo's own "No flights found": Go's line as it is, with its taps (the nearest airport, a bus), no model call.
         const payload: SearchWake = {
           source: 'travel_search', search: a.search, count: a.count, resultsId: a.results_id ?? null, summary: a.summary, error: null,
-          ...(lead ? { lead } : {}), ...(pick ? { pick } : {}), ...(found.none && a.count === 0 && a.note ? { next: a.note } : {}),
+          ...(lead ? { lead } : {}), ...(pick ? { pick } : {}),
+          ...(found.none && a.count === 0 ? { line: a.summary, ...(a.replies?.length ? { replies: a.replies } : {}) } : {}),
         };
         await wake(`search:${o.tripId}:${found.runId ?? o.fallbackId}`, payload);
       },
@@ -772,6 +778,8 @@ export interface SearchAnswer {
   /** The card the model may show: the results_id, the first 10, a title. */
   card?: { results_id: string; option_numbers: number[]; title: string };
   note: string;
+  /** Taps under Go's line (ixigo's none: the nearest airport, or a bus), put up by the caller, never said to the model. */
+  replies?: Array<{ label: string; text: string }>;
 }
 
 /**
@@ -779,7 +787,9 @@ export interface SearchAnswer {
  * and the best ten in short. Options read without filters ixigo left off (unapplied) are the search without them, and
  * the summary and the note say so.
  */
-export async function searchAnswer(kind: TravelKind, ask: TravelQuery, found: TravelSearch, tripId: string, d: { results: Pick<ResultsStore, 'save'>; now: () => Date }): Promise<SearchAnswer> {
+export async function searchAnswer(
+  kind: TravelKind, ask: TravelQuery, found: TravelSearch, tripId: string, d: { results: Pick<ResultsStore, 'save'>; now: () => Date; nearest?: NearestAirport },
+): Promise<SearchAnswer> {
   const q = answeredAs(ask, found);
   const left = found.unapplied?.length ? leftOff(found.unapplied) : null;
   const dropped = found.dropped?.length ? droppedWords(found.dropped) : null;
@@ -798,15 +808,20 @@ export async function searchAnswer(kind: TravelKind, ask: TravelQuery, found: Tr
   const wasNote = found.earlier
     ? `Say plainly that ixigo didn't answer just now and these are from Go's read ${age}, never as fresh. `
     : '';
-  // ixigo's own "No flights found" (prod, 12 Oct: Delhi to Kullu, read as a page that didn't load): the answer, and the
-  // nearest other airport with flights searched next, never "couldn't load" and never a try again.
+  // ixigo's own "No flights found" (prod, 12 Oct: Delhi to Kullu, read as a page that didn't load): the answer, with the
+  // nearest other airport with flights offered, one tap, or a bus; never "couldn't load" and never a try again.
   if (options.length === 0 && found.none && q.from && q.to && q.date) {
+    const offer = await noFlightsOfferFor(q.from, q.to, q.date, found.none, d.nearest);
     return {
       search,
       count: 0,
       checked: ageText(found.checkedAt, d.now()),
-      summary: noFlightsText(q.from, q.to, q.date, found.none),
-      note: nearestAirportAsk('search_flights with to, or from, set to that airport\'s city'),
+      summary: offer.text,
+      note:
+        'Say the summary in one line, as it is' +
+        (offer.replies.length ? ': its choices are under your message as buttons already, never list them. ' : '. ') +
+        "Never say it didn't load, and never that you'll try again.",
+      ...(offer.replies.length ? { replies: offer.replies } : {}),
     };
   }
   if (options.length === 0) {

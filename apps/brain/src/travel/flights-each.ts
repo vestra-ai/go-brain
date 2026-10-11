@@ -20,7 +20,8 @@ import { SAY_NOTHING, type QuickTool, type TurnCtx } from '../composer/tools.js'
 import type { Desk } from '../desk/desk.js';
 import type { ServerLink } from '../door/server-link.js';
 import type { TripPack } from '../trips/pack.js';
-import { dayText, nearestAirportAsk, noFlightsLine, noFlightsText } from './answer.js';
+import { dayText, noFlightsLine, noFlightsText } from './answer.js';
+import { noFlightsOfferFor, type NearestAirport } from './nearest-airport.js';
 import type { NoneSaid } from './book/engine.js';
 import type { Engine, EngineAnswer, StepsEvent } from './book/engine.js';
 import { buildOptionsCard, clip, formatInr, type CardPick } from './cards.js';
@@ -139,6 +140,8 @@ export interface FlightsEachDeps {
   now: () => Date;
   /** Where a city whose page didn't come waits for its try again (try-again.ts). */
   desk?: Pick<Desk, 'put'>;
+  /** The nearest other airport with flights, for a city ixigo had none for (nearest-airport.ts). */
+  nearest?: NearestAirport;
   /** When ixigo's own quiet on a flights page ends (it refused one), or null: a city's try waits past it. */
   ixigoQuiet?: (kind: TravelKind, q: TravelQuery) => number | null;
   log?: { warn(obj: object, msg: string): void };
@@ -194,8 +197,13 @@ async function groupCard(
  * Each traveller's card and its line are theirs alone to see (1.2 visible_to_person_ids, Keshav, 10 Oct), as well as to
  * act on. Never throws: a post that fails is logged.
  */
-function postFor(d: Pick<FlightsEachDeps, 'link' | 'log'>, tripId: string, requestId: string, card: C.Card | null, text: string, only: string[]): Promise<void> {
-  return d.link.request('post_message', { request_id: requestId, trip_id: tripId, text, ...(card ? { card } : {}), visible_to_person_ids: only })
+function postFor(
+  d: Pick<FlightsEachDeps, 'link' | 'log'>, tripId: string, requestId: string, card: C.Card | null, text: string, only: string[],
+  replies: Array<{ label: string; text: string }> = [],
+): Promise<void> {
+  return d.link.request('post_message', {
+    request_id: requestId, trip_id: tripId, text, ...(card ? { card } : {}), ...(replies.length ? { quick_replies: replies } : {}), visible_to_person_ids: only,
+  })
     .then(() => undefined)
     .catch((err: unknown) => d.log?.warn({ err: String(err).slice(0, 200), tripId }, "travel: a person's flights card could not be posted"));
 }
@@ -217,43 +225,30 @@ export interface Instead {
 }
 
 /**
- * ixigo has no flights from a city to the trip that day (its "No flights found"): Go searches the nearest other airport
- * with flights next, by itself (Keshav, 12 Oct: "Go should be smart enough to give the closest airport"), on a wake of its
- * own, so it happens whether the turn is still on or over. A search that already stood in for one (instead) gets the bus
- * line, theirs alone: one nearest airport, never a chain. Never "couldn't load", never a try again.
+ * ixigo has no flights from a city to the trip that day (its "No flights found"): each traveller hears it, theirs alone,
+ * with the nearest other airport with flights offered, one tap, or a bus (Keshav, 12 Oct: "Should I look at flights to
+ * Chandigarh, the nearest airport with flights?"). A tap comes back as their own message, which asks for that search. A
+ * search that already stood in for one (instead) offers the bus alone: one nearest airport, never a chain. Never
+ * "couldn't load", never a try again.
  */
 async function noFlightsFrom(
-  d: Pick<FlightsEachDeps, 'desk' | 'link' | 'now' | 'log'>, tripId: string, key: string, groups: EachGroup[],
+  d: Pick<FlightsEachDeps, 'link' | 'log' | 'nearest'>, tripId: string, key: string, groups: EachGroup[],
   at: { to: string; date: string; instead?: Instead | undefined }, none: NoneSaid,
 ): Promise<void> {
-  const home = groups[0]?.home;
-  if (!home) return;
-  // Kept for the stand-in's line, under both ends' words: which end has none is the model's to say.
-  for (const place of [home, at.to]) {
+  // Kept for the stand-in search's line, under both ends' words: which end had none is the tap's to say.
+  for (const place of [groups[0]?.home, at.to]) {
+    if (!place) continue;
     noneAt.set(noneKey(tripId, place, at.date), none);
     while (noneAt.size > 500) noneAt.delete(noneAt.keys().next().value!);
   }
-  if (at.instead || !d.desk) {
-    // The bus goes from their home to the trip's place, whichever end this search stood in for.
-    const busFrom = at.instead?.side === 'from' ? at.instead.of : home;
-    const busTo = at.instead?.side === 'to' ? at.instead.of : at.to;
-    for (const g of groups) {
-      const ids = g.people.map((p) => p.personId);
-      await postFor(d, tripId, stableId('go_each', key, ...ids, 'none'), null, `${namesOf(g)}, ${noFlightsLine(busFrom, busTo, at.date, none)}`, ids);
-    }
-    return;
+  for (const g of groups) {
+    // The bus goes from their home to the trip's place, whichever end a stand-in search stood in for.
+    const from = at.instead?.side === 'from' ? at.instead.of : g.home;
+    const to = at.instead?.side === 'to' ? at.instead.of : at.to;
+    const offer = at.instead ? { text: noFlightsLine(from, to, at.date, none), replies: [] } : await noFlightsOfferFor(from, to, at.date, none, d.nearest);
+    const ids = g.people.map((p) => p.personId);
+    await postFor(d, tripId, stableId('go_each', key, ...ids, 'none'), null, `${namesOf(g)}, ${offer.text}`, ids, offer.replies);
   }
-  const ids = groups.flatMap((g) => g.people.map((p) => p.personId));
-  const how =
-    `call search_flights_each with person_ids ${JSON.stringify(ids)}, instead_of the place in the summary whose airport has no flights, ` +
-    "and to set to that airport's city (from, when it is their home's end)";
-  await d.desk.put({
-    id: `search:${tripId}:none:${key}`, tripId, kind: 'search', ref: 'flights', dueAt: d.now(),
-    payload: {
-      source: 'travel_search', search: `flights from ${home} to ${at.to}`, count: 0, resultsId: null, error: null,
-      summary: noFlightsText(home, at.to, at.date, none), next: nearestAirportAsk(how),
-    },
-  }).catch((err: unknown) => d.log?.warn({ err: String(err).slice(0, 200), tripId }, "travel: the nearest airport's search could not be put on the desk"));
 }
 
 /**
@@ -322,9 +317,9 @@ const Args = z.object({
   cabin: z.enum(['economy', 'premium_economy', 'business']).optional().describe('Only when the ask names a cabin'),
   person_ids: z.array(z.string().min(1).max(80)).min(1).max(30).optional()
     .describe('Whose flights: the asker\'s alone for "my flights"; leave it out only when they asked for everyone\'s, or ours'),
-  from: z.string().min(2).max(60).optional().describe("Only when Go searches the nearest other airport to these people's home: that airport's city"),
+  from: z.string().min(2).max(60).optional().describe("Only for the nearest other airport to these people's home, when they asked for it: that airport's city"),
   instead_of: z.string().min(2).max(60).optional()
-    .describe('Only for the nearest other airport: the place whose own airport ixigo had no flights for that day (Manali)'),
+    .describe('Only for the nearest other airport someone asked for after ixigo had none: the place whose own airport had no flights (Manali)'),
 });
 
 
@@ -407,7 +402,7 @@ export function flightsEachTool(d: FlightsEachDeps): QuickTool<z.infer<typeof Ar
           for (const g of groupsOf(e.entry)) {
             notUp.set(g.home, instead
               ? 'ixigo has no flights from there that day either; their line says so, with a bus as the next step'
-              : 'ixigo has no flights on that route that day; Go searches the nearest other airport with flights next, by itself');
+              : 'ixigo has no flights on that route that day; their line says so and offers the nearest airport with flights, or a bus');
           }
           posts.push(noFlightsFrom(d, ctx.tripId, stableId('each_none', ctx.turnId, norm(e.entry)), groupsOf(e.entry), at, got.none));
           return;

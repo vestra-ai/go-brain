@@ -9,7 +9,7 @@ import { computeAnthropicCostUsd, estimateCostUsd } from '../composer/anthropic-
 import type { Log } from '../log.js';
 
 export interface SideRequest {
-  purpose: 'notes' | 'fold';
+  purpose: 'notes' | 'fold' | 'nearest_airport';
   system: string;
   user: string;
   maxTokens: number;

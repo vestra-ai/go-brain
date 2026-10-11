@@ -35,11 +35,8 @@ export interface SearchWake {
    * couldn't load flights from Delhi to Goa just now; I'll try again in a minute.", or the last word after the last try.
    */
   line?: string;
-  /**
-   * ixigo answered that it has no flights on the route (its "No flights found"): what Go does next, the nearest other
-   * airport's search (answer.ts nearestAirportAsk), Go's own words; the summary says the route, as data.
-   */
-  next?: string;
+  /** Taps under the line (ixigo's none: the nearest airport with flights, or a bus; answer.ts noFlightsOffer). */
+  replies?: Array<{ label: string; text: string }>;
 }
 
 /** How a finished search reads in "why Go woke". Null for desk items it doesn't own. */
@@ -51,8 +48,11 @@ export function renderSearchWake(item: DeskItem): string | null {
   const w = item.payload as Partial<SearchWake> | null;
   if (w?.source !== 'travel_search') return null;
   const what = inlineData(w.search ?? 'a travel search', 160);
-  if (w.next) return `The search ${what} finished: ${inlineData(w.summary ?? '', 300)} ${w.next}`;
-  if (w.line) return `ixigo didn't load the search ${what}. Say this, in one line, and never send a link for it: ${inlineData(w.line, 300)}`;
+  if (w.line) {
+    // Go's own line: ixigo didn't load it, or ixigo has no flights on the route (its taps then go up with it).
+    const taps = w.replies?.length ? ` Put its choices up with offer_replies: ${w.replies.map((r) => inlineData(r.label, 40)).join(', ')}.` : '';
+    return `The search ${what} has Go's own line. Say this, in one line, and never send a link for it: ${inlineData(w.line, 300)}${taps}`;
+  }
   if (w.error) return `The search ${what} didn't work (${w.error}). Say so in one short line, and do the nearest thing you can now (another date, place or kind), never only an offer to try again. Never start_task for it.`;
   if (w.resultsId && !w.count) {
     return (
@@ -86,6 +86,7 @@ export function searchWakeAnswer(d: Pick<TravelToolDeps, 'results' | 'images' | 
     const w = item.payload as Partial<SearchWake> | null;
     if (w?.source === 'travel_search' && typeof w.line === 'string') {
       ctx.lines.push(w.line);
+      if (w.replies?.length) ctx.quickReplies = w.replies;
       ctx.answered = true;
       return true;
     }
@@ -111,7 +112,7 @@ export function searchWakeAnswer(d: Pick<TravelToolDeps, 'results' | 'images' | 
  * other things in it, the model answers those.
  */
 export function tryAgainAnswer(
-  d: Pick<TravelToolDeps, 'travel' | 'results' | 'desk' | 'now' | 'log' | 'ixigoQuiet'> & { each?: (t: TryAgainItem, pack: TripPack) => void },
+  d: Pick<TravelToolDeps, 'travel' | 'results' | 'desk' | 'now' | 'log' | 'ixigoQuiet' | 'nearest'> & { each?: (t: TryAgainItem, pack: TripPack) => void },
 ): DirectAnswer {
   return async ({ tripId, wake, pack, ctx }) => {
     const tries = triesIn(wake);

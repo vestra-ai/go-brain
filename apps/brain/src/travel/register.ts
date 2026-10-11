@@ -4,7 +4,9 @@
  * early start of a search on intake (every TRAVEL_MODE) and the right-now block that hands its answer to the turn.
  */
 import type { RegisterLane } from '../app.js';
+import { anthropicSideModel, type SideModel } from '../memory/side-model.js';
 import { loadBook } from './book/book.js';
+import { createNearestAirport } from './nearest-airport.js';
 import { createEngine } from './book/engine.js';
 import { ixigoTool, runOnStage, toolRecipes } from './book/tool.js';
 import { bookingsNow } from './booking/booking-now.js';
@@ -354,7 +356,14 @@ export const registerTravel: RegisterLane = async (brain) => {
   };
   // When ixigo's own quiet on a search's page ends (it refused one): Go's tries again wait past it (try-again.ts).
   const ixigoQuiet = (kind: TravelKind, q: TravelQuery): number | null => engine.ixigoQuietUntil(searchRecipeOf(kind, q));
-  for (const t of travelTools({ travel, results, images, now: brain.now, desk: brain.desk, ixigoQuiet, log: brain.log, warmForTravel: warm, today, showPick, showPlaces: showPlacesOf, placeCover, placePhoto, stayBudget, groupStay })) brain.tools.register(t);
+  // The nearest other airport with flights, for a route ixigo had none on: the cases we know, else the side model, made
+  // when first asked (nearest-airport.ts).
+  let side: SideModel | null = null;
+  const nearest = createNearestAirport({
+    side: () => (side ??= brain.anthropic && brain.env?.SIDE_MODEL ? anthropicSideModel(brain.anthropic, brain.env.SIDE_MODEL, brain.log, brain.budget) : null),
+    now: brain.now, log: brain.log,
+  });
+  for (const t of travelTools({ travel, results, images, now: brain.now, desk: brain.desk, ixigoQuiet, log: brain.log, warmForTravel: warm, today, showPick, showPlaces: showPlacesOf, placeCover, placePhoto, stayBudget, groupStay, nearest })) brain.tools.register(t);
   brain.tools.register(budgetTool({ budgets, pool: brain.pool, now: brain.now, log: brain.log }));
   brain.context.addNow(budgetNow({ budgets, trip: async (tripId) => (await brain.packs.get(tripId)).trip }));
   // A person's own flight booking, in the turns they speak in (the lead, 11 Oct: Ankur's "?" after his stopped).
@@ -385,7 +394,7 @@ export const registerTravel: RegisterLane = async (brain) => {
   );
   // Each person's own flights from their home city, on cards for them alone (B7): one page per city, posted as it lands,
   // and a city whose page didn't come tried again (try-again.ts).
-  const eachDeps = { engine, results, link: brain.door.link, now: brain.now, desk: brain.desk, ixigoQuiet, log: brain.log, live: () => brain.switches.get('TRAVEL_MODE') === 'ixigo_web' };
+  const eachDeps = { engine, results, link: brain.door.link, now: brain.now, desk: brain.desk, ixigoQuiet, nearest, log: brain.log, live: () => brain.switches.get('TRAVEL_MODE') === 'ixigo_web' };
   brain.tools.register(flightsEachTool(eachDeps));
   // Watches the group asks for on ixigo ("tell us when it confirms"): the tools, and the checks every 30 s that find
   // the due ones. What comes true goes through the proactive bar as the group's ask (RECIPE_WATCHES turns it all off).
@@ -480,7 +489,7 @@ export const registerTravel: RegisterLane = async (brain) => {
   // The sites' own filter lists the trip's searches brought: the model maps the ask onto them (site_filters).
   brain.context.addNow(offersNow({ offers }));
   // The tries again Go promised when ixigo didn't load a search (G1, 11 Oct): first, so each starts whatever else woke Go.
-  brain.context.addDirect(tryAgainAnswer({ travel, results, desk: brain.desk, ixigoQuiet, now: brain.now, log: brain.log, each: eachTryAgain(eachDeps) }));
+  brain.context.addDirect(tryAgainAnswer({ travel, results, desk: brain.desk, ixigoQuiet, nearest, now: brain.now, log: brain.log, each: eachTryAgain(eachDeps) }));
   // A plain search ask whose early search found options answers with no model call: the card and a line from its data.
   // One still running is handed over, and the turn says nothing more: the live card covers the wait.
   brain.context.addDirect(earlyAnswer({ early, results, images, travel, today, now: brain.now, desk: brain.desk, ixigoQuiet, log: brain.log }));
