@@ -277,8 +277,12 @@ describe('the early answer, with no model call', () => {
       kind: 'stay', title, priceMinor, currency: 'INR', priceNote: 'per night, per room', highlights: [], facts: {},
       sourceUrl: `https://www.ixigo.com/hotels/1/details?hName=${encodeURIComponent(title)}`,
     });
-    // ixigo's popular first: the cheapest of the twenty is fourth, off the card.
-    const stays: TravelSearch = { checkedAt: '2026-10-07T12:00:00.000Z', found: 4, results: [stay('Miros', 2_233_300), stay('Saudades Homestays', 529_800), stay('Comfort Inn Elite', 559_600), stay('Budget Inn', 179_000)] };
+    // ixigo's popular first: the cheapest is eleventh, off the card's ten (rev 5 R3).
+    const more = Array.from({ length: 7 }, (_, i) => stay(`Goa Stay ${i + 1}`, 900_000 + i * 10_000));
+    const stays: TravelSearch = {
+      checkedAt: '2026-10-07T12:00:00.000Z', found: 11,
+      results: [stay('Miros', 2_233_300), stay('Saudades Homestays', 529_800), stay('Comfort Inn Elite', 559_600), ...more, stay('Budget Inn', 179_000)],
+    };
     const query = { area: 'goa', checkIn: '2026-11-06', checkOut: '2026-11-09' };
     const run = earlyAnswer({
       early: { searchFor: (_t: string, id: string): EarlySearch | null => (id === line.message_id ? { kind: 'stays', query, search: Promise.resolve(stays), live: true } : null) },
@@ -288,7 +292,7 @@ describe('the early answer, with no model call', () => {
     });
     const ctx = makeTurnCtx({ tripId: 't_goa', turnId: 'turn_d3', link: {} as never, pack, wake: [wakeFor(line.message_id, 59)], signal: new AbortController().signal });
     expect(await run({ tripId: 't_goa', wake: ctx.wake, pack, ctx })).toBe(true);
-    expect((ctx.cards[0] as { options: Array<{ title: string }> }).options.map((o) => o.title)).toEqual(['Miros', 'Saudades Homestays', 'Comfort Inn Elite']);
+    expect((ctx.cards[0] as { options: Array<{ title: string }> }).options.map((o) => o.title)).toEqual(['Miros', 'Saudades Homestays', 'Comfort Inn Elite', ...more.map((o) => o.title)]);
     expect(ctx.lines).toEqual(['Stays in Goa for 6 to 9 Nov, from ₹5,298 a night.']);
   });
 });
