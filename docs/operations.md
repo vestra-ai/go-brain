@@ -4,7 +4,7 @@ This page is for whoever runs Go this week. It says where Go runs, what each set
 
 Two words used below:
 
-- **Production** and **staging** are the two environments of the Railway project `go`. Production's Go is the one the real trip and the demo use. Staging runs the same services and takes every new version first, with the live smoke and the rehearsals; production is never used for drills.
+- **Production** and **staging** are the two environments of the Railway project `go`. Production's Go is the one the real trip and the demo use. Staging runs the same services and takes every new version first, with the live smoke. Drills run on production, each on its own trip and people, never on a real trip.
 - **A variable** is a setting on a Railway service. Values live only in Railway. Never paste a value into a chat, a doc, a commit or a log.
 
 ## The Railway project

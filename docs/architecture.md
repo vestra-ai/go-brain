@@ -17,7 +17,7 @@ flowchart LR
   Jev["Jev<br/>(the reflex)"]
   Phone["Twilio and a realtime voice model<br/>(phone calls)"]
   Bash["The trip's own Bash<br/>through Vestra /v1"]
-  Ixigo["ixigo<br/>(search and booking)"]
+  Ixigo["ixigo.com<br/>(search and booking)"]
 
   App -- "messages, taps, votes" --> Server
   Server <-- "one signed WebSocket, JSON-RPC 2.0" --> Go
@@ -27,22 +27,22 @@ flowchart LR
   Go -- "ten questions per message" --> Jev
   Go -- "call_business" --> Phone
   Go <-- "pay links, and paid or failed back, signed" --> Vault
-  Go -- "long jobs" --> Bash
+  Go -- "recipes and long jobs" --> Bash
   Bash -- "Go's MCP server: the trip, facts, recall, search" --> Go
-  Go -- "search, status, hold, confirm (MCP)" --> Ixigo
+  Bash -- "ixigo's own pages, in the trip's browser" --> Ixigo
 ```
 
 - **The socket.** The Server opens one WebSocket to Go at `GET /v1/socket`, signed with a shared secret, and keeps it open; Go accepts each signature once and pings every 20 seconds (`apps/brain/src/door`). Every change in a trip reaches Go as an event; every write Go makes (a message, a reaction, a vote, a record line) is a request back on the same socket, with a `request_id` so the Server does it once. The methods and objects are fixed in [`packages/contract`](../packages/contract) and explained in [`docs/guide`](guide).
 - **The vault** is its own service with its own database ([`apps/vault`](../apps/vault)). Cards and payments never pass through the Server or the model: the App opens the vault's page directly.
-- **The trip's own Bash.** Each trip gets its own computer, a Vestra Bash reached through `/v1` (`apps/brain/src/tasks`). Big jobs (compare villas, read reviews, fill a form) run there for minutes while the room goes on; it never speaks in the room, and it reads the trip through Go's MCP server, locked to that trip by a token (`apps/brain/src/mcp`).
-- **ixigo.** Travel search, status and booking go through one layer (`apps/brain/src/travel`): ixigo's MCP server, or the fake ixigo in process.
+- **The trip's own Bash.** Each trip gets its own computer, a Vestra Bash reached through `/v1` (`apps/brain/src/tasks`). Its browser is logged in to the trip's ixigo account: the login happens on Bash's Watch page, a live view of that browser, and Go sees it land by itself (`travel/login.ts`). The search card shows the same live view while Go works (`travel/screen-feed.ts`). Big jobs (compare villas, read reviews, fill a form) run there for minutes while the room goes on; it never speaks in the room, and it reads the trip through Go's MCP server, locked to that trip by a token (`apps/brain/src/mcp`).
+- **ixigo.** Travel search, status and booking go through one layer (`apps/brain/src/travel`). On production (`TRAVEL_MODE` `ixigo_web`) it reads ixigo.com itself, in the trip's own browser: recipe files say which ixigo page and filters answer each ask, and the engine fills them and reads the answer (`travel/book/engine.ts`). With `BOOKING` on, Go books flights, buses and the group's stay on ixigo's own pages up to the pay button, and never opens ixigo's payment page (`travel/booking`). Trains are built but parked: ixigo needs each traveller's IRCTC login. The fake ixigo answers in tests; ixigo's partner MCP server is VPN-only, so its adapter is unused.
 
 ## One message, from the room to Go's reply
 
 1. Someone types in the trip room. The App sends it to the Server, which stores it, gives it the trip's next change number and sends Go `send_event` with a `message.created` event.
 2. Go writes the event to its trip log once by `event_id` and answers at once: `{ accepted: true }`, or `duplicate: true` for an event it already has. The work happens after the answer, in change-number order per trip (`apps/brain/src/trips/intake.ts`). Card numbers, CVVs and one-time codes are hidden before anything is stored (`trips/screen.ts`).
 3. If the message names Go (an @mention, a reply to Go, or "Go, ..."), Go turns "Go is typing..." on at once, before thinking (`trips/names-go.ts`, `composer/speak.ts`).
-4. The reflex reads the message once: one call to Jev with ten closed questions and a 450 ms deadline. Any fault reads "unsure" (`apps/brain/src/reflex`).
+4. The reflex reads the message once: one call to Jev with eleven closed questions and a 450 ms deadline. Any fault reads "unsure" (`apps/brain/src/reflex`).
 5. Lanes see the read message: memory schedules its notes pass, and speaking first looks for an opening or a hush.
 6. Unless the reflex is sure it is chatter between friends, the message goes on the desk: due now when the thought is complete (the reflex is sure, or a message to Go, or the last line of a burst that named Go, plainly ends with ?, ., ! or an emoji), otherwise after 2 seconds, in case the same person adds more (`apps/brain/src/desk`).
 7. When it is due, the desk takes the trip's lease and runs one composer turn for everything due in that trip, so a burst of messages gets one answer.
@@ -52,12 +52,14 @@ flowchart LR
 
 ## Money needs two keys
 
+**For the hackweek demo, the payment is the Server's.** Go's pay card says "Pay with ixigo money"; the Server takes the payer's tap as paid, writes the booking (its ticket says DEMO) and the expense, and sends `payment.completed`. Go then books nothing more: it posts the ticket card and the next step (`apps/brain/src/money/engine.ts`). No money moves. The two keys below are Go's own path to a real payment, built and tested, and still in place when that event never comes.
+
 No code path pays on the model's word. A payment needs both:
 
 1. **The Server's key.** The Server runs its spend check and signs a spend approval with its Ed25519 private key: a compact JWS from `server` to `go-vault`, for one trip, one payer, one amount and currency, valid for at most 10 minutes and usable once (`packages/contract/src/spend-approval.ts`).
 2. **The payer's key.** The payer opens the vault's pay page from the App and unlocks it with their own passkey (Face ID or a fingerprint).
 
-The flow, from Go's side (`apps/brain/src/money/pay.ts`): the group votes; the payer taps "Yes, book it" on the mandate card; Go holds the voted offer and asks the Server for its spend approval (`request_spend_approval`); the vault checks the approval and gives Go a pay link; Go posts the pay card, with Approve shown only to the payer; the payer taps Approve and opens the vault's page; after the passkey the vault pays and calls Go back, signed; Go then confirms the booking and records the booking, the expense and the ticket card, each once. Any failure on the way cancels the approval and says so in the room. The model has no tool that confirms a booking or reaches a rail: only the vault's signed callback does (`apps/brain/src/money/__tests__/no-path-to-confirm.test.ts`). Stays are booked this way; for a flight, train or bus Go holds nothing and hands over the booking link, because those fares are per person.
+The flow, from Go's side (`apps/brain/src/money/pay.ts`): the group votes; the payer taps "Yes, book it" on the mandate card; Go holds the voted offer and asks the Server for its spend approval (`request_spend_approval`); the vault checks the approval and gives Go a pay link; Go posts the pay card, with Approve shown only to the payer; the payer taps Approve and opens the vault's page; after the passkey the vault pays and calls Go back, signed; Go then confirms the booking and records the booking, the expense and the ticket card, each once. Any failure on the way cancels the approval and says so in the room. The model has no tool that confirms a booking or reaches a rail: only the vault's signed callback does (`apps/brain/src/money/__tests__/no-path-to-confirm.test.ts`). A person's own flight or bus is one pay card for that person alone, after Go has filled ixigo's booking pages for them.
 
 The vault checks, in order, and refuses at the first failure (`apps/vault/src/pay.ts`): the link is valid and unused; the passkey verifies and is the payer's; the Server's signature checks and the approval has not expired; it is meant for the vault, by the Server, for this trip; it was never used before (one row per approval id, so two pages racing pay once); the person who unlocked is the payer the Server approved; and the amount is within the approval, in the same currency, while the hold still stands. Only then does it charge the saved card, once, with the approval's id as the idempotency key. The vault never sees a card number: a card is added through Stripe's own form, and the vault keeps only Stripe's token, encrypted with a key per item. `GET /internal/both-keys` counts payments without both keys from the vault's own records.
 
@@ -74,10 +76,10 @@ The tests in `apps/vault/src/pay.test.ts` walk every step, each refusing on its 
 | Memory | Facts with proof, pages, recall, the trip record, "the story so far", forget me, and catch-up. | |
 | Speaking first | Timers (votes closing, free cancellation ending, travel day, settle-up, a waiting payer), openings in the chat, and flight and train watches through the travel layer's status, all through the bar and the daily budget. | On the fake ixigo, a watched flight's status is the fake's. The demo's watch is `POST /admin/watch/fire`, and every card it leads to says "Simulated for the demo". |
 | Calls | Real phone calls through Twilio with a realtime voice model, only to numbers on `CALLS_ALLOWLIST` while the `CALLS_MODE` switch says `allowlist`. Go says who it will call and why, and waits 30 seconds for a stop first. | Off by default (`CALLS_MODE=off`). |
-| Payments | Go holds the voted stay, asks the Server for a signed approval and posts the pay card; the vault charges test cards through Stripe test mode, with both keys (`apps/brain/src/money`, `apps/vault`). | Test cards only: the vault refuses live Stripe keys at boot. `PAY_RAIL=fake` moves no money, and the ixigo rail answers "not ready". Flights, trains and buses are not booked by Go: it hands over the booking link. |
+| Payments | Go asks the Server for a signed approval and posts the pay card (`apps/brain/src/money`). On production the payer's "Pay with ixigo money" is the Server's demo payment (`payment.completed`). | The demo payment is simulated: its bookings and tickets say DEMO, and no money moves. The vault's path (both keys, test cards through Stripe test mode, `apps/vault`) is built and tested but is not on the demo's path; it refuses live Stripe keys at boot, and the ixigo rail answers "not ready". |
 | The proof board | `/board` and `/stats.json` show numbers from the turns Go really ran: time to typing and to the reply, the cache hit, the share of messages that woke the model, and cost per trip. | The bench's numbers on the board come from replays of recorded chats: the fast bench with a scripted model, the live bench with the real models and Jev (`packages/bench`). |
-| Travel | ixigo's MCP server when `IXIGO_MCP_URL` and its token are set and the `TRAVEL_MODE` switch says `ixigo`. | The fake ixigo answers by default: deterministic flights into Goa, North and South Goa villas, flight status and a two-step booking, everything it sells labelled "ixigo (simulated)". Go's mapping to ixigo's tools is the fake's until ixigo shares its tool list (`travel/ixigo-map.ts`). |
-| Long jobs | A real Vestra Bash per trip through `/v1`, when the `/v1` keys are set. | In tests, `/v1` is a fake that streams events like the real one. |
+| Travel | ixigo.com, in the trip's own browser, when the `TRAVEL_MODE` switch says `ixigo_web` (production). With `BOOKING` on, flights, buses and the group's stay are booked on ixigo's pages up to its pay button. | Nothing is paid on ixigo, and trains are parked (IRCTC). In tests the fake ixigo answers: deterministic flights into Goa, North and South Goa villas, flight status and a two-step booking, everything it sells labelled "ixigo (simulated)". |
+| The trip's computer | A real Vestra Bash per trip through `/v1`, when the `/v1` keys are set: its browser for ixigo, and long jobs. | In tests, `/v1` is a fake that streams events like the real one. |
 
 ## Architecture decisions
 
@@ -87,6 +89,6 @@ The tests in `apps/vault/src/pay.test.ts` walk every step, each refusing on its 
 
 **The vault is isolated.** The vault is its own service with its own database ([`apps/vault`](../apps/vault)), so cards and passkeys never sit with chat or AI data. A payment needs the Server's signed approval and the payer's own passkey ([Money needs two keys](#money-needs-two-keys)).
 
-**Hosting.** Go runs on Railway in the project `go`, with two environments, `staging` and `production`, in one US East region, so every hop is short. In each environment Go and the vault each have their own Postgres, reached over Railway's private network, so the vault's data never shares a database with Go's. Every new version, the live smoke and the rehearsals go to staging first; production is never used for drills ([`docs/operations.md`](operations.md), "The Railway project"). The Server's databases are its own: the Supabase project `go` belongs to the Server team and holds nothing of Go's.
+**Hosting.** Go runs on Railway in the project `go`, with two environments, `staging` and `production`, in one US East region, so every hop is short. In each environment Go and the vault each have their own Postgres, reached over Railway's private network, so the vault's data never shares a database with Go's. Every new version goes to staging first. Drills now run on production, each on its own trip and people, so they test what people use ([`docs/operations.md`](operations.md), "The Railway project"). The Server's databases are its own: the Supabase project `go` belongs to the Server team and holds nothing of Go's.
 
 **Privacy follows ownership.** "Forget me" runs in each owner's store, through the contract. When someone taps it in the App, the Server clears their join answers and sends Go `forget_person`; Go deletes its facts about them and checks that none are left before it answers ([the guide](guide/05-your-requests.md#forget-me-forget_person), and [`apps/brain/src/memory/people.ts`](../apps/brain/src/memory/people.ts#L110)). Their messages stay with the Server, which owns them and shows them to the rest of the group.
