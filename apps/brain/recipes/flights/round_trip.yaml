@@ -105,6 +105,8 @@ answer:
       $people := $inputs.adults + $inputs.children;
       $lock := $number($pair.priceLockAttributes.priceLockPremium);
       $hold := $number($pair.priceLockAttributes.lockWindow);
+      $lands := $o.flightDetails[-1].destination;
+      $landsName := $trim($replace($string($lookup($airports, $lands).airportName), /\s*(International\s+)?Airport$/i, ""));
       ($price > 0 and $exists($departAt) and $exists($backAt) and $minutes > 0 and $backMinutes > 0) ? {
         "title": $substring($leg.headerTextWeb & " " & $join($there, " + ") & ", back " & $bleg.headerTextWeb & " " & $join($home, " + "), 0, 80),
         "priceMinor": $paise($price),
@@ -129,6 +131,7 @@ answer:
         ),
         "facts": {
           "stops": $number($leg.stop), "duration_min": $minutes, "flights": $join($there, " + "), "refundable": $o.refundableType,
+          "arrival_airport": $type($lands) = "string" ? ($landsName != "" ? $landsName & " (" & $lands & ")" : $lands),
           "back_flights": $join($home, " + "), "back_carrier": $bleg.headerTextWeb, "back_stops": $number($bleg.stop),
           "back_depart_at": $backAt, "back_arrive_at": $istPlus($backAt, $backMinutes), "back_duration_min": $backMinutes,
           "back_refundable": $b.refundableType,

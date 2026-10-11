@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { subtitleFor } from '../../cards.js';
 import { flightDetails } from '../../details.js';
 import type { FetchPlan } from '../../recipes/recipe.js';
 import { capture, fixture } from '../../recipes/__tests__/fixtures.js';
@@ -41,7 +42,7 @@ describe("a flight's bags, seats, meal, changes, offer and Lock Price, from ixig
   it('reads Lock Price per fare: its fee a person, how long it holds, the cover, and every hold ixigo offers', async () => {
     const ix = (await flights())('Air-India Express IX1196');
     expect(ix.facts).toMatchObject({
-      lock: 'Lock Price ₹659 a person, holds 96 h', lock_fee_minor: 65_900, lock_hours: 96, lock_cover_minor: 400_000,
+      lock: 'Lock Price ₹659 a person, holds 96 h, covers a fare rise up to ₹4,000', lock_fee_minor: 65_900, lock_hours: 96, lock_cover_minor: 400_000,
       lock_options: '₹659 for 96 h, ₹739 for 168 h',
     });
     // The group's sheet: the fee for everyone the search was for, the hold and the cover.
@@ -64,6 +65,16 @@ describe("a flight's bags, seats, meal, changes, offer and Lock Price, from ixig
     expect(details.facts).toContainEqual({ label: 'Check-in bag', value: '15 kg per adult' });
     expect(details.facts).toContainEqual({ label: 'Offer', value: 'Extra ₹740 off with a code' });
     expect(details.cancellation).toBe('Partially refundable');
+  });
+
+  it("names the airport each flight lands at, by ixigo's name and its code: Goa has two (p2's re-run #16, 11 Oct)", async () => {
+    const find = await flights();
+    expect(find('Air-India Express IX1196').facts['arrival_airport']).toBe('Dabolim (GOI)');
+    const mopa = find('Air-India Express IX1108');
+    expect(mopa.facts['arrival_airport']).toBe('Manohar (GOX)');
+    expect(subtitleFor(toResultOption(mopa as never))).toBe('8:35 pm to 11:15 pm at Manohar (GOX), non-stop');
+    // Through Mumbai, it lands where its last flight does.
+    expect(find('IndiGo 6E328 + 6E5106').facts['arrival_airport']).toBe('Dabolim (GOI)');
   });
 
   it('says how few seats are left on the card, and where the plane changes', async () => {

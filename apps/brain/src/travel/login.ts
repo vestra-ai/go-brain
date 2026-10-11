@@ -141,6 +141,15 @@ const BOOK_ASK_AGAIN_MS = 2 * 60_000;
 const FIRST_LINE = "{name}, link ixigo for the trip: one login on the trip's computer, about a minute.";
 /** The ask when the person's browser lost the login (the keep-alive, another trip's check), at the trip's next travel talk. */
 const GONE_LINE = "{name}, ixigo logged Go's computer out: one login brings it back, about a minute.";
+/**
+ * The model's note while someone's login card is up with its own line (p2's re-run #24, 11 Oct: the card's line asked
+ * Rahul to log in, and Go's reply asked him again). The card is the ask: the reply never asks for the login again, and
+ * says only what it adds, what Go does once they're in ("once Rahul's logged in, I'll re-check and book it").
+ */
+export const cardIsTheAsk = (name: string, next: string): string =>
+  `${name}'s login card is up in the chat with its own line: that is the ask. Never ask ${name} or anyone to log in again, and never point at the card. ` +
+  `If your reply says anything about it, say only what it adds, in a few words: "once ${name}'s logged in, ${next}". Never ask for a number or a code in the chat.`;
+
 /** The hello's last line, for the person asked, with the login card on the same message. */
 export const HELLO_LINE = '{name}, first link ixigo once so I can search and book for everyone.';
 
@@ -1115,9 +1124,7 @@ export function createIxigoLogin(d: LoginDeps): IxigoLogin {
           const name = await nameOf(tripId, row.personId);
           return {
             ok: false,
-            note: park
-              ? `${what} needs the trip's ixigo login, and ${name} hasn't finished it on Go's screen yet. Go carries on with it once ${name} is in: say so in one line.`
-              : `${what} needs the trip's ixigo login, and ${name} hasn't finished it on Go's screen yet. Say so in one line.`,
+            note: `${what} needs the trip's ixigo login, and ${name} is logging in on Go's screen now. ${cardIsTheAsk(name, park ? `I'll re-check ${park.what} and book it` : "I'll carry on")}`,
           };
         }
       }
@@ -1143,13 +1150,13 @@ export function createIxigoLogin(d: LoginDeps): IxigoLogin {
       if (!row || row.personId !== personId || row.state !== 'asked' || now - row.askedAt.getTime() >= again) {
         const line = park ? `To book ${park.what} I need ixigo linked once, {name}: one login on the trip's computer, about a minute.` : "{name}, this needs ixigo linked for the trip: one login on the trip's computer, about a minute.";
         await ask(tripId, personId, row ? row.attempt + 1 : 0, line, park);
-        // Go's line and the card are the answer to the booking ask.
-        if (park) return { ok: false, note: `Go asked ${name} in the chat, with the login card, and carries on with booking ${park.what} once the login is in. Say nothing more about it.` };
+        // Go's line and the card are the ask: the reply adds only what comes once the login is in.
+        if (park) return { ok: false, note: `Booking ${park.what} waits on the trip's ixigo login, and Go carries on with it once the login is in. ${cardIsTheAsk(name, `I'll re-check ${park.what} and book it`)}` };
       } else if (park && row) {
         await save({ ...row, parked: park });
-        return { ok: false, note: `${what} needs the trip's ixigo login: ${name}'s login card is just above, and Go carries on once the login is in. Say so in one line, and never ask for a number or a code in the chat.` };
+        return { ok: false, note: `Booking ${park.what} waits on the trip's ixigo login, and Go carries on with it once the login is in. ${cardIsTheAsk(name, `I'll re-check ${park.what} and book it`)}` };
       }
-      return { ok: false, note: `${what} needs the trip's ixigo login. Go asked ${name} to log in on the card: say so in one line, and never ask for a number or a code in the chat.` };
+      return { ok: false, note: `${what} needs the trip's ixigo login. ${cardIsTheAsk(name, "I'll carry on")}` };
     },
 
     status,

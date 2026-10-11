@@ -289,6 +289,18 @@ describe('set_mandate on a stay from ixigo.com: the login first, and ixigo\'s pr
     expect(again[0]?.resume).toMatchObject({ cap_minor: 5500000 });
   });
 
+  // p2's re-run #24, 11 Oct: the login card's line asked Rahul, and Go's reply asked him again. The tool says the card
+  // is up and asks for it: the reply never asks for the login again.
+  it('the tool says the login card already asks for it: never a second login ask', async () => {
+    const note = 'Booking Villa Sol waits on the trip\'s ixigo login.';
+    prepared({ ok: false, note });
+    const [out] = await runToolCalls([setMandateTool((ctx, o) => setMandate(k.deps, ctx, o))], ctxWith(), [
+      { name: 'set_mandate', input: { decision_id: 'd_villa', choice_index: 0, refundable_only: true, payer_person_id: 'p_rahul' } },
+    ]);
+    expect(out).toEqual({ refused: note, tell_the_room: expect.stringContaining('whose card is already up asking for it') });
+    expect((out as { tell_the_room: string }).tell_the_room).toContain('never ask for the login again');
+  });
+
   it('says on the mandate that the price moved since the vote, and takes the cap from the price now', async () => {
     prepared({ ok: true, priceMinor: 5600000 });
     const ctx = ctxWith([['p_rahul', 'just book whatever works']]);

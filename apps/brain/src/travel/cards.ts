@@ -175,7 +175,9 @@ export function subtitleFor(o: ResultOption): string | null {
     if (o.kind === 'train' && typeof o.facts.class_code === 'string') extra = CLASS_WORDS[o.facts.class_code] ?? o.facts.class_code;
     if (o.kind === 'bus' && typeof o.facts.bus_type === 'string') extra = o.facts.bus_type;
     if (o.kind === 'bus') return `${busTimes(j)}${extra ? `, ${extra}` : ''}`;
-    return `${formatClock(localClock(j.depart_at))} to ${formatClock(localClock(j.arrive_at))}${arrivalWords(j.depart_at, j.arrive_at)}${extra ? `, ${extra}` : ''}`;
+    // A flight lands at an airport by its name: Goa has two, Dabolim (GOI) and Manohar (GOX) (p2's re-run #16, 11 Oct).
+    const at = o.kind === 'flight' && typeof o.facts.arrival_airport === 'string' ? ` at ${o.facts.arrival_airport}` : '';
+    return `${formatClock(localClock(j.depart_at))} to ${formatClock(localClock(j.arrive_at))}${arrivalWords(j.depart_at, j.arrive_at)}${at}${extra ? `, ${extra}` : ''}`;
   }
   if (o.kind === 'stay') {
     const area = typeof o.facts.area === 'string' ? o.facts.area : null;
