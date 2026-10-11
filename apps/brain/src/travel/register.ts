@@ -56,6 +56,7 @@ import { createWebStays, stayOf } from './web-stays.js';
 import { createWatchRunner, watchesNow } from './recipe-watches.js';
 import { watchTools } from './watch-tools.js';
 import { ProactiveStore } from '../proactive/store.js';
+import { createItinerary } from './itinerary.js';
 
 /** How often Go looks for watches that are due: each watch's own pace is an hour or half an hour. */
 export const WATCH_TICK_MS = 30_000;
@@ -234,6 +235,12 @@ export const registerTravel: RegisterLane = async (brain) => {
   brain.tripLog.onEvent((ev) => headStart.onEvent(ev));
   const stopHeadStarts = (): void => headStart.stop();
   brain.onStop(stopHeadStarts);
+  // The trip's itinerary from its dates and bookings: Go writes it, the App's Itinerary tab shows it (travel/itinerary.ts).
+  const itinerary = createItinerary({ link: brain.door.link, packs: brain.packs, log: brain.log });
+  brain.tripLog.onEvent((ev) => itinerary.onEvent(ev));
+  brain.onStop(function stopItineraryRewrites() {
+    return itinerary.settled();
+  });
   // A destination Go sets carries ixigo's place: its id, where it is, its time zone, its guide photos and best months.
   const placeFor = createPlaceFor({ pool: brain.pool, engine, images, log: brain.log });
   const travel = createTravelLayer({
