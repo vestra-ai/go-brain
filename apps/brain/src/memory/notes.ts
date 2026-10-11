@@ -170,6 +170,8 @@ export function createNotes(d: NotesDeps): { run(tripId: string, opts?: { only?:
     };
     if (!change.dates && !change.destination) return null;
     const at = { link: d.link, tripId, pack, requestId: () => `go_trip_${lineRequestId(line).slice('go_line_'.length)}` };
+    // The checker passed the line: the organizer's own settled line, or the group's yes.
+    change.agreed = true;
     let saved = await saveTrip(d, at, change);
     if (!saved.ok && saved.next && change.dates) saved = await saveTrip(d, at, { ...change, dates: saved.next });
     return saved.ok ? null : `trip: ${saved.error}`;

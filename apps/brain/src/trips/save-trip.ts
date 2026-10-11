@@ -21,7 +21,34 @@ export interface TripChange {
   stay?: string | undefined;
   /** 1.1: the group's budget per person, in minor units (set_budget, travel/trip-budget.ts). */
   budgetPerPersonMinor?: number | undefined;
+  /** The people's own messages that decided a title, place or dates change (groupDecided). */
+  proof?: readonly string[] | undefined;
+  /** The closed vote that decided it. */
+  decisionId?: string | undefined;
+  /** A caller that checked the group's say itself: the notes pass's checked line, a vote's winner. */
+  agreed?: true | undefined;
 }
+
+/**
+ * Who changes where the trip goes, its dates or its title (p2's re-audit of Keshav's Varkala trip, 11 Oct: South Goa set
+ * from one member's quick-reply tap while the group was split three ways, the dates twice from single members, and Go
+ * then claimed two people had said South Goa): the organizer's word, two people agreeing in words, or a closed vote.
+ * Read from the cited messages and the trip, never from Go's say-so; a reaction or a bare emoji is no word.
+ */
+export function groupDecided(pack: TripPack, proof: readonly string[], decisionId?: string): boolean {
+  if (decisionId && pack.trip.decisions.some((x) => x.decision_id === decisionId && x.status === 'closed')) return true;
+  const said = new Set<string>();
+  for (const id of proof) {
+    const m = pack.messages.find((x) => x.message_id === id);
+    if (!m || m.deleted || m.author.kind !== 'person' || !/[\p{L}\p{N}]/u.test(m.text ?? '')) continue;
+    said.add(m.author.person_id);
+  }
+  return said.has(pack.trip.organizer_person_id) || said.size >= 2;
+}
+
+/** What Go hears when one person's word would change the trip's title, place or dates. */
+export const NOT_DECIDED =
+  "Only the organizer's word, two people agreeing in words, or a closed vote changes the trip's title, place or dates: give their messages (proof_message_ids) or the vote (decision_id).";
 
 export interface SaveTripDeps {
   pool: Pool;
@@ -33,7 +60,7 @@ export interface SaveTripDeps {
 /** quiet: the refusal is Go's own to fix, never the room's to hear; next: the same days this year or next. */
 export type Saved =
   | { ok: true; changed: string[]; stay?: string; note?: string }
-  | { ok: false; error: string; quiet?: boolean; next?: { start: string; end: string } };
+  | { ok: false; error: string; quiet?: boolean; next?: { start: string; end: string }; notDecided?: true };
 
 /** Days said without a year mean the next ones: the same days this year, or next year when this year's have passed. */
 export function nextDates(d: { start: string; end: string }, today: string): { start: string; end: string } {
@@ -69,6 +96,9 @@ export async function saveTrip(
     ...(a.stay ? { stay: a.stay } : {}),
   };
   if (Object.keys(fields).length === 0 && !a.destination) return { ok: false, error: 'Nothing to change.' };
+  if ((a.title || a.destination || a.dates) && !a.agreed && !groupDecided(at.pack, a.proof ?? [], a.decisionId)) {
+    return { ok: false, error: NOT_DECIDED, notDecided: true };
+  }
   let note: string | undefined;
   // A stay or place a vote decided is saved from the winning option's own data, never from the words given, and a
   // different one is refused: "Villa Sol, Assagao" for the Villa Sol in Anjuna the group voted for saves "Villa Sol, Anjuna".

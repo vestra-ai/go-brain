@@ -350,14 +350,15 @@ describe('a composer turn', () => {
     expect(r.posts().map((p) => p.params.text)).toEqual(['From Delhi to Goa: three flights on Friday.']);
   });
 
-  it('the pre-post check never reads a message twice: one the prompt already held runs no extra round', async () => {
+  // p2's re-audit, 11 Oct 09:28: two asks landed together, the first turn answered both, and a second turn said it again.
+  it('an ask the prompt already held, its desk item claimed at the pre-post check, stays this turn\'s: the reply covers it, no second turn', async () => {
     const ask = msg(3, 'p_arjun', '@Go is the villa free?');
     // In the pack when the prompt was built, its desk item claimed only at the pre-post check.
     const early = msg(4, 'p_kabir', '@Go and pets?');
     let claimed = false;
     const r = room({
       messages: [ask, early],
-      script: [{ text: 'The villa is free, and pets are welcome.' }, { text: 'never asked' }],
+      script: [{ text: 'The villa is free.' }, { text: 'The villa is free, and pets are welcome.' }],
       claimNew: async (tripId) => {
         if (claimed) return [];
         claimed = true;
@@ -365,13 +366,15 @@ describe('a composer turn', () => {
       },
     });
     await turn(r, [item(r.tripId, ask, true)]);
-    expect(r.model.bodies).toHaveLength(1);
     expect(r.model.bodies[0].messages[0].content.at(-1).text).toContain('#4 Kabir: @Go and pets?');
+    // It names Go but was no reason this turn woke: read again in the extra round, so the one reply covers it.
+    expect(r.model.bodies).toHaveLength(2);
+    expect(JSON.stringify(r.model.bodies[1].messages.at(-1))).toContain('#4 Kabir: @Go and pets?');
     expect(r.posts().map((p) => p.params.text)).toEqual(['The villa is free, and pets are welcome.']);
     const seen = await db.pool.query('select composer_seen_seq from trips where trip_id = $1', [r.tripId]);
     expect(seen.rows[0].composer_seen_seq).toBe(4);
-    // It names Go but was no reason this turn woke: it goes back on the desk for a turn of its own.
-    expect(r.released).toEqual([`msg:${r.tripId}:m_4`]);
+    // It stays this turn's: never back on the desk for a second answer.
+    expect(r.released).toEqual([]);
   });
 
   it('a budget that runs out before the extra round: the answer round 1 paid for still goes out, and the unread ask hears the limit', async () => {
@@ -970,7 +973,7 @@ describe('people Go names', () => {
 });
 
 describe('an ask that lands while Go writes its hello', () => {
-  it('is never lost: when the hello passed over it, it gets a turn of its own and is answered', async () => {
+  it('is never lost: when the hello passed over it, the hello is redone to answer it, in one message', async () => {
     // Trip t_35e02e110dfa4980: Priya's ask was in Go's copy of the trip when the hello's prompt was built (it shows in
     // "new since"), but its desk item came after, so the hello turn took it at the pre-post check. The hello only said
     // hello, and the ask was never answered.
@@ -980,7 +983,10 @@ describe('an ask that lands while Go writes its hello', () => {
     let landed = false;
     const r = room({
       messages: [ask],
-      script: (body) => (woke(body).includes('you just joined this trip') ? { text: 'Hi all, I am Go!' } : { text: 'Here are three stays.' }),
+      script: (body) =>
+        JSON.stringify(body.messages.at(-1)).includes('New while you were writing')
+          ? { text: 'Hi all, I am Go! Here are three stays.' }
+          : woke(body).includes('you just joined this trip') ? { text: 'Hi all, I am Go!' } : { text: 'Here are three stays.' },
       claimNew: async (tripId, turnId) => {
         if (!landed) {
           landed = true;
@@ -995,7 +1001,7 @@ describe('an ask that lands while Go writes its hello', () => {
     await db.pool.query('insert into trips (trip_id) values ($1) on conflict do nothing', [r.tripId]);
     await desk.put({ id: `setup:${r.tripId}:greet`, tripId: r.tripId, kind: 'setup', ref: 'greet', dueAt: new Date(), payload: {} });
     await desk.tick();
-    expect(r.posts().map((p) => p.params.text)).toEqual(['Hi all, I am Go!', 'Here are three stays.']);
+    expect(r.posts().map((p) => p.params.text)).toEqual(['Hi all, I am Go! Here are three stays.']);
   });
 });
 
