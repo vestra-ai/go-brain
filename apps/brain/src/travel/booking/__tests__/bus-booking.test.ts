@@ -4,6 +4,7 @@ import { makeLaneBrain, type LaneBrain } from '../../../tasks/testing/lane-brain
 import { capture, fixture } from '../../recipes/__tests__/fixtures.js';
 import type { FetchPlan } from '../../recipes/recipe.js';
 import type { ReadOptions, RecipeRunner } from '../../recipes/runners.js';
+import { createResultsStore, type ResultOption } from '../../results.js';
 import type { StoredOffer } from '../../travel.js';
 import { ageOn, busOf, createBusBooking, SEAT_LAYOUT, type BusBooking } from '../bus-booking.js';
 import type { TicketPay } from '../flight-booking.js';
@@ -43,6 +44,7 @@ function fakeRunner(o: { fill?: boolean } = {}): { runner: RecipeRunner; reads: 
 }
 
 function money(o: { details?: boolean } = {}) {
+  const kept = { details: o.details !== false };
   const cards: Array<Record<string, unknown>> = [];
   let paid: ((p: { tripId: string; approvalId: string; railRef: string }) => Promise<void>) | null = null;
   const pay: TicketPay = {
@@ -53,17 +55,20 @@ function money(o: { details?: boolean } = {}) {
     onPaid: (fn) => {
       paid = fn;
     },
-    travelDetails: async () => (o.details === false ? null : DETAILS),
+    travelDetails: async () => (kept.details ? DETAILS : null),
   };
-  return { pay, cards, paid: () => paid };
+  return { pay, cards, paid: () => paid, kept };
 }
 
-function booking(runner: RecipeRunner, pay: TicketPay | null, on = true): BusBooking {
+type Asked = { tripId: string; personId: string; name: string; need: string[]; key: string; what: string };
+function booking(runner: RecipeRunner, pay: TicketPay | null, on = true, more: { name?: string; asked?: Asked[]; results?: ReturnType<typeof createResultsStore> } = {}): BusBooking {
   void lb.switches.set('BOOKING', on ? 'on' : 'off');
   void lb.switches.set('TRAVEL_MODE', 'ixigo_web');
   return createBusBooking({
     pool: db.pool, runner: () => runner, link: lb.link, switches: lb.switches, now: lb.brain.now, log: lb.brain.log, pay: () => pay ?? undefined,
-    nameOf: async () => 'Meher',
+    nameOf: async () => more.name ?? 'Meher',
+    ...(more.asked ? { detailsAsk: async (i: Asked) => { more.asked!.push(i); } } : {}),
+    ...(more.results ? { results: more.results } : {}),
   });
 }
 
@@ -95,6 +100,14 @@ describe("Go books a person's own bus up to ixigo's pay button", () => {
       ['https://www.ixigo.com/buses/bus_search/Bengaluru/7/Goa/102/06-11-2026/O', false, true],
     ]);
     expect(reads[0]!.plan.steps).toContainEqual({ op: 'click', role: 'button', name: 'Select Seats', near_text: ['IntrCity SmartBus', '22:35'] });
+    // The private tab opens the bus's seat map again, then its seat (6LC: the fifth ₹3858 text, the page holding each deck
+    // from its last row up, the upper deck first), the stops, Proceed, and the passenger.
+    expect(reads[1]!.plan.steps).toEqual(expect.arrayContaining([
+      { op: 'click', role: 'button', name: 'Select Seats', near_text: ['IntrCity SmartBus', '22:35'] },
+      { op: 'click', role: 'StaticText', name: '₹3858', nth: 5 },
+      { op: 'click', role: 'radio', nth: 1 },
+      { op: 'click', role: 'button', name: 'Proceed' },
+    ]));
     // Her details only in ixigo's form, in the private tab.
     expect(JSON.stringify(reads[1]!.plan.steps)).toContain('Meher Zainab');
     const sent = lb.link.requests.slice(from);
@@ -120,15 +133,42 @@ describe("Go books a person's own bus up to ixigo's pay button", () => {
     expect(row?.seats).toEqual(['6LB']);
   });
 
-  it('says so, and stops, when their vault has no travel details, or the cheapest free seat is more than 5% over their pick', async () => {
-    const { runner } = fakeRunner();
-    const b = booking(runner, money({ details: false }).pay);
+  // The lead, 11 Oct: never "add them" and stop. Their name in the trip, #478's one-tap gender card, the one ask for the
+  // rest, and the booking carries on by itself.
+  it('with no vault details: their trip name, the one-tap gender card, the one ask for their age, then it carries on by itself', async () => {
+    const m = money({ details: false });
+    const asked: Asked[] = [];
+    // The bus on its card, as the person picked it: a booking that waited reads its offer again from there.
+    const results = createResultsStore(db.pool);
+    const bus: ResultOption = { kind: 'bus', title: OFFER.title, priceMinor: 385_800, currency: 'INR', priceNote: 'per seat', highlights: [], facts: {}, sourceUrl: OFFER.sourceUrl! };
+    const set = await results.save({ tripId: 't_bus', optionKind: 'bus', source: 'search', query: {}, options: [bus], checkedAt: '2026-10-11T07:00:00.000Z' });
+    await results.saveCard({ cardId: 'c_bus', tripId: 't_bus', resultsId: set.resultsId, title: 'Buses', optionKind: 'bus', card: { card_id: 'c_bus' } as never }, [{ optionId: 'opt_bus1', n: 1, option: bus }], '2026-10-11T07:00:00.000Z');
+    const b = booking(fakeRunner().runner, m.pay, true, { name: 'Kabir Shah', asked, results });
     const from = lb.link.requests.length;
-    await b.start({ tapId: 'tap_bus3', tripId: 't_bus', personId: 'p_kabir', name: 'Kabir', offer: OFFER });
+    await b.start({ tapId: 'tap_bus3', tripId: 't_bus', personId: 'p_kabir', name: 'Kabir Shah', offer: OFFER });
     await b.settled();
-    expect(lb.link.requests.slice(from).map((r) => r.params['text']).filter(Boolean)).toEqual([expect.stringContaining("ixigo's bus form needs your name as on your ID, your age and your gender")]);
-    expect((await db.pool.query(`select state, why from bus_bookings where person_id = 'p_kabir'`)).rows[0]).toEqual({ state: 'failed', why: 'passenger_details_needed' });
+    // 1. Their gender, asked once, theirs alone.
+    const ask = lb.link.requests.slice(from).find((r) => (r.params['card'] as { actions?: Array<{ action_id: string }> } | undefined)?.actions?.some((a) => a.action_id === 'traveller_male'));
+    expect(ask?.params['visible_to_person_ids']).toEqual(['p_kabir']);
+    expect((await db.pool.query(`select why from bus_bookings where person_id = 'p_kabir'`)).rows[0]).toEqual({ why: 'gender_needed' });
+    expect(await b.gender({ tripId: 't_bus', cardId: 'c_nope', personId: 'p_kabir', gender: 'male' })).toEqual({ result: 'refused', toast: 'This booking has moved on' });
+    const cardId = String((ask!.params['card'] as { card_id: string }).card_id);
+    expect(await b.gender({ tripId: 't_bus', cardId, personId: 'p_kabir', gender: 'male' })).toEqual({ result: 'done', toast: 'Go carries on with your booking' });
+    await b.settled();
+    // 2. Their age: the one ask, for their date of birth alone (their name is their trip name, split), and it waits.
+    expect(asked).toEqual([expect.objectContaining({ tripId: 't_bus', personId: 'p_kabir', need: ['dob'], what: 'IntrCity SmartBus 22:35' })]);
+    expect((await db.pool.query(`select why from bus_bookings where person_id = 'p_kabir'`)).rows[0]).toEqual({ why: 'details_needed' });
+    await b.sweep();
+    expect((await db.pool.query(`select why from bus_bookings where person_id = 'p_kabir'`)).rows[0]).toEqual({ why: 'details_needed' });
+    // 3. Kept in their vault: the sweep carries the booking on to their pay card.
+    m.kept.details = true;
+    await b.sweep();
+    await b.settled();
+    expect((await db.pool.query(`select state from bus_bookings where person_id = 'p_kabir'`)).rows[0]).toEqual({ state: 'ready_to_pay' });
+    expect(m.cards.map((c) => c['personId'])).toEqual(['p_kabir']);
+  });
 
+  it('stops and says so when the cheapest free seat is more than 5% over the price they picked', async () => {
     const c = booking(fakeRunner().runner, money().pay);
     await c.start({ tapId: 'tap_bus4', tripId: 't_bus', personId: 'p_priya', name: 'Priya', offer: { ...OFFER, priceMinor: 300_000 } });
     await c.settled();

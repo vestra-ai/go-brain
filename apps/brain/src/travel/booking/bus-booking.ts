@@ -23,8 +23,8 @@ import type { RecipeRunner } from '../recipes/runners.js';
 import type { ResultsStore } from '../results.js';
 import type { StoredOffer } from '../travel.js';
 import { busLayout, choosePoint, chooseSeats, seatWords, type BusLayout, type BusPoint, type BusSeat, type SeatAsk } from './bus-seats.js';
-import { bookingLiveCard, bookingOnFor, FARE_MOVE_OK, LOGIN_WAIT_MS, RUNNING_MS, travellerAsk, type TicketPay } from './flight-booking.js';
-import { spokenFirstName } from './travellers.js';
+import { bookingLiveCard, bookingOnFor, FARE_MOVE_OK, genderAsk, LOGIN_WAIT_MS, RUNNING_MS, travellerAsk, type TicketPay } from './flight-booking.js';
+import { idNameOf, spokenFirstName } from './travellers.js';
 
 /** The list's own call, and the seat layout "Select Seats" opens. */
 export const BUS_LIST = '/buslist/v3/services$';
@@ -56,6 +56,8 @@ export interface BusAsk {
   near?: { board?: string[]; drop?: string[] };
   /** Their card as it was before their pick, put back when the booking stops before the pay card. */
   restore?: OptionsCardT;
+  /** Their gender as they said it on Go's one ask (#478's genderAsk), when their vault has none. */
+  gender?: 'male' | 'female';
 }
 
 export interface BusBookingDeps {
@@ -69,10 +71,16 @@ export interface BusBookingDeps {
   now: () => Date;
   log: Log;
   results?: Pick<ResultsStore, 'replaceCard' | 'offer'>;
+  /**
+   * The one ask for a ticket's missing details, trains' and buses' (p0's, 11 Oct): a card for the person alone whose tap
+   * opens their vault's travel form at just those fields. The booking waits, and the sweep carries it on once they are
+   * kept. Absent, the booking says what is missing in a line, and waits all the same.
+   */
+  detailsAsk?: (i: { tripId: string; personId: string; name: string; need: Array<'first_name' | 'last_name' | 'dob'>; key: string; what: string }) => Promise<void>;
 }
 
 /** What a booking that waited on the trip's login carries on with. */
-type Resume = { tapId: string; name: string; seat?: BusAsk['seat']; near?: BusAsk['near']; restore?: OptionsCardT };
+type Resume = { tapId: string; name: string; seat?: BusAsk['seat']; near?: BusAsk['near']; restore?: OptionsCardT; gender?: 'male' | 'female'; askCardId?: string };
 
 /**
  * A bus's address on Go's card: ixigo's results page, with the bus's operator and time after "#" (buses.between). The
@@ -103,15 +111,14 @@ export function ageOn(dob: string, day: string): number | null {
 }
 
 /**
- * The seats and the two points picked on the bus's own seat map, as the stage shows it. ixigo's seats show only their
- * price, and Bash finds an element by the page's accessibility tree: each seat is its price's text, counted in the order
- * the map draws them (the upper deck first, row by row, after the price filter's own chip, which is that text's first).
- * The points are the panel's radios in ixigo's order, the boarding list's then the dropping list's; picking the drop
- * moves the page on to the passenger form (p5's drill, 11 Oct: with no seat picked it said "Please select Seat(s) to
- * continue").
+ * The seats and the two points picked on the bus's own seat map, then Proceed to the passenger form. ixigo's seats show
+ * only their price, and Bash finds an element by the page's accessibility tree: each seat is its price's text, counted in
+ * the page's own order after the price filter's chip (that text's first). p5's drill, 11 Oct: the page holds a deck from
+ * its last row up (the second ₹3858 text was upper row 2, column 11, drawn under row 1), the upper deck first. The points
+ * are the panel's radios in ixigo's order, the boarding list's then the dropping list's; with both picked, Proceed lights.
  */
 export function seatSteps(layout: BusLayout, seats: readonly BusSeat[], board: BusPoint, drop: BusPoint): NonNullable<FetchPlan['steps']> {
-  const drawn = [...layout.seats].sort((a, b) => (a.deck === b.deck ? a.row - b.row || a.col - b.col : a.deck === 'upper' ? -1 : 1));
+  const drawn = [...layout.seats].sort((a, b) => (a.deck === b.deck ? b.row - a.row || a.col - b.col : a.deck === 'upper' ? -1 : 1));
   const price = (s: BusSeat): string => `₹${Math.round(s.fareMinor / 100)}`;
   const clicks = seats.map((s) => {
     const same = drawn.filter((x) => price(x) === price(s));
@@ -121,8 +128,16 @@ export function seatSteps(layout: BusLayout, seats: readonly BusSeat[], board: B
     ...clicks,
     { op: 'click', role: 'radio', nth: Math.max(1, layout.boarding.findIndex((p) => p.id === board.id) + 1) },
     { op: 'click', role: 'radio', nth: Math.max(1, layout.dropping.findIndex((p) => p.id === drop.id) + 1) },
+    { op: 'click', role: 'button', name: 'Proceed' },
   ];
 }
+
+/** The bus's own seat map opened again on a page of the results: its list, its "Select Seats", its layout. */
+const openSeats = (bus: { operator: string; departs: string }): NonNullable<FetchPlan['steps']> => [
+  { op: 'wait_for', match: BUS_LIST },
+  { op: 'click', role: 'button', name: 'Select Seats', near_text: [bus.operator, bus.departs] },
+  { op: 'wait_for', match: SEAT_LAYOUT },
+];
 
 /** ixigo's bus passenger form, filled for one passenger: their name as on their ID, age and gender. */
 export function passengerSteps(p: BusPassenger): NonNullable<FetchPlan['steps']> {
@@ -136,6 +151,8 @@ export function passengerSteps(p: BusPassenger): NonNullable<FetchPlan['steps']>
 export interface BusBooking {
   onFor(tripId: string): Promise<boolean>;
   start(ask: BusAsk): Promise<'started' | 'running'>;
+  /** Their tap on the gender ask: kept for the booking that waits on it, which carries on by itself. */
+  gender(i: { tripId: string; cardId: string; personId: string; gender: 'male' | 'female' }): Promise<{ result: 'done' | 'refused'; toast: string }>;
   resumeWaiting(tripId: string): Promise<void>;
   sweep(): Promise<void>;
   settled(): Promise<void>;
@@ -229,11 +246,7 @@ export function createBusBooking(d: BusBookingDeps): BusBooking {
         ask.tripId, bus.page,
         {
           capture: [{ match: SEAT_LAYOUT, required: true }],
-          steps: [
-            { op: 'wait_for', match: BUS_LIST },
-            { op: 'click', role: 'button', name: 'Select Seats', near_text: [bus.operator, bus.departs] },
-            { op: 'wait_for', match: SEAT_LAYOUT },
-          ],
+          steps: openSeats(bus),
         },
         { stage: true, tag: runId },
       )
@@ -285,19 +298,46 @@ export function createBusBooking(d: BusBookingDeps): BusBooking {
       await live.finish(false);
       return;
     }
-    const details = await d.pay?.()?.travelDetails?.({
+    // Their name as on their ID, their gender and their age on the day: from their vault when they kept them, else their
+    // name in the trip, #478's one-tap gender ask, and the one ask for the rest. Never a value in a log, the model or a card.
+    const vaulted = await d.pay?.()?.travelDetails?.({
       tripId: ask.tripId, personId: ask.personId, booking: { ref: runId, travellerPersonId: ask.personId, purpose: clip(`${title}, for ${ask.name}`, 200) },
     }).catch(() => null) ?? null;
-    const age = details && bus.day ? ageOn(details.dob, bus.day) : null;
-    if (!details || age === null) {
-      await tell(ask, runId, 'go_bus_details', `ixigo's bus form needs your name as on your ID, your age and your gender. Add your travel details in Go (You, then My vault), then tap I'll take this to try again.`);
-      return fail('passenger_details_needed', 2);
+    const named = vaulted ? { first: vaulted.firstName, last: vaulted.lastName } : idNameOf(await d.nameOf(ask.tripId, ask.personId).catch(() => ''));
+    const gender = vaulted?.gender ?? ask.gender;
+    const age = vaulted && bus.day ? ageOn(vaulted.dob, bus.day) : null;
+    const resume = (more: Partial<Resume> = {}): Resume => ({
+      tapId: ask.tapId, name: ask.name, ...(ask.seat ? { seat: ask.seat } : {}), ...(ask.near ? { near: ask.near } : {}), ...(ask.restore ? { restore: ask.restore } : {}),
+      ...(ask.gender ? { gender: ask.gender } : {}), ...more,
+    });
+    const wait = async (why: 'gender_needed' | 'details_needed', r: Resume): Promise<void> => {
+      await d.pool.query(
+        `update bus_bookings set state = 'failed', why = $2, resume = $3, waiting_since = coalesce(waiting_since, $4), updated_at = $4 where run_id = $1`,
+        [runId, why, JSON.stringify(r), d.now()],
+      );
+      await live.step(2, 'failed');
+      await live.finish(false);
+    };
+    if (!gender) {
+      const askCardId = stableId('c_bus_gender', runId);
+      await d.link.request('post_message', {
+        request_id: stableId('go_bus_gender', runId), trip_id: ask.tripId, card: genderAsk(askCardId, ask.personId, ask.name), visible_to_person_ids: [ask.personId],
+      });
+      return wait('gender_needed', resume({ askCardId }));
     }
+    if (!named || age === null) {
+      const need: Array<'first_name' | 'last_name' | 'dob'> = [...(named ? [] : ['first_name', 'last_name'] as const), ...(age === null ? ['dob'] as const : [])];
+      if (d.detailsAsk) await d.detailsAsk({ tripId: ask.tripId, personId: ask.personId, name: ask.name, need, key: runId, what: title });
+      else await tell(ask, runId, 'go_bus_details', `ixigo's bus form needs your ${age === null ? 'age' : 'name as on your ID'}. Add it once in your vault (You, then My vault) and Go carries on with your booking.`);
+      return wait('details_needed', resume());
+    }
+    const details = { firstName: named.first, lastName: named.last, gender };
     let ranOut = false;
     const filled = await runner
       .read(
         ask.tripId, bus.page,
-        { capture: [{ match: SEAT_LAYOUT, required: true }], steps: [...seatSteps(layout, seats, board, drop), ...passengerSteps({ first: details.firstName, last: details.lastName, age, gender: details.gender })] },
+        // A private tab is a page of its own: the bus's seat map opened again there, then its seats, stops and passenger.
+        { capture: [{ match: SEAT_LAYOUT, required: true }], steps: [...openSeats(bus), ...seatSteps(layout, seats, board, drop), ...passengerSteps({ first: details.firstName, last: details.lastName, age, gender: details.gender })] },
         { private: true, tag: runId, onTrace: (t) => { if (t.failed) ranOut = true; } },
       )
       .then(() => !ranOut, () => false);
@@ -332,12 +372,20 @@ export function createBusBooking(d: BusBookingDeps): BusBooking {
        returning run_id, person_id, option_id, resume`,
       [tripId, d.now()],
     );
-    for (const r of rows) {
-      const stored = d.results ? await d.results.offer(r.option_id).catch(() => null) : null;
-      if (!stored) continue;
-      d.log.info({ runId: r.run_id, tripId }, 'travel: a bus booking carries on after the login');
-      start({ tapId: r.resume.tapId, tripId, personId: r.person_id, name: r.resume.name, offer: stored, ...(r.resume.seat ? { seat: r.resume.seat } : {}), ...(r.resume.near ? { near: r.resume.near } : {}), ...(r.resume.restore ? { restore: r.resume.restore } : {}) }, r.run_id);
-    }
+    for (const r of rows) await resumeRun(tripId, r, 'login_in');
+  }
+
+  /** A booking that waited (the login, their gender, their details) carries on from the start, with what it kept. */
+  async function resumeRun(tripId: string, r: { run_id: string; person_id: string; option_id: string; resume: Resume }, from: string): Promise<boolean> {
+    const stored = d.results ? await d.results.offer(r.option_id).catch(() => null) : null;
+    if (!stored) return false;
+    d.log.info({ runId: r.run_id, tripId, from }, 'travel: a bus booking carries on');
+    const k = r.resume;
+    start({
+      tapId: k.tapId, tripId, personId: r.person_id, name: k.name, offer: stored,
+      ...(k.seat ? { seat: k.seat } : {}), ...(k.near ? { near: k.near } : {}), ...(k.restore ? { restore: k.restore } : {}), ...(k.gender ? { gender: k.gender } : {}),
+    }, r.run_id);
+    return true;
   }
 
   function start(ask: BusAsk, runId: string): void {
@@ -369,6 +417,18 @@ export function createBusBooking(d: BusBookingDeps): BusBooking {
       return 'started';
     },
     resumeWaiting: (tripId) => carryOn(tripId),
+    async gender(i) {
+      const { rows } = await d.pool.query<{ run_id: string; person_id: string; option_id: string; resume: Resume }>(
+        `update bus_bookings set why = 'gender_in', resume = resume || jsonb_build_object('gender', $4::text), updated_at = $5
+         where trip_id = $1 and person_id = $2 and why = 'gender_needed' and resume->>'askCardId' = $3
+         returning run_id, person_id, option_id, resume`,
+        [i.tripId, i.personId, i.cardId, i.gender, d.now()],
+      );
+      const r = rows[0];
+      if (!r) return { result: 'refused', toast: 'This booking has moved on' };
+      await resumeRun(i.tripId, r, 'gender_in');
+      return { result: 'done', toast: 'Go carries on with your booking' };
+    },
     async sweep() {
       const { rows } = await d.pool.query<{ run_id: string; trip_id: string; waiting_since: Date; updated_at: Date; login: string | null; logged_in_at: Date | null; resume: Resume }>(
         `select b.run_id, b.trip_id, b.waiting_since, b.updated_at, b.resume, l.state as login, l.logged_in_at
@@ -385,6 +445,23 @@ export function createBusBooking(d: BusBookingDeps): BusBooking {
         }
       }
       for (const tripId of trips) await carryOn(tripId);
+      // A booking that waits on the person's details carries on once they kept them (the one ask's form saves them in
+      // their vault), read as the booking reads them; one never kept puts their card back after LOGIN_WAIT_MS.
+      const waiting = await d.pool.query<{ run_id: string; trip_id: string; person_id: string; option_id: string; title: string; waiting_since: Date; resume: Resume }>(
+        `select run_id, trip_id, person_id, option_id, title, waiting_since, resume from bus_bookings where why = 'details_needed' and resume is not null`,
+      );
+      for (const r of waiting.rows) {
+        const kept = await d.pay?.()?.travelDetails?.({
+          tripId: r.trip_id, personId: r.person_id, booking: { ref: r.run_id, travellerPersonId: r.person_id, purpose: clip(`${r.title}, for ${r.resume.name}`, 200) },
+        }).catch(() => null) ?? null;
+        if (kept) {
+          const taken = await d.pool.query(`update bus_bookings set why = 'details_in', updated_at = $2 where run_id = $1 and why = 'details_needed'`, [r.run_id, d.now()]);
+          if (taken.rowCount) await resumeRun(r.trip_id, r, 'details_in');
+        } else if (now - r.waiting_since.getTime() >= LOGIN_WAIT_MS) {
+          const let_ = await d.pool.query(`update bus_bookings set why = 'details_let_go', updated_at = $2 where run_id = $1 and why = 'details_needed'`, [r.run_id, d.now()]);
+          if (let_.rowCount && r.resume.restore) await putBack({ tripId: r.trip_id, restore: r.resume.restore });
+        }
+      }
     },
     async settled() {
       await Promise.all([...running]);

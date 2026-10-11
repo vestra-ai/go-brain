@@ -33,7 +33,7 @@ export interface TravelTapDeps {
   /** Go booking a person's own flight itself (BOOKING, booking/flight-booking.ts); absent, "Book it" opens ixigo. */
   booking?: Pick<FlightBooking, 'onFor' | 'start' | 'pay' | 'gender'>;
   /** Go booking a person's own bus itself (BOOKING, booking/bus-booking.ts); absent, "Book it" opens ixigo. */
-  busBooking?: Pick<BusBooking, 'onFor' | 'start'>;
+  busBooking?: Pick<BusBooking, 'onFor' | 'start' | 'gender'>;
   /** A person's name in the trip, for the room's words about their booking. */
   nameOf?: (tripId: string, personId: string) => Promise<string>;
   link: Brain['door']['link'];
@@ -182,7 +182,10 @@ export function registerTravelTaps(taps: Brain['taps'], d: TravelTapDeps): void 
     taps.on('notice', action, async (tap, card) => {
       const forWho = 'for_person_ids' in card ? (card.for_person_ids ?? []) : [];
       if (!d.booking || !forWho.includes(tap.person_id)) return { result: 'refused', toast: 'This one is for someone else' };
-      const r = await d.booking.gender({ tripId: tap.trip_id, cardId: tap.card_id, personId: tap.person_id, gender });
+      // The flight's ask, or a bus booking's (the same card, its own id).
+      const i = { tripId: tap.trip_id, cardId: tap.card_id, personId: tap.person_id, gender };
+      const flight = await d.booking.gender(i);
+      const r = flight.result === 'refused' && d.busBooking ? await d.busBooking.gender(i) : flight;
       if (r.result === 'done' && card.kind === 'notice') {
         const answered = { ...card, actions: [], body: 'Thanks. Go carries on with your booking.', fallback_text: 'Thanks. Go carries on with your booking.' };
         void d.link.request('replace_card', { trip_id: tap.trip_id, card: answered })
