@@ -1220,6 +1220,40 @@ If Rahul had tapped "Not now" instead, the server would have sent:
 }
 ```
 
+### payment.completed (1.3)
+
+For the demo, the server pays a waiting pay card itself. When the payer taps `approve` on it, the tap never reaches Go. The server sets the card to paid, with no buttons, and writes the booking and the expense. In the same transaction it sends `booking.changed`, `record.changed` and `expense.changed`, then `payment.completed`, then its own "booked" and expense lines. No vault and no money are involved (`method: "demo"`).
+
+Go finishes its side by `approval_id`. It marks its payment paid and stops every timer on it. It never sends `add_booking` or `add_expense` for it, because the server has made both. It posts the ticket card (`{ "kind": "ticket", "booking_id": … }`, for that person alone on a person's own ticket) and moves on to the next step. It sends no second "booked" line, because the server has sent it. An `approval_id` Go doesn't know is accepted and ignored, and the same event twice does nothing more.
+
+Rahul taps Pay with ixigo money on the villa's pay card:
+
+<!-- schema: PaymentCompleted -->
+```json
+{
+  "event_id": "ev_0081",
+  "trip_id": "t_goa",
+  "seq": 81,
+  "occurred_at": "2026-10-05T09:02:00Z",
+  "type": "payment.completed",
+  "data": {
+    "approval_id": "ap_01JA7Q3V8Z",
+    "card_id": "c_villa_pay",
+    "payer_person_id": "p_rahul",
+    "amount_minor": 5420000,
+    "currency": "INR",
+    "merchant": "ixigo: Villa Sol, Anjuna",
+    "purpose": "Villa Sol, 3 nights, 6 to 9 Nov",
+    "decision_id": "d_villa",
+    "booking_id": "bk_villa",
+    "expense_id": "ex_villa",
+    "method": "demo",
+    "paid_at": "2026-10-05T09:02:00Z",
+    "by": { "kind": "person", "person_id": "p_rahul" }
+  }
+}
+```
+
 ## The trip record, bookings and money
 
 These three events cover the trip's shared memory and what the group booked and spent.

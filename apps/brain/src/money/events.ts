@@ -39,6 +39,9 @@ export async function tripEvent(t: TapDeps, ev: TripEvent): Promise<void> {
       return closeWaiting(t, ev.trip_id, ev.data.decision_id, 'expired', 'price_changed');
     case 'decision.cancelled':
       return closeWaiting(t, ev.trip_id, ev.data.decision_id, 'expired', 'other');
+    case 'payment.completed':
+      // The Server paid a waiting pay card on its payer's tap and booked it (the demo): Go books nothing more for it.
+      return t.paidByServer(ev);
     default:
       return;
   }

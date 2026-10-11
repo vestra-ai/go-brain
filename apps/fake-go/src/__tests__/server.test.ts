@@ -213,11 +213,12 @@ describe('send_event', () => {
     expect(seen).toEqual(['ev_0057']);
   });
 
-  it('knows all 22 event types of the contract, 1.1\'s settlement.recorded and 1.3\'s decision.options_added too', () => {
-    expect(KNOWN_EVENT_TYPES.size).toBe(22);
+  it('knows all 23 event types of the contract, 1.1\'s settlement.recorded and 1.3\'s decision.options_added and payment.completed too', () => {
+    expect(KNOWN_EVENT_TYPES.size).toBe(23);
     expect(KNOWN_EVENT_TYPES.has('message.created')).toBe(true);
     expect(KNOWN_EVENT_TYPES.has('expense.changed')).toBe(true);
     expect(KNOWN_EVENT_TYPES.has('settlement.recorded')).toBe(true);
+    expect(KNOWN_EVENT_TYPES.has('payment.completed')).toBe(true);
   });
 
   it("takes 1.1's new shapes from the Server: a payback, an expense answer, a flexible and a taken-back vote, a location", async () => {

@@ -1304,6 +1304,42 @@ class ExpenseChanged(BaseModel):
     data: ExpenseChangedData
 
 
+class Personal(BaseModel):
+    person_id: Annotated[str, Field(max_length=64, min_length=1)]
+    card_id: Annotated[str, Field(max_length=64, min_length=1)]
+    option_id: Annotated[str, Field(max_length=64, min_length=1)]
+
+
+class PaymentCompletedData(BaseModel):
+    approval_id: Annotated[str, Field(max_length=64, min_length=1)]
+    booking_id: str | None = None
+    card_id: str | None = None
+    payer_person_id: str | None = None
+    amount_minor: int | None = None
+    currency: str | None = None
+    merchant: str | None = None
+    purpose: str | None = None
+    decision_id: str | None = None
+    personal: Personal | None = None
+    expense_id: str | None = None
+    method: str | None = None
+    paid_at: AwareDatetime | None = None
+    by: PersonActor | GoActor | SystemActor | None = None
+
+
+class PaymentCompleted(BaseModel):
+    """
+    1.3: the Server paid a waiting pay card on its payer's tap (method demo), with the booking and expense written.
+    """
+
+    event_id: Annotated[str, Field(max_length=64, min_length=1)]
+    trip_id: Annotated[str, Field(max_length=64, min_length=1)]
+    seq: Annotated[int, Field(gt=0)]
+    occurred_at: AwareDatetime
+    type: Literal["payment.completed"]
+    data: PaymentCompletedData
+
+
 class SettlementRecordedData(BaseModel):
     settlement: Settlement
     by: Annotated[PersonActor | GoActor | SystemActor, Field(discriminator="kind")]
@@ -1349,6 +1385,7 @@ class Event(
         | BookingChanged
         | ExpenseChanged
         | SettlementRecorded
+        | PaymentCompleted
     ]
 ):
     root: Annotated[
@@ -1373,7 +1410,8 @@ class Event(
         | RecordChanged
         | BookingChanged
         | ExpenseChanged
-        | SettlementRecorded,
+        | SettlementRecorded
+        | PaymentCompleted,
         Field(discriminator="type"),
     ]
 

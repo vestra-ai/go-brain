@@ -165,21 +165,32 @@ export function createBusBooking(d: BusBookingDeps): BusBooking {
   const hookPaid = (pay: TicketPay): void => {
     if (hooked) return;
     hooked = true;
-    pay.onPaid(async ({ tripId, approvalId }) => {
-      const r = await d.pool.query<{ run_id: string; person_id: string; title: string; total_minor: string | null }>(
-        `update bus_bookings b set state = 'paid', approval_id = $2, updated_at = $3
+    pay.onPaid(async ({ tripId, approvalId, bookingId }) => {
+      const r = await d.pool.query<{ run_id: string; person_id: string; title: string; seats: string[]; total_minor: string | null }>(
+        `update bus_bookings b set state = 'paid', approval_id = $2, booking_id = coalesce($4, b.booking_id), updated_at = $3
          where b.trip_id = $1 and b.state <> 'paid'
            and (b.approval_id = $2 or b.run_id in (select p.hold_id from payments p where p.trip_id = $1 and p.approval_id = $2 and p.kind = 'ticket'))
-         returning b.run_id, b.person_id, b.title, b.total_minor`,
-        [tripId, approvalId, d.now()],
+         returning b.run_id, b.person_id, b.title, b.seats, b.total_minor`,
+        [tripId, approvalId, d.now(), bookingId ?? null],
       );
       for (const b of r.rows) {
-        if (b.total_minor === null) continue;
-        // Their ticket on the trip, theirs alone: Go's own reference, simulated, as Go stops before ixigo's pay button.
-        await d.link.request('add_booking', {
-          request_id: stableId('go_bus_ticket', b.run_id), trip_id: tripId, kind: 'bus', title: clip(b.title, 120), vendor: BUS_VENDOR,
-          ref: `SIM-${createHash('sha256').update(b.run_id).digest('hex').slice(0, 8).toUpperCase()}`,
-          amount_minor: Number(b.total_minor), currency: 'INR', payer_person_id: b.person_id, for_person_ids: [b.person_id], approval_id: approvalId,
+        // Their ticket on the trip, theirs alone. The Server's own booking when it paid on their tap (payment.completed):
+        // Go books nothing. Else Go's: its own reference, simulated, as Go stops before ixigo's pay button.
+        let booked = bookingId ?? null;
+        let ref: string | null = null;
+        if (!booked) {
+          if (b.total_minor === null) continue;
+          ref = `SIM-${createHash('sha256').update(b.run_id).digest('hex').slice(0, 8).toUpperCase()}`;
+          const added = await d.link.request('add_booking', {
+            request_id: stableId('go_bus_ticket', b.run_id), trip_id: tripId, kind: 'bus', title: clip(b.title, 120), vendor: BUS_VENDOR, ref,
+            amount_minor: Number(b.total_minor), currency: 'INR', payer_person_id: b.person_id, for_person_ids: [b.person_id], approval_id: approvalId,
+          });
+          booked = added.booking_id;
+          await d.pool.query('update bus_bookings set booking_id = $2 where run_id = $1', [b.run_id, booked]);
+        }
+        await pay.booked?.({
+          tripId, approvalId, bookingId: booked, title: b.title, ref, refundableUntil: null, simulated: true,
+          detail: b.seats.length ? `seat ${b.seats.join(', ')}` : null, personId: b.person_id,
         });
       }
     });

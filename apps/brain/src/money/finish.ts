@@ -1,8 +1,10 @@
+import type * as C from '@go/contract';
 import type { Confirmed } from '../travel/travel.js';
 import { payCardOf } from './ask.js';
 import { ticketCard } from './cards.js';
 import { payerOf, postLine, type MoneyDeps } from './deps.js';
 import { rid } from './ids.js';
+import type { Booked } from './pay.js';
 import { roomParts } from './rooms.js';
 import {
   byApproval,
@@ -39,6 +41,42 @@ export async function markPaid(d: MoneyDeps, p: { tripId: string; approvalId: st
     await transition(d.pool, row.payment_id, from, 'paid', { rail_ref: p.railRef }, d.now());
   }
   return getPayment(d.pool, row.payment_id);
+}
+
+/**
+ * The Server paid it itself on the payer's tap (payment.completed: the demo, no vault, no money), wrote its booking and
+ * expense, and set the card paid. The row takes the Server's ids and is paid: nothing expires, fails or declines it from
+ * here (every timer and tap is on a waiting row), and the finish books nothing. Null: no payment of Go's for it.
+ */
+export async function markPaidByServer(
+  d: MoneyDeps,
+  p: { tripId: string; approvalId: string; bookingId: string | null; expenseId: string | null },
+): Promise<PaymentRow | null> {
+  const row = await byApproval(d.pool, p.tripId, p.approvalId);
+  if (!row) return null;
+  if (row.state === 'paid') return row;
+  if (row.state !== 'waiting') d.log.warn({ payment_id: row.payment_id, was: row.state }, 'the Server paid a payment Go had closed; finishing it');
+  const from: PaymentState[] = ['asking', 'waiting', 'confirming', 'expired', 'declined', 'failed', 'refused'];
+  await transition(d.pool, row.payment_id, from, 'paid', { paid_by: 'server', booking_id: p.bookingId, expense_id: p.expenseId, card_state: 'paid' }, d.now());
+  return getPayment(d.pool, row.payment_id);
+}
+
+/**
+ * A paid booking's ticket card (a person's own, for them alone), with Go's line when Go booked it. Its request id comes
+ * from the approval, so a retry posts it once.
+ */
+export async function postTicket(d: Pick<MoneyDeps, 'link'>, b: Booked, line?: string): Promise<void> {
+  await d.link.request('post_message', {
+    // A person's ticket keeps 'ticket' for its paid line (finishTicketPaid), so its card has its own id.
+    request_id: rid('go_paid', b.approvalId, b.personId ? 'ticket_card' : 'ticket'),
+    trip_id: b.tripId,
+    ...(line ? { text: line } : {}),
+    card: ticketCard({
+      cardId: rid('c_ticket', b.approvalId), bookingId: b.bookingId, title: b.title, ref: b.ref, refundableUntil: b.refundableUntil,
+      simulated: b.simulated, detail: b.detail ?? null,
+    }),
+    ...(b.personId ? { visible_to_person_ids: [b.personId] } : {}),
+  });
 }
 
 /** The vault says the charge failed. Nothing was charged; a payment already paid stays paid. */
@@ -95,6 +133,7 @@ export async function reconcile(d: MoneyDeps, paymentId: string): Promise<void> 
 
 async function finishPaid(d: MoneyDeps, row: PaymentRow): Promise<void> {
   if (row.kind === 'ticket') return finishTicketPaid(d, row);
+  if (row.paid_by === 'server') return finishServerPaid(d, row);
   const approvalId = row.approval_id;
   if (!approvalId || !row.hold_id || !row.rail_ref || row.amount_minor === null || !row.currency) {
     throw new Error('a paid payment is missing its approval, hold or rail reference');
@@ -189,13 +228,9 @@ async function finishPaid(d: MoneyDeps, row: PaymentRow): Promise<void> {
 
   // 5. The ticket, with one line in Go's voice: what was booked, never the money, which the Server's own line says.
   if (!row.ticket_posted_at) {
-    const text = bookedLine({ title: confirmed.title, simulated: confirmed.simulated === true });
-    await d.link.request('post_message', {
-      request_id: id('ticket'),
-      trip_id: row.trip_id,
-      text,
-      card: ticketCard({ cardId: rid('c_ticket', approvalId), bookingId, title: confirmed.title, ref: confirmed.ref, refundableUntil, simulated: confirmed.simulated === true }),
-    });
+    const simulated = confirmed.simulated === true;
+    const b: Booked = { tripId: row.trip_id, approvalId, bookingId, title: confirmed.title, ref: confirmed.ref, refundableUntil, simulated, personId: null };
+    await postTicket(d, b, bookedLine({ title: confirmed.title, simulated }));
     // 6. The stay booked, each person's flights are next: before the ticket is marked posted, so a failed wake is tried
     //    again with it (the post and the wake are each once by their ids).
     if (confirmed.kind === 'stay') await d.stayBooked?.(row.trip_id, { bookingId, title: confirmed.title });
@@ -204,8 +239,55 @@ async function finishPaid(d: MoneyDeps, row: PaymentRow): Promise<void> {
 }
 
 /**
- * A traveller's ticket, paid: one line in Go's voice, naming the traveller. Its booking is its own flow's (the flight
- * booking that asked for it hears onPaid); on Go's test rails nothing real was paid, and the line says so.
+ * A group's payment the Server paid and booked itself (payment.completed): its booking, expense, pay card and "booked" line
+ * are the Server's, so Go adds none of them. The ticket card, alone, then for a stay the same next step as finishPaid's
+ * (each person's flights). Its words come from the Server's booking, read once and kept with the payment.
+ */
+async function finishServerPaid(d: MoneyDeps, row: PaymentRow): Promise<void> {
+  if (row.ticket_posted_at) return;
+  if (!row.approval_id) throw new Error('a payment the Server paid is missing its approval');
+  if (!row.booking_id) {
+    d.log.warn({ payment_id: row.payment_id }, 'the Server paid a payment with no booking named: no ticket card to post');
+    await patchPayment(d.pool, row.payment_id, { ticket_posted_at: d.now() }, d.now());
+    return;
+  }
+  let confirmed = row.confirmed;
+  if (!confirmed) {
+    const trip = await d.link.request('read_trip', { trip_id: row.trip_id });
+    const found = trip.bookings.find((x) => x.booking_id === row.booking_id);
+    if (found) {
+      confirmed = confirmedOf(found);
+      await patchPayment(d.pool, row.payment_id, { confirmed }, d.now());
+    }
+  }
+  const b: Booked = {
+    tripId: row.trip_id, approvalId: row.approval_id, bookingId: row.booking_id, title: confirmed?.title ?? row.label, ref: confirmed?.ref ?? null,
+    refundableUntil: confirmed?.refundableUntil ?? row.refundable_until, simulated: true, personId: null,
+  };
+  await postTicket(d, b);
+  // As finishPaid's step 6, before the ticket is marked posted. A group's payment is a stay's unless the Server's booking
+  // says otherwise.
+  if ((confirmed?.kind ?? 'stay') === 'stay') await d.stayBooked?.(row.trip_id, { bookingId: row.booking_id, title: b.title });
+  await patchPayment(d.pool, row.payment_id, { ticket_posted_at: d.now() }, d.now());
+}
+
+/** The Server's booking, as the travel layer would have confirmed it. */
+function confirmedOf(b: C.Booking): Confirmed {
+  return {
+    ref: b.ref, vendor: b.vendor, title: b.title, kind: b.kind,
+    ...(b.starts_at ? { startsAt: b.starts_at } : {}),
+    ...(b.ends_at ? { endsAt: b.ends_at } : {}),
+    ...(b.refundable_until ? { refundableUntil: b.refundable_until } : {}),
+    ...(b.image_url ? { imageUrl: b.image_url } : {}),
+    ...(b.place ? { place: b.place } : {}),
+    ...(b.journey ? { journey: b.journey } : {}),
+  };
+}
+
+/**
+ * A traveller's ticket, paid: one line in Go's voice, naming the traveller. Its booking and ticket card are its own flow's
+ * (the flight or bus booking that asked for it hears onPaid, then calls booked); on Go's test rails nothing real was paid,
+ * and the line says so.
  */
 async function finishTicketPaid(d: MoneyDeps, row: PaymentRow): Promise<void> {
   // A ticket with a pay card (askForTicketCard): the card shows paid, with no buttons, as a group's does.
@@ -215,11 +297,14 @@ async function finishTicketPaid(d: MoneyDeps, row: PaymentRow): Promise<void> {
     await patchPayment(d.pool, row.payment_id, { card_state: 'paid' }, d.now());
   }
   if (row.ticket_posted_at) return;
-  if (!row.approval_id || row.amount_minor === null || !row.currency) throw new Error('a paid ticket is missing its approval or amount');
-  const text = ticketPaidLine({
-    what: row.label, payer: row.payer_name, amount: money(row.amount_minor, row.currency), simulated: row.payment_kind !== 'ixigo',
-  });
-  await postLine(d, row.trip_id, text, rid('go_paid', row.approval_id, 'ticket'), payerOf(row));
+  // The Server paid it itself (payment.completed) and said so in the room: no second line.
+  if (row.paid_by !== 'server') {
+    if (!row.approval_id || row.amount_minor === null || !row.currency) throw new Error('a paid ticket is missing its approval or amount');
+    const text = ticketPaidLine({
+      what: row.label, payer: row.payer_name, amount: money(row.amount_minor, row.currency), simulated: row.payment_kind !== 'ixigo',
+    });
+    await postLine(d, row.trip_id, text, rid('go_paid', row.approval_id, 'ticket'), payerOf(row));
+  }
   await patchPayment(d.pool, row.payment_id, { ticket_posted_at: d.now() }, d.now());
 }
 

@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { Actor, Id, IsoDateTime, Seq } from './common.js';
+import { Actor, AmountMinor, Currency, Id, IsoDateTime, Seq } from './common.js';
 import { Person } from './people.js';
 import { Message, Reaction } from './room.js';
 import { Booking, Decision, DecisionOption, Expense, Mandate, RecordLine, Settlement, TripSnapshot } from './trip.js';
@@ -101,6 +101,35 @@ export const ExpenseChanged = ev('expense.changed',
     by_person_id: Id.nullish(),
   }),
   'ExpenseChanged', 'An expense was added, removed, or (1.1) changed.');
+/**
+ * 1.3 (the Server team's demo payment, 11 Oct): the payer tapped approve on a waiting pay card and the Server paid it itself
+ * (method "demo": no vault, no money). The Server has set the card paid and written the booking and the expense, in one
+ * transaction with booking.changed, record.changed and expense.changed before it. Go finishes its own side by approval_id:
+ * no add_booking or add_expense for it, the ticket card, then the next step. Lenient on purpose, so it is never refused:
+ * only approval_id is needed.
+ */
+export const PaymentCompleted = ev('payment.completed',
+  z.object({
+    approval_id: Id,
+    /** The booking the Server wrote for it (booking.changed came first). */
+    booking_id: Id.nullish(),
+    card_id: Id.nullish(),
+    payer_person_id: Id.nullish(),
+    amount_minor: AmountMinor.nullish(),
+    currency: Currency.nullish(),
+    merchant: z.string().nullish(),
+    purpose: z.string().nullish(),
+    /** A group's payment: the vote it was for. */
+    decision_id: Id.nullish(),
+    /** A person's own ticket (contract 1.3's personal pick): who, Go's card and the option they tapped. */
+    personal: z.object({ person_id: Id, card_id: Id, option_id: Id }).nullish(),
+    expense_id: Id.nullish(),
+    /** "demo": the Server paid it with no vault and no money. */
+    method: z.string().nullish(),
+    paid_at: IsoDateTime.nullish(),
+    by: Actor.nullish(),
+  }),
+  'PaymentCompleted', '1.3: the Server paid a waiting pay card on its payer\'s tap (method demo), with the booking and expense written.');
 export const SettlementRecorded = ev('settlement.recorded', z.object({ settlement: Settlement, by: Actor }), 'SettlementRecorded',
   '1.1: someone recorded paying someone back. It counts at once, so its status is always confirmed.');
 
@@ -128,6 +157,7 @@ export const Event = z
     BookingChanged,
     ExpenseChanged,
     SettlementRecorded,
+    PaymentCompleted,
   ])
   .meta({ id: 'Event', discriminator: { propertyName: 'type' } });
 export type Event = z.infer<typeof Event>;

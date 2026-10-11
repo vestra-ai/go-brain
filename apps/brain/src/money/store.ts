@@ -54,6 +54,11 @@ export interface PaymentRow {
   /** A traveller's own payment (contract 1.3, G3): the card of Go's they tapped and the option on it. Null for a vote's. */
   pick_card_id: string | null;
   pick_option_id: string | null;
+  /**
+   * 'server': the Server paid it itself on the payer's tap (payment.completed, method demo) and wrote its booking and
+   * expense; no vault and no money. Null: the vault paid it, and Go books it.
+   */
+  paid_by: 'server' | null;
   attempts: number;
   last_error: string | null;
   created_at: Date;
@@ -89,7 +94,7 @@ export interface NewPayment {
 const PATCHABLE = [
   'refused_reason', 'release_reason', 'approval_id', 'approval_token', 'approval_expires_at', 'card_id', 'card_state',
   'pay_link_url', 'pay_link_expires_at', 'rail_ref', 'fail_reason', 'confirmed', 'rooms', 'booking_id', 'expense_id',
-  'released_at', 'ticket_posted_at', 'said_at', 'last_error', 'checking_at',
+  'released_at', 'ticket_posted_at', 'said_at', 'last_error', 'checking_at', 'paid_by',
 ] as const;
 export type PaymentPatch = Partial<Pick<PaymentRow, (typeof PATCHABLE)[number]>>;
 
@@ -233,7 +238,10 @@ export async function interruptStale(db: Db, now: Date, ageMs = 60_000): Promise
   return r.rows.map((x) => x.payment_id);
 }
 
+/** Payments the vault paid. One the Server paid itself (payment.completed) moved no money and never opened the vault. */
 export async function paidApprovalIds(db: Db): Promise<string[]> {
-  const r = await db.query<{ approval_id: string }>("select approval_id from payments where state = 'paid' and approval_id is not null");
+  const r = await db.query<{ approval_id: string }>(
+    "select approval_id from payments where state = 'paid' and approval_id is not null and paid_by is null",
+  );
   return r.rows.map((x) => x.approval_id);
 }
