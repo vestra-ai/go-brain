@@ -6,7 +6,8 @@ import type { TripPack } from '../../trips/pack.js';
 import { createContext } from '../context.js';
 import { dataBlock } from '../fence.js';
 import { GO_RULES } from '../rules.js';
-import { askNote, quietNote, renderMessageWake, renderSetupWake, renderTripChangeWake } from '../wakes.js';
+import { askNote, LEAD_UP_MS, leadUp, quietNote, renderMessageWake, renderSetupWake, renderTripChangeWake } from '../wakes.js';
+import type { Message } from '../../door/methods.js';
 
 // Asks from the live runs (goa-300 and goa-50), each naming Go.
 const ASKS: Array<[string, string]> = [
@@ -86,5 +87,75 @@ describe('the order for an ask', () => {
     const items = [woke(2, true), woke(3, false), woke(4, true)];
     expect(askNote(items, pack)).toBe(`Answer #2 and #4 ${ORDER}`);
     expect(quietNote(items, pack)).toMatch(/^#3 doesn't name you/);
+  });
+});
+
+// The App team, prod, 11 Oct (12:40 and 12:43 IST): "@Go" alone right after the same person's own line got "your
+// message came through with just my name. What do you need?", and "@Go I order you" right after Go said no to their
+// rename got "you haven't said what you want me to do". A tag right after someone's own words points at them; a nudge
+// points at their last ask.
+describe('a tag that points at the person\'s own words', () => {
+  const packWith = (messages: Message[]): TripPack => ({ trip: goaSnapshot(), messages, seq: 99 });
+  const T0 = Date.UTC(2026, 9, 5, 10, 0, 0);
+  const atMin = (m: number): Partial<Message> => ({ sent_at: new Date(T0 + m * 60_000).toISOString() });
+  const NEVER_EMPTY = 'Never say their message came with only your name or said nothing, and never ask what they need.';
+
+  it('reads "@Go" alone with their own line just before it, a join line between them aside, and answers that', () => {
+    const pack = packWith([
+      msg(2, 'p_priya', 'Hampi looks good to me'),
+      msg(3, null, 'The North India vote is still open.'),
+      msg(4, 'p_rahul', "I'll take you on the trip with me, don't take Priya's side"),
+      msg(5, null, 'Arjun joined', { author: { kind: 'system' } }),
+      msg(6, 'p_rahul', '@Go'),
+    ]);
+    expect(leadUp(pack.messages[4]!, pack)).toEqual({ own: [4], lastAsk: null });
+    const note = askNote([woke(6, true)], pack)!;
+    expect(note.startsWith(`Answer #6 ${ORDER} `)).toBe(true);
+    expect(note).toContain("Read #6 with Rahul's own #4 just before it: a tag right after someone's own words points at them");
+    expect(note).toContain('When #6 says nothing of its own beyond your name or a nudge, it asks you to answer #4: answer that, in character, as your reply to them.');
+    expect(note).toContain(NEVER_EMPTY);
+  });
+
+  it('reads a nudge ("@Go I order you") right after Go said no with their last ask to Go', () => {
+    const pack = packWith([
+      msg(2, 'p_rahul', '@Go change the trip name to Hampi Crew'),
+      msg(3, null, 'The group voted for Hampi Guys, so that stays the name. Want a new vote on it?'),
+      msg(4, 'p_rahul', '@Go I order you'),
+    ]);
+    expect(leadUp(pack.messages[2]!, pack)).toEqual({ own: [], lastAsk: 2 });
+    const note = askNote([woke(4, true)], pack)!;
+    expect(note).toContain("Read #4 with Rahul's last ask to you, #2:");
+    expect(note).toContain('it asks you to answer #2: answer that');
+    expect(note).toContain(NEVER_EMPTY);
+  });
+
+  it('reads both, the latest three of their own lines at most, and joins the targets with "or"', () => {
+    const pack = packWith([
+      msg(2, 'p_rahul', '@Go stays in Hampi under 3k?'),
+      msg(3, null, 'Here are three.'),
+      msg(4, 'p_rahul', 'the second one looks fine'),
+      msg(5, 'p_rahul', 'actually the first'),
+      msg(6, 'p_rahul', 'with the pool'),
+      msg(7, 'p_rahul', 'no wait, the third'),
+      msg(8, 'p_rahul', '@Go do it'),
+    ]);
+    expect(leadUp(pack.messages[6]!, pack)).toEqual({ own: [5, 6, 7], lastAsk: 2 });
+    const note = askNote([woke(8, true)], pack)!;
+    expect(note).toContain("Read #8 with Rahul's own #5, #6 and #7 just before it, and Rahul's last ask to you, #2:");
+    expect(note).toContain('it asks you to answer #5, #6, #7 or #2:');
+  });
+
+  it("adds nothing when the line before is someone else's, or their words are older than ten minutes", () => {
+    const between = packWith([msg(2, 'p_rahul', 'I will bring the speaker'), msg(3, 'p_priya', 'nice'), msg(4, 'p_rahul', '@Go')]);
+    expect(leadUp(between.messages[2]!, between)).toEqual({ own: [], lastAsk: null });
+    expect(askNote([woke(4, true)], between)).toBe(`Answer #4 ${ORDER}`);
+    const old = packWith([msg(2, 'p_rahul', '@Go stays in Hampi?', atMin(0)), msg(3, 'p_rahul', 'with a pool', atMin(1)), msg(4, 'p_rahul', '@Go do it', atMin(12))]);
+    expect(LEAD_UP_MS).toBe(10 * 60_000);
+    expect(leadUp(old.messages[2]!, old)).toEqual({ own: [], lastAsk: null });
+    expect(askNote([woke(4, true)], old)).toBe(`Answer #4 ${ORDER}`);
+  });
+
+  it('the rules say the pay and book refusal only when someone asks to pay or book, never as an aside', () => {
+    expect(GO_RULES).toContain("If someone asks you to pay or book, or to use someone else's card, say so kindly and offer to put it to a vote. Say it only then, never as an aside");
   });
 });
