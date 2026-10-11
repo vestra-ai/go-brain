@@ -5,6 +5,7 @@ import { airportWords, noFlightsLine } from '../answer.js';
 import { loadBook } from '../book/book.js';
 import { createEngine } from '../book/engine.js';
 import type { ResultsStore } from '../results.js';
+import { renderSearchWake } from '../search-wake.js';
 import { searchAnswer } from '../tools.js';
 
 // Prod, 12 Oct (trip t_f0b08c1cdb0f7420): ixigo answered Delhi to Kullu (Manali's airport) on 13 Nov with 200 and one
@@ -41,7 +42,7 @@ describe('ixigo\'s own "No flights found"', () => {
     expect(noFlightsLine('Delhi', 'Manali', '2026-11-13', {})).toContain('ixigo has no flights from Delhi to Manali on Fri 13 Nov.');
   });
 
-  it('answers one route\'s search with the line as it is: never "couldn\'t load", never a try again, nothing saved', async () => {
+  it('answers one route\'s search with ixigo\'s none and the nearest other airport searched next: never "couldn\'t load", nothing saved', async () => {
     const saved: unknown[] = [];
     const results = { save: async (x: unknown) => (saved.push(x), { resultsId: 'r_none' }) } as unknown as ResultsStore;
     const found = {
@@ -49,9 +50,21 @@ describe('ixigo\'s own "No flights found"', () => {
       none: { from: { words: 'Delhi', code: 'DEL', city: 'New Delhi' }, to: { words: 'Manali', code: 'KUU', city: 'Kullu' } },
     };
     const out = await searchAnswer('flights', { from: 'Delhi', to: 'Manali', date: '2026-11-13' }, found, 't_none', { results, now: () => new Date('2026-10-12T07:00:00Z') });
-    expect(out).toMatchObject({ count: 0, summary: expect.stringContaining("ixigo has no flights from Delhi to Kullu (Manali's airport) on Fri 13 Nov.") });
+    expect(out).toMatchObject({ count: 0, summary: "ixigo has no flights from Delhi to Kullu (Manali's airport) on Fri 13 Nov." });
     expect(`${out.summary} ${out.note}`).not.toMatch(/couldn't load|didn't load it|try again in/);
-    expect(out.note).toContain("never that it didn't load, and never that you'll try again");
+    expect(out.note).toContain('Search again now with the nearest other airport that has flights in place of the end with none');
+    expect(out.note).toContain("search_flights with to, or from, set to that airport's city");
+    expect(out.note).toContain("Never say it didn't load, and never that you'll try again.");
     expect(saved).toEqual([]);
+  });
+
+  it('wakes the model on a search that outlived its turn with the route as data and the nearest airport to search next', () => {
+    const item = {
+      id: 'search:t_none:none:k', tripId: 't_none', kind: 'search' as const, ref: 'flights', dueAt: new Date(),
+      payload: { source: 'travel_search', search: 'flights from Delhi to Manali', count: 0, resultsId: null, error: null, summary: "ixigo has no flights from Delhi to Kullu (Manali's airport) on Fri 13 Nov.", next: 'Search again now.' },
+    };
+    expect(renderSearchWake(item)).toBe(
+      "The search <data>flights from Delhi to Manali</data> finished: <data>ixigo has no flights from Delhi to Kullu (Manali's airport) on Fri 13 Nov.</data> Search again now.",
+    );
   });
 });

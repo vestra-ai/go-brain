@@ -10,7 +10,7 @@ import type { Desk } from '../desk/desk.js';
 import { dateAs } from './book/expr.js';
 import { buildOptionsCard, clip, formatInr, ixigoPage, PERSONAL_KINDS, placeKindNotAll, stayNight, stayNote, stayWhole, subtitleFor } from './cards.js';
 import { localDay } from '../proactive/clock.js';
-import { answerLine, answerTitle, directPicks, droppedWords, ledBy, leftOff, loadWhat, noFlightsLine, plainAsk } from './answer.js';
+import { answerLine, answerTitle, directPicks, droppedWords, ledBy, leftOff, loadWhat, nearestAirportAsk, noFlightsText, plainAsk } from './answer.js';
 import { flightDetails, stayDetails, trainDetails } from './details.js';
 import { guideName, placeDetails, suggestedPlaces, type PlacePick } from './places-card.js';
 import { DEFAULT_TRIP_TZ } from './dates.js';
@@ -668,10 +668,10 @@ export function handOver(
         // Something left to pick goes to the model, which picks it; so do stays with the nearest saved after too few fits,
         // which the model says plainly. The rest posts its card with no model call.
         const pick = leftToPick(q, found).length > 0 || (kind === 'stays' && ((found.nearest?.length ?? 0) > 0 || !!found.earlier));
-        // ixigo's own "No flights found" is Go's line as it is, with no model call (searchWakeAnswer).
+        // ixigo's own "No flights found": the model searches the nearest other airport with flights next (its note).
         const payload: SearchWake = {
           source: 'travel_search', search: a.search, count: a.count, resultsId: a.results_id ?? null, summary: a.summary, error: null,
-          ...(lead ? { lead } : {}), ...(pick ? { pick } : {}), ...(found.none && a.count === 0 ? { line: a.summary } : {}),
+          ...(lead ? { lead } : {}), ...(pick ? { pick } : {}), ...(found.none && a.count === 0 && a.note ? { next: a.note } : {}),
         };
         await wake(`search:${o.tripId}:${found.runId ?? o.fallbackId}`, payload);
       },
@@ -798,15 +798,15 @@ export async function searchAnswer(kind: TravelKind, ask: TravelQuery, found: Tr
   const wasNote = found.earlier
     ? `Say plainly that ixigo didn't answer just now and these are from Go's read ${age}, never as fresh. `
     : '';
-  // ixigo's own "No flights found" (prod, 12 Oct: Delhi to Kullu, read as a page that didn't load): the answer, with a bus
-  // as the next step, never "couldn't load" and never a try again.
+  // ixigo's own "No flights found" (prod, 12 Oct: Delhi to Kullu, read as a page that didn't load): the answer, and the
+  // nearest other airport with flights searched next, never "couldn't load" and never a try again.
   if (options.length === 0 && found.none && q.from && q.to && q.date) {
     return {
       search,
       count: 0,
       checked: ageText(found.checkedAt, d.now()),
-      summary: noFlightsLine(q.from, q.to, q.date, found.none),
-      note: "ixigo answered that it has no flights that day. Say the summary in one line, as it is: never that it didn't load, and never that you'll try again.",
+      summary: noFlightsText(q.from, q.to, q.date, found.none),
+      note: nearestAirportAsk('search_flights with to, or from, set to that airport\'s city'),
     };
   }
   if (options.length === 0) {

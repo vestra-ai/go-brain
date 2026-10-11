@@ -20,7 +20,8 @@ import { SAY_NOTHING, type QuickTool, type TurnCtx } from '../composer/tools.js'
 import type { Desk } from '../desk/desk.js';
 import type { ServerLink } from '../door/server-link.js';
 import type { TripPack } from '../trips/pack.js';
-import { dayText, noFlightsLine } from './answer.js';
+import { dayText, nearestAirportAsk, noFlightsLine, noFlightsText } from './answer.js';
+import type { NoneSaid } from './book/engine.js';
 import type { Engine, EngineAnswer, StepsEvent } from './book/engine.js';
 import { buildOptionsCard, clip, formatInr, type CardPick } from './cards.js';
 import { flightDetails } from './details.js';
@@ -147,7 +148,10 @@ export interface FlightsEachDeps {
 }
 
 /** A group's card and its line, saved before it posts so its taps find their offers. */
-async function groupCard(d: Pick<FlightsEachDeps, 'results'>, tripId: string, turnId: string, g: EachGroup, at: { to: string; date: string }, got: Extract<EngineAnswer, { as: 'options' }>) {
+async function groupCard(
+  d: Pick<FlightsEachDeps, 'results'>, tripId: string, turnId: string, g: EachGroup, at: { to: string; date: string; instead?: Instead },
+  got: Extract<EngineAnswer, { as: 'options' }>,
+) {
   const { shown, fit } = flightsFor(g, got.options);
   const who = namesOf(g);
   const when = g.window ? `, ${g.window.words}` : '';
@@ -171,8 +175,10 @@ async function groupCard(d: Pick<FlightsEachDeps, 'results'>, tripId: string, tu
   const cheapest = shown[0]!;
   // A place with no airport of its own (Varkala), searched at ixigo's nearest (TRV): said once, in plain words.
   const near = (got.near ?? []).map((n) => `${n.words} has no airport, so these are flights ${norm(n.words) === norm(g.home) ? 'from' : 'to'} ${n.city} (${n.code}). `).join('');
+  // A search in place of a route ixigo had no flights on: which airport this is, and for where.
+  const instead = at.instead ? `${at.instead.side === 'from' ? g.home : at.to} is the nearest airport to ${at.instead.of} with flights that day. ` : '';
   const line =
-    `${who}, your flights from ${g.home} on ${dayText(at.date)}${when}: ${near}${fit} ${fit === 1 ? 'fits' : 'fit'}, from ${formatInr(cheapest.priceMinor)} a person. ` +
+    `${who}, your flights from ${g.home} on ${dayText(at.date)}${when}: ${near}${instead}${fit} ${fit === 1 ? 'fits' : 'fit'}, from ${formatInr(cheapest.priceMinor)} a person. ` +
     `Tap "I'll take this" on yours.`;
   return { card: saved, line };
 }
@@ -190,6 +196,47 @@ function postFor(d: Pick<FlightsEachDeps, 'link' | 'log'>, tripId: string, reque
 /** A traveller's line when their city's page didn't come, or the last try didn't either: "Arjun, I couldn't load…". */
 const notLoadedFor = (g: EachGroup, line: (what: string) => string): string => `${namesOf(g)}, ${line(`your flights from ${g.home}`)}`;
 
+/** A search that stands in for a route ixigo had no flights on: the place it stands in for, and which end that was. */
+export interface Instead {
+  of: string;
+  side: 'from' | 'to';
+}
+
+/**
+ * ixigo has no flights from a city to the trip that day (its "No flights found"): Go searches the nearest other airport
+ * with flights next, by itself (Keshav, 12 Oct: "Go should be smart enough to give the closest airport"), on a wake of its
+ * own, so it happens whether the turn is still on or over. A search that already stood in for one (instead) gets the bus
+ * line, theirs alone: one nearest airport, never a chain. Never "couldn't load", never a try again.
+ */
+async function noFlightsFrom(
+  d: Pick<FlightsEachDeps, 'desk' | 'link' | 'now' | 'log'>, tripId: string, key: string, groups: EachGroup[],
+  at: { to: string; date: string; instead?: Instead | undefined }, none: NoneSaid,
+): Promise<void> {
+  const home = groups[0]?.home;
+  if (!home) return;
+  if (at.instead || !d.desk) {
+    // The bus goes from their home to the trip's place, whichever end this search stood in for.
+    const busFrom = at.instead?.side === 'from' ? at.instead.of : home;
+    const busTo = at.instead?.side === 'to' ? at.instead.of : at.to;
+    for (const g of groups) {
+      const ids = g.people.map((p) => p.personId);
+      await postFor(d, tripId, stableId('go_each', key, ...ids, 'none'), null, `${namesOf(g)}, ${noFlightsLine(busFrom, busTo, at.date, none)}`, ids);
+    }
+    return;
+  }
+  const ids = groups.flatMap((g) => g.people.map((p) => p.personId));
+  const how =
+    `call search_flights_each with person_ids ${JSON.stringify(ids)}, instead_of the place in the summary whose airport has no flights, ` +
+    "and to set to that airport's city (from, when it is their home's end)";
+  await d.desk.put({
+    id: `search:${tripId}:none:${key}`, tripId, kind: 'search', ref: 'flights', dueAt: d.now(),
+    payload: {
+      source: 'travel_search', search: `flights from ${home} to ${at.to}`, count: 0, resultsId: null, error: null,
+      summary: noFlightsText(home, at.to, at.date, none), next: nearestAirportAsk(how),
+    },
+  }).catch((err: unknown) => d.log?.warn({ err: String(err).slice(0, 200), tripId }, "travel: the nearest airport's search could not be put on the desk"));
+}
+
 /**
  * A home city's try again (try-again.ts): its flights page alone, in the background, through ixigo's quiet. Each
  * traveller from there now (the trip as it is when the try comes) gets their own card when it lands, the next try goes on
@@ -200,7 +247,9 @@ export function eachTryAgain(d: Omit<FlightsEachDeps, 'live'>): (t: TryAgainItem
     const each = t.payload.each;
     if (!each) return;
     // The search's own people (one asked for theirs alone), from that city.
-    const people = each.people ? pack.trip.people.filter((p) => each.people!.includes(p.person_id)) : pack.trip.people;
+    // Flying from the nearest other airport to their home (instead, from): they fly from that city this time.
+    const people = (each.people ? pack.trip.people.filter((p) => each.people!.includes(p.person_id)) : pack.trip.people)
+      .map((p) => (each.instead?.side === 'from' ? { ...p, from_city: each.home } : p));
     const groups = planEach(people, each.to, each.date).groups.filter((g) => norm(g.home) === norm(each.home));
     if (groups.length === 0) return;
     const at = { to: each.to, date: each.date };
@@ -223,17 +272,14 @@ export function eachTryAgain(d: Omit<FlightsEachDeps, 'live'>): (t: TryAgainItem
       if (got?.as === 'options' && got.options.length > 0) {
         for (const g of groups) {
           const ids = g.people.map((p) => p.personId);
-          const made = await groupCard(d, t.tripId, t.id, g, at, got);
+          const made = await groupCard(d, t.tripId, t.id, g, { ...at, ...(each.instead ? { instead: each.instead } : {}) }, got);
           await postFor(d, t.tripId, stableId('go_each', t.id, ...ids), made.card, made.line, ids);
         }
         return;
       }
-      // ixigo's own "No flights found": the answer, theirs alone, and no try after it.
+      // ixigo's own "No flights found": the nearest other airport next, never another try.
       if (got?.as === 'options' && got.none) {
-        for (const g of groups) {
-          const ids = g.people.map((p) => p.personId);
-          await postFor(d, t.tripId, stableId('go_each', t.id, ...ids, 'none'), null, `${namesOf(g)}, ${noFlightsLine(g.home, each.to, each.date, got.none)}`, ids);
-        }
+        await noFlightsFrom(d, t.tripId, t.id, groups, { to: each.to, date: each.date, instead: each.instead }, got.none);
         return;
       }
       if (t.payload.n < TRIES && d.desk) {
@@ -257,7 +303,11 @@ const Args = z.object({
   cabin: z.enum(['economy', 'premium_economy', 'business']).optional().describe('Only when the ask names a cabin'),
   person_ids: z.array(z.string().min(1).max(80)).min(1).max(30).optional()
     .describe('Whose flights: the asker\'s alone for "my flights"; leave it out only when they asked for everyone\'s, or ours'),
+  from: z.string().min(2).max(60).optional().describe("Only when Go searches the nearest other airport to these people's home: that airport's city"),
+  instead_of: z.string().min(2).max(60).optional()
+    .describe('Only for the nearest other airport: the place whose own airport ixigo had no flights for that day (Manali)'),
 });
+
 
 export function flightsEachTool(d: FlightsEachDeps): QuickTool<z.infer<typeof Args>> {
   const told = new Map<string, number>();
@@ -280,7 +330,9 @@ export function flightsEachTool(d: FlightsEachDeps): QuickTool<z.infer<typeof Ar
       // "My flights" is the asker's alone, whoever else the model names; only everyone's or ours fans out (asker.ts).
       const asked = askedBy(ctx);
       const scope = asked?.own ? [asked.personId] : (a.person_ids ?? null);
-      const people = scope ? trip.people.filter((p) => scope.includes(p.person_id)) : trip.people;
+      // The nearest other airport to their home, when theirs had no flights: they fly from there this time.
+      const people = (scope ? trip.people.filter((p) => scope.includes(p.person_id)) : trip.people).map((p) => (a.from ? { ...p, from_city: a.from } : p));
+      const instead: Instead | undefined = a.instead_of ? { of: a.instead_of, side: a.from ? 'from' : 'to' } : undefined;
       if (people.length === 0) return { error: 'unknown_person', note: 'person_ids names nobody in the trip: give the person_id of each person whose flights to find.' };
       const plan = planEach(people, to, date);
       const asks = [
@@ -289,7 +341,7 @@ export function flightsEachTool(d: FlightsEachDeps): QuickTool<z.infer<typeof Ar
       ].join(' ');
       if (plan.groups.length === 0) return { error: 'needs_more', note: `Nobody has said where they fly from. Say only this, in one line: ${asks || 'where does everyone fly from?'}` };
 
-      const at = { to, date };
+      const at = { to, date, ...(instead ? { instead } : {}) };
       const live = waysLiveCard(d, ctx.tripId, ctx.stableId('c_live'), { kinds: ['flights'], fallback: "Go is checking each person's flights on ixigo from their home city." });
       const timeUp = new AbortController();
       let deadline: ReturnType<typeof setTimeout> | undefined;
@@ -334,10 +386,11 @@ export function flightsEachTool(d: FlightsEachDeps): QuickTool<z.infer<typeof Ar
         if (got?.as === 'options' && got.none && !city.posted) {
           city.posted = true;
           for (const g of groupsOf(e.entry)) {
-            const only = g.people.map((p) => p.personId);
-            post(`${only.join(',')}|none`, null, `${namesOf(g)}, ${noFlightsLine(g.home, to, date, got.none)}`, only);
-            notUp.set(g.home, 'ixigo has no flights from there that day; their line says so, with a bus as the next step');
+            notUp.set(g.home, instead
+              ? 'ixigo has no flights from there that day either; their line says so, with a bus as the next step'
+              : 'ixigo has no flights on that route that day; Go searches the nearest other airport with flights next, by itself');
           }
+          posts.push(noFlightsFrom(d, ctx.tripId, stableId('each_none', ctx.turnId, norm(e.entry)), groupsOf(e.entry), at, got.none));
           return;
         }
         // Both steps in and no flights read: never a link card. Each of the city's people hears it, theirs alone, and the
@@ -369,6 +422,7 @@ export function flightsEachTool(d: FlightsEachDeps): QuickTool<z.infer<typeof Ar
           if (d.desk) {
             const each = {
               home: e.entry, to, date, ...(a.cabin ? { cabin: a.cabin } : {}), ...(scope ? { people: scope } : {}), ...(asked ? { asker: asked.personId } : {}),
+              ...(instead ? { instead } : {}),
             };
             posts.push(
               tryAgain({ ...d, desk: d.desk }, ctx.tripId, 'flights', { key: stableId('each', ctx.turnId, norm(e.entry)), what: `flights from ${e.entry}`, n: 1, each })
