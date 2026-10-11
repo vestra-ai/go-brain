@@ -1,0 +1,1118 @@
+{
+ "data": {
+  "persona": "COUPLE",
+  "hotelLevelDetails": {
+   "hotelDetail": {
+    "hotelName": "Saudades Homestays",
+    "thumbnailImageURL": "https://pix8.agoda.net/hotelImages/964/9643175/9643175_19090914070080661283.jpg?ca=9&ce=1&s=1024x768"
+   },
+   "amenities": null,
+   "countryId": 1,
+   "city": "Girim",
+   "isInternational": false,
+   "accommodationType": "Homestay"
+  },
+  "rooms": [
+   {
+    "id": "119111364",
+    "masterRoomId": "119111364",
+    "name": "1 Bedroom Apartment",
+    "properties": [
+     {
+      "code": "SIZE",
+      "data": "15 sq. mt."
+     },
+     {
+      "code": "BED_TYPE",
+      "data": "1 king bed"
+     },
+     {
+      "code": "OCCUPANCY",
+      "data": "Sleeps 2"
+     }
+    ],
+    "roomLevelAmenities": [
+     "Cleaning supplies",
+     "Toiletries",
+     "Satellite channels",
+     "Air-conditioned rooms",
+     "Fan",
+     "Linens",
+     "Crockery items",
+     "Microwave",
+     "Refrigerator",
+     "Study table",
+     "Sofa",
+     "Cupboard",
+     "Ironing facilities"
+    ],
+    "roomOptions": [
+     {
+      "blockId": "block_1",
+      "hotelInfoToken": "token",
+      "roomId": "119111364",
+      "name": "Room With Free Cancellation",
+      "cancellationBenefits": {
+       "code": "FULLY_REFUNDABLE",
+       "data": "Free Cancellation till 18 Nov 11:59 PM",
+       "policy": [
+        {
+         "code": "FULLY_REFUNDABLE",
+         "title": "Fully refundable before 18 Nov 2026 11:59 PM",
+         "subTitle": "Cancel your reservation before 18 Nov 2026 11:59 PM, to get a full refund",
+         "cancellationDate": "2026-11-18T23:59:00",
+         "checkInDate": "2026-11-20T00:00:00",
+         "startDate": "2026-10-11T00:24:25.218932985",
+         "endDate": "2026-11-18T23:59:00",
+         "cancellationAmount": 0
+        },
+        {
+         "code": "PARTIALLY_REFUNDABLE",
+         "title": "Partially refundable before 19 Nov 2026 11:59 PM",
+         "subTitle": "You’ll be charged ₹1285.66 per night, if you cancel before 19 Nov 2026 11:59 PM ",
+         "cancellationDate": "2026-11-19T23:59:00",
+         "checkInDate": "2026-11-20T00:00:00",
+         "startDate": "2026-11-18T23:59:00",
+         "endDate": "2026-11-19T23:59:00",
+         "cancellationAmount": 1285.66
+        },
+        {
+         "code": "NON_REFUNDABLE",
+         "title": "Non-refundable after 19 Nov 2026 11:59 PM",
+         "subTitle": "100% amount will be deducted on cancellation after 19 Nov 2026 11:59 PM",
+         "cancellationDate": "2026-11-19T23:59:00",
+         "checkInDate": "2026-11-20T00:00:00",
+         "startDate": "2026-11-19T23:59:00",
+         "endDate": "2026-11-19T23:59:00",
+         "cancellationAmount": 2682.33
+        }
+       ],
+       "remarks": {
+        "title": "Note",
+        "text": null,
+        "subText": "Date and time is displayed as per the local time zone of your hotel’s location."
+       }
+      },
+      "extraBenefitsCount": 0,
+      "otherBenefits": [
+       "Parking"
+      ],
+      "priceIncrease": 0,
+      "fomoTag": "2 rooms left",
+      "isRecommended": true,
+      "paymentType": "BOOK_WITH_ZERO_PAYMENT",
+      "roomIndex": 1,
+      "fareDetail": {
+       "displayedBaseFare": 2348,
+       "baseFare": 2658.66,
+       "markUpFare": 2659,
+       "markupDiscountPercent": "11% off",
+       "taxesAndFees": 334,
+       "totalPrice": 2992.73,
+       "burnMoneyInfo": {
+        "burnAmount": 0,
+        "burnIxiMoneyAmount": 0,
+        "burnIxiMoneyMaxAmount": 0,
+        "title": "Redeem ₹0 ixigo money",
+        "text": "Redeem your entire ixigo money balance(upto 100% of the hotel fare) on ixigo bookings."
+       },
+       "couponCode": "IXIFIRST",
+       "cashback": null,
+       "cashbackText": null,
+       "earnInfo": {
+        "text": "",
+        "description": "Earned money will be credited within 24 hours of checkout date",
+        "data": []
+       },
+       "instantDiscount": 111,
+       "totalDiscount": 509.8,
+       "totalPGAmount": 5475.66,
+       "totalBookingAmount": 5586.66,
+       "bankOfferTextIncluded": false,
+       "offerText": {},
+       "offerMessage": "Discount of ₹111 included. Coupon code IXIFIRST applied!",
+       "taxAndChargeMap": {
+        "Hotel Tax": 269.34,
+        "Convenience Fee": 199.4
+       },
+       "discountMap": {
+        "Reversal of Convenience fee": 398.8,
+        "Coupon Discount": 111
+       },
+       "excludedChargeMap": {},
+       "taxChargeStatements": null,
+       "discountViewType": "SLASHED",
+       "method": "PN",
+       "totalBaseFare": 5317.32,
+       "totalTaxesAndFees": 668.14,
+       "bestPriceGuarantee": false,
+       "priceAfterDiscount": null,
+       "convenienceFee": 199.4,
+       "totalConvenienceFee": 398.8,
+       "paymentType": "BOOK_WITH_ZERO_PAYMENT",
+       "payAtHotelAmount": null,
+       "hotelCashBurnAmount": null,
+       "burnInfo": [],
+       "discountType": "staticDiscount",
+       "providerId": 2022,
+       "chainId": null,
+       "offset": 444.14,
+       "dd": null
+      }
+     }
+    ],
+    "imageList": [
+     {
+      "url": "https://pix8.agoda.net/hotelImages/964/9643175/9643175_19090913370080658849.jpg?ca=9&ce=1&s=1024x768",
+      "caption": ""
+     }
+    ],
+    "providerId": 2022,
+    "fareDetail": {
+     "displayedBaseFare": 2348,
+     "baseFare": 2658.66,
+     "markUpFare": 2659,
+     "markupDiscountPercent": "11% off",
+     "taxesAndFees": 334.07,
+     "totalPrice": 2992.73,
+     "burnMoneyInfo": {
+      "burnAmount": 0,
+      "burnIxiMoneyAmount": 0,
+      "burnIxiMoneyMaxAmount": 0,
+      "title": "Redeem ₹0 ixigo money",
+      "text": "Redeem your entire ixigo money balance(upto 100% of the hotel fare) on ixigo bookings."
+     },
+     "couponCode": "IXIFIRST",
+     "cashback": null,
+     "cashbackText": null,
+     "earnInfo": {
+      "text": "",
+      "description": "Earned money will be credited within 24 hours of checkout date",
+      "data": []
+     },
+     "instantDiscount": 111,
+     "totalDiscount": 509.8,
+     "totalPGAmount": 5475.66,
+     "totalBookingAmount": 5586.66,
+     "bankOfferTextIncluded": false,
+     "offerText": {},
+     "offerMessage": "Discount of ₹111 included. Coupon code IXIFIRST applied!",
+     "taxAndChargeMap": {
+      "Hotel Tax": 269.34,
+      "Convenience Fee": 199.4
+     },
+     "discountMap": {
+      "Reversal of Convenience fee": 398.8,
+      "Coupon Discount": 111
+     },
+     "excludedChargeMap": {},
+     "taxChargeStatements": null,
+     "discountViewType": "SLASHED",
+     "method": "PN",
+     "totalBaseFare": 5317.32,
+     "totalTaxesAndFees": 668.14,
+     "bestPriceGuarantee": false,
+     "priceAfterDiscount": null,
+     "convenienceFee": 199.4,
+     "totalConvenienceFee": 398.8,
+     "paymentType": "BOOK_WITH_ZERO_PAYMENT",
+     "payAtHotelAmount": null,
+     "hotelCashBurnAmount": null,
+     "burnInfo": [],
+     "discountType": "staticDiscount",
+     "providerId": 2022,
+     "chainId": null,
+     "offset": 444.14,
+     "dd": null
+    }
+   },
+   {
+    "id": "119111430",
+    "masterRoomId": "119111430",
+    "name": "2 Bedroom Apartment",
+    "properties": [
+     {
+      "code": "SIZE",
+      "data": "15 sq. mt."
+     },
+     {
+      "code": "BED_TYPE",
+      "data": "Bedroom 1: :1 king bed;Bedroom 2: :1 queen bed"
+     },
+     {
+      "code": "OCCUPANCY",
+      "data": "Sleeps 2"
+     }
+    ],
+    "roomLevelAmenities": [
+     "Cleaning supplies",
+     "Toiletries",
+     "Satellite channels",
+     "Television",
+     "Television",
+     "Air-conditioned rooms",
+     "Fan",
+     "Linens",
+     "Fully equipped kitchen",
+     "Crockery items",
+     "Microwave",
+     "Refrigerator",
+     "Study table",
+     "Sofa",
+     "Cupboard",
+     "Ironing facilities",
+     "Washing Machine"
+    ],
+    "roomOptions": [
+     {
+      "blockId": "block_2",
+      "hotelInfoToken": "token",
+      "roomId": "119111430",
+      "name": "Room With Free Cancellation",
+      "cancellationBenefits": {
+       "code": "FULLY_REFUNDABLE",
+       "data": "Free Cancellation till 18 Nov 11:59 PM",
+       "policy": [
+        {
+         "code": "FULLY_REFUNDABLE",
+         "title": "Fully refundable before 18 Nov 2026 11:59 PM",
+         "subTitle": "Cancel your reservation before 18 Nov 2026 11:59 PM, to get a full refund",
+         "cancellationDate": "2026-11-18T23:59:00",
+         "checkInDate": "2026-11-20T00:00:00",
+         "startDate": "2026-10-11T00:24:25.220632148",
+         "endDate": "2026-11-18T23:59:00",
+         "cancellationAmount": 0
+        },
+        {
+         "code": "PARTIALLY_REFUNDABLE",
+         "title": "Partially refundable before 19 Nov 2026 11:59 PM",
+         "subTitle": "You’ll be charged ₹2570.57 per night, if you cancel before 19 Nov 2026 11:59 PM ",
+         "cancellationDate": "2026-11-19T23:59:00",
+         "checkInDate": "2026-11-20T00:00:00",
+         "startDate": "2026-11-18T23:59:00",
+         "endDate": "2026-11-19T23:59:00",
+         "cancellationAmount": 2570.57
+        },
+        {
+         "code": "NON_REFUNDABLE",
+         "title": "Non-refundable after 19 Nov 2026 11:59 PM",
+         "subTitle": "100% amount will be deducted on cancellation after 19 Nov 2026 11:59 PM",
+         "cancellationDate": "2026-11-19T23:59:00",
+         "checkInDate": "2026-11-20T00:00:00",
+         "startDate": "2026-11-19T23:59:00",
+         "endDate": "2026-11-19T23:59:00",
+         "cancellationAmount": 5362.15
+        }
+       ],
+       "remarks": {
+        "title": "Note",
+        "text": null,
+        "subText": "Date and time is displayed as per the local time zone of your hotel’s location."
+       }
+      },
+      "extraBenefitsCount": 0,
+      "otherBenefits": [
+       "Parking"
+      ],
+      "priceIncrease": 0,
+      "fomoTag": "3 rooms left",
+      "isRecommended": false,
+      "paymentType": "BOOK_WITH_ZERO_PAYMENT",
+      "roomIndex": 1,
+      "fareDetail": {
+       "displayedBaseFare": 4694,
+       "baseFare": 5313.82,
+       "markUpFare": 5314,
+       "markupDiscountPercent": "11% off",
+       "taxesAndFees": 668,
+       "totalPrice": 5981.69,
+       "burnMoneyInfo": {
+        "burnAmount": 0,
+        "burnIxiMoneyAmount": 0,
+        "burnIxiMoneyMaxAmount": 0,
+        "title": "Redeem ₹0 ixigo money",
+        "text": "Redeem your entire ixigo money balance(upto 100% of the hotel fare) on ixigo bookings."
+       },
+       "couponCode": "IXIFIRST",
+       "cashback": null,
+       "cashbackText": null,
+       "earnInfo": {
+        "text": "",
+        "description": "Earned money will be credited within 24 hours of checkout date",
+        "data": []
+       },
+       "instantDiscount": 221,
+       "totalDiscount": 1018.07,
+       "totalPGAmount": 10945.3,
+       "totalBookingAmount": 11166.3,
+       "bankOfferTextIncluded": false,
+       "offerText": {},
+       "offerMessage": "Discount of ₹221 included. Coupon code IXIFIRST applied!",
+       "taxAndChargeMap": {
+        "Hotel Tax": 538.66,
+        "Convenience Fee": 398.54
+       },
+       "discountMap": {
+        "Reversal of Convenience fee": 797.07,
+        "Coupon Discount": 221
+       },
+       "excludedChargeMap": {},
+       "taxChargeStatements": null,
+       "discountViewType": "SLASHED",
+       "method": "PN",
+       "totalBaseFare": 10627.64,
+       "totalTaxesAndFees": 1335.73,
+       "bestPriceGuarantee": false,
+       "priceAfterDiscount": null,
+       "convenienceFee": 398.54,
+       "totalConvenienceFee": 797.07,
+       "paymentType": "BOOK_WITH_ZERO_PAYMENT",
+       "payAtHotelAmount": null,
+       "hotelCashBurnAmount": null,
+       "burnInfo": [],
+       "discountType": "staticDiscount",
+       "providerId": 2022,
+       "chainId": null,
+       "offset": 884.7,
+       "dd": null
+      }
+     }
+    ],
+    "imageList": [
+     {
+      "url": "https://pix8.agoda.net/hotelImages/964/9643175/9643175_20040716480089881963.jpg?ca=11&ce=1&s=1024x768",
+      "caption": ""
+     }
+    ],
+    "providerId": 2022,
+    "fareDetail": {
+     "displayedBaseFare": 4694,
+     "baseFare": 5313.82,
+     "markUpFare": 5314,
+     "markupDiscountPercent": "11% off",
+     "taxesAndFees": 667.87,
+     "totalPrice": 5981.69,
+     "burnMoneyInfo": {
+      "burnAmount": 0,
+      "burnIxiMoneyAmount": 0,
+      "burnIxiMoneyMaxAmount": 0,
+      "title": "Redeem ₹0 ixigo money",
+      "text": "Redeem your entire ixigo money balance(upto 100% of the hotel fare) on ixigo bookings."
+     },
+     "couponCode": "IXIFIRST",
+     "cashback": null,
+     "cashbackText": null,
+     "earnInfo": {
+      "text": "",
+      "description": "Earned money will be credited within 24 hours of checkout date",
+      "data": []
+     },
+     "instantDiscount": 221,
+     "totalDiscount": 1018.07,
+     "totalPGAmount": 10945.3,
+     "totalBookingAmount": 11166.3,
+     "bankOfferTextIncluded": false,
+     "offerText": {},
+     "offerMessage": "Discount of ₹221 included. Coupon code IXIFIRST applied!",
+     "taxAndChargeMap": {
+      "Hotel Tax": 538.66,
+      "Convenience Fee": 398.54
+     },
+     "discountMap": {
+      "Reversal of Convenience fee": 797.07,
+      "Coupon Discount": 221
+     },
+     "excludedChargeMap": {},
+     "taxChargeStatements": null,
+     "discountViewType": "SLASHED",
+     "method": "PN",
+     "totalBaseFare": 10627.64,
+     "totalTaxesAndFees": 1335.73,
+     "bestPriceGuarantee": false,
+     "priceAfterDiscount": null,
+     "convenienceFee": 398.54,
+     "totalConvenienceFee": 797.07,
+     "paymentType": "BOOK_WITH_ZERO_PAYMENT",
+     "payAtHotelAmount": null,
+     "hotelCashBurnAmount": null,
+     "burnInfo": [],
+     "discountType": "staticDiscount",
+     "providerId": 2022,
+     "chainId": null,
+     "offset": 884.7,
+     "dd": null
+    }
+   },
+   {
+    "id": "119111389",
+    "masterRoomId": "119111389",
+    "name": "3 Bedroom Apartment",
+    "properties": [
+     {
+      "code": "SIZE",
+      "data": "17 sq. mt."
+     },
+     {
+      "code": "BED_TYPE",
+      "data": "Bedroom 1: :1 king bed;Bedroom 2: :1 king bed;Bedroom 3: :1 queen bed"
+     },
+     {
+      "code": "OCCUPANCY",
+      "data": "Sleeps 2"
+     }
+    ],
+    "roomLevelAmenities": [
+     "Cleaning supplies",
+     "Toiletries",
+     "Satellite channels",
+     "Television",
+     "Air-conditioned rooms",
+     "Fan",
+     "Linens",
+     "Fully equipped kitchen",
+     "Crockery items",
+     "Microwave",
+     "Refrigerator",
+     "Study table",
+     "Sofa",
+     "Cupboard",
+     "Ironing facilities",
+     "Washing Machine"
+    ],
+    "roomOptions": [
+     {
+      "blockId": "block_3",
+      "hotelInfoToken": "token",
+      "roomId": "119111389",
+      "name": "Room With Free Cancellation",
+      "cancellationBenefits": {
+       "code": "FULLY_REFUNDABLE",
+       "data": "Free Cancellation till 18 Nov 11:59 PM",
+       "policy": [
+        {
+         "code": "FULLY_REFUNDABLE",
+         "title": "Fully refundable before 18 Nov 2026 11:59 PM",
+         "subTitle": "Cancel your reservation before 18 Nov 2026 11:59 PM, to get a full refund",
+         "cancellationDate": "2026-11-18T23:59:00",
+         "checkInDate": "2026-11-20T00:00:00",
+         "startDate": "2026-10-11T00:24:25.222234669",
+         "endDate": "2026-11-18T23:59:00",
+         "cancellationAmount": 0
+        },
+        {
+         "code": "PARTIALLY_REFUNDABLE",
+         "title": "Partially refundable before 19 Nov 2026 11:59 PM",
+         "subTitle": "You’ll be charged ₹4926.06 per night, if you cancel before 19 Nov 2026 11:59 PM ",
+         "cancellationDate": "2026-11-19T23:59:00",
+         "checkInDate": "2026-11-20T00:00:00",
+         "startDate": "2026-11-18T23:59:00",
+         "endDate": "2026-11-19T23:59:00",
+         "cancellationAmount": 4926.06
+        },
+        {
+         "code": "NON_REFUNDABLE",
+         "title": "Non-refundable after 19 Nov 2026 11:59 PM",
+         "subTitle": "100% amount will be deducted on cancellation after 19 Nov 2026 11:59 PM",
+         "cancellationDate": "2026-11-19T23:59:00",
+         "checkInDate": "2026-11-20T00:00:00",
+         "startDate": "2026-11-19T23:59:00",
+         "endDate": "2026-11-19T23:59:00",
+         "cancellationAmount": 10227.12
+        }
+       ],
+       "remarks": {
+        "title": "Note",
+        "text": null,
+        "subText": "Date and time is displayed as per the local time zone of your hotel’s location."
+       }
+      },
+      "extraBenefitsCount": 0,
+      "otherBenefits": [
+       "Parking"
+      ],
+      "priceIncrease": 0,
+      "fomoTag": "3 rooms left",
+      "isRecommended": false,
+      "paymentType": "BOOK_WITH_ZERO_PAYMENT",
+      "roomIndex": 1,
+      "fareDetail": {
+       "displayedBaseFare": 7920,
+       "baseFare": 8967.7,
+       "markUpFare": 8968,
+       "markupDiscountPercent": "11% off",
+       "taxesAndFees": 2307,
+       "totalPrice": 11274.7,
+       "burnMoneyInfo": {
+        "burnAmount": 0,
+        "burnIxiMoneyAmount": 0,
+        "burnIxiMoneyMaxAmount": 0,
+        "title": "Redeem ₹0 ixigo money",
+        "text": "Redeem your entire ixigo money balance(upto 100% of the hotel fare) on ixigo bookings."
+       },
+       "couponCode": "IXIFIRST",
+       "cashback": null,
+       "cashbackText": null,
+       "earnInfo": {
+        "text": "",
+        "description": "Earned money will be credited within 24 hours of checkout date",
+        "data": []
+       },
+       "instantDiscount": 375,
+       "totalDiscount": 1720.16,
+       "totalPGAmount": 20829.24,
+       "totalBookingAmount": 21204.24,
+       "bankOfferTextIncluded": false,
+       "offerText": {},
+       "offerMessage": "Discount of ₹375 included. Coupon code IXIFIRST applied!",
+       "taxAndChargeMap": {
+        "Hotel Tax": 3268.84,
+        "Convenience Fee": 672.58
+       },
+       "discountMap": {
+        "Reversal of Convenience fee": 1345.16,
+        "Coupon Discount": 375
+       },
+       "excludedChargeMap": {},
+       "taxChargeStatements": null,
+       "discountViewType": "SLASHED",
+       "method": "PN",
+       "totalBaseFare": 17935.4,
+       "totalTaxesAndFees": 4614,
+       "bestPriceGuarantee": false,
+       "priceAfterDiscount": null,
+       "convenienceFee": 672.58,
+       "totalConvenienceFee": 1345.16,
+       "paymentType": "BOOK_WITH_ZERO_PAYMENT",
+       "payAtHotelAmount": null,
+       "hotelCashBurnAmount": null,
+       "burnInfo": [],
+       "discountType": "staticDiscount",
+       "providerId": 2022,
+       "chainId": null,
+       "offset": 1501.64,
+       "dd": null
+      }
+     }
+    ],
+    "imageList": [
+     {
+      "url": "https://pix8.agoda.net/hotelImages/964/9643175/9643175_19090913450080659339.jpg?ca=9&ce=1&s=1024x768",
+      "caption": ""
+     }
+    ],
+    "providerId": 2022,
+    "fareDetail": {
+     "displayedBaseFare": 7920,
+     "baseFare": 8967.7,
+     "markUpFare": 8968,
+     "markupDiscountPercent": "11% off",
+     "taxesAndFees": 2307,
+     "totalPrice": 11274.7,
+     "burnMoneyInfo": {
+      "burnAmount": 0,
+      "burnIxiMoneyAmount": 0,
+      "burnIxiMoneyMaxAmount": 0,
+      "title": "Redeem ₹0 ixigo money",
+      "text": "Redeem your entire ixigo money balance(upto 100% of the hotel fare) on ixigo bookings."
+     },
+     "couponCode": "IXIFIRST",
+     "cashback": null,
+     "cashbackText": null,
+     "earnInfo": {
+      "text": "",
+      "description": "Earned money will be credited within 24 hours of checkout date",
+      "data": []
+     },
+     "instantDiscount": 375,
+     "totalDiscount": 1720.16,
+     "totalPGAmount": 20829.24,
+     "totalBookingAmount": 21204.24,
+     "bankOfferTextIncluded": false,
+     "offerText": {},
+     "offerMessage": "Discount of ₹375 included. Coupon code IXIFIRST applied!",
+     "taxAndChargeMap": {
+      "Hotel Tax": 3268.84,
+      "Convenience Fee": 672.58
+     },
+     "discountMap": {
+      "Reversal of Convenience fee": 1345.16,
+      "Coupon Discount": 375
+     },
+     "excludedChargeMap": {},
+     "taxChargeStatements": null,
+     "discountViewType": "SLASHED",
+     "method": "PN",
+     "totalBaseFare": 17935.4,
+     "totalTaxesAndFees": 4614,
+     "bestPriceGuarantee": false,
+     "priceAfterDiscount": null,
+     "convenienceFee": 672.58,
+     "totalConvenienceFee": 1345.16,
+     "paymentType": "BOOK_WITH_ZERO_PAYMENT",
+     "payAtHotelAmount": null,
+     "hotelCashBurnAmount": null,
+     "burnInfo": [],
+     "discountType": "staticDiscount",
+     "providerId": 2022,
+     "chainId": null,
+     "offset": 1501.64,
+     "dd": null
+    }
+   },
+   {
+    "id": "119111463",
+    "masterRoomId": "119111463",
+    "name": "3 bedroom villa",
+    "properties": [
+     {
+      "code": "SIZE",
+      "data": "20 sq. mt."
+     },
+     {
+      "code": "BED_TYPE",
+      "data": "Bedroom 1: :1 king bed;Bedroom 2: :1 king bed;Bedroom 3: :1 queen bed"
+     },
+     {
+      "code": "OCCUPANCY",
+      "data": "Sleeps 2"
+     }
+    ],
+    "roomLevelAmenities": [
+     "Cleaning supplies",
+     "Toiletries",
+     "Satellite channels",
+     "Television",
+     "Air-conditioned rooms",
+     "Fan",
+     "Linens",
+     "Fully equipped kitchen",
+     "Crockery items",
+     "Microwave",
+     "Refrigerator",
+     "Study table",
+     "Cupboard",
+     "Ironing facilities",
+     "Washing Machine"
+    ],
+    "roomOptions": [
+     {
+      "blockId": "block_4",
+      "hotelInfoToken": "token",
+      "roomId": "119111463",
+      "name": "Room With Free Cancellation",
+      "cancellationBenefits": {
+       "code": "FULLY_REFUNDABLE",
+       "data": "Free Cancellation till 18 Nov 11:59 PM",
+       "policy": [
+        {
+         "code": "FULLY_REFUNDABLE",
+         "title": "Fully refundable before 18 Nov 2026 11:59 PM",
+         "subTitle": "Cancel your reservation before 18 Nov 2026 11:59 PM, to get a full refund",
+         "cancellationDate": "2026-11-18T23:59:00",
+         "checkInDate": "2026-11-20T00:00:00",
+         "startDate": "2026-10-11T00:24:25.223740779",
+         "endDate": "2026-11-18T23:59:00",
+         "cancellationAmount": 0
+        },
+        {
+         "code": "PARTIALLY_REFUNDABLE",
+         "title": "Partially refundable before 19 Nov 2026 11:59 PM",
+         "subTitle": "You’ll be charged ₹5473.07 per night, if you cancel before 19 Nov 2026 11:59 PM ",
+         "cancellationDate": "2026-11-19T23:59:00",
+         "checkInDate": "2026-11-20T00:00:00",
+         "startDate": "2026-11-18T23:59:00",
+         "endDate": "2026-11-19T23:59:00",
+         "cancellationAmount": 5473.07
+        },
+        {
+         "code": "NON_REFUNDABLE",
+         "title": "Non-refundable after 19 Nov 2026 11:59 PM",
+         "subTitle": "100% amount will be deducted on cancellation after 19 Nov 2026 11:59 PM",
+         "cancellationDate": "2026-11-19T23:59:00",
+         "checkInDate": "2026-11-20T00:00:00",
+         "startDate": "2026-11-19T23:59:00",
+         "endDate": "2026-11-19T23:59:00",
+         "cancellationAmount": 11363.14
+        }
+       ],
+       "remarks": {
+        "title": "Note",
+        "text": null,
+        "subText": "Date and time is displayed as per the local time zone of your hotel’s location."
+       }
+      },
+      "extraBenefitsCount": 0,
+      "otherBenefits": [
+       "Parking"
+      ],
+      "priceIncrease": 0,
+      "fomoTag": "Only 1 room left",
+      "isRecommended": false,
+      "paymentType": "BOOK_WITH_ZERO_PAYMENT",
+      "roomIndex": 1,
+      "fareDetail": {
+       "displayedBaseFare": 8800,
+       "baseFare": 9964.12,
+       "markUpFare": 9964,
+       "markupDiscountPercent": "11% off",
+       "taxesAndFees": 2563,
+       "totalPrice": 12527.45,
+       "burnMoneyInfo": {
+        "burnAmount": 0,
+        "burnIxiMoneyAmount": 0,
+        "burnIxiMoneyMaxAmount": 0,
+        "title": "Redeem ₹0 ixigo money",
+        "text": "Redeem your entire ixigo money balance(upto 100% of the hotel fare) on ixigo bookings."
+       },
+       "couponCode": "IXIFIRST",
+       "cashback": null,
+       "cashbackText": null,
+       "earnInfo": {
+        "text": "",
+        "description": "Earned money will be credited within 24 hours of checkout date",
+        "data": []
+       },
+       "instantDiscount": 417,
+       "totalDiscount": 1911.62,
+       "totalPGAmount": 23143.28,
+       "totalBookingAmount": 23560.28,
+       "bankOfferTextIncluded": false,
+       "offerText": {},
+       "offerMessage": "Discount of ₹417 included. Coupon code IXIFIRST applied!",
+       "taxAndChargeMap": {
+        "Hotel Tax": 3632.04,
+        "Convenience Fee": 747.31
+       },
+       "discountMap": {
+        "Reversal of Convenience fee": 1494.62,
+        "Coupon Discount": 417
+       },
+       "excludedChargeMap": {},
+       "taxChargeStatements": null,
+       "discountViewType": "SLASHED",
+       "method": "PN",
+       "totalBaseFare": 19928.24,
+       "totalTaxesAndFees": 5126.66,
+       "bestPriceGuarantee": false,
+       "priceAfterDiscount": null,
+       "convenienceFee": 747.31,
+       "totalConvenienceFee": 1494.62,
+       "paymentType": "BOOK_WITH_ZERO_PAYMENT",
+       "payAtHotelAmount": null,
+       "hotelCashBurnAmount": null,
+       "burnInfo": [],
+       "discountType": "staticDiscount",
+       "providerId": 2022,
+       "chainId": null,
+       "offset": 1668.51,
+       "dd": null
+      }
+     }
+    ],
+    "imageList": [
+     {
+      "url": "https://pix8.agoda.net/hotelImages/964/9643175/9643175_19090913520080659923.jpg?ca=9&ce=1&s=1024x768",
+      "caption": ""
+     }
+    ],
+    "providerId": 2022,
+    "fareDetail": {
+     "displayedBaseFare": 8800,
+     "baseFare": 9964.12,
+     "markUpFare": 9964,
+     "markupDiscountPercent": "11% off",
+     "taxesAndFees": 2563.33,
+     "totalPrice": 12527.45,
+     "burnMoneyInfo": {
+      "burnAmount": 0,
+      "burnIxiMoneyAmount": 0,
+      "burnIxiMoneyMaxAmount": 0,
+      "title": "Redeem ₹0 ixigo money",
+      "text": "Redeem your entire ixigo money balance(upto 100% of the hotel fare) on ixigo bookings."
+     },
+     "couponCode": "IXIFIRST",
+     "cashback": null,
+     "cashbackText": null,
+     "earnInfo": {
+      "text": "",
+      "description": "Earned money will be credited within 24 hours of checkout date",
+      "data": []
+     },
+     "instantDiscount": 417,
+     "totalDiscount": 1911.62,
+     "totalPGAmount": 23143.28,
+     "totalBookingAmount": 23560.28,
+     "bankOfferTextIncluded": false,
+     "offerText": {},
+     "offerMessage": "Discount of ₹417 included. Coupon code IXIFIRST applied!",
+     "taxAndChargeMap": {
+      "Hotel Tax": 3632.04,
+      "Convenience Fee": 747.31
+     },
+     "discountMap": {
+      "Reversal of Convenience fee": 1494.62,
+      "Coupon Discount": 417
+     },
+     "excludedChargeMap": {},
+     "taxChargeStatements": null,
+     "discountViewType": "SLASHED",
+     "method": "PN",
+     "totalBaseFare": 19928.24,
+     "totalTaxesAndFees": 5126.66,
+     "bestPriceGuarantee": false,
+     "priceAfterDiscount": null,
+     "convenienceFee": 747.31,
+     "totalConvenienceFee": 1494.62,
+     "paymentType": "BOOK_WITH_ZERO_PAYMENT",
+     "payAtHotelAmount": null,
+     "hotelCashBurnAmount": null,
+     "burnInfo": [],
+     "discountType": "staticDiscount",
+     "providerId": 2022,
+     "chainId": null,
+     "offset": 1668.51,
+     "dd": null
+    }
+   },
+   {
+    "id": "119111488",
+    "masterRoomId": "119111488",
+    "name": "4 bedroom Villa",
+    "properties": [
+     {
+      "code": "SIZE",
+      "data": "20 sq. mt."
+     },
+     {
+      "code": "BED_TYPE",
+      "data": "Bedroom 1: :1 king bed;Bedroom 2: :1 king bed;Bedroom 3: :1 queen bed;Bedroom 4: :1 queen bed"
+     },
+     {
+      "code": "OCCUPANCY",
+      "data": "Sleeps 2"
+     }
+    ],
+    "roomLevelAmenities": [
+     "Cleaning supplies",
+     "Satellite channels",
+     "Television",
+     "Air-conditioned rooms",
+     "Fan",
+     "Linens",
+     "Fully equipped kitchen",
+     "Crockery items",
+     "Refrigerator",
+     "Study table",
+     "Sofa",
+     "Cupboard",
+     "Ironing facilities",
+     "Washing Machine"
+    ],
+    "roomOptions": [
+     {
+      "blockId": "block_5",
+      "hotelInfoToken": "token",
+      "roomId": "119111488",
+      "name": "Room With Free Cancellation",
+      "cancellationBenefits": {
+       "code": "FULLY_REFUNDABLE",
+       "data": "Free Cancellation till 18 Nov 11:59 PM",
+       "policy": [
+        {
+         "code": "FULLY_REFUNDABLE",
+         "title": "Fully refundable before 18 Nov 2026 11:59 PM",
+         "subTitle": "Cancel your reservation before 18 Nov 2026 11:59 PM, to get a full refund",
+         "cancellationDate": "2026-11-18T23:59:00",
+         "checkInDate": "2026-11-20T00:00:00",
+         "startDate": "2026-10-11T00:24:25.225326118",
+         "endDate": "2026-11-18T23:59:00",
+         "cancellationAmount": 0
+        },
+        {
+         "code": "PARTIALLY_REFUNDABLE",
+         "title": "Partially refundable before 19 Nov 2026 11:59 PM",
+         "subTitle": "You’ll be charged ₹6568.29 per night, if you cancel before 19 Nov 2026 11:59 PM ",
+         "cancellationDate": "2026-11-19T23:59:00",
+         "checkInDate": "2026-11-20T00:00:00",
+         "startDate": "2026-11-18T23:59:00",
+         "endDate": "2026-11-19T23:59:00",
+         "cancellationAmount": 6568.29
+        },
+        {
+         "code": "NON_REFUNDABLE",
+         "title": "Non-refundable after 19 Nov 2026 11:59 PM",
+         "subTitle": "100% amount will be deducted on cancellation after 19 Nov 2026 11:59 PM",
+         "cancellationDate": "2026-11-19T23:59:00",
+         "checkInDate": "2026-11-20T00:00:00",
+         "startDate": "2026-11-19T23:59:00",
+         "endDate": "2026-11-19T23:59:00",
+         "cancellationAmount": 13637.59
+        }
+       ],
+       "remarks": {
+        "title": "Note",
+        "text": null,
+        "subText": "Date and time is displayed as per the local time zone of your hotel’s location."
+       }
+      },
+      "extraBenefitsCount": 0,
+      "otherBenefits": [
+       "Parking"
+      ],
+      "priceIncrease": 0,
+      "fomoTag": "Only 1 room left",
+      "isRecommended": false,
+      "paymentType": "BOOK_WITH_ZERO_PAYMENT",
+      "roomIndex": 1,
+      "fareDetail": {
+       "displayedBaseFare": 10561,
+       "baseFare": 11959.37,
+       "markUpFare": 11959,
+       "markupDiscountPercent": "11% off",
+       "taxesAndFees": 3076,
+       "totalPrice": 15035.55,
+       "burnMoneyInfo": {
+        "burnAmount": 0,
+        "burnIxiMoneyAmount": 0,
+        "burnIxiMoneyMaxAmount": 0,
+        "title": "Redeem ₹0 ixigo money",
+        "text": "Redeem your entire ixigo money balance(upto 100% of the hotel fare) on ixigo bookings."
+       },
+       "couponCode": "IXIFIRST",
+       "cashback": null,
+       "cashbackText": null,
+       "earnInfo": {
+        "text": "",
+        "description": "Earned money will be credited within 24 hours of checkout date",
+        "data": []
+       },
+       "instantDiscount": 501,
+       "totalDiscount": 2294.91,
+       "totalPGAmount": 27776.18,
+       "totalBookingAmount": 28277.18,
+       "bankOfferTextIncluded": false,
+       "offerText": {},
+       "offerMessage": "Discount of ₹501 included. Coupon code IXIFIRST applied!",
+       "taxAndChargeMap": {
+        "Hotel Tax": 4358.44,
+        "Convenience Fee": 896.96
+       },
+       "discountMap": {
+        "Reversal of Convenience fee": 1793.91,
+        "Coupon Discount": 501
+       },
+       "excludedChargeMap": {},
+       "taxChargeStatements": null,
+       "discountViewType": "SLASHED",
+       "method": "PN",
+       "totalBaseFare": 23918.74,
+       "totalTaxesAndFees": 6152.35,
+       "bestPriceGuarantee": false,
+       "priceAfterDiscount": null,
+       "convenienceFee": 896.96,
+       "totalConvenienceFee": 1793.91,
+       "paymentType": "BOOK_WITH_ZERO_PAYMENT",
+       "payAtHotelAmount": null,
+       "hotelCashBurnAmount": null,
+       "burnInfo": [],
+       "discountType": "staticDiscount",
+       "providerId": 2022,
+       "chainId": null,
+       "offset": 2004.67,
+       "dd": null
+      }
+     }
+    ],
+    "imageList": [
+     {
+      "url": "https://pix8.agoda.net/hotelImages/964/9643175/9643175_19090913570080660430.jpg?ca=9&ce=1&s=1024x768",
+      "caption": ""
+     }
+    ],
+    "providerId": 2022,
+    "fareDetail": {
+     "displayedBaseFare": 10561,
+     "baseFare": 11959.37,
+     "markUpFare": 11959,
+     "markupDiscountPercent": "11% off",
+     "taxesAndFees": 3076.18,
+     "totalPrice": 15035.55,
+     "burnMoneyInfo": {
+      "burnAmount": 0,
+      "burnIxiMoneyAmount": 0,
+      "burnIxiMoneyMaxAmount": 0,
+      "title": "Redeem ₹0 ixigo money",
+      "text": "Redeem your entire ixigo money balance(upto 100% of the hotel fare) on ixigo bookings."
+     },
+     "couponCode": "IXIFIRST",
+     "cashback": null,
+     "cashbackText": null,
+     "earnInfo": {
+      "text": "",
+      "description": "Earned money will be credited within 24 hours of checkout date",
+      "data": []
+     },
+     "instantDiscount": 501,
+     "totalDiscount": 2294.91,
+     "totalPGAmount": 27776.18,
+     "totalBookingAmount": 28277.18,
+     "bankOfferTextIncluded": false,
+     "offerText": {},
+     "offerMessage": "Discount of ₹501 included. Coupon code IXIFIRST applied!",
+     "taxAndChargeMap": {
+      "Hotel Tax": 4358.44,
+      "Convenience Fee": 896.96
+     },
+     "discountMap": {
+      "Reversal of Convenience fee": 1793.91,
+      "Coupon Discount": 501
+     },
+     "excludedChargeMap": {},
+     "taxChargeStatements": null,
+     "discountViewType": "SLASHED",
+     "method": "PN",
+     "totalBaseFare": 23918.74,
+     "totalTaxesAndFees": 6152.35,
+     "bestPriceGuarantee": false,
+     "priceAfterDiscount": null,
+     "convenienceFee": 896.96,
+     "totalConvenienceFee": 1793.91,
+     "paymentType": "BOOK_WITH_ZERO_PAYMENT",
+     "payAtHotelAmount": null,
+     "hotelCashBurnAmount": null,
+     "burnInfo": [],
+     "discountType": "staticDiscount",
+     "providerId": 2022,
+     "chainId": null,
+     "offset": 2004.67,
+     "dd": null
+    }
+   }
+  ],
+  "metadata": {
+   "rateMethod": "per night for 1 room",
+   "roomTypeMapping": {
+    "1 Bedroom Apartment": "119111364",
+    "2 Bedroom Apartment": "119111430",
+    "3 Bedroom Apartment": "119111389",
+    "3 bedroom villa": "119111463",
+    "4 bedroom Villa": "119111488"
+   }
+  },
+  "benefitMap": [
+   {
+    "name": "Free Cancellation",
+    "code": "FC",
+    "blockIds": [
+     "block_1",
+     "block_2",
+     "block_3",
+     "block_4",
+     "block_5"
+    ],
+    "count": 5
+   }
+  ],
+  "providerId": 2022
+ }
+}

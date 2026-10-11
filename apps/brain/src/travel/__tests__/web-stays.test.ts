@@ -1,4 +1,3 @@
-import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { loadBook } from '../book/book.js';
 import { createEngine } from '../book/engine.js';
@@ -40,8 +39,8 @@ const offer = (over: Partial<StoredOffer> = {}): StoredOffer => ({
   priceMinor: 1589400, totalMinor: 4768200, currency: 'INR', priceNote: 'per night, per room', checkedAt: '2026-10-08T10:00:00Z', sourceUrl: PAGE, ...over,
 });
 
-// The stay's own page's rooms call, as ixigo answers it (hotels.rooms's sample): two cottages, each one rate, IXIFIRST on both.
-const ROOMS = readFileSync(new URL('../../../recipes/samples/hotels.rooms.json', import.meta.url), 'utf8');
+// The stay's own page's rooms call, as ixigo answers it (H1, the drill browser): five rooms, IXIFIRST on each.
+const ROOMS = fixture('stays-saudades-rooms.json');
 const ROOMS_URL = 'https://www.ixigo.com/accommodation-search/api/v1/accommodations/details/54381/rooms';
 
 function world(o: { login?: 'in' | 'out'; body?: string | null; stored?: StoredOffer | null; page?: string | null; booking?: boolean; rooms?: string | null } = {}) {
@@ -183,9 +182,9 @@ describe('the hold and the booking, on the test rail', () => {
     const h = await w.stays.hold(`${WEB_STAY}opt_saudades`, { name: 'Rahul', personIds: ['p_rahul'] });
     // The stay's own page, on the stage, its rooms call kept.
     expect(w.reads).toEqual([{ url: PAGE, plan: { capture: [{ match: '/accommodations/details/54381/rooms$', required: true }], timeoutMs: 20_000 }, stage: true }]);
-    // The cheapest whole stay (the Queen Cottage's rate, 3 nights and 3 rooms), with ixigo's own IXIFIRST on it.
-    expect(h).toMatchObject({ amountMinor: 15_327_900, currency: 'INR', payment: { kind: 'fake' } });
-    expect(h.merchant).toBe(`${SIM_VENDOR}: Saudades Homestays, Queen Cottage with Balcony, IXIFIRST ₹6,174 off`);
+    // The cheapest whole stay at what ixigo charges for it (the 1 Bedroom Apartment's rate), with ixigo's own IXIFIRST on it.
+    expect(h).toMatchObject({ amountMinor: 547_566, currency: 'INR', payment: { kind: 'fake' } });
+    expect(h.merchant).toBe(`${SIM_VENDOR}: Saudades Homestays, 1 Bedroom Apartment, IXIFIRST ₹111 off`);
     // The room watches it tick: the group's stay, so the live card is the room's.
     const live = w.posted.filter((p) => (p.params['card'] as { kind?: string } | undefined)?.kind === 'working');
     expect(live[0]!.params['visible_to_person_ids']).toBeUndefined();
