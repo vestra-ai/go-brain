@@ -122,7 +122,7 @@ describe('a model talked into paying', () => {
   it('has no tool that reaches confirm or a rail, whatever it is called with', async () => {
     await setUp('confirmed');
     // record_expense and who_owes_what only write and read the trip's expenses on the Server: they reach no vault and no rail.
-    expect(seen.tools.map((t) => t.name).sort()).toEqual(['ask_to_pay', 'record_expense', 'set_mandate', 'who_owes_what']);
+    expect(seen.tools.map((t) => t.name).sort()).toEqual(['ask_to_pay', 'record_expense', 'set_mandate', 'split_expense', 'who_owes_what']);
     const out = await model([
       { name: 'ask_to_pay', input: { decision_id: 'd_villa', option_ref: 'opt_villa_sol', purpose: 'Villa Sol' } },
       { name: 'ask_to_pay', input: { decision_id: 'd_villa', option_ref: 'opt_villa_sol', purpose: 'Villa Sol again' } },

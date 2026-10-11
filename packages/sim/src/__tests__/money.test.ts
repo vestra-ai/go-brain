@@ -4,7 +4,7 @@ import { GOA_SNAPSHOT, goaFreshTrip } from '../goa.js';
 import { SocketCallError } from '../server-socket.js';
 import { TEST_SPEND_PRIVATE_KEY_PEM, TEST_SPEND_PUBLIC_KEY_PEM } from '../test-spend-key.js';
 import { confirmMandate, declineMandate, openVote, setMandate, vote } from '../state/decisions.js';
-import { addBooking, addExpense, cancelSpendApproval, recomputeMoney, requestSpendApproval, spendCheck, updateBooking } from '../state/money.js';
+import { addBooking, addExpense, cancelSpendApproval, recomputeMoney, requestSpendApproval, spendCheck, updateBooking, updateExpense } from '../state/money.js';
 import { TripState } from '../state/trip-state.js';
 
 const everyone = ['p_rahul', 'p_priya', 'p_arjun', 'p_meher', 'p_kabir'];
@@ -261,6 +261,25 @@ describe('expenses and the money maths', () => {
     expect(err(() => addExpense(s, { ...cab, split_person_ids: ['p_stranger'] })).code).toBe(422);
     expect(err(() => addExpense(s, { ...cab, split_person_ids: [...cab.split_person_ids], booking_id: 'b_nope' })).code).toBe(422);
     expect(err(() => addExpense(s, { ...cab, split_person_ids: [...cab.split_person_ids], currency: 'USD' })).code).toBe(422);
+  });
+
+  // Saket's trip, 11 Oct: "split it evenly" added a second expense, and the trip's spend counted the stay one and a half
+  // times. update_expense changes the expense that stands.
+  it("changes an expense's split in place: the spend is the same, the transfers move, its note when given", () => {
+    const { s } = setUp();
+    const stay = addExpense(s, { request_id: 'rq_st', trip_id: 't_goa', paid_by_person_id: 'p_rahul', amount_minor: 4969200, currency: 'INR', note: 'Villa Sol', category: 'stay', split_person_ids: ['p_rahul'] });
+    expect(s.trip.money.transfers).toEqual([]);
+    const done = updateExpense(s, { request_id: 'rq_up', trip_id: 't_goa', expense_id: stay.result.expense_id, split_person_ids: everyone });
+    expect(done.events[0]).toMatchObject({ type: 'expense.changed', data: { change: 'updated', by: { kind: 'go' }, expense: { split_person_ids: everyone, note: 'Villa Sol' } } });
+    expect(done.result).toEqual({ seq: done.events[0]!.seq });
+    expect(s.trip.expenses[0]).toMatchObject({ expense_id: stay.result.expense_id, amount_minor: 4969200, split_person_ids: everyone });
+    expect(s.trip.expenses).toHaveLength(1);
+    expect(s.trip.money.spent_minor).toBe(4969200);
+    expect(s.trip.money.transfers.map((t) => [t.from_person_id, t.amount_minor])).toEqual(['p_priya', 'p_arjun', 'p_meher', 'p_kabir'].map((p) => [p, 993840]));
+    updateExpense(s, { request_id: 'rq_up2', trip_id: 't_goa', expense_id: stay.result.expense_id, split_person_ids: ['p_rahul', 'p_priya'], note: 'Villa Sol, two of us' });
+    expect(s.trip.expenses[0]!.note).toBe('Villa Sol, two of us');
+    expect(err(() => updateExpense(s, { request_id: 'rq_up3', trip_id: 't_goa', expense_id: 'e_nope', split_person_ids: everyone })).code).toBe(404);
+    expect(err(() => updateExpense(s, { request_id: 'rq_up4', trip_id: 't_goa', expense_id: stay.result.expense_id, split_person_ids: ['p_stranger'] })).code).toBe(422);
   });
 
   it("reproduces the money in the guide's Goa trip exactly", () => {

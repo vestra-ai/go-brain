@@ -24,6 +24,7 @@ export const TO_SERVER_SCHEMAS = {
   add_booking: [C.AddBooking, C.AddBookingResult],
   update_booking: [C.UpdateBooking, C.WriteResult],
   add_expense: [C.AddExpense, C.AddExpenseResult],
+  update_expense: [C.UpdateExpense, C.WriteResult],
   request_spend_approval: [C.RequestSpendApproval, C.SpendApprovalResult],
   cancel_spend_approval: [C.CancelSpendApproval, C.Ok],
 } as const;

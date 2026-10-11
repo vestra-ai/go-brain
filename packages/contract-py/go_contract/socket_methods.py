@@ -44,6 +44,7 @@ METHODS: dict[str, Method] = {
     'add_booking': Method('add_booking', 'to_server', models.AddBooking, models.AddBookingResult, 2, 'booking.changed'),
     'update_booking': Method('update_booking', 'to_server', models.UpdateBooking, models.WriteResult, 2, 'booking.changed'),
     'add_expense': Method('add_expense', 'to_server', models.AddExpense, models.AddExpenseResult, 2, 'expense.changed'),
+    'update_expense': Method('update_expense', 'to_server', models.UpdateExpense, models.WriteResult, 2, 'expense.changed'),
     'request_spend_approval': Method('request_spend_approval', 'to_server', models.RequestSpendApproval, models.SpendApprovalResult, 2, None),
     'cancel_spend_approval': Method('cancel_spend_approval', 'to_server', models.CancelSpendApproval, models.Ok, 2, None),
 }

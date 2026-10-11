@@ -3,6 +3,7 @@ import type { Pool } from 'pg';
 import { z } from 'zod';
 import type { QuickTool, TurnCtx } from '../composer/tools.js';
 import type { Trip } from '../door/methods.js';
+import { SocketCallError } from '../door/rpc.js';
 import { reactOnce } from '../memory/reactions.js';
 import { messageByRef } from '../trips/pack.js';
 import { rid } from './ids.js';
@@ -100,6 +101,93 @@ export async function recordExpense(ctx: Pick<TurnCtx, 'tripId' | 'link' | 'pack
   return { recorded: true, expense_id: r.expense_id, tell_the_room: QUIET };
 }
 
+export const SplitExpenseInput = z.strictObject({
+  message_id: z.string().min(1).max(64).describe('The message that asks for the new split, like "#61" ("Yes, split evenly"). "me" is its writer.'),
+  expense: z
+    .string()
+    .min(1)
+    .max(120)
+    .describe('Which expense: its id from who_owes_what, or what it was for as recorded, like "Villa Sol, 3 nights".'),
+  split_with: z
+    .array(z.string().min(1).max(80))
+    .min(1)
+    .max(30)
+    .optional()
+    .describe('Who shares it now, by first name ("me" for the writer). Leave it out to split it evenly among everyone in the trip.'),
+});
+export type SplitExpenseInput = z.infer<typeof SplitExpenseInput>;
+
+/** What the model is told when the Server has no update_expense yet (an older deploy): never a second expense instead. */
+export const SPLIT_NOT_HERE =
+  "Say plainly, in one short line, that you can't change how that expense is split from here yet, and that its split can be fixed " +
+  "in the App, on the expense. Never record a new expense for it: that counts the cost twice.";
+const SPLIT_DONE = 'It is changed, and the App posts the new split in the room. Say nothing more unless someone asked something it does not answer.';
+
+/** The expense the words name: its id, else the one whose note they are (or contain), else the one of the amount they say. */
+function expenseOf(trip: Trip, words: string): Trip['expenses'] | Trip['expenses'][number] {
+  const byId = trip.expenses.find((e) => e.expense_id === words.trim());
+  if (byId) return byId;
+  const w = words.trim().toLowerCase();
+  const named = trip.expenses.filter((e) => e.note.toLowerCase() === w);
+  if (named.length > 0) return named.length === 1 ? named[0]! : named;
+  const near = trip.expenses.filter((e) => e.note.toLowerCase().includes(w) || w.includes(e.note.toLowerCase()));
+  if (near.length > 0) return near.length === 1 ? near[0]! : near;
+  const amounts = amountsIn(words);
+  const priced = trip.expenses.filter((e) => amounts.includes(e.amount_minor));
+  return priced.length === 1 ? priced[0]! : priced.length > 0 ? priced : trip.expenses;
+}
+
+/**
+ * Changes how an expense that stands is split (update_expense), with a request id made from the asking message and the
+ * expense, so a rerun changes it once. Saket's trip, 11 Oct: on "Yes, split evenly" Go could only add_expense, so it
+ * added a second ₹24,846 beside the ₹49,692 stay, and the trip's spend read ₹91,829. The amount and the payer never
+ * change; a Server without update_expense yet is said plainly, never worked around with a second expense.
+ */
+export async function splitExpense(ctx: Pick<TurnCtx, 'tripId' | 'link' | 'pack' | 'outcome'>, a: SplitExpenseInput, pool: Pool): Promise<object> {
+  const m = messageByRef(ctx.pack.messages, a.message_id);
+  if (!m || m.deleted || m.withheld || m.author.kind !== 'person') return { refused: `There is no message ${a.message_id} from a person asking for this.`, tell_the_room: ASK };
+  const trip = await ctx.link.request('read_trip', { trip_id: ctx.tripId });
+  const found = expenseOf(trip, a.expense);
+  const nameOf = (id: string) => trip.people.find((p) => p.person_id === id)?.name ?? 'someone who left';
+  const listed = (es: Trip['expenses']) => es.slice(-15).map((e) => ({ id: e.expense_id, for: e.note, paid_by: nameOf(e.paid_by_person_id), amount: money(e.amount_minor, e.currency) }));
+  if (Array.isArray(found)) {
+    return found.length === 0
+      ? { refused: 'Nothing is recorded yet to split.', tell_the_room: 'Say so in one short line.' }
+      : { refused: `Not sure which expense "${clip(a.expense, 60)}" is.`, expenses: listed(found), note: 'Call again with the id of the one meant; ask the person only if you cannot tell.' };
+  }
+  const asker = m.author.person_id;
+  let split: string[];
+  if (a.split_with) {
+    const ids = a.split_with.map((s) => personOf(trip, s, asker));
+    if (ids.some((id) => id === null)) {
+      (ctx.outcome.asked ??= []).push(m.message_id);
+      return { refused: `Not sure who ${a.split_with.join(', ')} is in this trip.`, tell_the_room: ASK };
+    }
+    split = [...new Set(ids as string[])];
+  } else {
+    split = trip.people.map((p) => p.person_id);
+  }
+  const same = split.length === found.split_person_ids.length && split.every((id) => found.split_person_ids.includes(id));
+  if (same) return { changed: false, note: `${found.note} is already split that way.`, tell_the_room: 'Say so in one short line.' };
+  try {
+    await ctx.link.request('update_expense', {
+      request_id: rid('go_split', m.message_id, found.expense_id),
+      trip_id: ctx.tripId,
+      expense_id: found.expense_id,
+      split_person_ids: split,
+    });
+  } catch (err) {
+    if (err instanceof SocketCallError && err.code === C.SOCKET_ERROR_CODES.unknown_method) return { refused: 'The Server cannot change a split yet.', tell_the_room: SPLIT_NOT_HERE };
+    if (err instanceof SocketCallError && err.code === 404) return { refused: `${found.note} is no longer recorded.`, tell_the_room: 'Say so in one short line.' };
+    if (err instanceof SocketCallError && err.code === 422) return { refused: 'Someone named is not in the trip.', tell_the_room: ASK };
+    throw err;
+  }
+  (ctx.outcome.noted ??= []).push(m.message_id);
+  if ((await reactOnce(pool, ctx.link, ctx.tripId, m, '✅')) === 'sent') ctx.outcome.reactions += 1;
+  const everyone = split.length === trip.people.length;
+  return { changed: true, expense: found.note, amount: money(found.amount_minor, found.currency), shared_by: everyone ? 'everyone' : split.map(nameOf).join(', '), tell_the_room: SPLIT_DONE };
+}
+
 /** Who paid what and who owes whom, read from the Server's expenses and balances, never from the chat. */
 export async function readExpenses(ctx: Pick<TurnCtx, 'tripId' | 'link'>): Promise<object> {
   const trip = await ctx.link.request('read_trip', { trip_id: ctx.tripId });
@@ -114,7 +202,7 @@ export async function readExpenses(ctx: Pick<TurnCtx, 'tripId' | 'link'>): Promi
     paid_by: [...paid].map(([id, minor]) => ({ name: nameOf(id), paid: money(minor, cur) })),
     owes: trip.money.transfers.map((t) => ({ from: nameOf(t.from_person_id), to: nameOf(t.to_person_id), amount: money(t.amount_minor, t.currency) })),
     expenses: trip.expenses.slice(-15).map((e) => ({
-      for: e.note, paid_by: nameOf(e.paid_by_person_id), amount: money(e.amount_minor, e.currency), shared_by: shared(e.split_person_ids),
+      id: e.expense_id, for: e.note, paid_by: nameOf(e.paid_by_person_id), amount: money(e.amount_minor, e.currency), shared_by: shared(e.split_person_ids),
     })),
     tell_the_room:
       trip.expenses.length === 0
@@ -129,9 +217,23 @@ export function recordExpenseTool(o: { pool: Pool }): QuickTool<RecordExpenseInp
     description:
       'Record what someone in the group says they paid for the group, or that someone owes them ("I paid 3,200 for the cab", ' +
       '"Rahul owes me 1,500 for the tickets"). The person who wrote the message is the payer. It adds a ✅ to their message. ' +
-      'Only from what they clearly said: if the amount or who it was for is unclear, ask instead. You record costs; you never move money between people.',
+      'Only from what they clearly said: if the amount or who it was for is unclear, ask instead. You record costs; you never move money between people. ' +
+      'Never to change how a cost already recorded is split ("split it evenly", "Yes, split evenly"): that is split_expense, and a second expense counts the cost twice.',
     input: RecordExpenseInput,
     run: (a, ctx) => recordExpense(ctx, a, o.pool),
+  };
+}
+
+export function splitExpenseTool(o: { pool: Pool }): QuickTool<SplitExpenseInput> {
+  return {
+    name: 'split_expense',
+    description:
+      'Change how a cost already recorded is split: "split it evenly", "split the villa with Priya and Kabir", "Yes, split evenly" ' +
+      'after you asked how to split it. It changes that expense, never adds another: never record_expense for this, since a second ' +
+      'expense counts the cost twice. The amount and who paid stay as they are. Name the expense by its id from who_owes_what or by ' +
+      'what it was for; leave split_with out to split it evenly among everyone in the trip. It adds a ✅ to the asking message.',
+    input: SplitExpenseInput,
+    run: (a, ctx) => splitExpense(ctx, a, o.pool),
   };
 }
 
