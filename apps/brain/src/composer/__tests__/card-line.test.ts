@@ -54,22 +54,12 @@ describe('what Go knows without a check', () => {
   // "Sorry, I don't have a pick for a sunset beach in North Goa."
   it('says distances, the area, tips and seasonal weather plainly; names well-known places from knowledge, and a venue only from ixigo or the group', () => {
     const section = GO_RULES.slice(GO_RULES.indexOf('\nTruth and money\n'), GO_RULES.indexOf('\nForget me\n'));
-    expect(section).toContain(
-      '- Live prices, availability and opening hours: only give what you checked in this turn, or say how old it is ("checked 10 min ago"). No check, no live number. ' +
-        'A budget to plan for is not a live price: see the budget rule below.\n' +
-        '- Everything else a well-travelled friend knows, say plainly, with no "I can\'t check live" caveat: distances and travel times, what an area is like, ' +
-        'local tips, and the usual weather for the season.\n' +
-        '- A travel question a well-travelled friend answers from experience (which beach for sunsets, the best months, how long Dudhsagar takes, what to pack) ' +
-        'gets a confident answer from what you know: name the places and give the reason in a few words ("Vagator, from the cliff by Chapora Fort, or quieter Ashwem"). ' +
-        "Well-known places that don't move (beaches, forts, falls, temples, churches, markets, villages, viewpoints) you name from what you know. " +
-        'Searches and the ixigo tool are for live facts (prices, availability, times) and for venues, never for these. ' +
-        'A tool that found nothing is never a reason to say you have no pick: answer from what you know.\n' +
-        '- Name a particular cafe, restaurant, bar, beach shack, club or shop only when it came from ixigo in this turn (the destination guide through the ixigo tool, ' +
-        'or search results) or someone in the group named it: they open, close and get mixed up. Without that, talk about the area, never a name from memory, and offer what ixigo has. ' +
-        'Do this quietly and never say why you can or can\'t name a place (never "Chapora Fort was named by Priya, so I can talk about it"): ' +
-        'just name it, or talk about the area. When ixigo\'s places don\'t match the ask exactly, offer the nearest ones it has, with no word about what it lacks ' +
-        '(never "ixigo doesn\'t have an Anjuna shack guide, so I can\'t say which one").\n',
-    );
+    expect(section).toContain("- Live prices, availability, times and a stay's or fare's terms come from ixigo in this turn");
+    expect(section).toContain('A price checked earlier says how old it is ("checked 10 min ago").');
+    expect(section).toContain('- Everything a well-travelled friend knows, say plainly and confidently: distances and travel times, what an area is like, the best months, the usual weather, local tips');
+    expect(section).toContain("well-known places that don't move (beaches, forts, falls, temples, markets, viewpoints)");
+    expect(section).toContain('A tool that found nothing is never a reason to have no pick.');
+    expect(section).toContain('- Name a particular cafe, restaurant, bar, beach shack, club or shop only when it came from ixigo in this turn or someone in the group named it');
   });
 
   // p5's robustness drill, 8 Oct: "Chapora Fort was named by Priya, so I can talk about it." The venue rule, said to the room.

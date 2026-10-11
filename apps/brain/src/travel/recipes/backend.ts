@@ -739,7 +739,7 @@ export function createIxigoWebBackend(d: IxigoWebDeps): IxigoWebBackend {
         },
         // A step's run is never cut short by its composite, but anything that is not a travel error is said as one.
         (err: unknown): never => {
-          throw err instanceof TravelError ? err : new TravelError('unreachable', 'ixigo took too long to answer. Try again in a moment.');
+          throw err instanceof TravelError ? err : new TravelError('unreachable', 'ixigo took too long to answer.');
         },
       );
       keep(key, { at: nowMs, ttl: recipe.ttl_minutes * 60_000 || RECIPE_TTL_MS, search, ran, page });
