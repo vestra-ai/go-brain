@@ -12,6 +12,8 @@ import type { RecipeOption } from '../recipes/recipe.js';
 import { createResultsStore, type ResultsStore } from '../results.js';
 import { registerTravelTaps } from '../taps.js';
 import type { TryAgainItem } from '../try-again.js';
+import { asksForOwn } from '../asker.js';
+import { msg } from '../../__tests__/fixtures/goa.js';
 
 let db: Awaited<ReturnType<typeof withSchema>>;
 let lb: LaneBrain;
@@ -159,7 +161,7 @@ describe("each person's own flights, from their home city", () => {
     expect(puts.at(-1)).toMatchObject({ id: expect.stringMatching(new RegExp(`:1:${quietEnds}$`)), dueAt: new Date(quietEnds + 5_000), payload: { n: 1, each: { home: 'Bangalore' } } });
   });
 
-  it("tries that city again: its people's cards, theirs alone, when it lands; the next try when it doesn't; Go's last word after the last", async () => {
+  it("tries that city again: its people's cards, theirs alone, when it lands; the next try when it doesn't; nothing more after the last", async () => {
     const tryOf = (n: number): TryAgainItem => ({
       id: `try_again:t_goa:each_blr:${n}`, tripId: 't_goa', kind: 'search', ref: 'flights', dueAt: lb.brain.now(),
       payload: { source: 'travel_try_again', key: 'each_blr', what: 'flights from Bangalore', n, each: { home: 'Bangalore', to: 'North Goa', date: '2026-11-06' } },
@@ -183,11 +185,58 @@ describe("each person's own flights, from their home city", () => {
     await eventually(() => puts.length === before + 1);
     expect(puts.at(-1)).toMatchObject({ id: 'try_again:t_goa:each_blr:2', dueAt: new Date(lb.brain.now().getTime() + 60_000), payload: { n: 2, key: 'each_blr' } });
     expect(postedSince(from)).toEqual([]);
-    // The last try doesn't either: Go's last word, Arjun's alone, and never a link.
+    // The last try doesn't either: his one line already said it, and nothing more goes up (p2's re-audit, 11 Oct: a
+    // line a minute), never a link.
+    const runsBefore = runs.length;
     tries(async () => link('BLR'))(tryOf(2), goaPack());
-    await eventually(() => postedSince(from).length === 1);
-    expect(postedSince(from)).toEqual([{ text: "Arjun, I tried again and still couldn't load your flights from Bangalore. Ask me in a bit and I'll look once more.", card: undefined, visibleTo: ['p_arjun'] }]);
+    await eventually(() => runs.length === runsBefore + 1);
+    await new Promise((r) => setTimeout(r, 20));
+    expect(postedSince(from)).toEqual([]);
     expect(puts).toHaveLength(before + 1);
+  });
+
+  // p2's re-audit of Keshav's Varkala trip (11 Oct): his "Book my flights" searched all five, and 20 private "I couldn't
+  // load your flights" lines went up in four rounds a minute apart, 15 to people who never asked.
+  it('takes "my flights" as the asker\'s alone, their city\'s page only, whoever the model names; "our" or "everyone\'s" for all', async () => {
+    expect(['Book my flights', 'book flights for me', '@Go find my flight to Goa'].map(asksForOwn)).toEqual([true, true, true]);
+    expect(['Book our flights', "find everyone's flights", 'flights for us', 'book flights', "my flight and everyone's"].map(asksForOwn)).toEqual([false, false, false, false, false]);
+    const ask = msg(60, 'p_meher', '@Go book my flights');
+    const wake: DeskItem[] = [{ id: 'w60', tripId: 't_goa', kind: 'message', ref: ask.message_id, dueAt: new Date(), payload: { messageId: ask.message_id } }];
+    const ctx = lb.ctx({ turnId: 'turn_each_mine', wake, pack: { ...goaPack(), messages: [...goaPack().messages, ask] } });
+    const from = lb.link.requests.length;
+    const mumbai = (run: RunFor): void => {
+      run.onSteps?.({ type: 'entries', entries: ['Mumbai'] });
+      run.onSteps?.({ type: 'step', entry: 'Mumbai', recipe: 'flights.results', ok: true, answer: options(MUMBAI) });
+      run.onSteps?.({ type: 'step', entry: 'Mumbai', recipe: 'flights.search', ok: true, answer: link('BOM') });
+    };
+    // The model named everyone: hers alone all the same.
+    await toolWith(async (run) => (mumbai(run), COMPARE)).run({ person_ids: ['p_rahul', 'p_priya', 'p_arjun', 'p_meher', 'p_kabir'] }, ctx);
+    // Her city's page alone.
+    expect(asked.at(-1)).toEqual({ id: FLIGHTS_EACH, given: { to: 'North Goa', date: '2026-11-06', from: 'Mumbai' } });
+    const posted = postedSince(from);
+    expect(posted.map((p) => [(p.card as { title?: string } | undefined)?.title, p.visibleTo])).toEqual([['Flights for Meher, Mumbai to North Goa, Fri 6 Nov', ['p_meher']]]);
+  });
+
+  it("says a city's flights didn't load once to each person, never again on an ask again, and a try for one person's search stays theirs", async () => {
+    const tool = toolWith(async (run) => (tellAll(run), COMPARE));
+    const from = lb.link.requests.length;
+    const before = puts.length;
+    await tool.run({}, lb.ctx({ turnId: 'turn_each_once1' }));
+    // "search again": the same search, a minute on.
+    await tool.run({}, lb.ctx({ turnId: 'turn_each_once2' }));
+    const lines = postedSince(from).filter((p) => !p.card);
+    expect(lines.map((p) => p.visibleTo)).toEqual([['p_arjun']]);
+    // Bangalore is still tried for each search, quietly.
+    expect(puts.length).toBe(before + 2);
+    // A try for Rahul's own search (his "my flights") makes his card alone, though Priya and Kabir fly from Delhi too.
+    const at = lb.link.requests.length;
+    const tryRahul: TryAgainItem = {
+      id: 'try_again:t_goa:each_del:1', tripId: 't_goa', kind: 'search', ref: 'flights', dueAt: lb.brain.now(),
+      payload: { source: 'travel_try_again', key: 'each_del', what: 'flights from Delhi', n: 1, each: { home: 'Delhi', to: 'North Goa', date: '2026-11-06', people: ['p_rahul'] } },
+    };
+    eachTryAgain({ engine: { answer: async () => options(DELHI) }, results, link: lb.link, now: lb.brain.now, desk })(tryRahul, goaPack());
+    await eventually(() => postedSince(at).length === 1);
+    expect(postedSince(at).map((p) => p.visibleTo)).toEqual([['p_rahul']]);
   });
 
   // Keshav's Varkala trip, 11 Oct: every city stopped on which airport, the model said "your Delhi flights card is up",

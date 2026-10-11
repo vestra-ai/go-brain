@@ -35,7 +35,7 @@ export interface TryAgain {
   /** A search's own ask (search_flights, search_stays, a search that outlived its turn): its card goes up for the room. */
   query?: TravelQuery;
   /** A home city's flights for the travellers who fly from it (search_flights_each): each one's card is theirs alone. */
-  each?: { home: string; to: string; date: string; cabin?: string };
+  each?: { home: string; to: string; date: string; cabin?: string; people?: string[] };
 }
 
 export type TryAgainItem = DeskItem & { payload: TryAgain };
