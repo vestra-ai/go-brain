@@ -12,8 +12,12 @@ export type FareChoice = 'basic' | 'assured' | 'flex';
  * first radio after its own words ("Add Free Cancellation to your trip" heads Assured's, Flex's says "Free Cancellation +
  * Rescheduling").
  */
-export const FARE_TYPES: Record<FareChoice, { type: string; words: string; click: { op: 'click'; role: 'radio'; text?: string; near_text?: string } }> = {
-  basic: { type: 'BASIC_FARE', words: 'no free cancellation', click: { op: 'click', role: 'radio', text: "I don't want Free Cancellation" } },
+export const FARE_TYPES: Record<FareChoice, { type: string; words: string; click: { op: 'click'; role: 'radio'; text?: string; near_text?: string; optional?: boolean; within_ms?: number } }> = {
+  // The basic fare declines Free Cancellation where ixigo offers it, and where it doesn't (some international flights'
+  // reviews have no such radio: flydubai FZ436+FZ191, prod 11 Oct, "stopped at 1 click"; a live look, 12 Oct: a HYD-DXB
+  // review with no radio, a BOM-DXB one with this same radio) there is nothing to decline: looked for up to 10 s, then
+  // the fetch goes on without it. Assured and Flex need their radio, so theirs stay required.
+  basic: { type: 'BASIC_FARE', words: 'no free cancellation', click: { op: 'click', role: 'radio', text: "I don't want Free Cancellation", optional: true, within_ms: 10_000 } },
   assured: { type: 'IXIGO_ASSURED', words: 'Assured (free cancellation)', click: { op: 'click', role: 'radio', near_text: 'Add Free Cancellation to your trip' } },
   flex: { type: 'ASSURED_FLEX', words: 'Assured Flex (free cancellation and rescheduling)', click: { op: 'click', role: 'radio', near_text: 'Free Cancellation + Rescheduling' } },
 };

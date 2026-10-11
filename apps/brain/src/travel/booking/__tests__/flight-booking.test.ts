@@ -16,6 +16,7 @@ import {
   type FlightBooking, type TicketPay,
 } from '../flight-booking.js';
 import { buildOptionsCard, type OptionsCardT } from '../../cards.js';
+import { FARE_TYPES } from '../review-read.js';
 
 let db: Awaited<ReturnType<typeof withSchema>>;
 let lb: LaneBrain;
@@ -127,6 +128,17 @@ function booking(
   });
 }
 
+// flydubai FZ436+FZ191, prod 11 Oct ("stopped at 1 click", review_not_read): an international review with no Free
+// Cancellation radio stopped at the basic fare's click. A live look, 12 Oct: one HYD-DXB review had no such radio, a
+// BOM-DXB one had it, named as on a domestic review.
+describe("the basic fare declines Free Cancellation only where ixigo offers it", () => {
+  it("its radio is looked for, up to 10 s, never needed; Assured's and Flex's radios are", () => {
+    expect(FARE_TYPES.basic.click).toEqual({ op: 'click', role: 'radio', text: "I don't want Free Cancellation", optional: true, within_ms: 10_000 });
+    expect(FARE_TYPES.assured.click.optional).toBeUndefined();
+    expect(FARE_TYPES.flex.click.optional).toBeUndefined();
+  });
+});
+
 describe("Go books a person's own flight up to ixigo's pay button", () => {
   it('opens the fare on the stage for them alone, picks the fare type, keeps ixigo\'s coupon, and posts their ready card', async () => {
     const { runner, reads, calls } = fakeRunner();
@@ -144,17 +156,17 @@ describe("Go books a person's own flight up to ixigo's pay button", () => {
     expect(new URL(reads[0]!.url).searchParams.get('adults')).toBe('1');
     expect(reads[0]!.plan.capture).toEqual([{ match: FLIGHT_STREAM, required: true, max_bytes: 4_194_304, sse: 'last' }]);
     expect(new URL(reads[1]!.url).searchParams.get('ftk')).toBe('T-6E2150');
-    expect(reads[1]!.plan.steps).toEqual([{ op: 'click', role: 'radio', text: "I don't want Free Cancellation" }]);
+    expect(reads[1]!.plan.steps).toEqual([{ op: 'click', role: 'radio', text: "I don't want Free Cancellation", optional: true, within_ms: 10_000 }]);
     // The account's saved travellers, as ixigo's traveller step asks for them itself (prod, 11 Oct: ixigo turned away Go's
     // own call), and her own ticked by her name there.
     expect(calls).toEqual([SAVED_TRAVELLERS]);
     expect(reads[2]!.plan).toEqual({
       capture: [{ match: SAVED_TRAVELLERS, required: true }, { match: TRAVELLER_FIELDS, required: false }],
-      steps: [{ op: 'click', role: 'radio', text: "I don't want Free Cancellation" }, { op: 'click', role: 'button', name: 'Continue' }],
+      steps: [{ op: 'click', role: 'radio', text: "I don't want Free Cancellation", optional: true, within_ms: 10_000 }, { op: 'click', role: 'button', name: 'Continue' }],
     });
     expect(reads[3]!.plan).toEqual({
       capture: [{ match: TRAVELLER_FIELDS, required: true }],
-      steps: [{ op: 'click', role: 'radio', text: "I don't want Free Cancellation" }, { op: 'click', role: 'button', name: 'Continue' }, { op: 'click', text: 'Meher Kapoor' }],
+      steps: [{ op: 'click', role: 'radio', text: "I don't want Free Cancellation", optional: true, within_ms: 10_000 }, { op: 'click', role: 'button', name: 'Continue' }, { op: 'click', text: 'Meher Kapoor' }],
     });
     // Her live card ticking each step, then her ready card with what she would pay: each posted for her alone (1.2).
     const sent = lb.link.requests.slice(from);
@@ -249,7 +261,7 @@ describe("Go books a person's own flight up to ixigo's pay button", () => {
     expect(vaultAsks).toEqual([{ tripId: 't_goa', personId: 'p_arjun2', booking: { ref: expect.stringMatching(/^fb_/), travellerPersonId: 'p_arjun2', purpose: 'IndiGo 6E2150, for Arjun' } }]);
     expect(reads.at(-1)!.o?.private).toBe(true);
     expect(reads.at(-1)!.plan.steps).toEqual([
-      { op: 'click', role: 'radio', text: "I don't want Free Cancellation" }, { op: 'click', role: 'button', name: 'Continue' },
+      { op: 'click', role: 'radio', text: "I don't want Free Cancellation", optional: true, within_ms: 10_000 }, { op: 'click', role: 'button', name: 'Continue' },
       { op: 'click', role: 'textbox', near_text: 'Adult 1' }, { op: 'click', name: 'Mr', near_text: 'Title' },
       { op: 'click', role: 'textbox', near_text: 'First & Middle Name' }, { op: 'type', text: 'Arjun' },
       { op: 'click', role: 'textbox', near_text: 'Last Name' }, { op: 'type', text: 'Varma' },
