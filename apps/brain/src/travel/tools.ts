@@ -25,7 +25,7 @@ import type { TopPick } from './pick-photos.js';
 import { toResultOption, type OptionKind, type ResultOption, type ResultSet, type ResultsStore } from './results.js';
 import type { SearchWake } from './search-wake.js';
 import { Clock, MUST_HAVES, type Travel, type TravelKind, type TravelOption, type TravelQuery, type TravelSearch } from './travel.js';
-import { notLoadedLine, stillNotLoadedLine, TRIES, tryAgain } from './try-again.js';
+import { notLoadedLine, stillNotLoadedLine, TRIES, tryAgain, waitFor } from './try-again.js';
 import { openVoteFromCard } from './votes.js';
 
 export interface TravelToolDeps {
@@ -40,6 +40,8 @@ export interface TravelToolDeps {
   now: () => Date;
   /** Where a search that outlives its turn wakes Go with its options; without it, every search is waited for. */
   desk?: Pick<Desk, 'put'>;
+  /** When ixigo's own quiet on a search's page ends (it refused one), or null: Go's try again waits past it (try-again.ts). */
+  ixigoQuiet?: (kind: TravelKind, q: TravelQuery) => number | null;
   log?: { warn(obj: object, msg: string): void };
   /** Wakes the trip's computer for a search of this kind (travel/warm.ts); absent in tests that don't look at it. */
   warmForTravel?: (tripId: string, kind: TravelKind) => void;
@@ -525,7 +527,7 @@ export function handOver(
   q: TravelQuery,
   pending: Promise<TravelSearch>,
   o: { tripId: string; fallbackId: string; tryNo?: number },
-  d: Pick<TravelToolDeps, 'desk' | 'now' | 'log'> & { results: Pick<ResultsStore, 'save'> },
+  d: Pick<TravelToolDeps, 'desk' | 'now' | 'log' | 'ixigoQuiet'> & { results: Pick<ResultsStore, 'save'> },
 ): void {
   const desk = d.desk;
   if (!desk) return;
@@ -557,9 +559,11 @@ export function handOver(
         // last word when this was the last try.
         const n = o.tryNo ?? 0;
         const what = loadWhat(kind, q);
-        if (n < TRIES) await tryAgain({ desk, now: d.now }, o.tripId, kind, { key: o.fallbackId, what, n: n + 1, query: q });
-        if (n === 0) await wake(`search:${o.tripId}:${o.fallbackId}:not_loaded`, { ...failed, line: notLoadedLine(what) });
-        else if (n >= TRIES) await wake(`search:${o.tripId}:${o.fallbackId}:gave_up`, { ...failed, line: stillNotLoadedLine(what) });
+        if (n === 0) {
+          const wait = await tryAgain({ ...d, desk }, o.tripId, kind, { key: o.fallbackId, what, n: 1, query: q });
+          await wake(`search:${o.tripId}:${o.fallbackId}:not_loaded`, { ...failed, line: notLoadedLine(what, wait) });
+        } else if (n < TRIES) await tryAgain({ ...d, desk }, o.tripId, kind, { key: o.fallbackId, what, n: n + 1, query: q });
+        else await wake(`search:${o.tripId}:${o.fallbackId}:gave_up`, { ...failed, line: stillNotLoadedLine(what) });
       },
     )
     .catch((err: unknown) => d.log?.warn({ err, tripId: o.tripId, kind }, 'travel: a search that outlived its turn could not wake Go'));
@@ -584,8 +588,8 @@ function goOnWithout(kind: TravelKind, q: TravelQuery, pending: Promise<TravelSe
  */
 async function notLoadedAnswer(kind: TravelKind, q: TravelQuery, ctx: TurnCtx, d: TravelToolDeps, plain: boolean): Promise<unknown> {
   const what = loadWhat(kind, q);
-  const line = notLoadedLine(what);
-  if (d.desk) await tryAgain({ desk: d.desk, now: d.now }, ctx.tripId, kind, { key: stableId('search', ctx.turnId, searchName(kind, q)), what, n: 1, query: q });
+  const try1 = { key: stableId('search', ctx.turnId, searchName(kind, q)), what, n: 1, query: q };
+  const line = notLoadedLine(what, d.desk ? await tryAgain({ ...d, desk: d.desk }, ctx.tripId, kind, try1) : waitFor(d, kind, q));
   if (plain) {
     ctx.lines.push(line);
     ctx.answered = true;
@@ -594,7 +598,7 @@ async function notLoadedAnswer(kind: TravelKind, q: TravelQuery, ctx: TurnCtx, d
     search: searchName(kind, q),
     count: 0,
     not_loaded: true,
-    note: `ixigo didn't load this search for Go just now. Go tries it again in the background, a minute apart, up to ${TRIES} times, and its card goes up by itself when a try lands.`,
+    note: `ixigo didn't load this search for Go just now. Go tries it again in the background, up to ${TRIES} times (as the line says when), and its card goes up by itself when a try lands.`,
     tell_the_room: `Say only this, in one line: "${line}" Never send or offer a link, never name another site, never say there are none, and quote no prices or times.`,
   };
 }

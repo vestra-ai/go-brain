@@ -126,6 +126,8 @@ export const NOT_LOADED = "ixigo didn't load it just now";
 export const SEARCH_RECIPES: Record<TravelKind, string> = { flights: 'flights.results', trains: 'trains.between', buses: 'buses.between', stays: 'hotels.search' };
 /** A flights search with a day back: both ways on one ixigo page, as pairs priced there and back. */
 export const ROUND_TRIP_RECIPE = 'flights.round_trip';
+/** The recipe a search runs: its kind's, or a round trip's. */
+export const searchRecipeOf = (kind: TravelKind, q: TravelQuery): string => (kind === 'flights' && q.returnDate ? ROUND_TRIP_RECIPE : SEARCH_RECIPES[kind]);
 /**
  * The link that stands for a search when ixigo won't show Go its page (flights: refused, paced, or empty): link_only, never
  * the room's answer (G1, 11 Oct: Go says it couldn't load them and tries again, try-again.ts).
@@ -393,7 +395,7 @@ export function createIxigoWebBackend(d: IxigoWebDeps): IxigoWebBackend {
   /** The recipe, its inputs and the search's key, or a plain refusal before anything runs. */
   async function plan(kind: TravelKind, q: TravelQuery, tripId: string | undefined) {
     if (!tripId) throw new TravelError('refused', "An ixigo.com search runs on a trip's computer, so it needs the trip.");
-    const id = kind === 'flights' && q.returnDate ? ROUND_TRIP_RECIPE : SEARCH_RECIPES[kind];
+    const id = searchRecipeOf(kind, q);
     const recipe = d.book.get(id);
     if (!recipe) throw new TravelError('refused', `Go's recipe book has no ${id}.`);
     const { given, conditions, site } = recipeInputs(kind, q);

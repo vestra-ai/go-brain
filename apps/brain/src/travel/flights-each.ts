@@ -28,8 +28,8 @@ import { TravelError } from './mcp-travel.js';
 import { CARD_DELAY_MS, TRAVEL_WAIT_MS } from './recipes/backend.js';
 import { norm } from './recipes/places.js';
 import { toResultOption, type ResultOption, type ResultsStore } from './results.js';
-import type { TravelOption } from './travel.js';
-import { notLoadedLine, stillNotLoadedLine, TRIES, tryAgain, type TryAgainItem } from './try-again.js';
+import type { TravelKind, TravelOption, TravelQuery } from './travel.js';
+import { notLoadedLine, stillNotLoadedLine, TRIES, tryAgain, waitFor, type TryAgainItem } from './try-again.js';
 import { waysLiveCard } from './ways-there.js';
 
 export const FLIGHTS_EACH = 'trip.flights_each';
@@ -110,6 +110,8 @@ export interface FlightsEachDeps {
   now: () => Date;
   /** Where a city whose page didn't come waits for its try again (try-again.ts). */
   desk?: Pick<Desk, 'put'>;
+  /** When ixigo's own quiet on a flights page ends (it refused one), or null: a city's try waits past it. */
+  ixigoQuiet?: (kind: TravelKind, q: TravelQuery) => number | null;
   log?: { warn(obj: object, msg: string): void };
   /** How long the turn waits (TRAVEL_WAIT_MS), and before the live card shows (CARD_DELAY_MS). */
   waitMs?: number;
@@ -156,7 +158,7 @@ function postFor(d: Pick<FlightsEachDeps, 'link' | 'log'>, tripId: string, reque
 }
 
 /** A traveller's line when their city's page didn't come, or the last try didn't either: "Arjun, I couldn't load…". */
-const notLoadedFor = (g: EachGroup, last = false): string => `${namesOf(g)}, ${(last ? stillNotLoadedLine : notLoadedLine)(`your flights from ${g.home}`)}`;
+const notLoadedFor = (g: EachGroup, line: (what: string) => string): string => `${namesOf(g)}, ${line(`your flights from ${g.home}`)}`;
 
 /**
  * A home city's try again (try-again.ts): its flights page alone, in the background, through ixigo's quiet. Each
@@ -184,10 +186,13 @@ export function eachTryAgain(d: Omit<FlightsEachDeps, 'live'>): (t: TryAgainItem
         }
         return;
       }
-      if (t.payload.n < TRIES && d.desk) return tryAgain({ desk: d.desk, now: d.now }, t.tripId, 'flights', { ...t.payload, n: t.payload.n + 1 });
+      if (t.payload.n < TRIES && d.desk) {
+        await tryAgain({ ...d, desk: d.desk }, t.tripId, 'flights', { ...t.payload, n: t.payload.n + 1 });
+        return;
+      }
       for (const g of groups) {
         const ids = g.people.map((p) => p.personId);
-        await postFor(d, t.tripId, stableId('go_each', t.id, ...ids, 'gave_up'), null, notLoadedFor(g, true), ids);
+        await postFor(d, t.tripId, stableId('go_each', t.id, ...ids, 'gave_up'), null, notLoadedFor(g, stillNotLoadedLine), ids);
       }
     };
     run().catch((err: unknown) => d.log?.warn({ err: String(err).slice(0, 200), tripId: t.tripId }, "travel: a city's flights try again failed"));
@@ -259,14 +264,17 @@ export function flightsEachTool(d: FlightsEachDeps): QuickTool<z.infer<typeof Ar
         // city is tried again in a minute.
         if (city.steps >= 2 && !city.posted) {
           city.posted = true;
+          // A minute, or past ixigo's own quiet when ixigo refused a flights page: the line says which.
+          const wait = waitFor(d, 'flights', { from: e.entry, to, date });
           for (const g of groupsOf(e.entry)) {
             const only = g.people.map((p) => p.personId);
-            post(`${only.join(',')}|not_loaded`, null, notLoadedFor(g), only);
+            post(`${only.join(',')}|not_loaded`, null, notLoadedFor(g, (what) => notLoadedLine(what, wait)), only);
           }
           if (d.desk) {
             const each = { home: e.entry, to, date, ...(a.cabin ? { cabin: a.cabin } : {}) };
             posts.push(
-              tryAgain({ desk: d.desk, now: d.now }, ctx.tripId, 'flights', { key: stableId('each', ctx.turnId, norm(e.entry)), what: `flights from ${e.entry}`, n: 1, each })
+              tryAgain({ ...d, desk: d.desk }, ctx.tripId, 'flights', { key: stableId('each', ctx.turnId, norm(e.entry)), what: `flights from ${e.entry}`, n: 1, each })
+                .then(() => undefined)
                 .catch((err: unknown) => d.log?.warn({ err: String(err).slice(0, 200), tripId: ctx.tripId }, "travel: a city's flights try again could not be put on the desk")),
             );
           }

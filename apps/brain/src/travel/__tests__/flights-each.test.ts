@@ -69,10 +69,11 @@ const asked: Array<{ id: string; given: Record<string, unknown> }> = [];
 /** The tries again a city whose page didn't come put on the desk. */
 const puts: DeskItem[] = [];
 const desk = { put: async (item: Omit<DeskItem, 'id'> & { id?: string }) => { puts.push({ ...item, id: item.id! }); } };
-const toolWith = (answer: (o: RunFor) => Promise<EngineAnswer>, o: { live?: boolean; waitMs?: number } = {}) =>
+const toolWith = (answer: (o: RunFor) => Promise<EngineAnswer>, o: { live?: boolean; waitMs?: number; ixigoQuiet?: () => number | null } = {}) =>
   flightsEachTool({
     engine: { answer: async (id, given, run) => (asked.push({ id, given }), id === FLIGHTS_EACH ? answer(run) : Promise.reject(new Error(id))) },
     results, link: lb.link, now: lb.brain.now, desk, live: () => o.live ?? true, waitMs: o.waitMs ?? 5_000, cardDelayMs: 60_000,
+    ...(o.ixigoQuiet ? { ixigoQuiet: o.ixigoQuiet } : {}),
   });
 type Posted = { text: string; card: C.Card; visibleTo: string[] | undefined };
 const postedSince = (from: number): Posted[] =>
@@ -144,6 +145,17 @@ describe("each person's own flights, from their home city", () => {
     // Rahul's pick on his card is his own: his confirm, never a vote.
     expect(await lb.taps.tap('options', 'pick', { tap_id: 'tap_each1', trip_id: 't_goa', card_id: card.card_id, action_id: 'pick', person_id: 'p_rahul', option_id: card.options[0]!.option_id }, card))
       .toEqual({ result: 'done', toast: "It's yours to confirm" });
+  });
+
+  // The lead, 11 Oct: never ask ixigo again inside its own quiet (it refused a page: a 403, a 429, Cloudflare's check).
+  it("tells that city's travellers ixigo asked us to slow down, theirs alone, and puts the city's try just past ixigo's quiet", async () => {
+    const quietEnds = lb.brain.now().getTime() + 10 * 60_000;
+    const from = lb.link.requests.length;
+    await toolWith(async (run) => (tellAll(run), COMPARE), { ixigoQuiet: () => quietEnds }).run({}, lb.ctx({ turnId: 'turn_each_q' }));
+    expect(postedSince(from).filter((p) => !p.card)).toEqual([{
+      text: "Arjun, I couldn't load your flights from Bangalore: ixigo asked us to slow down, so I'll try again in about 10 minutes.", card: undefined, visibleTo: ['p_arjun'],
+    }]);
+    expect(puts.at(-1)).toMatchObject({ id: expect.stringMatching(new RegExp(`:1:${quietEnds}$`)), dueAt: new Date(quietEnds + 5_000), payload: { n: 1, each: { home: 'Bangalore' } } });
   });
 
   it("tries that city again: its people's cards, theirs alone, when it lands; the next try when it doesn't; Go's last word after the last", async () => {

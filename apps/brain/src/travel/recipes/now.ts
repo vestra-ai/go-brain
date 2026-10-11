@@ -24,7 +24,7 @@ import type { Images } from '../images.js';
 import { withoutPhotos } from '../photos.js';
 import type { ResultsStore } from '../results.js';
 import { answerItself, handOver, searchAnswer, searchScope, type SearchAnswer } from '../tools.js';
-import type { Travel, TravelSearch } from '../travel.js';
+import type { Travel, TravelKind, TravelQuery, TravelSearch } from '../travel.js';
 import { isSearchChoice, type SearchChoice } from '../../reflex/questions.js';
 import type { EarlyStart } from './early.js';
 import { FAST_ASKS } from './fast.js';
@@ -140,6 +140,8 @@ export interface EarlyAnswerDeps {
   now: () => Date;
   /** Where a search still running wakes Go when it finishes (tools.ts handOver). */
   desk?: Pick<Desk, 'put'>;
+  /** When ixigo's own quiet on a search's page ends, or null: a try again of one that didn't load waits past it. */
+  ixigoQuiet?: (kind: TravelKind, q: TravelQuery) => number | null;
   log?: { warn(obj: object, msg: string): void };
   wait?: (ms: number) => Promise<void>;
 }

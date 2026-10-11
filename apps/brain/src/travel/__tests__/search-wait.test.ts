@@ -263,6 +263,40 @@ describe("a search ixigo didn't load", () => {
     })]);
   });
 
+  // The lead, 11 Oct: a try may go through Go's own quiet, never ixigo's (a 403, a 429, Cloudflare's check), which would
+  // risk the shared address for every trip. Go says so, and the try waits past it.
+  it('when ixigo itself asked us to slow down, says so and puts the try just past its quiet, never inside it', async () => {
+    const turn = { ...ctx, cards: [] } as unknown as TurnCtx;
+    const { puts, desk } = deskOf();
+    const quietEnds = now().getTime() + 9 * 60_000 + 30_000;
+    const ixigoQuiet = vi.fn(() => quietEnds);
+    const travel = { search: async () => { throw refused(); }, waitMs: async () => null } as unknown as Travel;
+    const tools = travelTools({ travel, results: {} as ResultsStore, images: {} as Images, now, desk, ixigoQuiet });
+    const out = (await tools.find((t) => t.name === 'search_flights')!.run(DELHI_GOA, turn)) as Record<string, unknown>;
+    expect(out.tell_the_room).toContain(`"I couldn't load flights from Delhi to Goa: ixigo asked us to slow down, so I'll try again in about 10 minutes."`);
+    expect(ixigoQuiet).toHaveBeenCalledWith('flights', expect.objectContaining(DELHI_GOA));
+    expect(puts).toEqual([expect.objectContaining({ id: expect.stringMatching(new RegExp(`^try_again:t_goa:search_\\w+:1:${quietEnds}$`)), dueAt: new Date(quietEnds + 5_000) })]);
+    // A late search the same: its line on the wake says it, and its try waits past the quiet.
+    const late = deskOf();
+    handOver('flights', DELHI_GOA, Promise.reject(refused()), { tripId: 't_goa', fallbackId: 'turn_q1:flights' }, { desk: late.desk, now, ixigoQuiet, results: {} as ResultsStore });
+    await vi.waitFor(() => expect(late.puts).toHaveLength(2));
+    expect(late.puts.map((p) => [p.id, p.dueAt])).toEqual([[`try_again:t_goa:turn_q1:flights:1:${quietEnds}`, new Date(quietEnds + 5_000)], ['search:t_goa:turn_q1:flights:not_loaded', now()]]);
+    expect(late.puts[1]!.payload).toMatchObject({ line: "I couldn't load flights from Delhi to Goa: ixigo asked us to slow down, so I'll try again in about 10 minutes." });
+  });
+
+  it("a try that comes inside ixigo's own quiet (it refused another page since) asks nothing: the same try goes back on the desk past it", async () => {
+    const { puts, desk } = deskOf();
+    const search = vi.fn(async () => FOUND);
+    const quietEnds = now().getTime() + 8 * 60_000;
+    const answer = tryAgainAnswer({ travel: { search } as unknown as Travel, results: {} as ResultsStore, desk, now, ixigoQuiet: () => quietEnds });
+    const t: DeskItem = { id: 'try_again:t_goa:k4:2', tripId: 't_goa', kind: 'search', ref: 'flights', dueAt: now(), payload: { source: 'travel_try_again', key: 'k4', what: 'flights from Delhi to Goa', n: 2, query: DELHI_GOA } satisfies TryAgain };
+    const turn = turnOf([t]);
+    expect(await answer({ tripId: 't_goa', wake: [t], pack: goaPack(), ctx: turn })).toBe(true);
+    expect(search).not.toHaveBeenCalled();
+    expect([turn.cards, turn.lines]).toEqual([[], []]);
+    expect(puts).toEqual([expect.objectContaining({ id: `try_again:t_goa:k4:2:${quietEnds}`, dueAt: new Date(quietEnds + 5_000), payload: expect.objectContaining({ n: 2, key: 'k4', query: DELHI_GOA }) })]);
+  });
+
   it('a late search says so on its wake, with no card and no model call, and its try goes on the desk', async () => {
     const { puts, desk } = deskOf();
     handOver('flights', DELHI_GOA, Promise.reject(refused()), { tripId: 't_goa', fallbackId: 'turn_l1:flights' }, { desk, now, results: {} as ResultsStore });

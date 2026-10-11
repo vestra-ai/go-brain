@@ -15,7 +15,7 @@ import type { TripPack } from '../trips/pack.js';
 import { answerLine, answerTitle, directPicks, ledBy } from './answer.js';
 import { handOver, putUpCard, type TravelToolDeps } from './tools.js';
 import type { TravelKind, TravelQuery } from './travel.js';
-import { triesIn, type TryAgain, type TryAgainItem } from './try-again.js';
+import { inIxigoQuiet, triesIn, tryAgain, type TryAgain, type TryAgainItem } from './try-again.js';
 
 export interface SearchWake {
   source: 'travel_search';
@@ -98,19 +98,22 @@ export function searchWakeAnswer(d: Pick<TravelToolDeps, 'results' | 'images' | 
 
 /**
  * The tries again Go promised (try-again.ts), each started in the background as its wake comes: a search's is handed over
- * as a search that outlived its turn, through ixigo's quiet, so its card goes up by itself when it lands (or the next try
+ * as a search that outlived its turn, through Go's own quiet, so its card goes up by itself when it lands (or the next try
  * goes on the desk, or Go's last word goes up); a home city's goes to search_flights_each's own (each), whose cards are
- * each traveller's alone. A wake of tries alone posts nothing now; with other things in it, the model answers those.
+ * each traveller's alone. A try that comes while ixigo's own quiet is on (ixigo refused another page since it was put)
+ * asks nothing: it goes back on the desk past that quiet, the same try. A wake of tries alone posts nothing now; with
+ * other things in it, the model answers those.
  */
 export function tryAgainAnswer(
-  d: Pick<TravelToolDeps, 'travel' | 'results' | 'desk' | 'now' | 'log'> & { each?: (t: TryAgainItem, pack: TripPack) => void },
+  d: Pick<TravelToolDeps, 'travel' | 'results' | 'desk' | 'now' | 'log' | 'ixigoQuiet'> & { each?: (t: TryAgainItem, pack: TripPack) => void },
 ): DirectAnswer {
   return async ({ tripId, wake, pack, ctx }) => {
     const tries = triesIn(wake);
     for (const t of tries) {
-      if (t.payload.each) d.each?.(t, pack);
+      const kind = t.ref as TravelKind;
+      if (d.desk && inIxigoQuiet(d, kind, t.payload)) await tryAgain({ ...d, desk: d.desk }, tripId, kind, t.payload);
+      else if (t.payload.each) d.each?.(t, pack);
       else if (t.payload.query && KINDS.includes(t.ref)) {
-        const kind = t.ref as TravelKind;
         handOver(kind, t.payload.query, d.travel.search(kind, t.payload.query, { tripId, retry: true }), { tripId, fallbackId: t.payload.key, tryNo: t.payload.n }, d);
       }
     }
