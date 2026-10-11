@@ -1,6 +1,7 @@
 /**
  * Taps on Go's options cards. A shared thing's card is its vote since rev 5 (votes.ts): the App's Vote goes to the Server,
- * and "See more" puts more of the same search on a new card in the same vote. On cards from before, "Put it to a vote"
+ * and "See more" puts the next 10 of the same search on a new card in the same vote (a ticket's, on a card of the
+ * tapper's own). On cards from before, "Put it to a vote"
  * opens the vote in code (fast and once). "I'll take this" goes on the
  * desk, so the composer answers the person in the room, except on a ticket (a flight, train or bus fare: PERSONAL_KINDS),
  * which is the picker's own: Go posts their own confirm at once, "Book it" or "Change", for them alone, never a vote, and
@@ -21,9 +22,9 @@ import { BOOK_MINE, budgetSheet, buildConfirmMineCard, buildOptionsCard, CHANGE_
 import { stableId } from './ids.js';
 import type { Images } from './images.js';
 import { recordPick, wayOf } from './picks.js';
-import { MORE_CARD, unseenNumbers, type ResultsStore } from './results.js';
-import { cardPicks } from './tools.js';
-import type { StoredOffer } from './travel.js';
+import { MORE_CARD, optionKey, toResultOption, unseenNumbers, type ResultSet, type ResultsStore } from './results.js';
+import { CARD_SHOWS, cardPicks } from './tools.js';
+import type { StoredOffer, Travel, TravelQuery } from './travel.js';
 import { addToVote, openVoteFromCard, VOTE_MOST } from './votes.js';
 
 export interface TravelTapDeps {
@@ -39,7 +40,12 @@ export interface TravelTapDeps {
   log: Brain['log'];
   /** Go's image cache, for the photos on a "See more" card; absent, See more is refused. */
   images?: Images;
+  /** ixigo's next page of a stays search, for "See more" once the set's own are shown (results.siteMore); absent, none. */
+  travel?: Pick<Travel, 'search'>;
 }
+
+/** "See more" with nothing more: the search's own all shown, and ixigo has no next page of it. */
+export const ALL_SHOWN = "That's all ixigo has for this search";
 
 /** How long the App may hold an ixigo page it was told to open: the time its prices count as fresh. */
 export const OPEN_FOR_MS = 10 * 60_000;
@@ -170,59 +176,114 @@ export function registerTravelTaps(taps: Brain['taps'], d: TravelTapDeps): void 
     return { result: 'open', url, expires_at: new Date(d.now().getTime() + OPEN_FOR_MS).toISOString() };
   });
 
-  // "See more" (rev 5 R4): up to 10 more of the same search that no card has shown, on a new card in the same vote. The
-  // tap answers at once and the card follows; with nothing new left, the vote closed or full, a toast says so instead.
+  /**
+   * ixigo's next page of a stays search, read on the stage like any search: its stays the set doesn't hold are kept after
+   * the set's own, and ixigo has no more after it (two pages, the most hotels.search reads). The set as kept now.
+   */
+  async function nextPage(tripId: string, set: ResultSet, travel: Pick<Travel, 'search'>): Promise<ResultSet> {
+    const q: TravelQuery = { ...(set.query as TravelQuery), pages: 2 };
+    const found = await travel.search('stays', q, { tripId });
+    const known = new Set(set.options.map(optionKey));
+    const fresh = found.results.map(toResultOption).filter((o) => {
+      const key = optionKey(o);
+      if (known.has(key)) return false;
+      known.add(key);
+      return true;
+    });
+    return (await d.results.extend(tripId, set.resultsId, { options: fresh, query: q, siteMore: false })) ?? set;
+  }
+
+  // "See more" (rev 5 R4; Keshav, 11 Oct: "show 10 then see more button, and on click 10 more etc"): the next 10 of the
+  // same search that no card has shown, on a new card. A shared thing's joins the card's vote, up to the most one vote
+  // takes (VOTE_MOST); a ticket's (PERSONAL_KINDS) is the tapper's own, for them alone, each person with their own next 10.
+  // Once the set's own are all shown, a stays search ixigo has more of (siteMore) reads ixigo's next page first. The tap
+  // answers at once and the card follows, and the card tapped hands its See more on to it; with nothing more, the vote
+  // closed or full, a toast says so instead.
   taps.on('options', 'more_options', async (tap) => {
     const row = await d.results.card(tap.trip_id, tap.card_id);
     const set = row ? await d.results.get(tap.trip_id, row.resultsId) : null;
+    const personal = !!row && PERSONAL_KINDS.has(row.optionKind);
     const decisionId = row?.card.decision_id ?? null;
     const images = d.images;
-    if (!row || !set || !decisionId || !images) return { result: 'refused', toast: 'Those options are no longer here' };
-    if (moreRunning.has(set.resultsId)) return { result: 'done', toast: 'More are on the way' };
-    // Claimed before anything waits, until its card is up or it gives up: a second tap meanwhile never adds the same stays.
-    moreRunning.add(set.resultsId);
+    if (!row || !set || (!personal && !decisionId) || !images) return { result: 'refused', toast: 'Those options are no longer here' };
+    // A second tap meanwhile (a double tap, two people, another card of the same search) would add the same options again.
+    const lock = personal ? `${set.resultsId}|${tap.person_id}` : set.resultsId;
+    if (moreRunning.has(lock)) return { result: 'done', toast: 'More are on the way' };
+    // Claimed before anything waits, until its card is up or it gives up.
+    moreRunning.add(lock);
     let running = false;
     try {
-      const unseen = unseenNumbers(set, await d.results.shownFrom(tap.trip_id, set.resultsId));
-      if (unseen.length === 0) return { result: 'done', toast: "That's everything ixigo listed for this search" };
+      const shownTo = personal ? tap.person_id : undefined;
+      const unseen = unseenNumbers(set, await d.results.shownFrom(tap.trip_id, set.resultsId, shownTo));
+      const travel = unseen.length === 0 && set.siteMore ? d.travel : undefined;
+      if (unseen.length === 0 && !travel) return { result: 'done', toast: ALL_SHOWN };
       const trip = await d.link.request('read_trip', { trip_id: tap.trip_id });
-      const vote = trip.decisions.find((x) => x.decision_id === decisionId);
-      if (vote?.status !== 'open') return { result: 'done', toast: 'The vote has closed' };
-      if (vote.options.length >= VOTE_MOST) return { result: 'done', toast: `This vote has ${VOTE_MOST} options, the most one vote takes` };
-      const numbers = unseen.slice(0, Math.min(10, VOTE_MOST - vote.options.length));
+      let voted = 0;
+      if (decisionId) {
+        const vote = trip.decisions.find((x) => x.decision_id === decisionId);
+        if (vote?.status !== 'open') return { result: 'done', toast: 'The vote has closed' };
+        if (vote.options.length >= VOTE_MOST) return { result: 'done', toast: `This vote has ${VOTE_MOST} options, the most one vote takes` };
+        voted = vote.options.length;
+      }
+      const room = decisionId ? Math.min(CARD_SHOWS, VOTE_MOST - voted) : CARD_SHOWS;
       const people = typeof set.query['guests'] === 'number' ? set.query['guests'] : trip.people.length;
+      // The card tapped is a person's own, or the vote's: its See more goes on to the next card. A ticket's card for the
+      // room keeps it, for everyone else's next 10.
+      const handsOn = !personal || (row.card.for_person_ids ?? []).join() === tap.person_id;
       // Outside a turn, ids come from the tap, so a repeat does each write once.
       const cardId = stableId(MORE_CARD, tap.tap_id);
       const more = async (): Promise<void> => {
-        let added = false;
+        let shown = false;
         try {
-          const picks = await cardPicks(set, numbers, cardId, people, { images });
+          const from = travel ? await nextPage(tap.trip_id, set, travel) : set;
+          const left = travel ? unseenNumbers(from, await d.results.shownFrom(tap.trip_id, set.resultsId, shownTo)) : unseen;
+          if (left.length === 0) {
+            // ixigo's next page held nothing new: the card tapped loses its See more.
+            const card = await d.results.dropMore(tap.trip_id, tap.card_id);
+            if (card) await d.link.request('replace_card', { trip_id: tap.trip_id, card });
+            return;
+          }
+          const numbers = left.slice(0, room);
+          const after = (left.length > numbers.length || !!from.siteMore) && (!decisionId || voted + numbers.length < VOTE_MOST);
+          const picks = await cardPicks(from, numbers, cardId, people, { images });
           const title = `More: ${row.title.replace(/^More: /, '')}`;
-          const card = buildOptionsCard({ cardId, title, optionKind: row.optionKind, checkedAt: set.checkedAt, picks });
-          await d.results.saveCard({ cardId, tripId: tap.trip_id, resultsId: set.resultsId, title: card.title, optionKind: row.optionKind, card }, picks, set.checkedAt);
-          await addToVote({ results: d.results, link: d.link }, { tripId: tap.trip_id, cardId, decisionId, requestId: stableId('go_more', tap.tap_id) });
-          added = true;
-          // Its own "See more" while the search has more and the vote has room after these.
-          const left = unseen.length > numbers.length && vote.options.length + numbers.length < VOTE_MOST;
-          const voting = await d.results.setCardDecision(tap.trip_id, cardId, decisionId, left);
-          if (voting) await d.link.request('post_message', { trip_id: tap.trip_id, request_id: stableId('go_more_card', tap.tap_id), card: voting });
+          const card = buildOptionsCard({
+            cardId, title, optionKind: row.optionKind, checkedAt: from.checkedAt, picks,
+            ...(personal ? { forPersonIds: [tap.person_id], ...(after ? { more: true } : {}) } : {}),
+          });
+          await d.results.saveCard({ cardId, tripId: tap.trip_id, resultsId: set.resultsId, title: card.title, optionKind: row.optionKind, card }, picks, from.checkedAt);
+          const requestId = stableId('go_more_card', tap.tap_id);
+          if (decisionId) {
+            await addToVote({ results: d.results, link: d.link }, { tripId: tap.trip_id, cardId, decisionId, requestId: stableId('go_more', tap.tap_id) });
+            shown = true;
+            const voting = await d.results.setCardDecision(tap.trip_id, cardId, decisionId, after);
+            if (voting) await d.link.request('post_message', { trip_id: tap.trip_id, request_id: requestId, card: voting });
+          } else {
+            await d.link.request('post_message', { trip_id: tap.trip_id, request_id: requestId, card, visible_to_person_ids: [tap.person_id] });
+            shown = true;
+          }
+          if (handsOn) {
+            const tapped = await d.results.dropMore(tap.trip_id, tap.card_id);
+            if (tapped) await d.link.request('replace_card', { trip_id: tap.trip_id, card: tapped });
+          }
         } catch (err) {
-          // Options the Server refused to add never joined the vote: never shown, so the next See more offers them again.
-          // A 503 (the Server unreachable, after the link's retries) may have added them all the same: the card and its
-          // offers are kept, unposted, so a winner among them can still be booked and none is added twice.
+          // Options the Server refused (to add to the vote, or to post) were never shown, so the next See more offers them
+          // again. A 503 (the Server unreachable, after the link's retries) may have taken them all the same: the card and
+          // its offers are kept, unposted, so a winner among them can still be booked and none is added twice.
           const refused = err instanceof SocketCallError && err.code !== 503;
-          if (!added && refused) await d.results.dropCard(tap.trip_id, cardId).catch(() => undefined);
+          if (!shown && refused) await d.results.dropCard(tap.trip_id, cardId).catch(() => undefined);
           throw err;
         } finally {
-          moreRunning.delete(set.resultsId);
+          moreRunning.delete(lock);
         }
       };
-      // The card goes up after the answer: a page of photos and two requests to the Server must not hold the 3 s tap answer.
+      // The card goes up after the answer: ixigo's next page, a page of photos and the Server's requests must not hold
+      // the 3 s tap answer.
       running = true;
       void more().catch((err: unknown) => d.log.error({ err, cardId: tap.card_id }, 'travel: See more failed'));
-      return { result: 'done' };
+      return travel ? { result: 'done', toast: 'Looking for more on ixigo' } : { result: 'done' };
     } finally {
-      if (!running) moreRunning.delete(set.resultsId);
+      if (!running) moreRunning.delete(lock);
     }
   });
 

@@ -95,7 +95,7 @@ describe('the options card', () => {
   // The Server team's rev 5 (R2): a card of places, each with ixigo's estimate a person and a sheet of why and getting
   // there; its first three get their own place and guide in the background (places-card.ts showPlaces).
   it("puts places up with ixigo's estimate a person and their sheet, and hands the first three on for their own photos", async () => {
-    const results = { saveCard: async () => undefined, card: async () => null } as unknown as ResultsStore;
+    const results = { saveCard: async () => undefined, shownFrom: async () => [], card: async () => null } as unknown as ResultsStore;
     const images = { rehostUrl: async () => 'https://go.test/img/x.jpg' } as never;
     const ctx = makeTurnCtx({ tripId: 't_goa', turnId: 'turn_pl', link: {} as never, pack: goaPack(), wake: [], signal: new AbortController().signal });
     const place = (name: string) => ({ place: name, estimate_minor: 900_000, estimate_nights: 3, getting_there_minor: 17_000, kind: ['beaches'] });
@@ -115,7 +115,7 @@ describe('the options card', () => {
   // The Server team's rev 5 (R1): labelled photos on every stay, not the top pick's alone. The card's next two stays go
   // with the top pick, their own pages read after its page, in the background (register.ts showPick).
   it("hands the top pick's next two stays with it, each by its own ixigo page; none off ixigo.com, none past the third", async () => {
-    const results = { saveCard: async () => undefined, card: async () => null } as unknown as ResultsStore;
+    const results = { saveCard: async () => undefined, shownFrom: async () => [], card: async () => null } as unknown as ResultsStore;
     const images = { rehostUrl: async () => 'https://go.test/img/x.jpg' } as never;
     const ctx = makeTurnCtx({ tripId: 't_goa', turnId: 'turn_d5', link: {} as never, pack: goaPack(), wake: [], signal: new AbortController().signal });
     const villa = (id: number, title: string, sourceUrl = `https://www.ixigo.com/hotels/${id}/details`) => ({ ...RIVA, title, sourceUrl });
@@ -133,7 +133,7 @@ describe('the options card', () => {
   });
 
   it("carries each stay's sheet, its photos through Go's image cache, and the stay's place with its time zone", async () => {
-    const results = { saveCard: async () => undefined, card: async () => null } as unknown as ResultsStore;
+    const results = { saveCard: async () => undefined, shownFrom: async () => [], card: async () => null } as unknown as ResultsStore;
     const images = { rehostUrl: async (u: string) => `https://go.test/img/${u.endsWith('s=1024x768') ? (u.includes('/b.jpg') ? 'b' : 'a') : 'card'}.jpg` } as never;
     const ctx = makeTurnCtx({ tripId: 't_goa', turnId: 'turn_d1', link: {} as never, pack: goaPack(), wake: [], signal: new AbortController().signal });
     const set = { resultsId: 'r_d1', tripId: 't_goa', optionKind: 'stay' as const, source: 'search' as const, query: ASK, options: [RIVA], checkedAt: '2026-10-08T12:00:00.000Z' };

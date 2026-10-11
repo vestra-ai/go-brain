@@ -44,6 +44,11 @@ export interface ResultSet {
   checkedAt: string;
   /** The results page the search read on ixigo.com, where the whole list is: "See all on ixigo" opens it. */
   page?: string | null;
+  /**
+   * ixigo has more of this search than the set holds: a stays list whose one page read was full. "See more" reads its next
+   * page once the set's own are all shown (taps.ts), and the set then holds both.
+   */
+  siteMore?: boolean;
 }
 
 /** What a card's option may gain after the card went up (results.setOptionFields): a bus's line its drops (bus-drops.ts) too. */
@@ -68,8 +73,17 @@ export interface OptionsCardRow {
  */
 export const MORE_CARD = 'c_more';
 
-/** An option as "See more" tells it from the others: its own page, else its name and when it leaves. */
-const optionKey = (o: ResultOption): string => o.sourceUrl ?? `${o.title}|${o.journey?.depart_at ?? ''}`;
+/** A stay's own page on ixigo.com: its hotel id, whatever token a read gave its address (web-stays.ts DETAILS). */
+const STAY_PAGE = /^https:\/\/www\.ixigo\.com\/hotels\/(\d+)\/details\?/;
+
+/**
+ * An option as "See more" tells it from the others: a stay on ixigo by its hotel (a second read of the same page gives
+ * its address a new token), else its own page, else its name and when it leaves.
+ */
+export const optionKey = (o: ResultOption): string => {
+  const hotel = o.sourceUrl ? STAY_PAGE.exec(o.sourceUrl)?.[1] : undefined;
+  return hotel ? `hotel:${hotel}` : (o.sourceUrl ?? `${o.title}|${o.journey?.depart_at ?? ''}`);
+};
 
 /** A search's options that no card has shown yet (shown: results.shownFrom), by their numbers in the search. */
 export function unseenNumbers(set: Pick<ResultSet, 'options'>, shown: ResultOption[]): number[] {
@@ -80,6 +94,11 @@ export function unseenNumbers(set: Pick<ResultSet, 'options'>, shown: ResultOpti
 export interface ResultsStore {
   save(s: Omit<ResultSet, 'resultsId'> & { resultsId?: string }): Promise<ResultSet>;
   get(tripId: string, resultsId: string): Promise<ResultSet | null>;
+  /**
+   * ixigo's next page of a search, read for "See more": its new options after the set's own, the query it was read with,
+   * and whether ixigo has more still. The set as kept now, or null when the trip has no such set.
+   */
+  extend(tripId: string, resultsId: string, next: { options: ResultOption[]; query: Record<string, unknown>; siteMore: boolean }): Promise<ResultSet | null>;
   /**
    * The offer as Go's own search last showed it in this trip (the composer's search, or the trip's computer's through
    * Go's MCP server), with that check's time; null when no search of this trip showed it. A job's answer is never a source.
@@ -112,8 +131,13 @@ export interface ResultsStore {
   votesOfKind(tripId: string, kind: OptionKind, exceptCardId: string, exceptKey: string): Promise<string[]>;
   /** A card that never went up ("See more" that failed before its options joined the vote): gone, its options unshown again. */
   dropCard(tripId: string, cardId: string): Promise<void>;
-  /** Every option of a search that a card has shown, as the search gave it: what "See more" never shows again. */
-  shownFrom(tripId: string, resultsId: string): Promise<ResultOption[]>;
+  /**
+   * Every option of a search that a card has shown, as the search gave it: what "See more" never shows again. personId:
+   * only the cards that person sees too (a ticket's See more is theirs alone, so each person has their own next ten).
+   */
+  shownFrom(tripId: string, resultsId: string, personId?: string): Promise<ResultOption[]>;
+  /** A card's "See more" taken off (its search has nothing more after all), the rest as it was: the card as kept now. */
+  dropMore(tripId: string, cardId: string): Promise<OptionsCardT | null>;
   offer(optionId: string): Promise<StoredOffer | null>;
   offersOnCard(cardId: string): Promise<StoredOffer[]>;
   /** Each option on a card as its search gave it (its facts, its night and its whole stay), by its option id. */
@@ -169,25 +193,44 @@ function offerOf(r: OfferDbRow): StoredOffer {
   };
 }
 
+interface SetDbRow {
+  results_id: string; trip_id: string; option_kind: OptionKind; source: 'search' | 'task'; query: Record<string, unknown>; options: ResultOption[];
+  checked_at: Date; page: string | null; site_more: boolean;
+}
+
+const SET_COLUMNS = 'results_id, trip_id, option_kind, source, query, options, checked_at, page, site_more';
+
+function setOf(r: SetDbRow): ResultSet {
+  return {
+    resultsId: r.results_id, tripId: r.trip_id, optionKind: r.option_kind, source: r.source, query: r.query, options: r.options, checkedAt: r.checked_at.toISOString(),
+    ...(r.page ? { page: r.page } : {}),
+    ...(r.site_more ? { siteMore: true } : {}),
+  };
+}
+
 export function createResultsStore(pool: pg.Pool): ResultsStore {
   return {
     async save(s) {
       const set: ResultSet = { ...s, resultsId: s.resultsId ?? mintId('r') };
       await pool.query(
-        `insert into travel_results (results_id, trip_id, option_kind, source, query, options, checked_at, page)
-         values ($1, $2, $3, $4, $5, $6, $7, $8) on conflict (results_id) do nothing`,
-        [set.resultsId, set.tripId, set.optionKind, set.source, JSON.stringify(set.query), JSON.stringify(set.options), set.checkedAt, set.page ?? null],
+        `insert into travel_results (results_id, trip_id, option_kind, source, query, options, checked_at, page, site_more)
+         values ($1, $2, $3, $4, $5, $6, $7, $8, $9) on conflict (results_id) do nothing`,
+        [set.resultsId, set.tripId, set.optionKind, set.source, JSON.stringify(set.query), JSON.stringify(set.options), set.checkedAt, set.page ?? null, set.siteMore === true],
       );
       return set;
     },
 
     async get(tripId, resultsId) {
-      const { rows } = await pool.query<{ results_id: string; trip_id: string; option_kind: OptionKind; source: 'search' | 'task'; query: Record<string, unknown>; options: ResultOption[]; checked_at: Date; page: string | null }>(
-        'select results_id, trip_id, option_kind, source, query, options, checked_at, page from travel_results where trip_id = $1 and results_id = $2',
-        [tripId, resultsId],
+      const { rows } = await pool.query<SetDbRow>(`select ${SET_COLUMNS} from travel_results where trip_id = $1 and results_id = $2`, [tripId, resultsId]);
+      return rows[0] ? setOf(rows[0]) : null;
+    },
+
+    async extend(tripId, resultsId, next) {
+      const { rows } = await pool.query<SetDbRow>(
+        `update travel_results set options = options || $3::jsonb, query = $4, site_more = $5 where trip_id = $1 and results_id = $2 returning ${SET_COLUMNS}`,
+        [tripId, resultsId, JSON.stringify(next.options), JSON.stringify(next.query), next.siteMore],
       );
-      const r = rows[0];
-      return r ? { resultsId: r.results_id, tripId: r.trip_id, optionKind: r.option_kind, source: r.source, query: r.query, options: r.options, checkedAt: r.checked_at.toISOString(), ...(r.page ? { page: r.page } : {}) } : null;
+      return rows[0] ? setOf(rows[0]) : null;
     },
 
     async findOffer(tripId, offerId) {
@@ -304,9 +347,26 @@ export function createResultsStore(pool: pg.Pool): ResultsStore {
       await pool.query('delete from options_cards where trip_id = $1 and card_id = $2', [tripId, cardId]);
     },
 
-    async shownFrom(tripId, resultsId) {
-      const { rows } = await pool.query<{ option: ResultOption }>('select option from travel_offers where trip_id = $1 and results_id = $2', [tripId, resultsId]);
+    async shownFrom(tripId, resultsId, personId) {
+      // A card for some people alone (for_person_ids) is shown to them; any other card, to everyone.
+      const { rows } = await pool.query<{ option: ResultOption }>(
+        `select o.option from travel_offers o left join options_cards c on c.trip_id = o.trip_id and c.card_id = o.card_id
+         where o.trip_id = $1 and o.results_id = $2
+           and ($3::text is null or jsonb_typeof(c.card->'for_person_ids') is distinct from 'array' or c.card->'for_person_ids' ? $3)`,
+        [tripId, resultsId, personId ?? null],
+      );
       return rows.map((r) => r.option);
+    },
+
+    async dropMore(tripId, cardId) {
+      const { rows } = await pool.query<{ card: OptionsCardT }>(
+        `update options_cards set card = card || jsonb_build_object('actions', (
+           select coalesce(jsonb_agg(a order by i), '[]'::jsonb) from jsonb_array_elements(coalesce(card->'actions', '[]'::jsonb)) with ordinality as t(a, i)
+           where a->>'action_id' is distinct from $3))
+         where trip_id = $1 and card_id = $2 returning card`,
+        [tripId, cardId, MORE_OPTIONS.action_id],
+      );
+      return rows[0]?.card ?? null;
     },
 
     async releaseVote(cardId, key) {

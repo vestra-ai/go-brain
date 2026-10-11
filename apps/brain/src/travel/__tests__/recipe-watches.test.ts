@@ -277,7 +277,7 @@ describe('watch_ixigo', () => {
         saved.push(s);
         return { ...s, resultsId: 'r_w2' };
       },
-      saveCard: async () => undefined,
+      saveCard: async () => undefined, shownFrom: async () => [],
       card: async () => null,
     } as never;
     const images = { rehostUrl: async (u: string) => u } as never;

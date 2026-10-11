@@ -3,12 +3,14 @@ import * as C from '@go/contract';
 import { withSchema } from '../../db/test-db.js';
 import { eventually, makeLaneBrain, type LaneBrain } from '../../tasks/testing/lane-brain.js';
 import { GOA_TRIP, goaPack } from '../../tasks/testing/goa.js';
-import { buildIxigoLinkCard, buildOptionsCard, SEE_ALL_ACTION } from '../cards.js';
+import { buildIxigoLinkCard, buildOptionsCard, PICK_ACTION, SEE_ALL_ACTION } from '../cards.js';
 import { stableId } from '../ids.js';
 import { picksOf } from '../picks.js';
 import { registerTravel } from '../register.js';
 import { SocketCallError } from '../../door/rpc.js';
 import { createResultsStore, MORE_CARD, type ResultOption } from '../results.js';
+import { ALL_SHOWN } from '../taps.js';
+import type { TravelOption } from '../travel.js';
 
 let db: Awaited<ReturnType<typeof withSchema>>;
 let lb: LaneBrain;
@@ -228,9 +230,12 @@ describe('registerTravel', () => {
       const added = lb.link.sent('add_vote_options').at(-1)!;
       expect(added).toMatchObject({ request_id: stableId('go_more', 'tap_m3'), trip_id: 't_goa', decision_id: shown.decision_id });
       expect((added.options as Array<{ option_ref: string }>).map((o) => o.option_ref)).toEqual(next.options.map((o) => o.option_id));
+      // The card tapped hands its See more on: the newest card of the vote has it, or none does.
+      await eventually(() => lb.link.sent('replace_card').some((p) => (p.card as { card_id: string }).card_id === first.card_id));
+      expect(lb.link.sent('replace_card').filter((p) => (p.card as { card_id: string }).card_id === first.card_id).at(-1)).toMatchObject({ card: { actions: [], decision_id: shown.decision_id } });
       // Every one shown now: a toast, and nothing posted.
       const posts = lb.link.sent('post_message').length;
-      expect(await more('tap_m4')).toEqual({ result: 'done', toast: "That's everything ixigo listed for this search" });
+      expect(await more('tap_m4')).toEqual({ result: 'done', toast: ALL_SHOWN });
       expect(lb.link.sent('post_message')).toHaveLength(posts);
     } finally {
       lb.link.request = real;
@@ -264,9 +269,120 @@ describe('registerTravel', () => {
       expect(await results.card('t_goa', kept)).not.toBeNull();
       expect(lb.link.sent('post_message').some((p) => (p.card as { card_id?: string } | undefined)?.card_id === kept)).toBe(false);
       // Its stay counts as shown: the next See more never adds it again.
-      expect(await more('tap_m6')).toEqual({ result: 'done', toast: "That's everything ixigo listed for this search" });
+      expect(await more('tap_m6')).toEqual({ result: 'done', toast: ALL_SHOWN });
     } finally {
       lb.link.request = real;
+    }
+  });
+
+  // Keshav, 11 Oct: "show 10 then see more button, and on click 10 more etc", for each traveller's own tickets too.
+  it("\"See more\" on a ticket's card puts the next 10 on a card of the tapper's own, for them alone, and each person has their own next 10", async () => {
+    const results = createResultsStore(db.pool);
+    const flight = (i: number): ResultOption => ({
+      kind: 'flight', title: `IndiGo 6E${2100 + i}`, priceMinor: 600_000 + i * 1_000, currency: 'INR', priceNote: 'per person', highlights: [], facts: {},
+      sourceUrl: `https://www.ixigo.com/search/result/flight?from=DEL&to=GOI&date=06112026#${i}`,
+    });
+    const options = Array.from({ length: 13 }, (_, i) => flight(i + 1));
+    const set = await results.save({ tripId: 't_goa', optionKind: 'flight', source: 'search', query: { from: 'Delhi', to: 'Goa' }, options, checkedAt: '2026-10-07T12:00:00.000Z' });
+    const ctx = lb.ctx({ turnId: 'turn_more3' });
+    await lb.tools.run('show_options', { line: 'Flights from Delhi.', results_id: set.resultsId, title: 'Flights, Delhi to Goa', option_numbers: [2] }, ctx);
+    const first = C.OptionsCard.parse(ctx.cards[0]);
+    expect(first.options.map((o) => o.title)).toEqual([2, 1, 3, 4, 5, 6, 7, 8, 9, 10].map((n) => `IndiGo 6E${2100 + n}`));
+    expect(first.decision_id ?? null).toBeNull();
+    expect(first.actions).toEqual([PICK_ACTION, C.MORE_OPTIONS]);
+    const more = (tapId: string, personId: string) =>
+      lb.taps.tap('options', 'more_options', { tap_id: tapId, trip_id: 't_goa', card_id: first.card_id, action_id: 'more_options', person_id: personId }, first);
+    const posted = (tapId: string) => lb.link.sent('post_message').find((p) => (p.card as { card_id?: string } | undefined)?.card_id === stableId(MORE_CARD, tapId));
+    const rest = ['IndiGo 6E2111', 'IndiGo 6E2112', 'IndiGo 6E2113'];
+    expect(await more('tap_f1', 'p_meher')).toEqual({ result: 'done' });
+    await eventually(() => posted('tap_f1') !== undefined);
+    const mine = C.OptionsCard.parse(posted('tap_f1')!.card);
+    expect(mine.options.map((o) => o.title)).toEqual(rest);
+    // Hers alone, with nothing more after these: "I'll take this" only.
+    expect(posted('tap_f1')).toMatchObject({ visible_to_person_ids: ['p_meher'] });
+    expect(mine).toMatchObject({ for_person_ids: ['p_meher'], actions: [{ ...PICK_ACTION, only_for_person_ids: ['p_meher'] }] });
+    expect(mine.decision_id ?? null).toBeNull();
+    expect(lb.link.sent('add_vote_options').some((p) => p['request_id'] === stableId('go_more', 'tap_f1'))).toBe(false);
+    // Priya's next 10 are the same three: Meher's card was Meher's alone.
+    expect(await more('tap_f2', 'p_priya')).toEqual({ result: 'done' });
+    await eventually(() => posted('tap_f2') !== undefined);
+    expect(C.OptionsCard.parse(posted('tap_f2')!.card).options.map((o) => o.title)).toEqual(rest);
+    // Meher has seen them all: a toast. The room's card keeps its See more, for everyone else's next 10.
+    expect(await more('tap_f3', 'p_meher')).toEqual({ result: 'done', toast: ALL_SHOWN });
+    expect(lb.link.sent('replace_card').some((p) => (p.card as { card_id: string }).card_id === first.card_id)).toBe(false);
+  });
+
+  it("\"See more\" reads ixigo's next page once the search's own stays are shown, the same stays never twice, and takes See more off when it brings nothing new", async () => {
+    const results = createResultsStore(db.pool);
+    // A second read gives a stay's address a new token: the same hotel all the same.
+    const stay = (i: number, token = 'a'): TravelOption => ({
+      kind: 'stay', title: `Morjim ${i}`, priceMinor: 500_000 + i * 1_000, totalMinor: 1_500_000 + i * 3_000, currency: 'INR', priceNote: 'per night, per room',
+      highlights: [], facts: { nights: 3 }, sourceUrl: `https://www.ixigo.com/hotels/${9300 + i}/details?hName=Morjim%20${i}&hotelInfoToken=${token}`,
+    });
+    const query = { area: 'Morjim', checkIn: '2026-11-06', checkOut: '2026-11-09', guests: 5 };
+    const page1 = Array.from({ length: 10 }, (_, i) => stay(i + 1));
+    const show = async (turnId: string) => {
+      const set = await results.save({ tripId: 't_goa', optionKind: 'stay', source: 'search', query, options: page1 as ResultOption[], checkedAt: '2026-10-07T12:00:00.000Z', siteMore: true });
+      const ctx = lb.ctx({ turnId });
+      const shown = (await lb.tools.run('show_options', { line: 'Stays in Morjim.', results_id: set.resultsId, title: 'Stays in Morjim' }, ctx)) as any;
+      return { set, shown, first: C.OptionsCard.parse(ctx.cards[0]) };
+    };
+    const travel = lb.brain.travel!;
+    const realSearch = travel.search;
+    const realRequest = lb.link.request.bind(lb.link);
+    const reads: Array<[string, unknown, unknown]> = [];
+    let next: TravelOption[] = [];
+    travel.search = (async (kind: string, q: unknown, o: unknown) => {
+      reads.push([kind, q, o]);
+      return { results: next, checkedAt: '2026-10-07T12:05:00.000Z', listed: next.length };
+    }) as typeof travel.search;
+    try {
+      const { set, shown, first } = await show('turn_more4');
+      // All ten of page 1 on the card, and See more: ixigo has more.
+      expect(first.options).toHaveLength(10);
+      expect(first).toMatchObject({ decision_id: shown.decision_id, actions: [C.MORE_OPTIONS] });
+      lb.link.request = (async (method: string, params: unknown) =>
+        method === 'read_trip'
+          ? { ...GOA_TRIP, decisions: [{ decision_id: shown.decision_id, status: 'open', options: Array.from({ length: 10 }, (_, i) => ({ label: `S${i}` })) }] }
+          : realRequest(method as 'post_message', params as never)) as typeof lb.link.request;
+      // Pages 1 and 2: page 1's stays again, with new tokens, then eight more.
+      next = [...Array.from({ length: 10 }, (_, i) => stay(i + 1, 'b')), ...Array.from({ length: 8 }, (_, i) => stay(i + 11, 'b'))];
+      expect(await lb.taps.tap('options', 'more_options', { tap_id: 'tap_p1', trip_id: 't_goa', card_id: first.card_id, action_id: 'more_options', person_id: 'p_meher' }, first))
+        .toEqual({ result: 'done', toast: 'Looking for more on ixigo' });
+      const cardId = stableId(MORE_CARD, 'tap_p1');
+      const posted = () => lb.link.sent('post_message').find((p) => (p.card as { card_id?: string } | undefined)?.card_id === cardId);
+      await eventually(() => posted() !== undefined);
+      // The same search, two pages of it, on the stage like any search.
+      expect(reads).toEqual([['stays', { ...query, pages: 2 }, { tripId: 't_goa' }]]);
+      const second = C.OptionsCard.parse(posted()!.card);
+      expect(second.options.map((o) => o.title)).toEqual(Array.from({ length: 8 }, (_, i) => `Morjim ${i + 11}`));
+      // In the same vote, and nothing more after: ixigo's two pages read, every stay shown.
+      expect(second).toMatchObject({ decision_id: shown.decision_id, actions: [] });
+      const kept = await results.get('t_goa', set.resultsId);
+      expect(kept?.options).toHaveLength(18);
+      expect(kept?.query).toEqual({ ...query, pages: 2 });
+      expect(kept?.siteMore).toBeUndefined();
+
+      // A next page with nothing new: no card, and the card tapped loses its See more.
+      const other = await show('turn_more5');
+      next = Array.from({ length: 10 }, (_, i) => stay(i + 1, 'c'));
+      const posts = lb.link.sent('post_message').length;
+      lb.link.request = (async (method: string, params: unknown) =>
+        method === 'read_trip'
+          ? { ...GOA_TRIP, decisions: [{ decision_id: other.shown.decision_id, status: 'open', options: Array.from({ length: 10 }, (_, i) => ({ label: `S${i}` })) }] }
+          : realRequest(method as 'post_message', params as never)) as typeof lb.link.request;
+      expect(await lb.taps.tap('options', 'more_options', { tap_id: 'tap_p2', trip_id: 't_goa', card_id: other.first.card_id, action_id: 'more_options', person_id: 'p_meher' }, other.first))
+        .toEqual({ result: 'done', toast: 'Looking for more on ixigo' });
+      await eventually(() => lb.link.sent('replace_card').some((p) => (p.card as { card_id: string }).card_id === other.first.card_id));
+      expect(lb.link.sent('replace_card').filter((p) => (p.card as { card_id: string }).card_id === other.first.card_id).at(-1)).toMatchObject({ card: { actions: [] } });
+      expect(lb.link.sent('post_message')).toHaveLength(posts);
+      expect((await results.get('t_goa', other.set.resultsId))?.siteMore).toBeUndefined();
+      // Nothing more anywhere now: a toast.
+      expect(await lb.taps.tap('options', 'more_options', { tap_id: 'tap_p3', trip_id: 't_goa', card_id: other.first.card_id, action_id: 'more_options', person_id: 'p_meher' }, other.first))
+        .toEqual({ result: 'done', toast: ALL_SHOWN });
+    } finally {
+      travel.search = realSearch;
+      lb.link.request = realRequest;
     }
   });
 
