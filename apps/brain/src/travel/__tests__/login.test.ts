@@ -1404,7 +1404,8 @@ describe("one tap: Go's screen opens with the log in, and Go sees the login land
   it(`with nothing seen for ${SELF_CHECK_MS / 1000} s the card gets I'm logged in; Not now ends every screen session it opened`, async () => {
     const w = world({ cookies: () => [] });
     await w.setup();
-    const at60 = SELF_CHECK_MS / LOGIN_POLL_MS;
+    // The look that reaches 60 s from the tap: every 2 s for the first 30 s, then every 5 s.
+    const at60 = LOGIN_POLL_FAST_FOR_MS / LOGIN_POLL_MS + (SELF_CHECK_MS - LOGIN_POLL_FAST_FOR_MS) / LOGIN_POLL_SLOW_MS;
     const seen: Record<number, string[]> = {};
     // While Go waits: Log in tapped again (the screen opens again), then, once that is answered, Not now. Each is kept, so
     // the test waits on them itself: how many looks the wait takes meanwhile is the database's pace, never counted.
@@ -1419,7 +1420,7 @@ describe("one tap: Go's screen opens with the log in, and Go sees the login land
     // The wait ends only once Not now is in (its state), so both taps were made by now.
     await notNow;
     await w.login.settled();
-    // Each look is one 2 s wait: up to 60 s from the tap the card has no I'm logged in, and the next look shows it.
+    // Up to 60 s from the tap the card has no I'm logged in, and the next look shows it.
     expect(seen[at60]).toEqual(['ixigo_login', 'ixigo_not_now']);
     expect(seen[at60 + 1]).toEqual(['ixigo_login', 'ixigo_logged_in', 'ixigo_not_now']);
     expect(w.cards().filter((c) => ids(c).includes('ixigo_logged_in'))).toHaveLength(1);
