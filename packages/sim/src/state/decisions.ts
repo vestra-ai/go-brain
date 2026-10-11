@@ -51,8 +51,9 @@ export function addVoteOptions(s: TripState, p: Params<typeof C.AddVoteOptions>)
   const d = openDecision(s, p.decision_id);
   if (d.options.length + p.options.length > 20) throw fail('invalid', `options: a vote has at most 20 options, and this one has ${d.options.length}`);
   p.options.forEach((o, i) => s.currency(o.currency, `options[${i}].currency`));
-  d.options.push(...p.options);
-  d.tally.push(...p.options.map(() => 0));
+  // New arrays: the vote's options may be the very array open_vote was given.
+  d.options = [...d.options, ...p.options];
+  d.tally = [...d.tally, ...p.options.map(() => 0)];
   const ev = s.bump('decision.options_added', { decision_id: d.decision_id, options: structuredClone(p.options), by: { kind: 'go' } });
   return { result: { seq: ev.seq }, events: [ev] };
 }

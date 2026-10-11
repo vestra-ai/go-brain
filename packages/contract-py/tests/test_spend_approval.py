@@ -46,24 +46,27 @@ def test_refuses_garbage(v):
     assert verify_spend_approval("not.a.token!", v["public_key_pem"]).reason == "malformed"
 
 
-# Contract 1.2: a traveller's own ticket. The Server signs for_person_id in place of decision_id; the traveller pays.
-def _ticket(v, **over):
+# Contract 1.3 (G3): a person's own pick. The Server signs `personal` in place of decision_id; that person pays.
+_PICK = {"person_id": "p_meher", "card_id": "c_flights_meher", "option_id": "opt_flight_2"}
+
+
+def _personal(v, **over):
     claims = {k: x for k, x in v["claims"].items() if k != "decision_id"}
-    claims.update({"for_person_id": "p_meher", "kind": "ticket", "payer_person_id": "p_meher"})
+    claims.update({"personal": dict(_PICK), "payer_person_id": "p_meher"})
     claims.update(over)
     return claims
 
 
-def test_signs_and_verifies_a_ticket(v):
-    token = sign_spend_approval(_ticket(v), v["private_key_pem"])
+def test_signs_and_verifies_a_personal_approval(v):
+    token = sign_spend_approval(_personal(v), v["private_key_pem"])
     r = verify_spend_approval(token, v["public_key_pem"], now=v["verify_at"])
-    assert r.ok and r.claims["for_person_id"] == "p_meher" and r.claims["payer_person_id"] == "p_meher"
+    assert r.ok and r.claims["personal"] == _PICK and r.claims["payer_person_id"] == "p_meher"
 
 
-def test_will_not_sign_a_ticket_another_pays_or_one_naming_a_vote_too(v):
+def test_will_not_sign_a_personal_approval_another_pays_or_one_naming_a_vote_too(v):
     with pytest.raises(ValueError):
-        sign_spend_approval(_ticket(v, payer_person_id="p_rahul"), v["private_key_pem"])
+        sign_spend_approval(_personal(v, payer_person_id="p_rahul"), v["private_key_pem"])
     with pytest.raises(ValueError):
-        sign_spend_approval(_ticket(v, decision_id="d_villa"), v["private_key_pem"])
+        sign_spend_approval(_personal(v, decision_id="d_villa"), v["private_key_pem"])
     with pytest.raises(ValueError):
         sign_spend_approval({k: x for k, x in v["claims"].items() if k != "decision_id"}, v["private_key_pem"])

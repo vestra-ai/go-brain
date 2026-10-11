@@ -1527,7 +1527,7 @@ The params are a `RequestSpendApproval`:
 | `merchant` | Who is paid, as the payer will see it in the vault. |
 | `purpose` | What the payment is for, as the payer will see it in the vault. |
 | `refundable_until` | When free cancellation ends. Required when the mandate is refundable only. |
-| `kind`, `for_person_id` | Contract 1.2, a traveller's own ticket: `kind: "ticket"` and the traveller in place of `decision_id`. The traveller is the payer. See [A traveller's own ticket](08-money-and-the-vault.md#a-travellers-own-ticket-contract-12). |
+| `personal` | Contract 1.3, a person's own pick (their ticket, or a seat or bag at check-in): `{ person_id, card_id, option_id }` in place of `decision_id`. That person is the payer. See [A person's own pick](08-money-and-the-vault.md#a-persons-own-pick-contract-13). |
 
 #### The approved result
 

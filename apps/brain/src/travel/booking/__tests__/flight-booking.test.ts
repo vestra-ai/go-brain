@@ -240,7 +240,11 @@ describe("Go books a person's own flight up to ixigo's pay button", () => {
     const cardId = (await db.pool.query(`select card_id from flight_bookings where person_id = 'p_meher4'`)).rows[0].card_id as string;
     expect(await b.pay({ tripId: 't_goa', cardId, personId: 'p_kabir', tapId: 'tap_p2' })).toEqual({ result: 'refused', toast: 'This one is for someone else to pay' });
     expect(await b.pay({ tripId: 't_goa', cardId, personId: 'p_meher4', tapId: 'tap_p3' })).toEqual({ result: 'open', url: 'https://vault.example/pay/x', expires_at: '2026-10-10T12:00:00.000Z' });
-    expect(asked).toEqual([{ personId: 'p_meher4', amountMinor: 753_600, currency: 'INR', purpose: 'IndiGo 6E2150, Fri 6 Nov, for Someone', key: expect.stringMatching(/^fb_/), trigger: 'tap_p3' }]);
+    // Their pick goes with it (contract 1.3): the options card they tapped and the flight on it.
+    expect(asked).toEqual([{
+      personId: 'p_meher4', cardId: 'c_fl', optionId: 'opt_fl1', amountMinor: 753_600, currency: 'INR', purpose: 'IndiGo 6E2150, Fri 6 Nov, for Someone',
+      key: expect.stringMatching(/^fb_/), trigger: 'tap_p3',
+    }]);
     await hook.paid!({ tripId: 't_goa', approvalId: 'appr_1', railRef: 'fake_1' });
     expect((await db.pool.query(`select state, approval_id from flight_bookings where person_id = 'p_meher4'`)).rows[0]).toEqual({ state: 'paid', approval_id: 'appr_1' });
     expect(await b.pay({ tripId: 't_goa', cardId, personId: 'p_meher4', tapId: 'tap_p4' })).toEqual({ result: 'refused', toast: 'Already paid' });
