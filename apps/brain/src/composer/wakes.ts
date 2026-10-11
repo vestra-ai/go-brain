@@ -4,7 +4,7 @@ import { amountsIn } from '../money/expenses.js';
 import { looksLikeMoney, saysMoneyMoved } from '../reflex/money-line.js';
 import { plainlyNamesGo } from '../trips/names-go.js';
 import type { TripPack } from '../trips/pack.js';
-import { flexibleOf } from '../trips/votes.js';
+import { flexibleOf, tripOfOne } from '../trips/votes.js';
 import { answersToGo, followsGoAnswer, inlineData, personName } from './fence.js';
 
 /** For a line that says someone paid but no amount: record_expense would ask, but with no amount the model never calls it. */
@@ -196,6 +196,13 @@ function pointsAt(m: Message, pack: TripPack): string | null {
 export function renderTripChangeWake(item: DeskItem, pack: TripPack): string {
   const p = (item.payload ?? {}) as { type?: string; decisionId?: string; title?: string };
   // The group's stay is booked (money/finish.ts): each person's flights are next, never before it (Saket's test, 11 Oct).
+  // A trip of one's: their own flights, never "everyone's" (Keshav, 12 Oct).
+  if (p.type === 'stay.booked' && tripOfOne(pack.trip)) {
+    return (
+      `their stay ${inlineData(p.title ?? 'the stay')} is booked, and its ticket is up. Their flights are next: call search_flights_each ` +
+      'for them, unless they have a flight picked or booked already, and say it in one short line. Never say vote, poll, everyone or the group.'
+    );
+  }
   if (p.type === 'stay.booked') {
     return (
       `the group's stay ${inlineData(p.title ?? 'the stay')} is booked, and its ticket is up. Each person's flights are next: ` +
@@ -227,7 +234,17 @@ export function renderTripChangeWake(item: DeskItem, pack: TripPack): string {
   return `the trip changed (${p.type ?? item.ref})`;
 }
 
-export function renderSetupWake(item: DeskItem): string {
+export function renderSetupWake(item: DeskItem, pack?: TripPack): string {
+  // A trip of one never gets a vote (Keshav, 12 Oct; Go's hello said "run votes" to one person): their word is the decision.
+  if (item.ref === 'greet' && tripOfOne(pack?.trip)) {
+    return (
+      'you just joined this trip, which has one person. Say hello to them in one or two short lines and what you can do for them ' +
+      '(find stays and flights, keep the plan, book what they pick). If they asked you something in this turn, answer that first ' +
+      'and keep the hello to a few words. Their word is the decision: never say vote, poll, everyone or the group. Where the trip ' +
+      'could go, if you suggest any, is a place card (the ixigo tool\'s plan.explore, then show_options), never names in your words or ' +
+      'in offer_replies. If the card can\'t come, say the hello anyway.'
+    );
+  }
   if (item.ref === 'greet') {
     return (
       'you just joined this trip. Say hello to the group in one or two short lines and what you can do for them ' +

@@ -141,7 +141,11 @@ function voteCardFor(id: string, decisionId: string, question: string, options: 
  */
 export async function openVoteFromCard(
   d: { results: ResultsStore; link: Pick<ServerLink, 'request'>; now: () => Date },
-  o: { tripId: string; cardId: string; key: string; requestId: string; voteCardId: string; question?: string; closesInHours?: number; anonymous?: boolean; onCard?: boolean },
+  o: {
+    tripId: string; cardId: string; key: string; requestId: string; voteCardId: string; question?: string; closesInHours?: number; anonymous?: boolean; onCard?: boolean;
+    /** A trip of one: the vote is under the hood, and no line says "vote" (Keshav, 12 Oct). */
+    one?: boolean;
+  },
 ): Promise<VoteOutcome> {
   const row = await d.results.card(o.tripId, o.cardId);
   if (!row) return { ok: false, reason: 'unknown_card' };
@@ -185,9 +189,9 @@ export async function openVoteFromCard(
         const line = stale
           ? `The earlier ${noun} vote was for ${searchWords(was!) || 'another search'}; this card is the vote for ${searchWords(now!) || 'this one'}.`
           : `The earlier ${noun} vote had no room left; this card is the new vote.`;
-        // Best effort: the new card's vote opens whatever the Server says to these.
+        // Best effort: the new card's vote opens whatever the Server says to these. A trip of one hears nothing of votes.
         await d.link.request('close_vote', { request_id: stableId('go_close_replaced', open.decisionId), trip_id: o.tripId, decision_id: open.decisionId })
-          .then(() => d.link.request('post_message', { request_id: stableId('go_vote_replaced', open.decisionId, o.cardId), trip_id: o.tripId, text: line }))
+          .then(() => (o.one ? undefined : d.link.request('post_message', { request_id: stableId('go_vote_replaced', open.decisionId, o.cardId), trip_id: o.tripId, text: line })))
           .catch(() => undefined);
       }
     }

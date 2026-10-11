@@ -27,7 +27,12 @@ import { toResultOption, unseenNumbers, type OptionKind, type ResultOption, type
 import type { SearchWake } from './search-wake.js';
 import { Clock, MUST_HAVES, type Travel, type TravelKind, type TravelOption, type TravelQuery, type TravelSearch } from './travel.js';
 import { notLoadedLine, stillNotLoadedLine, TRIES, tryAgain, waitFor } from './try-again.js';
+import { NO_VOTE_FOR_ONE, tripOfOne } from '../trips/votes.js';
 import { openVoteFromCard, VOTE_MOST } from './votes.js';
+
+/** A trip of one's options card: its vote is under the hood, their one tap picks it, and Go never says so in vote words. */
+const ONE_PICKS =
+  'This trip has one person: their one tap on an option picks it, at once, and Go takes it from there. Never say vote, poll, everyone or the group.';
 
 export interface TravelToolDeps {
   /**
@@ -510,7 +515,10 @@ export async function putUpCard(
     const voted = await openVoteFromCard(
       { results: d.results, link: ctx.link, now: d.now ?? (() => new Date()) },
       // Its ids from the card, so a rerun that skips an earlier card's vote never gives this one that card's request.
-      { tripId: ctx.tripId, cardId, key: ctx.turnId, requestId: stableId('go_vote', cardId), voteCardId: stableId('c_vote', cardId), onCard: true, ...given.vote },
+      {
+        tripId: ctx.tripId, cardId, key: ctx.turnId, requestId: stableId('go_vote', cardId), voteCardId: stableId('c_vote', cardId), onCard: true, ...given.vote,
+        ...(tripOfOne(ctx.pack?.trip) ? { one: true } : {}),
+      },
     ).catch((err: unknown) => {
       d.log?.warn({ err: String(err).slice(0, 200), cardId }, 'travel: a card went up without its vote');
       return null;
@@ -1015,7 +1023,9 @@ export function travelTools(d: TravelToolDeps): QuickTool<any>[] {
       return {
         card_id: cardId, shown, checked: ageText(set.checkedAt, d.now()),
         ...(decisionId ? { decision_id: decisionId } : {}),
-        note: decisionId ? "The card goes out with your line, as the group's vote: each option has Vote on it." : 'The card goes out with your line.',
+        note: tripOfOne(ctx.pack?.trip) && !PERSONAL_KINDS.has(set.optionKind)
+          ? `The card goes out with your line. ${ONE_PICKS}`
+          : decisionId ? "The card goes out with your line, as the group's vote: each option has Vote on it." : 'The card goes out with your line.',
       };
     },
   };
@@ -1030,6 +1040,7 @@ export function travelTools(d: TravelToolDeps): QuickTool<any>[] {
     input: VoteArgs,
     endsTurn: true,
     async run(a, ctx) {
+      if (tripOfOne(ctx.pack?.trip)) return { error: 'one_person', note: NO_VOTE_FOR_ONE };
       // No card_id: the one options card shown earlier in this reply (the loop runs a reply of card tools in order).
       let cardId = a.card_id;
       if (!cardId) {

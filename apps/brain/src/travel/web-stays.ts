@@ -155,14 +155,15 @@ export function createWebStays(d: WebStaysDeps): WebStays {
    * fills in; nothing is typed, and nothing past the review is pressed. The live card ticks each step for the room (the
    * stay is the group's), the fare and coupon on it. Null when a step fails: the caller reads the price as before.
    */
-  async function stageHold(o: StoredOffer & { sourceUrl: string }): Promise<Staged | null> {
+  async function stageHold(o: StoredOffer & { sourceUrl: string }, forOne: boolean): Promise<Staged | null> {
     const stay = stayOf(o.sourceUrl);
     const runner = d.runner();
     if (!stay || !runner || !d.link) return null;
     const tag = stableId('stay', o.optionId, d.now().getTime());
     const live = bookingLiveCard(
       { link: d.link, now: d.now, log: d.log ?? { warn: () => undefined } },
-      o.tripId, stableId('c_stay', o.optionId, d.now().getTime()), `Booking ${o.title} for the group`,
+      // One person's own stay (a trip of one): never "for the group".
+      o.tripId, stableId('c_stay', o.optionId, d.now().getTime()), forOne ? `Booking ${o.title}` : `Booking ${o.title} for the group`,
       [`Opening ${o.title} on ixigo`, 'Choosing the rooms', "ixigo's coupon", 'Reserving it on ixigo, privately', 'Ready to pay'], null,
     );
     const failed = async (i: number): Promise<null> => {
@@ -221,7 +222,7 @@ export function createWebStays(d: WebStaysDeps): WebStays {
       return { ok: true, priceMinor: await livePrice(offer as StoredOffer & { sourceUrl: string }) };
     },
 
-    async hold(offerId) {
+    async hold(offerId, lead) {
       const o = await optionOf(offerId);
       const login = (): Promise<void> =>
         d.login.ensure(o.tripId, `Booking ${o.title}`, { booking: true }).then((l) => {
@@ -234,7 +235,7 @@ export function createWebStays(d: WebStaysDeps): WebStays {
       let read: number | null = null;
       if (booking) {
         await login();
-        staged = await stageHold(o).catch(() => null);
+        staged = await stageHold(o, lead?.personIds.length === 1).catch(() => null);
         if (!staged) read = await livePrice(o);
       } else {
         // ixigo's login and its price now, read together: each is one page on the trip's browser, and the payment waits on
