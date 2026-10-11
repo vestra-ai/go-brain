@@ -222,15 +222,30 @@ export function createWebStays(d: WebStaysDeps): WebStays {
 
     async hold(offerId) {
       const o = await optionOf(offerId);
-      const login = await d.login.ensure(o.tripId, `Booking ${o.title}`, { booking: true });
-      if (!login.ok) throw new TravelError('refused', login.note);
+      const login = (): Promise<void> =>
+        d.login.ensure(o.tripId, `Booking ${o.title}`, { booking: true }).then((l) => {
+          if (!l.ok) throw new TravelError('refused', l.note);
+        });
       // BOOKING: the stay's own page on the stage, its rate chosen and ixigo's coupon on it kept; its price is the hold's.
-      const staged = d.bookingOn && (await d.bookingOn(o.tripId).catch(() => false)) ? await stageHold(o).catch(() => null) : null;
+      // Its Reserve needs the login, so the login is read first.
+      const booking = d.bookingOn ? await d.bookingOn(o.tripId).catch(() => false) : false;
+      let staged: Awaited<ReturnType<typeof stageHold>> | null = null;
+      let read: number | null = null;
+      if (booking) {
+        await login();
+        staged = await stageHold(o).catch(() => null);
+        if (!staged) read = await livePrice(o);
+      } else {
+        // ixigo's login and its price now, read together: each is one page on the trip's browser, and the payment waits on
+        // both (prod, 10 Oct 21:05Z: one after the other they took the payment past the composer's 8 s). Neither is skipped:
+        // a login ixigo refuses still asks, whatever the price said.
+        [, read] = await Promise.all([login(), livePrice(o)]);
+      }
       const room = staged ? `, ${roomName(staged.room)}` : '';
       const saving = staged?.coupon?.savingMinor ? ` ${formatInr(staged.coupon.savingMinor)} off` : '';
       const coupon = staged?.coupon ? `, ${staged.coupon.code}${saving}` : '';
       // ixigo's price now; when the list didn't have the stay this time, the price Go showed it at, which the vote used.
-      const amountMinor = staged?.totalMinor ?? (await livePrice(o)) ?? o.totalMinor;
+      const amountMinor = staged?.totalMinor ?? read ?? o.totalMinor;
       if (amountMinor === null) throw new TravelError('unreachable', `ixigo didn't show a price for ${o.title} just now.`);
       const expiresAt = new Date(d.now().getTime() + WEB_HOLD_MS);
       const h: Hold = {
