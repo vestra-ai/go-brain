@@ -54,14 +54,14 @@ const REVIEW = review('1 Bedroom Apartment', 5586.66, 111);
 const REVIEW_URL = 'https://www.ixigo.com/accommodation-search/api/v1/accommodations/booking/review';
 
 function world(o: {
-  login?: 'in' | 'out'; body?: string | null; stored?: StoredOffer | null; page?: string | null; booking?: boolean; rooms?: string | null; review?: string | null;
+  login?: 'in' | 'out'; loginLine?: string; body?: string | null; stored?: StoredOffer | null; page?: string | null; booking?: boolean; rooms?: string | null; review?: string | null;
   /** ixigo's answer on the login comes once this settles. */
   loginGate?: Promise<void>;
 } = {}) {
   const stored = o.stored === undefined ? offer() : o.stored;
   const reads: Array<{ url: string; plan: FetchPlan; stage?: boolean; private?: boolean }> = [];
   const posted: Array<{ method: string; params: Record<string, unknown> }> = [];
-  const ensured: Array<{ tripId: string; what: string; park?: Parked; booking?: boolean }> = [];
+  const ensured: Array<{ tripId: string; what: string; park?: Parked; booking?: boolean; for?: string }> = [];
   const stays = createWebStays({
     results: {
       offer: async (id) => (stored && id === stored.optionId ? stored : null),
@@ -88,9 +88,9 @@ function world(o: {
     }),
     login: {
       ensure: async (tripId, what, x) => {
-        ensured.push({ tripId, what, ...(x?.park ? { park: x.park } : {}), ...(x?.booking ? { booking: x.booking } : {}) });
+        ensured.push({ tripId, what, ...(x?.park ? { park: x.park } : {}), ...(x?.booking ? { booking: x.booking } : {}), ...(x?.for ? { for: x.for } : {}) });
         await o.loginGate;
-        return o.login === 'out' ? { ok: false as const, note: `Go asked Rahul to link ixigo for ${what}.` } : { ok: true as const };
+        return o.login === 'out' ? { ok: false as const, note: `Go asked Rahul to link ixigo for ${what}.`, ...(o.loginLine ? { line: o.loginLine } : {}) } : { ok: true as const };
       },
     },
     now: () => new Date('2026-10-08T10:30:00Z'),
@@ -143,12 +143,21 @@ describe('before the mandate', () => {
 
   it('with the login out, asks for it with the booking parked on it, and reads no price', async () => {
     const w = world({ login: 'out' });
-    expect(await w.stays.prepare('opt_saudades', { tripId: 't_goa', what: 'Saudades Homestays', resume })).toEqual({
+    expect(await w.stays.prepare('opt_saudades', { tripId: 't_goa', what: 'Saudades Homestays', resume, for: 'p_rahul' })).toEqual({
       ok: false, note: 'Go asked Rahul to link ixigo for Saudades Homestays.',
     });
-    // A booking reads ixigo now (booking): a login it no longer has asks again, never standing on a stale one.
-    expect(w.ensured).toEqual([{ tripId: 't_goa', what: 'Saudades Homestays', park: { what: 'Saudades Homestays', resume }, booking: true }]);
+    // A booking reads ixigo now (booking): a login it no longer has asks again, never standing on a stale one. The card
+    // goes to the person booking it.
+    expect(w.ensured).toEqual([{ tripId: 't_goa', what: 'Saudades Homestays', park: { what: 'Saudades Homestays', resume }, booking: true, for: 'p_rahul' }]);
     expect(w.reads).toEqual([]);
+  });
+
+  it("with the login's card already up, carries the login's one plain line for a tap to say", async () => {
+    const line = "Booking Saudades Homestays waits on the trip's ixigo login: @Rahul, tap Log in to ixigo on your card above, and I'll carry on once you're in.";
+    const w = world({ login: 'out', loginLine: line });
+    expect(await w.stays.prepare('opt_saudades', { tripId: 't_goa', what: 'Saudades Homestays', resume })).toEqual({
+      ok: false, note: 'Go asked Rahul to link ixigo for Saudades Homestays.', line,
+    });
   });
 
   it("with the login in, reads ixigo's price now from the search that showed the stay: the same, or moved", async () => {

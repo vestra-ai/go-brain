@@ -110,7 +110,7 @@ export async function setMandate(
   o: { decisionId: string; choiceIndex: number; capMinor?: number; refundableOnly: boolean; payerPersonId: string },
 ): Promise<
   | { cardId: string; capMinor: number; byMargin: boolean; note: string | null; booking: string }
-  | { refused: string; unbookable?: true; parked?: true; claim?: true }
+  | { refused: string; unbookable?: true; parked?: true; claim?: true; line?: string }
 > {
   const vague = { payer: 'The payer', what: 'it' };
   let trip: Trip;
@@ -185,11 +185,11 @@ export async function setMandate(
     };
     let ready: Awaited<ReturnType<typeof prepare>>;
     try {
-      ready = await prepare(chosen.option_ref, { tripId: ctx.tripId, what: chosen.label, resume });
+      ready = await prepare(chosen.option_ref, { tripId: ctx.tripId, what: chosen.label, resume, for: payer.person_id });
     } catch {
       return { refused: checkFailed(chosen.label) };
     }
-    if (!ready.ok) return { refused: ready.note, parked: true };
+    if (!ready.ok) return { refused: ready.note, parked: true, ...(ready.line ? { line: ready.line } : {}) };
     live = ready.priceMinor;
   }
 
