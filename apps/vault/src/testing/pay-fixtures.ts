@@ -30,7 +30,7 @@ export interface PayFixture {
   setGoStatus(status: number): void;
   registerFor(personId: string): Promise<TestAuthenticator>;
   cardFor(personId: string): Promise<CardSummary>;
-  /** ticketFor: 1.2's ticket approval for that traveller (no vote), who is its payer. */
+  /** ticketFor: 1.3's personal approval for that person's own pick (no vote), who is its payer. */
   payLinkFor(o?: { jti?: string; sameApproval?: boolean; payer?: string; ticketFor?: string; kind?: 'fake' | 'stripe_test' }): Promise<{ token: string; jti: string }>;
   approve(token: string, who: TestAuthenticator): Promise<ApproveResult>;
   drop(): Promise<void>;
@@ -103,7 +103,7 @@ export async function payFixture(): Promise<PayFixture> {
     async payLinkFor(o = {}) {
       const jti = o.jti ?? `ap_${randomBytes(6).toString('hex')}`;
       const payer = o.ticketFor ?? o.payer ?? 'p_rahul';
-      const form = o.ticketFor ? { decision_id: null, for_person_id: o.ticketFor, kind: 'ticket' as const } : {};
+      const form = o.ticketFor ? { decision_id: null, personal: { person_id: o.ticketFor, card_id: 'c_flights_mine', option_id: 'opt_flight_1' } } : {};
       const approval = (o.sameApproval ? approvals.get(jti) : undefined) ?? signTestApproval({ jti, payer_person_id: payer, ...form });
       approvals.set(jti, approval);
       const r = await openPayLink(pool, env, now, {

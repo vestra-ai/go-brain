@@ -176,10 +176,10 @@ describe('step 6: the payer is the person who unlocked', () => {
   });
 });
 
-// Contract 1.2: a traveller's own ticket is never voted on. The Server's approval names the traveller (for_person_id),
-// who is its payer; the vault still takes both keys, and only that traveller's Face ID pays it.
-describe("step 6 for a ticket: only its traveller pays it", () => {
-  it("pays a ticket with the traveller's own passkey, with both keys in the log", async () => {
+// Contract 1.3: a person's own pick is never voted on. The Server's approval names their pick (personal), and they are
+// its payer; the vault still takes both keys, and only that person's Face ID pays it.
+describe("step 6 for a personal approval: only its person pays it", () => {
+  it("pays a person's own pick with their own passkey, with both keys in the log", async () => {
     const { token, jti } = await f.payLinkFor({ ticketFor: 'p_priya' });
     expect(await f.approve(token, priya)).toEqual({ state: 'paid', railRef: `fake_${jti}` });
     expect(f.rail.charges.at(-1)).toMatchObject({ personId: 'p_priya', idempotencyKey: jti });

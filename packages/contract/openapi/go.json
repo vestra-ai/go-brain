@@ -7498,7 +7498,32 @@
           "decision_id"
         ]
       },
-      "RequestTicketSpendApproval": {
+      "PersonalPick": {
+        "type": "object",
+        "properties": {
+          "person_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "card_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "option_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          }
+        },
+        "required": [
+          "person_id",
+          "card_id",
+          "option_id"
+        ]
+      },
+      "RequestPersonalSpendApproval": {
         "type": "object",
         "properties": {
           "request_id": {
@@ -7541,14 +7566,8 @@
               }
             ]
           },
-          "kind": {
-            "type": "string",
-            "const": "ticket"
-          },
-          "for_person_id": {
-            "type": "string",
-            "minLength": 1,
-            "maxLength": 64
+          "personal": {
+            "$ref": "#/components/schemas/PersonalPick"
           }
         },
         "required": [
@@ -7558,14 +7577,13 @@
           "currency",
           "merchant",
           "purpose",
-          "kind",
-          "for_person_id"
+          "personal"
         ]
       },
       "RequestSpendApproval": {
         "anyOf": [
           {
-            "$ref": "#/components/schemas/RequestTicketSpendApproval"
+            "$ref": "#/components/schemas/RequestPersonalSpendApproval"
           },
           {
             "$ref": "#/components/schemas/RequestGroupSpendApproval"
@@ -7621,6 +7639,7 @@
           "not_refundable",
           "approval_outstanding",
           "not_in_trip",
+          "no_pick",
           "already_booked"
         ]
       },
@@ -8684,23 +8703,10 @@
               }
             ]
           },
-          "for_person_id": {
+          "personal": {
             "anyOf": [
               {
-                "type": "string",
-                "minLength": 1,
-                "maxLength": 64
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "kind": {
-            "anyOf": [
-              {
-                "type": "string",
-                "const": "ticket"
+                "$ref": "#/components/schemas/PersonalPick"
               },
               {
                 "type": "null"
@@ -8766,7 +8772,7 @@
           "iat",
           "exp"
         ],
-        "description": "What the Server signs. exp is at most 600 seconds after iat. A group approval carries decision_id; 1.2's ticket approval carries for_person_id (and kind \"ticket\") instead, and its payer is that person."
+        "description": "What the Server signs. exp is at most 600 seconds after iat. A group approval carries decision_id; 1.3's personal approval carries personal (the person, Go's card and the option they picked) instead, and its payer is that person."
       }
     }
   }

@@ -245,6 +245,8 @@ export class FakeServer {
   async tap(cardId: string, actionId: string, personId: string, optionId?: string): Promise<TapResult> {
     const s = this.state(this.tripWith((t) => t.cardMessage(cardId) !== undefined, `card ${cardId}`));
     const tap = { tap_id: this.mint('tap_'), trip_id: s.id, card_id: cardId, action_id: actionId, person_id: personId, ...(optionId ? { option_id: optionId } : {}) };
+    // The Server keeps every tap: a personal approval is granted only for an option its person tapped (1.3, G3).
+    s.recordTap(personId, cardId, optionId);
     return CardActionResult.parse(await this.socket.request('card_tap', tap, { timeoutMs: 3500 }));
   }
 

@@ -393,4 +393,14 @@ describe('the turn context and the registry', () => {
     expect(() => tools.register(t('Search Stays'))).toThrow(/snake_case/);
     expect(tools.list().map((x) => x.name)).toEqual(['ask_to_pay', 'search_stays']);
   });
+
+  it('leaves a tool out of the list while it says it is not offered, read at every list (call_business with calls off)', () => {
+    const tools = createTools();
+    let on = false;
+    tools.register({ name: 'call_business', description: 'd', input: z.object({}), run: async () => ({}), offered: () => on });
+    tools.register({ name: 'react', description: 'd', input: z.object({}), run: async () => ({}) });
+    expect(tools.list().map((x) => x.name)).toEqual(['react']);
+    on = true;
+    expect(tools.list().map((x) => x.name)).toEqual(['call_business', 'react']);
+  });
 });

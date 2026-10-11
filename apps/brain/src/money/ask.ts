@@ -72,7 +72,7 @@ function refuse(d: MoneyDeps, code: RefusalCode, words: Words, err?: unknown): R
 const CODES: ReadonlySet<string> = new Set<RefusalCode>([
   'decision_not_found', 'decision_not_closed', 'no_mandate', 'payer_has_not_confirmed', 'payer_declined', 'over_cap',
   'currency_mismatch', 'not_refundable', 'approval_outstanding', 'no_vote', 'wrong_offer', 'not_bookable', 'not_bookable_yet', 'already_paid',
-  'no_travel', 'hold_failed', 'rail_not_ready', 'vault_refused', 'server_down', 'closed', 'not_in_trip', 'already_booked',
+  'no_travel', 'hold_failed', 'rail_not_ready', 'vault_refused', 'server_down', 'closed', 'not_in_trip', 'already_booked', 'no_pick',
 ]);
 
 /** Fares Go does not book for the whole group this week (master §9 "Cut now"): they are per person. */
@@ -359,6 +359,12 @@ async function advance(d: MoneyDeps, row: PaymentRow, ids: AskIds, deliver: Deli
 export interface TicketAsk {
   /** The traveller, who is the payer. */
   personId: string;
+  /**
+   * Their pick (contract 1.3, G3): the card of Go's they tapped and the option on it. The Server grants the approval only
+   * for an option that person tapped on their own card in the last 30 minutes, at most its price plus 5%.
+   */
+  cardId: string;
+  optionId: string;
   amountMinor: number;
   currency: string;
   /** Shown on the vault's page and signed into the approval, e.g. "IndiGo 6E2150, Fri 6 Nov, for Meher". */
@@ -427,6 +433,8 @@ export async function askForTicket(d: MoneyDeps, tripId: string, o: TicketAsk): 
       payment_kind: d.payRail(),
       hold_expires_at: new Date(now.getTime() + TICKET_HOLD_MS),
       refundable_until: null,
+      pick_card_id: o.cardId,
+      pick_option_id: o.optionId,
     },
     now,
   );
@@ -472,15 +480,16 @@ async function ticketLinkOf(d: MoneyDeps, row: PaymentRow, spend: string | null)
     return refuse(d, code, words, err);
   };
 
-  // 1. The Server's key: the ticket form names the traveller, who is the payer, in place of a vote.
+  // 1. The Server's key: the personal form names the traveller's own pick (who, Go's card, the option they tapped), in
+  // place of a vote; they are the payer.
   if (!row.approval_id || !row.approval_token || !row.approval_expires_at) {
+    if (!row.pick_card_id || !row.pick_option_id) return fail('no_pick', 'no_pick');
     let answer: ToServerResult<'request_spend_approval'>;
     try {
       answer = await d.link.request('request_spend_approval', {
         request_id: spend,
         trip_id: row.trip_id,
-        kind: 'ticket',
-        for_person_id: row.payer_person_id,
+        personal: { person_id: row.payer_person_id, card_id: row.pick_card_id, option_id: row.pick_option_id },
         amount_minor: row.amount_minor,
         currency: row.currency,
         merchant: row.merchant,
