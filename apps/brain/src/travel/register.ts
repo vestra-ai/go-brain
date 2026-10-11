@@ -28,7 +28,7 @@ import { createEarlyStart } from './recipes/early.js';
 import { earlyAnswer, earlyReadNow, earlySearchNow, jevPickNow } from './recipes/now.js';
 import { loadLearnedPlaces } from './recipes/places-store.js';
 import { optionOnCard } from './recipes/option-on-card.js';
-import { createPlaceFor } from './place-for.js';
+import { createGuideOf, createPlaceFor } from './place-for.js';
 import { placeInfoHandler, registerPlaceLearn } from './place-info.js';
 import { createGroupStay } from './group-stay.js';
 import { createResultsStore } from './results.js';
@@ -249,7 +249,10 @@ export const registerTravel: RegisterLane = async (brain) => {
   // The Server team's rev 5 (R6): what a place is like, for the ideas on the home screen, from the places Go has learned;
   // the operator learns one ahead through a trip of their own (place-info.ts).
   brain.door.handle('place_info', placeInfoHandler({ pool: brain.pool }));
-  registerPlaceLearn(brain.http, { adminToken: brain.env.ADMIN_TOKEN, pool: brain.pool, placeFor, live: () => brain.switches.get('TRAVEL_MODE') === 'ixigo_web' });
+  registerPlaceLearn(brain.http, {
+    adminToken: brain.env.ADMIN_TOKEN, pool: brain.pool, placeFor, guideOf: createGuideOf({ engine, images, log: brain.log }),
+    live: () => brain.switches.get('TRAVEL_MODE') === 'ixigo_web',
+  });
   const today = tripToday(brain.pool, brain.now);
   // A stays card's top pick opened on the stage, as a person opens it: its card clicked on the results by its name, its
   // page by its address if the click brings nothing (a watched read: a progress to follow puts it on the stage). Its
