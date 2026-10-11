@@ -25,7 +25,8 @@ export type PayRefusal =
   | 'currency_mismatch'
   | 'over_amount'
   | 'hold_expiring'
-  | 'no_card';
+  | 'no_card'
+  | 'otp_wrong';
 
 export type ApproveResult =
   | { state: 'paid'; railRef: string }
@@ -165,13 +166,15 @@ async function startAttempt(d: PayDeps, now: Date, linkId: string, a: AttemptRow
 /** The pay check. Every step runs in this order and the first failure stops the payment. */
 export async function approvePayment(
   d: PayDeps,
-  input: { token: string; challengeId: string; response: AuthenticationResponseJSON },
+  input: { token: string; challengeId: string; response: AuthenticationResponseJSON; otp?: string },
 ): Promise<ApproveResult> {
   const now = d.now();
   // 1. The link is valid, unused and unexpired.
   const found = await payLink(d, input.token);
   if ('problem' in found) return { state: 'refused', reason: found.problem };
   const { link, pr } = found;
+  // The demo's bank code, asked on the page after Face ID: checked before the passkey, so a mistyped code costs no Face ID.
+  if (d.otp !== undefined && input.otp !== d.otp) return { state: 'refused', reason: 'otp_wrong' };
 
   const refuse = async (reason: PayRefusal, personId: string, keys: { passkey: boolean; approval: boolean }): Promise<ApproveResult> => {
     await logUnlock(d.pool, now, {
