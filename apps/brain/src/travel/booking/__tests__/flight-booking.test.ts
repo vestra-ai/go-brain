@@ -11,7 +11,7 @@ import { SWITCH_RULES } from '../../../admin/switches.js';
 import { spokenFirstName } from '../travellers.js';
 import {
   createFlightBooking, dayMs, dayOf, FLIGHT_FARE, FLIGHT_STREAM, GRAPH, LOGIN_WAIT_MS, newTravellerSteps, numbersOf, readyCard, SAVED_TRAVELLERS, TRAVELLER_FEMALE,
-  TRAIN_DETAILS, TRAVELLER_FIELDS, TRAVELLER_MALE, travellerAsk, TRAVELLERS_RETRY,
+  TRAVEL_DETAILS, TRAVELLER_FIELDS, TRAVELLER_MALE, travellerAsk, TRAVELLERS_RETRY, detailsAsk, hasFields,
   type FlightBooking, type TicketPay,
 } from '../flight-booking.js';
 import { buildOptionsCard } from '../../cards.js';
@@ -780,7 +780,7 @@ describe("Go books a person's own train up to ixigo's pay button, as a flight", 
     const pay: TicketPay = {
       onPaid: () => undefined,
       travelDetails: async () => kept,
-      travelLink: async (personId) => (links.push(personId), { url: 'https://vault.example/travel?t=1', expiresAt: '2026-10-11T12:00:00.000Z' }),
+      travelLink: async (personId, fields) => (links.push(`${personId}:${(fields ?? []).join(',')}`), { url: 'https://vault.example/travel?t=1', expiresAt: '2026-10-11T12:00:00.000Z' }),
     };
     const { runner } = trainRunner();
     const b = booking(runner, true, pay, { results });
@@ -794,11 +794,11 @@ describe("Go books a person's own train up to ixigo's pay button, as a flight", 
       for_person_ids: ['p_meher31'], title: 'Meher, one step for your train',
       body: 'Your train needs your age and IRCTC user ID: add them once (30 s), and Go carries on with your booking.',
     });
-    expect(card.actions?.map((a) => [a.action_id, a.label, a.only_for_person_ids])).toEqual([[TRAIN_DETAILS, 'Add them', ['p_meher31']]]);
+    expect(card.actions?.map((a) => [a.action_id, a.label, a.only_for_person_ids])).toEqual([[TRAVEL_DETAILS, 'Add them', ['p_meher31']]]);
     expect((await db.pool.query(`select state, why from flight_bookings where person_id = 'p_meher31'`)).rows[0]).toEqual({ state: 'failed', why: 'details_needed' });
-    // Her tap: the vault's own travel form, hers alone; someone else's card, nothing.
+    // Her tap: the vault's own travel form, hers alone, showing exactly what it needs (#485's fields); someone else's, nothing.
     expect(await b.detailsLink({ tripId: 't_goa', cardId: card.card_id, personId: 'p_meher31' })).toEqual({ result: 'open', url: 'https://vault.example/travel?t=1', expires_at: '2026-10-11T12:00:00.000Z' });
-    expect(links).toEqual(['p_meher31']);
+    expect(links).toEqual(['p_meher31:dob,irctc_user_id']);
     expect(await b.detailsLink({ tripId: 't_goa', cardId: card.card_id, personId: 'p_kabir' })).toEqual({ result: 'refused', toast: 'This booking has moved on' });
     // Not in yet: the sweep waits. Once they are, it carries on by itself to her pay card.
     await b.sweep();
@@ -807,6 +807,19 @@ describe("Go books a person's own train up to ixigo's pay button, as a flight", 
     await b.sweep();
     await b.settled();
     expect((await db.pool.query(`select state from flight_bookings where person_id = 'p_meher31'`)).rows[0]).toEqual({ state: 'ready_to_pay' });
+  });
+
+  // p5's buses (11 Oct) ask through the same card and wait on the same sweep.
+  it("words its one ask by what it needs and the ticket's kind, a bus's age alone too, and knows when the vault has every one", () => {
+    expect(detailsAsk('c_d', 'p_x', 'Ravi', ['dob'], 'bus')).toMatchObject({
+      title: 'Ravi, one step for your bus', body: 'Your bus needs your age: add it once (30 s), and Go carries on with your booking.',
+      actions: [{ action_id: TRAVEL_DETAILS, label: 'Add it', only_for_person_ids: ['p_x'] }],
+    });
+    expect(hasFields(VAULT, ['dob', 'irctc_user_id'])).toBe(true);
+    const { irctcUserId: _none, ...noIrctc } = VAULT;
+    expect(hasFields(noIrctc, ['dob', 'irctc_user_id'])).toBe(false);
+    expect(hasFields(noIrctc, ['dob'])).toBe(true);
+    expect(hasFields(null, ['dob'])).toBe(false);
   });
 
   it("stops, saying so, when its seats don't read, or its passenger form doesn't fill, and puts their card back", async () => {

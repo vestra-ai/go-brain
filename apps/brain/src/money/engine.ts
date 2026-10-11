@@ -43,7 +43,8 @@ export function createPay(d: MoneyDeps): PayEngine {
     requestTicketApproval: (tripId, o) => askForTicket(d, tripId, o),
     requestTicketCard: (tripId, o) => askForTicketCard(d, tripId, o),
     travelDetails: (i) => d.vault.travelDetails(i),
-    travelLink: (personId) => d.vault.homeLink({ personId, start: 'add_travel', display: 'sheet' }),
+    // The browser sheet: the vault opens only its home embedded (#431).
+    travelLink: (personId, fields) => d.vault.homeLink({ personId, start: 'add_travel', display: 'sheet', ...(fields?.length ? { fields } : {}) }),
     onPaid(fn) {
       listeners.push(fn);
     },

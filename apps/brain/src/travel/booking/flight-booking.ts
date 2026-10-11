@@ -20,7 +20,7 @@ import type { IxigoLogin } from '../login.js';
 import { bodiesFor } from '../recipes/recipe.js';
 import type { FetchPlan } from '../recipes/recipe.js';
 import type { RecipeRunner } from '../recipes/runners.js';
-import type { TravelDetails } from '../../money/vault-client.js';
+import type { TravelDetails, TravelField } from '../../money/vault-client.js';
 import type { ResultsStore } from '../results.js';
 import type { StoredOffer } from '../travel.js';
 import { fareFor, reviewAddress } from './review-address.js';
@@ -83,8 +83,8 @@ export interface TicketPay {
   onPaid(fn: (p: { tripId: string; approvalId: string; railRef: string }) => Promise<void>): void;
   /** Their travel details from their vault (#395), for a ticket of their own: typed only into ixigo's traveller form. */
   travelDetails?(i: { tripId: string; personId: string; booking: { ref: string; travellerPersonId: string; purpose: string } }): Promise<TravelDetails | null>;
-  /** The vault's own travel details form for them: a booking's one ask for what it needs (detailsAsk). */
-  travelLink?(personId: string): Promise<{ url: string; expiresAt: string }>;
+  /** The vault's own travel details form for them, showing the fields a booking's one ask needs (detailsAsk). */
+  travelLink?(personId: string, fields?: TravelField[]): Promise<{ url: string; expiresAt: string }>;
 }
 
 /** A payment the vault can't take (its rail not ready, or it refused): the one case its traveller is sent to ixigo, with why. */
@@ -145,8 +145,11 @@ export const FARE_MOVE_OK = 1.05;
 export const LOGIN_WAIT_MS = 30 * 60_000;
 
 /** What a booking waiting on the login carries on with: the ask, but its offer, read again by its option id. */
-/** What a booking that waits (a login, their gender) carries on with; askCardId: the card that asked them. */
-type Resume = { tapId: string; name: string; choice: FareChoice; restore?: OptionsCardT; gender?: 'male' | 'female'; askCardId?: string };
+/**
+ * What a booking that waits (a login, their gender, their travel details) carries on with; askCardId: the card that asked
+ * them; need: the travel details it waits on in their vault (askForDetails).
+ */
+type Resume = { tapId: string; name: string; choice: FareChoice; restore?: OptionsCardT; gender?: 'male' | 'female'; askCardId?: string; need?: TravelField[] };
 
 /** A day (DDMMYYYY, as ixigo's results address writes it) as ixigo's traveller list takes it: its midnight in India, in ms. */
 export function dayMs(ddmmyyyy: string): number | null {
@@ -265,23 +268,34 @@ export function genderAsk(cardId: string, personId: string, name: string): Notic
 /** A ticket's own kind of options card: a train's, else a flight's. */
 const kindOf = (ask: Pick<BookingAsk, 'offer'>): 'flight' | 'train' => (ask.offer.kind === 'train' ? 'train' : 'flight');
 
-/** A train's one ask for what its passenger form needs from the vault (detailsAsk): its tap opens the vault's travel form. */
-export const TRAIN_DETAILS = 'train_details';
+/** A booking's one ask for what its form needs from the vault (detailsAsk, a train's or a bus's): its tap opens the vault's travel form. */
+export const TRAVEL_DETAILS = 'travel_details';
+
+/** A travel detail as the ask names it: a birthday is asked for as the age it gives. */
+const FIELD_WORDS: Record<TravelField, string> = { first_name: 'name as on your ID', last_name: 'name as on your ID', gender: 'gender', dob: 'age', irctc_user_id: 'IRCTC user ID' };
+
+/** Whether their vault's travel details have every one of these. */
+export function hasFields(t: TravelDetails | null, need: readonly TravelField[]): boolean {
+  if (!t) return false;
+  const has: Record<TravelField, boolean> = { first_name: !!t.firstName, last_name: !!t.lastName, gender: !!t.gender, dob: !!t.dob, irctc_user_id: !!t.irctcUserId };
+  return need.every((f) => has[f]);
+}
 
 /**
- * A train's one ask, one tap and short (the lead, 11 Oct; Keshav: "just ask me details"): what its passenger form needs
- * that their vault doesn't have yet, their age (from their birthday) or their IRCTC user ID, added once in the vault's own
- * form, never in the chat. The booking carries on by itself once they're there (sweep).
+ * A booking's one ask, one tap and short (the lead, 11 Oct; Keshav: "just ask me details"): the travel details its form
+ * needs that their vault doesn't have yet (need: a train's age and IRCTC user ID, a bus's age), added once in the
+ * vault's own form, never in the chat. The booking carries on by itself once they're there (sweep). ticket: "train", "bus".
  */
-export function detailsAsk(cardId: string, personId: string, name: string, missing: string[]): NoticeCard {
-  const what = missing.length > 1 ? `${missing.slice(0, -1).join(', ')} and ${missing.at(-1)}` : (missing[0] ?? 'travel details');
-  const them = missing.length > 1 ? 'them' : 'it';
-  const body = `Your train needs your ${what}: add ${them} once (30 s), and Go carries on with your booking.`;
+export function detailsAsk(cardId: string, personId: string, name: string, need: readonly TravelField[], ticket: string): NoticeCard {
+  const words = [...new Set(need.map((f) => FIELD_WORDS[f]))];
+  const what = words.length > 1 ? `${words.slice(0, -1).join(', ')} and ${words.at(-1)}` : (words[0] ?? 'travel details');
+  const them = words.length > 1 ? 'them' : 'it';
+  const body = `Your ${ticket} needs your ${what}: add ${them} once (30 s), and Go carries on with your booking.`;
   const only = [personId];
   return {
     card_id: cardId, kind: 'notice', tone: 'heads_up', for_person_ids: only,
-    title: clip(`${name}, one step for your train`, 80), body: clip(body, 500), fallback_text: clip(body, 300),
-    actions: [{ action_id: TRAIN_DETAILS, label: missing.length > 1 ? 'Add them' : 'Add it', style: 'primary', only_for_person_ids: only }],
+    title: clip(`${name}, one step for your ${ticket}`, 80), body: clip(body, 500), fallback_text: clip(body, 300),
+    actions: [{ action_id: TRAVEL_DETAILS, label: words.length > 1 ? 'Add them' : 'Add it', style: 'primary', only_for_person_ids: only }],
   };
 }
 
@@ -470,6 +484,25 @@ export function createFlightBooking(d: FlightBookingDeps): FlightBooking {
     await live.step(step, 'failed');
     await live.finish(false);
     return false;
+  }
+
+  /**
+   * The one ask for the travel details a booking's form needs (need), theirs alone (detailsAsk), and the booking waits
+   * on it: the sweep carries it on once their vault has every one, or lets it go after LOGIN_WAIT_MS with their card back.
+   * A train's and a bus's run both wait here (p5's buses, 11 Oct).
+   */
+  async function askForDetails(ask: BookingAsk, runId: string, live: ReturnType<typeof bookingLiveCard>, step: number, need: TravelField[], ticket: string): Promise<void> {
+    const askCardId = stableId('c_book_details', runId);
+    await d.link.request('post_message', {
+      request_id: stableId('go_book_details', runId), trip_id: ask.tripId, card: detailsAsk(askCardId, ask.personId, ask.name, need, ticket), visible_to_person_ids: [ask.personId],
+    });
+    const resume: Resume = { tapId: ask.tapId, name: ask.name, choice: ask.choice, ...(ask.restore ? { restore: ask.restore } : {}), ...(ask.gender ? { gender: ask.gender } : {}), askCardId, need };
+    await d.pool.query(
+      `update flight_bookings set state = 'failed', why = 'details_needed', resume = $2, waiting_since = coalesce(waiting_since, $3), updated_at = $3 where run_id = $1`,
+      [runId, JSON.stringify(resume), d.now()],
+    );
+    await live.step(step, 'failed');
+    await live.finish(false);
   }
 
   /**
@@ -766,22 +799,9 @@ export function createFlightBooking(d: FlightBookingDeps): FlightBooking {
     const purpose = clip(`${title} (${cls}), ${day}, for ${ask.name}`, 200);
     const details = await d.pay?.()?.travelDetails?.({ tripId: ask.tripId, personId: ask.personId, booking: { ref: runId, travellerPersonId: ask.personId, purpose } }).catch(() => null) ?? null;
     const age = details ? ageOn(details.dob, train.date) : null;
-    const missing = [...(age === null ? ['age'] : []), ...(details?.irctcUserId ? [] : ['IRCTC user ID'])];
-    if (!details || age === null || !details.irctcUserId) {
-      // One ask, one tap: the vault's own form; the booking carries on by itself once they're there (sweep).
-      const askCardId = stableId('c_book_details', runId);
-      await d.link.request('post_message', {
-        request_id: stableId('go_book_details', runId), trip_id: ask.tripId, card: detailsAsk(askCardId, ask.personId, ask.name, missing), visible_to_person_ids: [ask.personId],
-      });
-      const resume: Resume = { tapId: ask.tapId, name: ask.name, choice: ask.choice, ...(ask.restore ? { restore: ask.restore } : {}), askCardId };
-      await d.pool.query(
-        `update flight_bookings set state = 'failed', why = 'details_needed', resume = $2, waiting_since = coalesce(waiting_since, $3), updated_at = $3 where run_id = $1`,
-        [runId, JSON.stringify(resume), d.now()],
-      );
-      await live.step(2, 'failed');
-      await live.finish(false);
-      return;
-    }
+    // One ask, one tap, for what the vault doesn't have: the vault's own form, showing exactly those.
+    const need: TravelField[] = [...(age === null ? ['dob' as const] : []), ...(details?.irctcUserId ? [] : ['irctc_user_id' as const])];
+    if (!details || age === null || !details.irctcUserId) return askForDetails(ask, runId, live, 2, need, 'train');
     // In a private tab: the row's SHOW AVAILABILITY by its train, the class's tile, the day's BOOK, then the passenger
     // form, its Gender tried as a select, chips, then radios. Nothing is submitted; their values go only into the form.
     const passenger = { name: `${details.firstName} ${details.lastName}`, age, gender: details.gender, irctc: details.irctcUserId };
@@ -894,11 +914,11 @@ export function createFlightBooking(d: FlightBookingDeps): FlightBooking {
     },
     resumeWaiting: (tripId) => carryOn(tripId),
     async detailsLink(i) {
-      const { rows } = await d.pool.query<{ run_id: string }>(
-        `select run_id from flight_bookings where trip_id = $1 and person_id = $2 and why = 'details_needed' and resume->>'askCardId' = $3`,
+      const { rows } = await d.pool.query<{ run_id: string; resume: Resume }>(
+        `select run_id, resume from flight_bookings where trip_id = $1 and person_id = $2 and why = 'details_needed' and resume->>'askCardId' = $3`,
         [i.tripId, i.personId, i.cardId],
       );
-      const link = rows[0] ? await d.pay?.()?.travelLink?.(i.personId).catch(() => null) : null;
+      const link = rows[0] ? await d.pay?.()?.travelLink?.(i.personId, rows[0].resume.need ?? []).catch(() => null) : null;
       if (!rows[0]) return { result: 'refused', toast: 'This booking has moved on' };
       if (!link) return { result: 'refused', toast: "Go couldn't open your travel details just now: try again in a moment" };
       return { result: 'open', url: link.url, expires_at: link.expiresAt };
@@ -944,7 +964,7 @@ export function createFlightBooking(d: FlightBookingDeps): FlightBooking {
         const details = await pay?.travelDetails?.({
           tripId: r.trip_id, personId: r.person_id, booking: { ref: r.run_id, travellerPersonId: r.person_id, purpose: clip(`${r.title}, for ${r.resume.name}`, 200) },
         }).catch(() => null);
-        if (!details?.irctcUserId) continue;
+        if (!hasFields(details ?? null, r.resume.need ?? ['dob', 'irctc_user_id'])) continue;
         const claimed = await d.pool.query<{ run_id: string; person_id: string; option_id: string; resume: Resume }>(
           `update flight_bookings set why = 'details_in', updated_at = $2 where run_id = $1 and why = 'details_needed' returning run_id, person_id, option_id, resume`,
           [r.run_id, d.now()],

@@ -28,6 +28,9 @@ export interface PayLinkInput {
   hold: { holdId: string; amountMinor: number; currency: string; merchant: string; paymentKind: PaymentKind; expiresAt: string };
 }
 
+/** A travel detail by its name in the vault (p5's #485): what a booking's ask sends its form to show, and nothing else. */
+export type TravelField = 'first_name' | 'last_name' | 'gender' | 'dob' | 'irctc_user_id';
+
 /** A person's travel details as on their ID, kept in their vault: only ever typed into a booking's own form. */
 export interface TravelDetails {
   firstName: string;
@@ -41,7 +44,8 @@ export interface TravelDetails {
 
 export interface VaultClient {
   /** display embedded: the home the App frames (the vault answers 409 for any other start); sheet, the default: the browser sheet. */
-  homeLink(i: { personId: string; start: 'home' | 'add_card' | 'add_login' | 'add_travel'; display?: 'sheet' | 'embedded' }): Promise<{ url: string; expiresAt: string }>;
+  /** fields (add_travel, #485): the form shows exactly those, and any required one not saved yet; a home link ignores them. */
+  homeLink(i: { personId: string; start: 'home' | 'add_card' | 'add_login' | 'add_travel'; display?: 'sheet' | 'embedded'; fields?: TravelField[] }): Promise<{ url: string; expiresAt: string }>;
   /**
    * A person's travel details for a ticket of their own Go is booking (booking.travellerPersonId is them; the vault refuses
    * anyone else; booking.ref is the flight booking's run id), or null when they kept none. The values go only into the booking's own form: never a log line, the
@@ -90,7 +94,7 @@ export function vaultClient(o: { baseUrl: string; secret: string; fetch?: typeof
 
   return {
     async homeLink(i) {
-      const r = await call('POST', '/internal/links', { person_id: i.personId, start: i.start, display: i.display }, o.timeoutMs ?? 1_500);
+      const r = await call('POST', '/internal/links', { person_id: i.personId, start: i.start, display: i.display, ...(i.fields?.length ? { fields: i.fields } : {}) }, o.timeoutMs ?? 1_500);
       if (r.status !== 200) throw new Error(`the vault answered ${r.status}`);
       const link = LinkAnswer.parse(r.data);
       return { url: link.url, expiresAt: link.expires_at };

@@ -16,7 +16,7 @@ import type { CardTapParams } from '../door/methods.js';
 import type { DeskItem } from '../desk/desk.js';
 import { SocketCallError } from '../door/rpc.js';
 import type { TripPack } from '../trips/pack.js';
-import { PAY_FLIGHT, TRAIN_DETAILS, TRAVELLER_FEMALE, TRAVELLER_MALE, type FlightBooking } from './booking/flight-booking.js';
+import { PAY_FLIGHT, TRAVEL_DETAILS, TRAVELLER_FEMALE, TRAVELLER_MALE, type FlightBooking } from './booking/flight-booking.js';
 import { BOOK_MINE, budgetSheet, buildConfirmMineCard, buildOptionsCard, CHANGE_MINE, clip, ixigoPage, PERSONAL_KINDS } from './cards.js';
 import { stableId } from './ids.js';
 import type { Images } from './images.js';
@@ -186,7 +186,7 @@ export function registerTravelTaps(taps: Brain['taps'], d: TravelTapDeps): void 
 
   // A train's one ask for its passenger's details (flight-booking.ts detailsAsk): the vault's own travel form, theirs
   // alone; the booking carries on by itself once the details are there.
-  taps.on('notice', TRAIN_DETAILS, async (tap, card) => {
+  taps.on('notice', TRAVEL_DETAILS, async (tap, card) => {
     const forWho = 'for_person_ids' in card ? (card.for_person_ids ?? []) : [];
     if (!d.booking || !forWho.includes(tap.person_id)) return { result: 'refused', toast: 'This one is for someone else' };
     return d.booking.detailsLink({ tripId: tap.trip_id, cardId: tap.card_id, personId: tap.person_id });
