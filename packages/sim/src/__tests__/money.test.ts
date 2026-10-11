@@ -142,10 +142,12 @@ describe("a person's own pick", () => {
   function picked(o: { tap?: boolean; forPerson?: string } = {}) {
     const { s, clock } = setUp();
     const option = (n: number, price: number) => ({ option_id: `opt_flight_${n}`, title: `Flight ${n}`, price_minor: price, currency: 'INR', highlights: [] });
-    s.postMessage({
+    // The room keeps the card as Go sent it (the raw request), as the Server does.
+    const post = {
       request_id: 'rq_card', trip_id: 't_goa', text: 'Meher, your flights from Mumbai',
       card: { card_id: 'c_flights_meher', kind: 'options', fallback_text: 'Flights', title: 'Your flights', option_kind: 'flight', checked_at: new Date(start).toISOString(), for_person_ids: [o.forPerson ?? 'p_meher'], options: [option(1, 690000), option(2, 717800)] },
-    } as never, {});
+    };
+    s.postMessage(post as never, post);
     if (o.tap !== false) s.recordTap('p_meher', 'c_flights_meher', 'opt_flight_2');
     return { s, clock };
   }
