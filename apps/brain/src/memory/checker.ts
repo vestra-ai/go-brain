@@ -173,6 +173,15 @@ export function checkLine(p: LineProposal, env: CheckEnv): Checked<CheckedLine> 
 
   const named = [...new Set(p.person_ids)];
   if (named.some((id) => !inTrip.has(id))) return no('someone named is not in the trip');
+  // Go's own question is open only until the people it asks speak again (prod, 11 Oct: "Goa or Gokarna for the beach
+  // trip?" was opened as the person tapped Goa, and stayed open in everyone's record for a minute).
+  if (p.kind === 'open' && !p.line_id && proof.every((m) => m.author.kind === 'go')) {
+    const asked = new Set(named.length > 0 ? named : [...inTrip]);
+    const after = Math.max(...proof.map((m) => m.seq));
+    if (pack.messages.some((m) => m.seq > after && m.author.kind === 'person' && asked.has(m.author.person_id) && !m.deleted && !m.withheld)) {
+      return no("Go's question was answered: the people it asks spoke after it");
+    }
+  }
   let personIds = named.slice(0, 30);
 
   let kind = p.kind;

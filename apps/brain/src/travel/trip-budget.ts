@@ -92,6 +92,16 @@ export function stayCap(b: TripBudget | null): number | null {
   return b && (b.covers === 'stay' || b.source !== 'chat') ? b.perPersonMinor : null;
 }
 
+/**
+ * How an option is weighed against the budget, and when the budget is left out. Prod, 11 Oct (Manali, a 60k a head
+ * budget): stays at about ₹26,400 and ₹45,500 a head were called "well over the group's 60k a head", twice, to someone
+ * who had asked for the most expensive ones.
+ */
+export const WEIGH =
+  'Weigh an option by its share a head (a stay\'s "about ₹X each" for the whole stay), never by a per-room, per-night or ' +
+  'whole-group price: it is over only when that share is. When someone asks for pricier ones, the most expensive, or one ' +
+  'stay by name, show them without a word about the budget.';
+
 /** "Right now": the decided budget, and that it holds. The App's lowest band before 1.1 has its own line (composer/trip-now.ts). */
 export function budgetNow(d: { budgets: TripBudgets; trip: (tripId: string) => Promise<Pick<C.TripSnapshot, 'budget'>> }): NowProvider {
   return {
@@ -106,7 +116,7 @@ export function budgetNow(d: { budgets: TripBudgets; trip: (tripId: string) => P
       const also = b.source === 'chat' && group ? ` The group's budget in the App is ${budgetWords({ perPersonMinor: group, covers: 'whole_trip', source: 'group', messageId: null })}.` : '';
       return (
         `The trip's budget, ${b.source === 'chat' ? 'decided in the chat' : "the group's in the App"}: ${budgetWords(b)}. Search and pick with it in mind, mostly within it; ` +
-        `anything you show over it, say so plainly. It holds until the group changes it.${also}`
+        `anything you show over it, say so plainly. ${WEIGH} It holds until the group changes it.${also}`
       );
     },
   };

@@ -5,6 +5,7 @@ import { TravelError } from '../../mcp-travel.js';
 import { CARD_DELAY_MS, CHALLENGE_COOL_MS, CHOOSING_MS, createIxigoWebBackend, NARROW_MIN, NOT_LOADED, TRAVEL_WAIT_MS } from '../backend.js';
 import type { RecipeOption } from '../recipe.js';
 import { NothingCaughtError } from '../runners.js';
+import { leftToPick } from '../../tools.js';
 import { capture, fixture } from './fixtures.js';
 
 const { book } = loadBook();
@@ -792,6 +793,63 @@ describe("a stays read that fails is never a bare \"try again\"", () => {
     met = now().getTime() - CHALLENGE_COOL_MS;
     await s.b.search('stays', PAY, { tripId: 't_goa', turnId: 'turn_2' });
     expect(s.runs).toHaveLength(2);
+  });
+});
+
+// The Manali room, 11 Oct: "I need some stays that have gym in those" went unfiltered, and Go said to check each one's amenities.
+describe('a stays ask for something one of ixigo\'s own filters means (wants: "gym")', () => {
+  const ASK = { to: 'Goa', checkIn: '2026-11-06', checkOut: '2026-11-09' };
+  const LIST = { recipeId: 'hotels.search', about: 'stays in Goa', at: 0, offers: [{ kind: 'filter' as const, group: 'Facilities', name: 'Fitness Centre', code: 'FL_HF_11' }], bands: [] };
+  /** The engine as it reads a place: its first read brings ixigo's list, and a read after that applies what the list means. */
+  function gymEngine(o: { noGym?: boolean } = {}) {
+    let listed = false;
+    const runs: RunFor[] = [];
+    const answer: Answer = async (_id, _given, ro) => {
+      runs.push(ro);
+      const known = listed;
+      listed = true;
+      const wanted = known ? (ro.siteWants ?? []).filter((w) => w === 'gym') : [];
+      return {
+        as: 'options', options: o.noGym && wanted.length > 0 ? [] : [stay(1, true), stay(2, false)], page: 'https://www.ixigo.com/hotels/search/result', checkedAt: '2026-10-07T12:00:00.000Z', ms: 9_000,
+        site: { filtered: wanted.length > 0 ? ['Fitness Centre'] : [], sorted: null, unknown: [], wanted, listed: known, list: known ? LIST : null },
+      };
+    };
+    // The page's request: ixigo's filter is on it only once the list says what a gym is.
+    const requestOf: Engine['requestOf'] = async (_id, _given, ro) => (listed && ro.siteWants?.includes('gym') ? 'filtered by Fitness Centre' : 'the plain page');
+    const b = createIxigoWebBackend({
+      book, engine: { answer, requestOf }, now, cardDelayMs: 0,
+      live: (() => ({ progress: () => undefined, finish: async () => undefined })) as never,
+    });
+    return { b, runs };
+  }
+
+  it("reads the place again with ixigo's own filter once its first read brings the list, so ixigo filters it, never the model", async () => {
+    const g = gymEngine();
+    const q = { ...ASK, wants: ['gym', 'quiet'] };
+    const found = await g.b.search('stays', q, { tripId: 't_goa', turnId: 'turn_1' });
+    expect(g.runs).toHaveLength(2);
+    expect(g.runs[1]).toMatchObject({ siteWants: ['gym', 'quiet'] });
+    expect(found.site).toMatchObject({ filtered: ['Fitness Centre'], unknown: [], wanted: ['gym'] });
+    // The gym is ixigo's; the quiet is still the model's to pick.
+    expect(leftToPick(q, found)).toEqual(['quiet']);
+  });
+
+  it("shows the list without ixigo's filter when it leaves no stay, saying it left them all out, never nothing", async () => {
+    const g = gymEngine({ noGym: true });
+    const found = await g.b.search('stays', { ...ASK, wants: ['gym'] }, { tripId: 't_goa', turnId: 'turn_1' });
+    // The place's first read, its read with the Fitness Centre (none), and the plain list again, kept: two loads.
+    expect(g.runs).toHaveLength(2);
+    expect(found.results.map((r) => r.title)).toEqual(['Stay 1', 'Stay 2']);
+    expect(found.dropped).toEqual(['gym']);
+  });
+
+  it('loads nothing more when nothing on the list means the ask: the same request is the read just kept', async () => {
+    const g = gymEngine();
+    const q = { ...ASK, wants: ['quiet'] };
+    const found = await g.b.search('stays', q, { tripId: 't_goa', turnId: 'turn_1' });
+    expect(g.runs).toHaveLength(1);
+    expect(found.site).not.toHaveProperty('wanted');
+    expect(leftToPick(q, found)).toEqual(['quiet']);
   });
 });
 

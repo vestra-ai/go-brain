@@ -69,6 +69,8 @@ const queryFor = (backend: string, q: TravelQuery): TravelQuery =>
         ...(q.dropAt ? { dropAt: q.dropAt } : {}),
         ...(q.siteFilters?.length ? { siteFilters: q.siteFilters } : {}),
         ...(q.siteSort ? { siteSort: q.siteSort } : {}),
+        // The rest of the ask: ixigo filters the part one of its own filters means (a gym, as its Fitness Centre).
+        ...(q.wants?.length ? { wants: q.wants } : {}),
         ...(q.budgetMinor !== undefined ? { budgetMinor: q.budgetMinor } : {}),
       }
     : backendQuery(q);

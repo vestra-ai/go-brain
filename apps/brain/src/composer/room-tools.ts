@@ -210,6 +210,14 @@ export function roomTools(o: { now: () => Date; pool: Pool; travel?: () => Trave
       // The trip's one writer: the checks (a stay or place a vote decided, days before today) and the request are there.
       const r = await saveTrip(o, { link: ctx.link, tripId: ctx.tripId, pack: ctx.pack, requestId: () => ctx.stableId('go_trip') }, a);
       if (!r.ok) return { ok: false, error: r.error, ...(r.quiet ? { tell_the_room: SAY_NOTHING } : {}) };
+      // The lines this turn woke for are noted: their ✅ stays, even when the reply ends on a next-step question (prod,
+      // 11 Oct: "Goa" and "1 to 7 Dec" were saved, and their ✅ came off two seconds later with "What should I pull up first?").
+      if (r.changed.length > 0) {
+        for (const i of ctx.wake) {
+          const id = (i.payload as { messageId?: string } | null)?.messageId ?? i.ref;
+          if (i.kind === 'message' && ctx.pack.messages.some((m) => m.message_id === id && m.author.kind === 'person')) (ctx.outcome.noted ??= []).push(id);
+        }
+      }
       return { ok: true, changed: r.changed, ...(r.stay ? { stay: r.stay } : {}), ...(r.note ? { note: r.note } : {}) };
     },
   };

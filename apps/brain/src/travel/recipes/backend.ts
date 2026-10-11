@@ -46,7 +46,7 @@ import type { Engine, EngineAnswer, RunFor, ShareSearch } from '../book/engine.j
 import type { LiveSearch } from '../live-search.js';
 import { TravelError } from '../mcp-travel.js';
 import type { SearchFor, TravelBackend, TravelKind, TravelQuery, TravelSearch } from '../travel.js';
-import { offersText, sameName, strictestOf } from './offers.js';
+import { meansOffer, offersText, sameName, strictestOf } from './offers.js';
 import { RECIPE_TTL_MS, type RecipeOption } from './recipe.js';
 import { ChallengedError, NothingCaughtError } from './runners.js';
 
@@ -158,6 +158,8 @@ export const searchKindOf = (recipeId: string): TravelKind | null =>
 export interface SiteAsk {
   filters: string[];
   sort?: string;
+  /** The rest of a stays ask in the group's words ("a gym"): filtered by the site when one of its filters means it. */
+  wants?: string[];
   /** A decided budget for the stay, per person, in paise: ixigo's own price bands by it (RunFor.budgetMinor). */
   budget?: number;
 }
@@ -168,16 +170,23 @@ const NO_SITE: SiteAsk = { filters: [] };
  */
 function forAsk(found: TravelSearch, site: SiteAsk): TravelSearch {
   const asked = [...site.filters, ...(site.sort ? [site.sort] : [])];
-  if (!found.site || asked.length === 0) return found;
+  if (!found.site || (asked.length === 0 && !site.wants?.length)) return found;
   const applied = [...found.site.filtered, ...(found.site.sorted ? [found.site.sorted] : [])];
-  const unknown = asked.filter((n) => !applied.some((a) => sameName(a, n)));
-  return { ...found, site: { ...found.site, unknown } };
+  // By name, or by meaning: "Gym" was filtered as ixigo's Fitness Centre.
+  const covered = (n: string): boolean => applied.some((a) => sameName(a, n) || meansOffer(n, a));
+  const unknown = asked.filter((n) => !covered(n));
+  const wanted = (site.wants ?? []).filter(covered);
+  const said = { ...found.site, unknown };
+  if (wanted.length > 0) return { ...found, site: { ...said, wanted } };
+  delete said.wanted;
+  return { ...found, site: said };
 }
 
 /** A run's site filters and sort, as the engine takes them. */
-const siteRun = (site: SiteAsk): Pick<RunFor, 'siteFilters' | 'siteSort' | 'budgetMinor'> => ({
+const siteRun = (site: SiteAsk): Pick<RunFor, 'siteFilters' | 'siteSort' | 'siteWants' | 'budgetMinor'> => ({
   ...(site.filters.length > 0 ? { siteFilters: site.filters } : {}),
   ...(site.sort ? { siteSort: site.sort } : {}),
+  ...(site.wants?.length ? { siteWants: site.wants } : {}),
   ...(site.budget !== undefined ? { budgetMinor: site.budget } : {}),
 });
 
@@ -188,7 +197,10 @@ const siteRun = (site: SiteAsk): Pick<RunFor, 'siteFilters' | 'siteSort' | 'budg
 export function recipeInputs(kind: TravelKind, q: TravelQuery): { given: Record<string, unknown>; conditions: string[]; site: SiteAsk } {
   const conditions = [...(q.mustHave ?? [])];
   if (kind === 'stays') {
-    const site = { filters: [...(q.siteFilters ?? [])], ...(q.siteSort ? { sort: q.siteSort } : {}), ...(q.budgetMinor !== undefined ? { budget: q.budgetMinor } : {}) };
+    const site = {
+      filters: [...(q.siteFilters ?? [])], ...(q.siteSort ? { sort: q.siteSort } : {}), ...(q.wants?.length ? { wants: [...q.wants] } : {}),
+      ...(q.budgetMinor !== undefined ? { budget: q.budgetMinor } : {}),
+    };
     return { given: { place: q.area ?? q.to, check_in: q.checkIn, check_out: q.checkOut, adults: q.guests }, conditions, site };
   }
   if (kind === 'flights') {
@@ -402,7 +414,7 @@ export function createIxigoWebBackend(d: IxigoWebDeps): IxigoWebBackend {
     const link = recipe.answer.as === 'link';
     const ttl = recipe.ttl_minutes * 60_000 || RECIPE_TTL_MS;
     const key = link ? `${id}|${keyOf(given, conditions, site)}` : await keyFor(id, given, conditions, tripId, site);
-    const plain = conditions.length === 0 && site.filters.length === 0 && !site.sort && site.budget === undefined;
+    const plain = conditions.length === 0 && site.filters.length === 0 && !site.sort && !site.wants?.length && site.budget === undefined;
     return {
       tripId, id, given, conditions, site, link, ttl, key, page: !plain && !link ? await keyFor(id, given, [], tripId) : key,
       words: link ? key : wordsKey(id, given, conditions, site),
@@ -461,7 +473,7 @@ export function createIxigoWebBackend(d: IxigoWebDeps): IxigoWebBackend {
     // that can be narrowed waits here, so every other search reads what is kept and keeps its own with no wait between.
     const byPage = narrowedBy(id, conditions);
     // Never for an ask that names the site's own filters or sort: ixigo's own read applies them.
-    if (byPage && site.filters.length === 0 && !site.sort && site.budget === undefined && !(fresh(hit) && hit.done)) {
+    if (byPage && site.filters.length === 0 && !site.sort && !site.wants?.length && site.budget === undefined && !(fresh(hit) && hit.done)) {
       const narrowed = await fromKept(id, given, byPage, tripId);
       // The wait let another search of this key start, or finish: what is kept is read again.
       [hit, hitKey] = keptNow();
@@ -534,7 +546,8 @@ export function createIxigoWebBackend(d: IxigoWebDeps): IxigoWebBackend {
         const strict = run.options.length === 0 && run.site?.list && run.site.filtered.length > 0 && q.siteFilters?.length ? strictestOf(run.site.list, q.siteFilters) : null;
         const said = run.site
           ? {
-              filtered: run.site.filtered, sorted: run.site.sorted, unknown: run.site.unknown, listed: run.site.listed, offers: run.site.list ? offersText(run.site.list) : null,
+              filtered: run.site.filtered, sorted: run.site.sorted, unknown: run.site.unknown, ...(run.site.wanted?.length ? { wanted: run.site.wanted } : {}),
+              listed: run.site.listed, offers: run.site.list ? offersText(run.site.list) : null,
               ...(run.site.priced ? { priced: run.site.priced } : {}),
               ...(strict ? { strictest: strict } : {}),
             }
@@ -633,6 +646,9 @@ export function createIxigoWebBackend(d: IxigoWebDeps): IxigoWebBackend {
     }
     try {
       let found = await searchPage('stays', q, o, true);
+      // A place's first read brings ixigo's own list of filters: the rest of the ask that one of them means (a gym) is read
+      // again with it, so ixigo filters it on its page. With none, the same request is the read just kept: nothing loads.
+      if (q.wants?.length && found.site && !found.site.listed && found.results.length > 0) found = await searchPage('stays', q, o, true);
       // ixigo's price bands for the group's budget held no stay: the search without them, so the group still sees what
       // there is (the lead, 10 Oct: "fall back to plain search if the band is empty").
       if (found.results.length === 0 && q.budgetMinor !== undefined) {
@@ -653,6 +669,15 @@ export function createIxigoWebBackend(d: IxigoWebDeps): IxigoWebBackend {
         const next: TravelQuery = { ...q };
         delete next.siteFilters;
         q = rest.length > 0 ? { ...next, siteFilters: rest } : next;
+        found = await searchPage('stays', q, o, true);
+      }
+      // ixigo's own filter for the rest of the ask (a gym, as its Fitness Centre) that left no stay: the list without it,
+      // and the line says it left them all out, never nothing.
+      if (found.results.length === 0 && found.site?.wanted?.length) {
+        dropped.push(...found.site.wanted);
+        const without: TravelQuery = { ...q };
+        delete without.wants;
+        q = without;
         found = await searchPage('stays', q, o, true);
       }
       return dropped.length > 0 ? { ...found, dropped } : found;
