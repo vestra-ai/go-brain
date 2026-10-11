@@ -226,7 +226,8 @@ describe('the hold and the booking, on the test rail', () => {
   // The lead, 10 Oct: every Book ends in Go doing it, where the room watches.
   it("with BOOKING on, books it on ixigo's own pages: the stay, its rate and coupon on the stage, then Reserve and the review privately", async () => {
     const w = world({ booking: true });
-    const h = await w.stays.hold(`${WEB_STAY}opt_saudades`, { name: 'Rahul', personIds: ['p_rahul'] });
+    // The group's stay: money holds it for every person on the trip.
+    const h = await w.stays.hold(`${WEB_STAY}opt_saudades`, { name: 'Rahul', personIds: ['p_rahul', 'p_priya', 'p_arjun'] });
     expect(w.reads).toEqual([
       // The stay's own page, on the stage, its rooms call kept.
       { url: PAGE, plan: { capture: [{ match: '/accommodations/details/54381/rooms$', required: true }], timeoutMs: 20_000 }, stage: true },

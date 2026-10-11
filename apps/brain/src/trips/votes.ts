@@ -5,7 +5,7 @@ import type * as C from '@go/contract';
  * shared things' cards have Choose this on each option instead (cards.ts CHOOSE_ACTION), and a tool that would open a
  * vote tells the model this.
  */
-export const tripOfOne = (trip: { people: readonly unknown[] } | null | undefined): boolean => trip?.people.length === 1;
+export const tripOfOne = (trip: { people?: readonly unknown[] } | null | undefined): boolean => trip?.people?.length === 1;
 export const NO_VOTE_FOR_ONE =
   'This trip has one person: their word is the decision, so there is no vote or poll. If they chose, apply it now (update_trip, ' +
   'their message as the proof; a card of options has Choose this on each, and their tap applies it); if they have not, ask one ' +

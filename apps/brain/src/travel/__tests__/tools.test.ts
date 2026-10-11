@@ -458,9 +458,9 @@ describe('show_options', () => {
 describe('a trip of one never gets a vote', () => {
   const one = () => ({ ...goaPack(), trip: { ...GOA_TRIP, people: GOA_TRIP.people.slice(0, 1) } });
   it('its stays card opens no vote: Choose this on each option, the card theirs, and put_to_vote opens none', async () => {
-    const found = (await lb.tools.run('search_stays', STAYS, lb.ctx({ turnId: 'turn_one1', pack: one() }))) as any;
+    const found = (await lb.tools.run('search_stays', STAYS, lb.ctx({ turnId: 'turn_solo1', pack: one() }))) as any;
     const opened = lb.link.sent('open_vote').length;
-    const ctx = lb.ctx({ turnId: 'turn_one2', pack: one() });
+    const ctx = lb.ctx({ turnId: 'turn_solo2', pack: one() });
     const shown = (await lb.tools.run('show_options', { line: 'Here are the villas.', results_id: found.results_id, title: 'Villas' }, ctx)) as any;
     const card = C.OptionsCard.parse(ctx.cards[0]);
     const person = GOA_TRIP.people[0]!.person_id;
@@ -471,7 +471,7 @@ describe('a trip of one never gets a vote', () => {
     expect(card.for_person_ids).toEqual([person]);
     expect(card.actions?.[0]).toMatchObject({ action_id: 'choose', label: 'Choose this', per_option: true, only_for_person_ids: [person] });
     expect(shown.note).toContain(NO_VOTE_FOR_ONE);
-    const put = lb.ctx({ turnId: 'turn_one3', pack: one() });
+    const put = lb.ctx({ turnId: 'turn_solo3', pack: one() });
     expect(await lb.tools.run('put_to_vote', { line: 'Vote is up.', card_id: shown.card_id }, put)).toEqual({ error: 'one_person', note: NO_VOTE_FOR_ONE });
     expect(put.cards).toEqual([]);
     expect(lb.link.sent('open_vote')).toHaveLength(opened);

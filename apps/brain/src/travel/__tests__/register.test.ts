@@ -67,7 +67,8 @@ describe('registerTravel', () => {
       'notice/ixigo_logged_in', 'notice/ixigo_login', 'notice/ixigo_logout', 'notice/ixigo_not_now', 'notice/ixigo_watch', 'notice/pay_flight', 'notice/see_on_ixigo',
       // A booking's one ask for a traveller's gender (flight-booking.ts genderAsk).
       'notice/travel_details', 'notice/traveller_female', 'notice/traveller_male',
-      'options/add_budget', 'options/book_mine', 'options/change', 'options/flights_home', 'options/more_options', 'options/open', 'options/pick', 'options/see_all', 'options/vote',
+      // A trip of one's Choose this (choose.ts).
+      'options/add_budget', 'options/book_mine', 'options/change', 'options/choose', 'options/flights_home', 'options/more_options', 'options/open', 'options/pick', 'options/see_all', 'options/vote',
       // The rooms card's pick (REV4 B5, rooms-card.ts).
       'rooms/pick',
     ]);
@@ -487,8 +488,9 @@ describe('registerTravel', () => {
     // The fake alone: the image fetcher, the screen's Bash streams (screen-feed.ts), the live view's viewers (live.ts), the
     // stays head starts waiting for an edit to settle (warm.ts), the watch checks (recipe-watches.ts), the person's
     // login's keep-alive (login-keepalive.ts), the minute's look at one-tap logins (login.ts sweep) and at the flight
-    // bookings waiting on a login (booking/flight-booking.ts sweep), each stopped by name where it has one.
-    expect(lb.stoppers).toHaveLength(8);
+    // bookings waiting on a login (booking/flight-booking.ts sweep), and a trip of one's stay bookings settling
+    // (booking/stay-for-one.ts), each stopped by name where it has one.
+    expect(lb.stoppers).toHaveLength(9);
     expect(lb.stoppers.map((f) => f.name)).toEqual(expect.arrayContaining(['stopWatchChecks', 'stopHeadStarts', 'stopLoginKeepAlive', 'stopLoginSweep', 'stopBookingSweep']));
     const withIxigo = makeLaneBrain({ pool: db.pool, env: { IXIGO_MCP_URL: 'http://127.0.0.1:1/mcp', IXIGO_MCP_TOKEN: 'tok-ixigo-123456' } });
     await registerTravel(withIxigo.brain);
