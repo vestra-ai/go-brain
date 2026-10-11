@@ -22,7 +22,7 @@ export function callsNow(service: CallService): NowProvider {
     name: 'calls',
     order: CALLS_ORDER,
     async render(tripId: string): Promise<string | null> {
-      if (service.mode() === 'off') return null;
+      if (service.mode() === 'off' || !service.ready()) return null;
       const lines: string[] = [];
       const names = service.callable();
       if (names.length > 0) lines.push(`Go can phone (call_business with the name): ${names.join(', ')}.`);
@@ -76,7 +76,11 @@ export async function startCalls(brain: Brain, o: StartCallsOpts = {}): Promise<
     log: brain.log,
   });
 
-  brain.tools.register(callTool(service));
+  // The tool is offered only when a call can really go out: every setting set and at least one named business, with
+  // the CALLS_MODE switch on (it flips at runtime, so it is read every turn). Prod, 10 Oct: with calls unset the tool was
+  // still offered, its "a cab about a pickup" had Go offer to call a local cab operator, and "yes call" placed nothing.
+  const ready = service.ready();
+  if (ready) brain.tools.register({ ...callTool(service), offered: () => service.mode() === 'allowlist' });
   brain.hooks.onRead((msg, _read, pack) => service.onMessage(msg, pack));
   brain.taps.on('call', 'stop', (tap) => service.stopTap(tap));
   brain.context.addNow(callsNow(service));
@@ -138,7 +142,10 @@ export async function startCalls(brain: Brain, o: StartCallsOpts = {}): Promise<
     h.unref();
     handles.push(h);
   }
-  brain.log.info({ voiceModel: config.voiceModel, missing: config.missing }, config.missing.length > 0 ? 'calls: not set up yet; call_business will refuse' : 'calls: ready');
+  brain.log.info(
+    { voiceModel: config.voiceModel, missing: config.missing, named: service.callable().length },
+    ready ? 'calls: ready' : 'calls: not set up yet; call_business is not offered',
+  );
 
   const stop = async (): Promise<void> => {
     stopped = true;
