@@ -195,6 +195,9 @@ export function createComposer(d: ComposerDeps): Composer {
     // Typing may also be on for a message the turn pulled in, or one intake turned it on for: a turn that posted answered it.
     const pulled: DeskItem[] = [];
     let posted = false;
+    // Typing went on when the model started writing, on a turn nobody named Go in (G4, 11 Oct: a reply to a line that
+    // didn't tag Go showed no "Go is typing…"); it goes off when the turn ends, as for one that named Go.
+    let wrote = false;
     let spoke = false;
     try {
       const trip = await d.pool.query<{ composer_seen_seq: number; tz: string }>('select composer_seen_seq, tz from trips where trip_id = $1', [t.tripId]);
@@ -221,6 +224,11 @@ export function createComposer(d: ComposerDeps): Composer {
         signal,
         onFirstToken: () => {
           times.firstToken ??= d.now();
+        },
+        onWriting: () => {
+          if (forGo || wrote || ctx.mayPostText === false) return;
+          wrote = true;
+          d.speak.working(t.tripId);
         },
         ...(d.budget ? { budget: d.budget } : {}),
       };
@@ -333,7 +341,7 @@ export function createComposer(d: ComposerDeps): Composer {
         .catch(() => undefined);
       throw e;
     } finally {
-      if (forGo || posted || pulled.some(isForGo)) d.speak.typingOff(t.tripId);
+      if (forGo || wrote || posted || pulled.some(isForGo)) d.speak.typingOff(t.tripId);
     }
     return spoke;
   }

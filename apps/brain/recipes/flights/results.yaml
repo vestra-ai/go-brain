@@ -141,6 +141,7 @@ answer:
   # and what the same flight costs with a check-in bag), seats left, a free meal, each change of plane, the code's saving
   # the card shows ("Extra ₹740 Off"; the stream's text comes mis-decoded, so only its amount is read), and Lock Price:
   # its fee a person, how long it holds the fare, and the most ixigo covers if the fare rises, from the fare's own fields.
+  # The airport it lands at, by ixigo's name for it and its code: Goa has two, Dabolim (GOI) and Manohar (GOX), 39 km apart.
   each: |
     (
       $leg := flightDetails[0];
@@ -161,6 +162,8 @@ answer:
       $lock := $num($f.priceLockPremium);
       $hold := $num($f.lockWindow);
       $cover := $num($f.priceLockMaxAbsorption);
+      $lands := flightDetails[-1].destination;
+      $landsName := $trim($replace($string($lookup($airports, $lands).airportName), /\s*(International\s+)?Airport$/i, ""));
       $lockOptions := $f.allPriceLockPremiums[$num(amount) > 0 and $num(expiry) > 0];
       $layovers := flightDetails.layover[$type(location) = "string" and $num(durationInMinutes) > 0];
       ($fare > 0 and $exists($departAt) and $minutes > 0) ? {
@@ -198,7 +201,9 @@ answer:
           "layover": $count($layovers) > 0 ? $join($layovers.(location & " " & $hoursMinutes($num(durationInMinutes))), ", "),
           "offer": $offAmount > 0 ? "Extra " & $rupees($offAmount) & " off with a code",
           "offer_minor": $offAmount > 0 ? $paise($offAmount),
-          "lock": ($lock > 0 and $hold > 0) ? "Lock Price " & $rupees($lock) & " a person, holds " & $string($hold) & " h",
+          "arrival_airport": $type($lands) = "string" ? ($landsName != "" ? $landsName & " (" & $lands & ")" : $lands),
+          "lock": ($lock > 0 and $hold > 0) ? "Lock Price " & $rupees($lock) & " a person, holds " & $string($hold) & " h"
+            & ($cover > 0 ? ", covers a fare rise up to " & $rupees($cover) : ""),
           "lock_fee_minor": $lock > 0 ? $paise($lock),
           "lock_hours": ($lock > 0 and $hold > 0) ? $hold,
           "lock_cover_minor": ($lock > 0 and $cover > 0) ? $paise($cover),

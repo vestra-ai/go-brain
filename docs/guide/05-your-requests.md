@@ -419,7 +419,7 @@ The home screen's ideas are the server's own, picked for each starting city. To 
 { "name": "Ladakh", "from_city": "Delhi" }
 ```
 
-Go answers with the place and 6 to 12 photos when it has them, a one-line tag, the usual way there from that city, and the best months (1 to 12):
+Go answers from the places it has learned: trips' destinations, places on its cards, and the ideas it learns ahead. It sends the place with its photos (6 to 12 when ixigo's guide has them), where it is, and the best months (1 to 12). `tag` and `travel` (the usual way there from that city) are in the shape for later: Go doesn't send them yet.
 
 <!-- schema: PlaceInfo -->
 ```json
@@ -439,9 +439,7 @@ Go answers with the place and 6 to 12 photos when it has them, a one-line tag, t
 }
 ```
 
-`complete`: absent or `true` means the whole answer. `false` means partial (photos still coming): show it, but don't keep it, and ask again later.
-
-Until Go answers it, `place_info` gets a 409 `conflict` error, "not available yet": keep the idea's own image.
+`complete`: absent or `true` means the whole answer. `false` means partial (photos still coming): show it, but don't keep it, and ask again later. A place Go hasn't learned yet comes back as its name alone with `complete: false`: keep the idea's own image and ask again another day.
 
 ## An option's Details: `get_option_details` (1.3)
 

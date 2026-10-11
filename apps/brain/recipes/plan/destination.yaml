@@ -45,6 +45,12 @@ answer:
         "photo": $type($hero) = "string" ? $hero : ($type($visit) = "string" ? $visit),
         "photos": $append($append($count($heroes) > 0 ? [{ "url": $heroes[0], "label": $find(page, 'destination').destination }] : [], $spots), [$heroes[[1..11]].{ "url": $ }])[[0..11]],
         "best_time": $guide.bestTime,
+        /* The same months as numbers, 1 to 12 (place_info's best_months): the guide's popularMonthRange, [from, to) pairs
+           such as [[1, 4], [11, 13]] for "November - March". */
+        "best_months": ($ranges := $lookup($guide, 'popularMonthRange'); [$filter([1..12], function($m) { $count($filter($ranges, function($r) {
+          $type($r) = "array" and $count($r) = 2 and $type($r[0]) = "number" and $type($r[1]) = "number"
+            ? ($r[0] <= $m and $m < $r[1]) or ($r[0] <= $m + 12 and $m + 12 < $r[1]) : false
+        })) > 0 })]),
         "weather_by_month": [$guide.weatherHistory.(month & ": " & $string(weatherAqi.min) & " to " & $string(weatherAqi.max) & " C. " & summary)],
         "places_to_visit": [$widget("Places To Visit").data[$not($exists($kind)) or $lowercase(type) = $kind].(
           name & " (" & $join([$exists($num(rating)) ? $string($num(rating)), type ? $lowercase(type)], ", ") & ")" & (description ? ": " & description : "")
