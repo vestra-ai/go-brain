@@ -13,11 +13,12 @@ import type pg from 'pg';
 import type { Switches } from '../../admin/switches.js';
 import type { ServerLink } from '../../door/server-link.js';
 import { dayText } from '../answer.js';
-import { clip, formatInr } from '../cards.js';
+import { buildOptionsCard, clip, formatInr } from '../cards.js';
 import { stableId } from '../ids.js';
 import type { IxigoLogin } from '../login.js';
 import { bodiesFor } from '../recipes/recipe.js';
 import type { RecipeRunner } from '../recipes/runners.js';
+import type { ResultsStore } from '../results.js';
 import type { StoredOffer } from '../travel.js';
 import { fareFor, reviewAddress } from './review-address.js';
 import { FARE_TYPES, ixigoCoupon, reviewFare, type FareChoice } from './review-read.js';
@@ -87,7 +88,15 @@ export interface FlightBookingDeps {
   switches: Pick<Switches, 'get'>;
   now: () => Date;
   log: Log;
+  /** Where a fare that moved is put to its traveller again, on a card of its own; absent, the run says it in a line. */
+  results?: Pick<ResultsStore, 'optionOf' | 'saveCard'>;
 }
+
+/**
+ * How far over the price a person picked at a fare may come and still be booked (the App team's G2, 11 Oct; the Server's
+ * personal approval allows the same): more, and they are asked again at the new price.
+ */
+export const FARE_MOVE_OK = 1.05;
 
 /** A day (DDMMYYYY, as ixigo's results address writes it) as ixigo's traveller list takes it: its midnight in India, in ms. */
 export function dayMs(ddmmyyyy: string): number | null {
@@ -232,6 +241,28 @@ export function createFlightBooking(d: FlightBookingDeps): FlightBooking {
     );
   };
 
+  /**
+   * The fare moved more than 5%: the traveller's own card of that flight at its new price, theirs alone, to pick again
+   * (their pick books it, as any pick does); or, with no store for the card, the line alone.
+   */
+  async function askAgain(ask: BookingAsk, runId: string, pickedMinor: number, nowMinor: number): Promise<void> {
+    const text = `${ask.name}, ${ask.offer.title} is ${formatInr(nowMinor)} now, up from ${formatInr(pickedMinor)}. Tap I'll take this to book it at ${formatInr(nowMinor)}.`;
+    const option = d.results ? await d.results.optionOf(ask.offer.optionId).catch(() => null) : null;
+    if (!d.results || !option) {
+      await d.link.request('post_message', { request_id: stableId('go_fare', runId), trip_id: ask.tripId, text, visible_to_person_ids: [ask.personId] });
+      return;
+    }
+    const cardId = stableId('c_fare', runId);
+    const optionId = stableId('opt', cardId, 1);
+    const repriced = { ...option, priceMinor: nowMinor };
+    const card = buildOptionsCard({
+      cardId, title: clip(`${ask.offer.title} at ${formatInr(nowMinor)} now`, 80), optionKind: 'flight', checkedAt: d.now().toISOString(),
+      picks: [{ optionId, option: repriced, imageUrl: null }], forPersonIds: [ask.personId],
+    });
+    await d.results.saveCard({ cardId, tripId: ask.tripId, resultsId: ask.offer.resultsId, title: card.title, optionKind: 'flight', card }, [{ optionId, n: 1, option: repriced }], card.checked_at);
+    await d.link.request('post_message', { request_id: stableId('go_fare', runId), trip_id: ask.tripId, text, card, visible_to_person_ids: [ask.personId] });
+  }
+
   async function book(ask: BookingAsk, runId: string): Promise<void> {
     const runner = d.runner();
     const title = ask.offer.title;
@@ -282,6 +313,16 @@ export function createFlightBooking(d: FlightBookingDeps): FlightBooking {
     const coupon = bodiesFor(opened.captures, GRAPH).map(parsed).map(ixigoCoupon).find((c) => c !== null) ?? null;
     const typed = priced.types.find((t) => t.choice === ask.choice)?.totalMinor ?? priced.totalMinor;
     const amountMinor = Math.max(1, typed - (coupon?.savingMinor ?? 0));
+    // A fare more than 5% over the price they picked at: asked again at the new price, on a card of its own, and this run
+    // stops (the Server approves a personal payment up to 5% over the option they tapped, so a new price needs a new tap).
+    const picked = ask.offer.priceMinor;
+    if (picked !== null && amountMinor > Math.round(picked * FARE_MOVE_OK)) {
+      await save(runId, { state: 'failed', why: 'fare_moved', total_minor: amountMinor });
+      await live.step(2, 'failed');
+      await live.finish(false);
+      await askAgain(ask, runId, picked, amountMinor);
+      return;
+    }
     await save(runId, { state: 'travellers', total_minor: amountMinor, coupon_code: coupon?.code ?? null, coupon_minor: coupon?.savingMinor ?? null });
     await live.step(2, 'done');
 

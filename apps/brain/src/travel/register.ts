@@ -348,6 +348,7 @@ export const registerTravel: RegisterLane = async (brain) => {
     // Money registers after travel: its Pay is read when Pay is tapped.
     pay: () => brain.pay,
     login,
+    results,
   });
   registerTravelTaps(brain.taps, { results, pool: brain.pool, link: brain.door.link, desk: brain.desk, now: brain.now, log: brain.log, booking, nameOf });
   // The Server's REV4 B5: once a vote picks a stay, its rooms card (the ways to take its rooms, who shares, what each pays)
