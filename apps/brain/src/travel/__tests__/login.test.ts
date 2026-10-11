@@ -869,6 +869,24 @@ describe("one login for all of a person's trips: their browser (tasks/browsers.t
     expect(w.reads).toHaveLength(1);
   });
 
+  // The lead, 11 Oct: Keshav booked on Saket's trip, and the login card went to Saket, the organizer. Anyone in the trip
+  // can log in on the trip's computer: the person booking is asked, and an ask open for someone else moves to them.
+  it("asks the person booking for the trip's ixigo login before the organizer, and moves the organizer's open ask to them", async () => {
+    const w = world({});
+    await w.setup();
+    const whose = async () => (await db.pool.query<{ person_id: string }>('select person_id from ixigo_logins where trip_id = $1', [w.tripId])).rows[0]?.person_id;
+    expect(await whose()).toBe('p_rahul');
+    const before = w.link.of('post_message').length;
+    const out = await w.login.ensure(w.tripId, 'Booking IndiGo 6E2150 for Meher', { booking: true, for: 'p_meher' });
+    expect(out.ok).toBe(false);
+    const posts = w.link.of('post_message').slice(before);
+    expect(posts).toHaveLength(1);
+    expect(posts[0]).toMatchObject({ card: { for_person_ids: ['p_meher'] } });
+    expect(JSON.stringify(posts[0])).not.toContain('p_rahul');
+    expect(await whose()).toBe('p_meher');
+    expect(await w.state()).toBe('asked');
+  });
+
   it("the browser's login gone since this trip checked ends this trip's login: the next booking asks again, reading nothing", async () => {
     const b = fakeBrowser();
     const w = world({ browser: b, statuses: [200] });
