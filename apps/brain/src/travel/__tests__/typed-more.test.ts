@@ -9,7 +9,11 @@ describe('a typed "more"', () => {
   // The lead's tone drill on prod, 11 Oct: "more" got "On it." with its live card, then "Looking for more on ixigo." as a
   // second line of its own.
   it('says a See more toast only when it is an outcome, never "still looking" beside the live card', async () => {
-    const card = { kind: 'options', card_id: 'c_opt_1', title: 'Stays in Goa', options: [], fallback_text: 'Stays in Goa' };
+    // A real options card: the chat's messages are checked against the contract (msg parses them).
+    const card = {
+      kind: 'options', card_id: 'c_opt_1', title: 'Stays in Goa', option_kind: 'stay', checked_at: '2026-10-11T12:00:00Z', decision_id: 'd_1',
+      options: [{ option_id: 'opt_1', title: 'Summerville', highlights: [] }], fallback_text: 'Stays in Goa',
+    };
     const pack = { trip: {}, messages: [msg(10, null, 'Stays in Goa.', { card } as never), msg(11, 'p_meher', 'more')], seq: 11 };
     const wake: DeskItem[] = [{ id: 'msg:t_goa:m_11', tripId: 't_goa', kind: 'message', ref: 'm_11', dueAt: new Date(), payload: { messageId: 'm_11' } }];
     const run = async (answer: SeeMoreAnswer): Promise<string[]> => {
