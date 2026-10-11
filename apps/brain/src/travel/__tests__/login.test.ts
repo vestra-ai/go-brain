@@ -78,6 +78,7 @@ function world(o: {
   const runner = {
     read: async (_trip: string, url: string, plan: FetchPlan) => {
       reads.push({ url, plan });
+      timeline.push({ what: 'read', at: Date.now() });
       if (plan !== LOGIN_CALLS) return { captures: [], finalUrl: url };
       const s = statuses.shift() ?? 'timeout';
       if (s === 'timeout') throw new TravelError('unreachable', 'ixigo took too long to answer.');
@@ -1414,17 +1415,32 @@ describe("one tap: Go's screen opens with the log in, and Go sees the login land
 
   // 11 Oct: Go closed the login's tab at once, and the person's Watch showed the computer's screen behind it until its
   // own 3 s check said the session had ended.
-  it('a landed login ends its Watch first and closes its tab CLOSE_AFTER_WATCH_MS later, in the background: logged in never waits on it', async () => {
+  it('a landed login ends its Watch first and closes its tab CLOSE_AFTER_WATCH_MS later, in the background', async () => {
     expect(CLOSE_AFTER_WATCH_MS).toBe(4_000);
     const w = world({ cookies: (n) => (n < 2 ? [] : at(AT)), statuses: [200], closeAfterWatchMs: 300 });
     await w.setup();
     await w.fire('ixigo_login', 'p_rahul');
-    await vi.waitFor(async () => expect(await w.state()).toBe('logged_in'));
-    expect(w.ended).toEqual(['ses_1']);
+    await vi.waitFor(() => expect(w.ended).toEqual(['ses_1']));
     expect(w.releases).toEqual([]);
     await w.login.settled();
-    expect(w.timeline.map((e) => e.what)).toEqual(['end:ses_1', `close:${LOGIN_TAB}`]);
-    expect(w.timeline[1]!.at - w.timeline[0]!.at).toBeGreaterThanOrEqual(250);
+    // The Watch ends first; the tab closes once, the delay after (the read of ixigo waits the same delay: the test below).
+    const end = w.timeline.findIndex((e) => e.what === 'end:ses_1');
+    const closes = w.timeline.filter((e) => e.what.startsWith('close:'));
+    expect(closes.map((e) => e.what)).toEqual([`close:${LOGIN_TAB}`]);
+    expect(w.timeline.indexOf(closes[0]!)).toBeGreaterThan(end);
+    expect(end).toBeGreaterThanOrEqual(0);
+    expect(closes[0]!.at - w.timeline[end]!.at).toBeGreaterThanOrEqual(250);
+  });
+
+  // 11 Oct: Go's read of ixigo right after the login landed opened a window over the person's Watch (a black frame).
+  it("a landed login's read of ixigo, and all after it, waits CLOSE_AFTER_WATCH_MS after the Watch ends", async () => {
+    const w = world({ cookies: (n) => (n < 2 ? [] : at(AT)), statuses: [200], closeAfterWatchMs: 300 });
+    await w.setup();
+    await w.tap('ixigo_login', 'p_rahul');
+    expect(await w.state()).toBe('logged_in');
+    const end = w.timeline.find((e) => e.what === 'end:ses_1')!;
+    const read = w.timeline.filter((e) => e.what === 'read').at(-1)!;
+    expect(read.at - end.at).toBeGreaterThanOrEqual(250);
   });
 
   it('a login opened again before the old tab closes keeps its tab: the old close does nothing', async () => {
