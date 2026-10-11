@@ -793,7 +793,7 @@ export async function searchAnswer(kind: TravelKind, ask: TravelQuery, found: Tr
       'If someone asked for a place an option is not in, say the option\'s own area: asked for Calangute, a villa in Vagator is in Vagator. ' +
       `${left ? `Say in the line that ${left}. ` : ''}` +
       `${dropped ? `Say in the line that ${dropped}: they are the nearest, never a fit for it. ` : ''}` +
-      `${found.cut ? `Say in the line that these are from the first ${before} ixigo sent, and the whole list is on ixigo's page. ` : ''}` +
+      `${found.cut ? `Say in the line that you picked these from the first ${before} ixigo sent, and offer to look at more. ` : ''}` +
       `${found.notes?.length ? "What ixigo itself offers for this list is in the summary: say it in one short line when it helps the ask (holding a fare while the group decides, a budget), as ixigo's to set, never Go's. " : ''}` +
       (pick.length
         ? `Show the options whose amenities or details fit ${listOf(pick)}, the best three when there are three, best first, and say which part ixigo filtered and which you picked; ` +
