@@ -180,6 +180,8 @@ export const TOASTS = {
   notReady: "This payment isn't ready yet.",
   fresh: 'That one timed out. Setting up a fresh payment.',
   restart: 'Setting up a fresh payment.',
+  /** A traveller's ticket has no vote to ask again from: its own flow asks afresh. */
+  ticketRunOut: 'That payment ran out. Tap Book it again for a fresh one.',
   noPage: "Couldn't open the payment page. Try again.",
   declinedDone: 'Declined. Nothing was charged.',
   confirming: "We're confirming this payment with the bank. Don't pay again.",
