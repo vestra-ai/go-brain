@@ -179,12 +179,24 @@ export const registerTravel: RegisterLane = async (brain) => {
   brain.recipeWatches = () => watchesNow(brain.pool);
   // When each trip's live card last said "On it.", across its cards: one ask's second search says nothing (live-search.ts).
   const saidOnIt = new Map<string, number>();
+  // A live card's view of the trip's screen (R7): a view-only session on the browser its search runs in. The tasks lane,
+  // which owns the computers, registers after this one: read when a card starts.
+  const liveViews = {
+    liveView: async (tripId: string) => {
+      const screen = brain.recipeRunners?.screen;
+      if (!screen) throw new Error("no trip computer here for a live view");
+      return screen(tripId, 'view');
+    },
+    endView: async (sessionId: string) => {
+      await brain.recipeRunners?.endScreen?.(sessionId);
+    },
+  };
   const ixigoWeb = createIxigoWebBackend({
     book,
     engine,
     now: brain.now,
     log: brain.log,
-    live: (tripId, o) => startLiveSearch({ link: brain.door.link, images, now: brain.now, log: brain.log, saidOnIt }, tripId, o),
+    live: (tripId, o) => startLiveSearch({ link: brain.door.link, images, now: brain.now, log: brain.log, saidOnIt, ...liveViews }, tripId, o),
     // A computer that met Cloudflare's check moments ago opens no stays page for an ask (backend.ts CHALLENGE_COOL_MS).
     challengedAt: (tripId) => brain.recipeRunners?.browserFetch.lastChallenge?.(tripId) ?? null,
   });
