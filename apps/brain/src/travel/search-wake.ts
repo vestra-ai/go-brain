@@ -112,7 +112,7 @@ export function searchWakeAnswer(d: Pick<TravelToolDeps, 'results' | 'images' | 
  * other things in it, the model answers those.
  */
 export function tryAgainAnswer(
-  d: Pick<TravelToolDeps, 'travel' | 'results' | 'desk' | 'now' | 'log' | 'ixigoQuiet'> & { each?: (t: TryAgainItem, pack: TripPack) => void },
+  d: Pick<TravelToolDeps, 'travel' | 'results' | 'desk' | 'now' | 'log' | 'ixigoQuiet' | 'nearest'> & { each?: (t: TryAgainItem, pack: TripPack) => void },
 ): DirectAnswer {
   return async ({ tripId, wake, pack, ctx }) => {
     const tries = triesIn(wake);

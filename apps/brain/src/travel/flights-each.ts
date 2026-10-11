@@ -20,7 +20,8 @@ import { SAY_NOTHING, type QuickTool, type TurnCtx } from '../composer/tools.js'
 import type { Desk } from '../desk/desk.js';
 import type { ServerLink } from '../door/server-link.js';
 import type { TripPack } from '../trips/pack.js';
-import { dayText, noFlightsLine, noFlightsOffer } from './answer.js';
+import { dayText, noFlightsLine, noFlightsText } from './answer.js';
+import { noFlightsOfferFor, type NearestAirport } from './nearest-airport.js';
 import type { NoneSaid } from './book/engine.js';
 import type { Engine, EngineAnswer, StepsEvent } from './book/engine.js';
 import { buildOptionsCard, clip, formatInr, type CardPick } from './cards.js';
@@ -139,6 +140,8 @@ export interface FlightsEachDeps {
   now: () => Date;
   /** Where a city whose page didn't come waits for its try again (try-again.ts). */
   desk?: Pick<Desk, 'put'>;
+  /** The nearest other airport with flights, for a city ixigo had none for (nearest-airport.ts). */
+  nearest?: NearestAirport;
   /** When ixigo's own quiet on a flights page ends (it refused one), or null: a city's try waits past it. */
   ixigoQuiet?: (kind: TravelKind, q: TravelQuery) => number | null;
   log?: { warn(obj: object, msg: string): void };
@@ -229,7 +232,7 @@ export interface Instead {
  * "couldn't load", never a try again.
  */
 async function noFlightsFrom(
-  d: Pick<FlightsEachDeps, 'link' | 'log'>, tripId: string, key: string, groups: EachGroup[],
+  d: Pick<FlightsEachDeps, 'link' | 'log' | 'nearest'>, tripId: string, key: string, groups: EachGroup[],
   at: { to: string; date: string; instead?: Instead | undefined }, none: NoneSaid,
 ): Promise<void> {
   // Kept for the stand-in search's line, under both ends' words: which end had none is the tap's to say.
@@ -242,7 +245,7 @@ async function noFlightsFrom(
     // The bus goes from their home to the trip's place, whichever end a stand-in search stood in for.
     const from = at.instead?.side === 'from' ? at.instead.of : g.home;
     const to = at.instead?.side === 'to' ? at.instead.of : at.to;
-    const offer = at.instead ? { text: noFlightsLine(from, to, at.date, none), replies: [] } : noFlightsOffer(from, to, at.date, none);
+    const offer = at.instead ? { text: noFlightsLine(from, to, at.date, none), replies: [] } : await noFlightsOfferFor(from, to, at.date, none, d.nearest);
     const ids = g.people.map((p) => p.personId);
     await postFor(d, tripId, stableId('go_each', key, ...ids, 'none'), null, `${namesOf(g)}, ${offer.text}`, ids, offer.replies);
   }

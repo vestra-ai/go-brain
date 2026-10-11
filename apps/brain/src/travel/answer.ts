@@ -216,11 +216,15 @@ export interface NoFlightsOffer {
 export function noFlightsOffer(
   from: string, to: string, date: string,
   none: { from?: { words: string; code: string; city: string }; to?: { words: string; code: string; city: string } },
+  nearest: { there: { city: string; road?: string } | null; home: { city: string; road?: string } | null } = {
+    there: nearestWithFlights(none.to?.words ?? to, none.to),
+    home: nearestWithFlights(none.from?.words ?? from, none.from),
+  },
 ): NoFlightsOffer {
   const said = noFlightsText(from, to, date, none);
   const bus = { label: 'A bus instead', text: `A bus from ${from} to ${to} instead` };
-  const there = nearestWithFlights(none.to?.words ?? to, none.to);
-  const home = there ? null : nearestWithFlights(none.from?.words ?? from, none.from);
+  const { there } = nearest;
+  const home = there ? null : nearest.home;
   if (there) {
     return {
       text: `${said} Should I look at flights to ${there.city}, the nearest airport with flights?${there.road ? ` It's ${there.road} by road to ${to}.` : ''}`,
