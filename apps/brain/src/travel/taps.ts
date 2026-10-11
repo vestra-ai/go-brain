@@ -16,7 +16,7 @@ import type { Brain } from '../app.js';
 import type { CardTapParams } from '../door/methods.js';
 import type { DeskItem } from '../desk/desk.js';
 import type { TripPack } from '../trips/pack.js';
-import { PAY_FLIGHT, TRAVELLER_FEMALE, TRAVELLER_MALE, type FlightBooking } from './booking/flight-booking.js';
+import { PAY_FLIGHT, TRAVEL_DETAILS, TRAVELLER_FEMALE, TRAVELLER_MALE, type FlightBooking } from './booking/flight-booking.js';
 import { BOOK_MINE, budgetSheet, buildConfirmMineCard, CHANGE_MINE, clip, ixigoPage, PERSONAL_KINDS } from './cards.js';
 import { stableId } from './ids.js';
 import type { Images } from './images.js';
@@ -30,7 +30,7 @@ export interface TravelTapDeps {
   results: ResultsStore;
   pool: Brain['pool'];
   /** Go booking a person's own flight itself (BOOKING, booking/flight-booking.ts); absent, "Book it" opens ixigo. */
-  booking?: Pick<FlightBooking, 'onFor' | 'start' | 'pay' | 'gender'>;
+  booking?: Pick<FlightBooking, 'onFor' | 'start' | 'pay' | 'gender' | 'detailsLink'>;
   /** A person's name in the trip, for the room's words about their booking. */
   nameOf?: (tripId: string, personId: string) => Promise<string>;
   link: Brain['door']['link'];
@@ -101,7 +101,8 @@ export function registerTravelTaps(taps: Brain['taps'], d: TravelTapDeps): { see
       // The App team's G2 (11 Oct): with Go booking it (BOOKING), the pick is the booking. Their own card shows their flight
       // alone, with no buttons left, and no second card goes up; Go books it on the trip's computer up to ixigo's pay step.
       // A card the room shares stays as it is, for the others to pick from.
-      if (d.booking && offer.kind === 'flight' && offer.sourceUrl && (await d.booking.onFor(tap.trip_id))) {
+      // A train is booked as a flight is (Keshav, 11 Oct: "trains and buses are crying to get booked like flights").
+      if (d.booking && (offer.kind === 'flight' || offer.kind === 'train') && offer.sourceUrl && (await d.booking.onFor(tap.trip_id))) {
         const forWho = row.card.for_person_ids ?? [];
         const own = forWho.length === 1 && forWho[0] === tap.person_id;
         if (own) {
@@ -142,7 +143,7 @@ export function registerTravelTaps(taps: Brain['taps'], d: TravelTapDeps): { see
     const m = await mine(tap, card);
     if ('refused' in m) return { result: 'refused', toast: m.refused };
     // Go books it itself, on the stage, up to ixigo's pay button (BOOKING): the tap answers at once, the booking goes on.
-    if (d.booking && m.offer.kind === 'flight' && m.offer.sourceUrl && (await d.booking.onFor(tap.trip_id))) {
+    if (d.booking && (m.offer.kind === 'flight' || m.offer.kind === 'train') && m.offer.sourceUrl && (await d.booking.onFor(tap.trip_id))) {
       const name = (await d.nameOf?.(tap.trip_id, tap.person_id).catch(() => null)) ?? 'you';
       const started = await d.booking.start({ tapId: tap.tap_id, tripId: tap.trip_id, personId: tap.person_id, name, offer: m.offer, choice: 'basic' });
       return { result: 'done', toast: started === 'running' ? ALREADY_BOOKING : "Go is booking it on the trip's computer" };
@@ -185,6 +186,14 @@ export function registerTravelTaps(taps: Brain['taps'], d: TravelTapDeps): { see
       return r.result === 'done' ? { result: 'done', toast: r.toast } : { result: 'refused', toast: r.toast };
     });
   }
+
+  // A train's one ask for its passenger's details (flight-booking.ts detailsAsk): the vault's own travel form, theirs
+  // alone; the booking carries on by itself once the details are there.
+  taps.on('notice', TRAVEL_DETAILS, async (tap, card) => {
+    const forWho = 'for_person_ids' in card ? (card.for_person_ids ?? []) : [];
+    if (!d.booking || !forWho.includes(tap.person_id)) return { result: 'refused', toast: 'This one is for someone else' };
+    return d.booking.detailsLink({ tripId: tap.trip_id, cardId: tap.card_id, personId: tap.person_id });
+  });
 
   taps.on('notice', 'see_on_ixigo', async (_tap, card) => {
     const url = card.kind === 'notice' ? ixigoPage(card.source?.url) : null;

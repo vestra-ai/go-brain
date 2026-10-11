@@ -50,6 +50,16 @@ export function bookingWords(r: Row, nowMs: number): string {
       return `${r.title} stopped (${when}): ixigo's traveller form needs their last name as on their ID, and their name in the trip is one word; once their travel details are in Go, I'll take this again.`;
     case 'traveller_not_filled':
       return `${r.title} stopped (${when}): Go couldn't fill their traveller details on ixigo's form; ${TAP_AGAIN}.`;
+    case 'details_needed':
+      return `${r.title} waits for them to add their travel details in Go (their age and IRCTC user ID), from the card Go sent (since ${when}): Go carries on by itself then.`;
+    case 'details_in':
+      return `Go is booking ${r.title} for them now that their travel details are in; their pay card comes when it's ready.`;
+    case 'details_let_go':
+      return `${r.title} stopped (${when}): their travel details didn't come in; ${TAP_AGAIN}.`;
+    case 'seats_not_read':
+      return `${r.title} stopped (${when}): Go couldn't read its seats on ixigo; ${TAP_AGAIN}.`;
+    case 'passengers_not_filled':
+      return `${r.title} stopped (${when}): Go couldn't fill their passenger details on ixigo's form; ${TAP_AGAIN}.`;
     case 'international_traveller':
       return `${r.title} stopped (${when}): an international ticket needs passport details on ixigo's form, which Go doesn't fill yet.`;
     default:
@@ -79,7 +89,7 @@ export function bookingsNow(d: { pool: pg.Pool; packs: Pick<Packs, 'get'>; now: 
       const nameOf = (id: string) => spokenFirstName(pack.trip.people.find((p) => p.person_id === id)?.name ?? 'Someone');
       const ordered = [...rows].sort((a, b) => Number(spoke.has(b.person_id)) - Number(spoke.has(a.person_id)) || a.person_id.localeCompare(b.person_id));
       return [
-        'Right now, the trip\'s flight bookings as Go has them (each one is its traveller\'s: when they ask, or seem lost ("?"), ' +
+        'Right now, the trip\'s bookings (flights and trains) as Go has them (each one is its traveller\'s: when they ask, or seem lost ("?"), ' +
           "say where theirs is in a line, as this says it, never that Go can't book flights; bring up nobody's unasked):",
         ...ordered.map((r) => `- ${nameOf(r.person_id)}${spoke.has(r.person_id) ? ' (spoke now)' : ''}: ${bookingWords(r, now.getTime())}`),
       ].join('\n');

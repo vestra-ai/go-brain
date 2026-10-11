@@ -11,7 +11,7 @@ import { SWITCH_RULES } from '../../../admin/switches.js';
 import { spokenFirstName } from '../travellers.js';
 import {
   createFlightBooking, dayMs, dayOf, FLIGHT_FARE, FLIGHT_STREAM, GRAPH, LOGIN_WAIT_MS, newTravellerSteps, numbersOf, readyCard, SAVED_TRAVELLERS, TRAVELLER_FEMALE,
-  TRAVELLER_FIELDS, TRAVELLER_MALE, travellerAsk, TRAVELLERS_RETRY,
+  TRAVEL_DETAILS, TRAVELLER_FIELDS, TRAVELLER_MALE, travellerAsk, TRAVELLERS_RETRY, detailsAsk, hasFields,
   type FlightBooking, type TicketPay,
 } from '../flight-booking.js';
 import { buildOptionsCard } from '../../cards.js';
@@ -706,5 +706,143 @@ describe("Go books a person's own flight up to ixigo's pay button", () => {
     expect([dayOf(OFFER.sourceUrl), dayOf(null), dayOf('https://www.ixigo.com/x')]).toEqual(['2026-11-06', null, null]);
     const card = readyCard({ cardId: 'c_r', personId: 'p_meher', name: 'Meher', title: 'IndiGo 6E2150', when: 'Fri 6 Nov, 18:15', choice: 'assured', amountMinor: 910_500, coupon: null });
     expect(card.body).toBe('IndiGo 6E2150, Fri 6 Nov, 18:15, Assured (free cancellation).');
+  });
+});
+
+// Keshav, 11 Oct: "trains and buses are crying to get booked like flights". p0's T1 drill found the way in: the day's
+// results page, a row's SHOW AVAILABILITY, the class's tile, the day's BOOK, behind ixigo's login.
+describe("Go books a person's own train up to ixigo's pay button, as a flight", () => {
+  const MANDOVI = 'https://www.ixigo.com/trains/10103?orgn=CSMT&dstn=MAO&departDate=2026-11-06&quota=GN';
+  const RESULTS = 'https://www.ixigo.com/search/result/train/CSMT/MAO/06112026//1/0/0/0/SL';
+  const seats = (status: string, p = 0) => JSON.stringify({ data: { routesData: [{ trainCode: '10103', availabilities: [{ c: 'SL', q: 'GN', a: status, p, f: 410 }] }] } });
+  const AVAIL = 'https://www.ixigo.com/api/v3/trains/availability?originCode=CSMT&destinationCode=MAO&travelDate=06112026';
+
+  /** The day's results page: its seats call on the stage and in the private tab; fill: whether the passenger form fills. */
+  function trainRunner(o: { status?: string; chance?: number; seats?: boolean; fill?: boolean } = {}): { runner: RecipeRunner; reads: Read[] } {
+    const reads: Read[] = [];
+    const runner: RecipeRunner = {
+      name: 'browser_fetch',
+      async read(_trip, url, plan, opts) {
+        reads.push({ url, plan, o: opts });
+        if (opts?.private && o.fill === false) throw new Error('504 timeout at 4 type');
+        return { captures: o.seats === false ? [] : [capture('/api/v3/trains/availability', AVAIL, seats(o.status ?? 'AVAILABLE 34', o.chance ?? 0))], finalUrl: url };
+      },
+    };
+    return { runner, reads };
+  }
+
+  /** Meher's own Mandovi, SL, picked on her card at ₹410. */
+  async function trainOffer(optionId: string) {
+    const results = createResultsStore(db.pool);
+    const train: ResultOption = {
+      kind: 'train', title: 'Mandovi Express 10103', priceMinor: 41_000, currency: 'INR', priceNote: 'per person', highlights: [], facts: { class_code: 'SL', availability: 'AVAILABLE 34' }, sourceUrl: MANDOVI,
+    };
+    const set = await results.save({ tripId: 't_goa', optionKind: 'train', source: 'search', query: {}, options: [train], checkedAt: '2026-10-10T07:00:00.000Z' });
+    await results.saveCard({ cardId: `c_${optionId}`, tripId: 't_goa', resultsId: set.resultsId, title: 'Trains', optionKind: 'train', card: { card_id: `c_${optionId}` } as never }, [{ optionId, n: 1, option: train }], '2026-10-10T07:00:00.000Z');
+    const offer: StoredOffer = { ...OFFER, optionId, cardId: `c_${optionId}`, resultsId: set.resultsId, kind: 'train', title: 'Mandovi Express 10103', priceMinor: 41_000, sourceUrl: MANDOVI };
+    return { results, offer };
+  }
+
+  const VAULT = { firstName: 'Meher', lastName: 'Varma', gender: 'female' as const, dob: '1994-11-07', irctcUserId: 'meher_irctc' };
+
+  it('reads its seats on the stage, types its passenger from the vault privately, says a waitlist before pay, and books on to the pay card', async () => {
+    const { results, offer } = await trainOffer('opt_tr1');
+    const vaultAsks: unknown[] = [];
+    const pay: TicketPay = { onPaid: () => undefined, travelDetails: async (i) => (vaultAsks.push(i), VAULT) };
+    const { runner, reads } = trainRunner({ status: 'GNWL 12', chance: 47 });
+    const b = booking(runner, true, pay, { results });
+    const from = lb.link.requests.length;
+    expect(await b.start({ tapId: 'tap_tr1', tripId: 't_goa', personId: 'p_meher30', name: 'Meher', offer, choice: 'basic' })).toBe('started');
+    await b.settled();
+    // 1. The day's results for its class, on the stage, its seats call required.
+    expect(reads[0]).toMatchObject({ url: RESULTS, o: { stage: true }, plan: { capture: [{ match: '/api/v3/trains/availability', required: true }] } });
+    // 2. Privately: the row's SHOW AVAILABILITY by its train, the class's tile, the day's BOOK, then her passenger.
+    expect(reads[1]!.o?.private).toBe(true);
+    expect(reads[1]!.plan.steps).toEqual([
+      { op: 'click', name: 'SHOW AVAILABILITY', near_text: '10103' },
+      { op: 'click', text: 'SL', near_text: ['10103', 'HIDE AVAILABILITY'] },
+      { op: 'click', role: 'button', name: 'BOOK', near_text: 'Fri, 06 Nov' },
+      { op: 'type', role: 'textbox', name: 'Name', text: 'Meher Varma' },
+      { op: 'type', role: 'textbox', name: 'Age', text: '31' },
+      { op: 'type', role: 'combobox', name: 'Gender', text: 'Female' },
+      { op: 'type', role: 'textbox', name: 'IRCTC Username', text: 'meher_irctc' },
+    ]);
+    expect(vaultAsks).toEqual([{ tripId: 't_goa', personId: 'p_meher30', booking: { ref: expect.stringMatching(/^fb_/), travellerPersonId: 'p_meher30', purpose: 'Mandovi Express 10103 (SL), Fri, 06 Nov, for Meher' } }]);
+    // The waitlist, said plainly before she pays, hers alone; then her ready card.
+    const said = lb.link.requests.slice(from).filter((r) => r.method === 'post_message' && !r.params['card']).map((r) => [r.params['text'], r.params['visible_to_person_ids']]);
+    expect(said).toEqual([[
+      "Before you pay for Mandovi Express 10103 (SL): It's waitlisted (GNWL 12); ixigo gives it a 47% chance to confirm: a waitlisted ticket that doesn't confirm by the chart is cancelled and refunded.",
+      ['p_meher30'],
+    ]]);
+    expect((await db.pool.query(`select state, total_minor from flight_bookings where person_id = 'p_meher30'`)).rows[0]).toEqual({ state: 'ready_to_pay', total_minor: '41000' });
+    // None of her details reaches a card or a line.
+    expect(JSON.stringify(lb.link.requests.slice(from))).not.toMatch(/Varma|meher_irctc|1994/);
+  });
+
+  it('asks once, one tap, for the age and IRCTC user ID its form needs, opening the vault\'s own form, and carries on by itself once they\'re there', async () => {
+    const { results, offer } = await trainOffer('opt_tr2');
+    let kept: typeof VAULT | null = null;
+    const links: string[] = [];
+    const pay: TicketPay = {
+      onPaid: () => undefined,
+      travelDetails: async () => kept,
+      travelLink: async (personId, fields) => (links.push(`${personId}:${(fields ?? []).join(',')}`), { url: 'https://vault.example/travel?t=1', expiresAt: '2026-10-11T12:00:00.000Z' }),
+    };
+    const { runner } = trainRunner();
+    const b = booking(runner, true, pay, { results });
+    const from = lb.link.requests.length;
+    await b.start({ tapId: 'tap_tr2', tripId: 't_goa', personId: 'p_meher31', name: 'Meher', offer, choice: 'basic' });
+    await b.settled();
+    const asked = lb.link.requests.slice(from).filter((r) => (r.params['card'] as C.Card | undefined)?.kind === 'notice');
+    expect(asked.map((r) => r.params['visible_to_person_ids'])).toEqual([['p_meher31']]);
+    const card = C.NoticeCard.parse(asked[0]!.params['card']);
+    expect(card).toMatchObject({
+      for_person_ids: ['p_meher31'], title: 'Meher, one step for your train',
+      body: 'Your train needs your age and IRCTC user ID: add them once (30 s), and Go carries on with your booking.',
+    });
+    expect(card.actions?.map((a) => [a.action_id, a.label, a.only_for_person_ids])).toEqual([[TRAVEL_DETAILS, 'Add them', ['p_meher31']]]);
+    expect((await db.pool.query(`select state, why from flight_bookings where person_id = 'p_meher31'`)).rows[0]).toEqual({ state: 'failed', why: 'details_needed' });
+    // Her tap: the vault's own travel form, hers alone, showing exactly what it needs (#485's fields); someone else's, nothing.
+    expect(await b.detailsLink({ tripId: 't_goa', cardId: card.card_id, personId: 'p_meher31' })).toEqual({ result: 'open', url: 'https://vault.example/travel?t=1', expires_at: '2026-10-11T12:00:00.000Z' });
+    expect(links).toEqual(['p_meher31:dob,irctc_user_id']);
+    expect(await b.detailsLink({ tripId: 't_goa', cardId: card.card_id, personId: 'p_kabir' })).toEqual({ result: 'refused', toast: 'This booking has moved on' });
+    // Not in yet: the sweep waits. Once they are, it carries on by itself to her pay card.
+    await b.sweep();
+    expect((await db.pool.query(`select why from flight_bookings where person_id = 'p_meher31'`)).rows[0]).toEqual({ why: 'details_needed' });
+    kept = VAULT;
+    await b.sweep();
+    await b.settled();
+    expect((await db.pool.query(`select state from flight_bookings where person_id = 'p_meher31'`)).rows[0]).toEqual({ state: 'ready_to_pay' });
+  });
+
+  // p5's buses (11 Oct) ask through the same card and wait on the same sweep.
+  it("words its one ask by what it needs and the ticket's kind, a bus's age alone too, and knows when the vault has every one", () => {
+    expect(detailsAsk('c_d', 'p_x', 'Ravi', ['dob'], 'bus')).toMatchObject({
+      title: 'Ravi, one step for your bus', body: 'Your bus needs your age: add it once (30 s), and Go carries on with your booking.',
+      actions: [{ action_id: TRAVEL_DETAILS, label: 'Add it', only_for_person_ids: ['p_x'] }],
+    });
+    expect(hasFields(VAULT, ['dob', 'irctc_user_id'])).toBe(true);
+    const { irctcUserId: _none, ...noIrctc } = VAULT;
+    expect(hasFields(noIrctc, ['dob', 'irctc_user_id'])).toBe(false);
+    expect(hasFields(noIrctc, ['dob'])).toBe(true);
+    expect(hasFields(null, ['dob'])).toBe(false);
+  });
+
+  it("stops, saying so, when its seats don't read, or its passenger form doesn't fill, and puts their card back", async () => {
+    const pay: TicketPay = { onPaid: () => undefined, travelDetails: async () => VAULT };
+    const from = lb.link.requests.length;
+    const one = await trainOffer('opt_tr3');
+    const a = booking(trainRunner({ seats: false }).runner, true, pay, { results: one.results });
+    await a.start({ tapId: 'tap_tr3', tripId: 't_goa', personId: 'p_meher32', name: 'Meher', offer: one.offer, choice: 'basic' });
+    await a.settled();
+    const two = await trainOffer('opt_tr4');
+    const b = booking(trainRunner({ fill: false }).runner, true, pay, { results: two.results });
+    await b.start({ tapId: 'tap_tr4', tripId: 't_goa', personId: 'p_meher33', name: 'Meher', offer: two.offer, choice: 'basic' });
+    await b.settled();
+    const said = (person: string) => lb.link.requests.slice(from).filter((r) => r.method === 'post_message' && !r.params['card'] && JSON.stringify(r.params['visible_to_person_ids']) === `["${person}"]`).map((r) => r.params['text']);
+    expect(said('p_meher32')).toEqual(["Go couldn't read the seats on Mandovi Express 10103 just now, so it stopped before booking it. Tap I'll take this to try again."]);
+    expect(said('p_meher33')).toEqual(["Go couldn't fill your passenger details on ixigo's form, so it stopped before booking Mandovi Express 10103. Tap I'll take this to try again."]);
+    const rows = (await db.pool.query(`select person_id, why from flight_bookings where person_id in ('p_meher32', 'p_meher33') order by person_id`)).rows;
+    expect(rows).toEqual([{ person_id: 'p_meher32', why: 'seats_not_read' }, { person_id: 'p_meher33', why: 'passengers_not_filled' }]);
   });
 });
