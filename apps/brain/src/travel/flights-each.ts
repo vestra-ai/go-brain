@@ -175,11 +175,18 @@ async function groupCard(
   const cheapest = shown[0]!;
   // A place with no airport of its own (Varkala), searched at ixigo's nearest (TRV): said once, in plain words.
   const near = (got.near ?? []).map((n) => `${n.words} has no airport, so these are flights ${norm(n.words) === norm(g.home) ? 'from' : 'to'} ${n.city} (${n.code}). `).join('');
-  // A search in place of a route ixigo had no flights on: which airport this is, and for where.
-  const instead = at.instead ? `${at.instead.side === 'from' ? g.home : at.to} is the nearest airport to ${at.instead.of} with flights that day. ` : '';
-  const line =
-    `${who}, your flights from ${g.home} on ${dayText(at.date)}${when}: ${near}${instead}${fit} ${fit === 1 ? 'fits' : 'fit'}, from ${formatInr(cheapest.priceMinor)} a person. ` +
-    `Tap "I'll take this" on yours.`;
+  const fits = `${fit} ${fit === 1 ? 'fits' : 'fit'}, from ${formatInr(cheapest.priceMinor)} a person. Tap "I'll take this" on yours.`;
+  // A search in place of a route ixigo had no flights on: the none first, then which airport this is and for where
+  // (Keshav, 12 Oct: "ixigo has no flights from Delhi to Kullu (Manali's airport) on Fri 13 Nov, so here are flights to
+  // Chandigarh, the nearest airport to Manali with flights that day").
+  if (at.instead) {
+    const { of, side } = at.instead;
+    const none = noneAt.get(noneKey(tripId, of, at.date)) ?? {};
+    const said = side === 'from' ? noFlightsText(of, at.to, at.date, none) : noFlightsText(g.home, of, at.date, none);
+    const here = side === 'from' ? `from ${g.home}` : `to ${at.to}`;
+    return { card: saved, line: `${who}, ${said.slice(0, -1)}, so here are flights ${here}, the nearest airport to ${of} with flights that day${when}. ${fits}` };
+  }
+  const line = `${who}, your flights from ${g.home} on ${dayText(at.date)}${when}: ${near}${fits}`;
   return { card: saved, line };
 }
 
@@ -195,6 +202,13 @@ function postFor(d: Pick<FlightsEachDeps, 'link' | 'log'>, tripId: string, reque
 
 /** A traveller's line when their city's page didn't come, or the last try didn't either: "Arjun, I couldn't load…". */
 const notLoadedFor = (g: EachGroup, line: (what: string) => string): string => `${namesOf(g)}, ${line(`your flights from ${g.home}`)}`;
+
+/**
+ * ixigo's none for a place on a day, by trip (noFlightsFrom keeps it): the stand-in search's line says it first, as ixigo
+ * searched it ("Kullu (Manali's airport)"). A hint: with none kept (a restart), the line says the place's own words.
+ */
+const noneAt = new Map<string, NoneSaid>();
+const noneKey = (tripId: string, place: string, date: string): string => `${tripId}|${norm(place)}|${date}`;
 
 /** A search that stands in for a route ixigo had no flights on: the place it stands in for, and which end that was. */
 export interface Instead {
@@ -214,6 +228,11 @@ async function noFlightsFrom(
 ): Promise<void> {
   const home = groups[0]?.home;
   if (!home) return;
+  // Kept for the stand-in's line, under both ends' words: which end has none is the model's to say.
+  for (const place of [home, at.to]) {
+    noneAt.set(noneKey(tripId, place, at.date), none);
+    while (noneAt.size > 500) noneAt.delete(noneAt.keys().next().value!);
+  }
   if (at.instead || !d.desk) {
     // The bus goes from their home to the trip's place, whichever end this search stood in for.
     const busFrom = at.instead?.side === 'from' ? at.instead.of : home;

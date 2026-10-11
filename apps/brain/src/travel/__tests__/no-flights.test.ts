@@ -53,6 +53,10 @@ describe('ixigo\'s own "No flights found"', () => {
     expect(out).toMatchObject({ count: 0, summary: "ixigo has no flights from Delhi to Kullu (Manali's airport) on Fri 13 Nov." });
     expect(`${out.summary} ${out.note}`).not.toMatch(/couldn't load|didn't load it|try again in/);
     expect(out.note).toContain('Search again now with the nearest other airport that has flights in place of the end with none');
+    // Said the same way as each person's card: the none first, then the airport.
+    expect(out.note).toContain(
+      'Say it in one line, the none first and then the airport: "ixigo has no flights from Delhi to Kullu (Manali\'s airport) on Fri 13 Nov, so here are flights to Chandigarh, the nearest airport to Manali with flights that day."',
+    );
     expect(out.note).toContain("search_flights with to, or from, set to that airport's city");
     expect(out.note).toContain("Never say it didn't load, and never that you'll try again.");
     expect(saved).toEqual([]);

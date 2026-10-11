@@ -181,7 +181,8 @@ export function nearestAirportAsk(how: string): string {
   return (
     'Search again now with the nearest other airport that has flights in place of the end with none, the trip\'s place or a ' +
     'home (a small airport\'s nearest bigger one: Manali Chandigarh, Coorg Mangalore, Munnar Kochi, Spiti Chandigarh): ' +
-    `${how}. Say in one line that it is the nearest airport to that place with flights that day. When this search already was ` +
+    `${how}. Say it in one line, the none first and then the airport: "ixigo has no flights from Delhi to Kullu (Manali's ` +
+    'airport) on Fri 13 Nov, so here are flights to Chandigarh, the nearest airport to Manali with flights that day." When this search already was ' +
     'that nearest airport, say neither has flights that day and offer a bus. Never say it didn\'t load, and never that you\'ll try again.'
   );
 }

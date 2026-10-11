@@ -338,7 +338,11 @@ describe("each person's own flights, from their home city", () => {
     const near = lb.link.requests.length;
     await toolWith(async (run) => (told(options(DELHI), ['Delhi'])(run), COMPARE)).run({ to: 'Dabolim', instead_of: 'North Goa', person_ids: ['p_priya'] }, lb.ctx({ turnId: 'turn_each_near_ok' }));
     const priya = postedSince(near).find((p) => p.visibleTo?.[0] === 'p_priya')!;
-    expect(priya.text).toContain('Dabolim is the nearest airport to North Goa with flights that day.');
+    // The none first, as ixigo searched it, then the nearest airport and for where (Keshav, 12 Oct).
+    expect(priya.text).toBe(
+      "Priya, ixigo has no flights from Delhi to Mopa (North Goa's airport) on Fri 6 Nov, so here are flights to Dabolim, the nearest airport to North Goa " +
+        'with flights that day. 5 fit, from ₹4,000 a person. Tap "I\'ll take this" on yours.',
+    );
     // One that has none too: the bus, theirs alone, and no second nearest.
     const again = lb.link.requests.length;
     const before2 = puts.length;
