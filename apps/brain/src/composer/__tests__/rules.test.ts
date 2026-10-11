@@ -43,12 +43,20 @@ describe("Go's rules: a travel agent who owns the outcome", () => {
 
   // The same drill: "first week" from one member rightly left the trip's dates as they were (#475's gate), and Go then
   // waited ("Once a couple of you agree, I'll pull up stays"). A proposal is searched at once; only agreement moves the trip.
-  it('records a proposed date range as an open line and searches stays for it at once, the trip\'s dates unchanged until agreed', () => {
-    expect(section('When you speak', 'How you write')).toContain(
-      '- A date range someone proposes ("first week of December", "1 to 7 Dec?") is an open proposal: record it as an open line ("1 to 7 Dec?") and run search_stays at once ' +
-        "with those dates as check_in and check_out, the card's line saying they're for those dates. The trip's dates stay as they are until a vote picks them.",
+  // Keshav, 12 Oct ("polls are needed for date adjustments when more than 1 person in group, they are not coming"): prod
+  // t_4426539b31290625, Saket's "1 to 5 Nov" got stays and no vote, and the trip never got dates. A group's proposed dates
+  // open the dates vote in the same turn; a trip of one's are saved at once.
+  it('searches stays for proposed dates at once; a group gets a dates vote the same turn, a trip of one has them saved', () => {
+    const speak = section('When you speak', 'How you write');
+    expect(speak).toContain(
+      '- Dates someone proposes ("1 to 7 Dec?"), the first dates or a change, get search_stays at once for those dates, the card\'s line saying so.',
     );
-    expect(section('When you speak', 'How you write')).not.toContain('never search on it unless someone asks');
+    expect(speak).toContain(
+      'In a group, open a dates vote with open_vote in the same turn: the ranges people named, plus "Other dates"; the trip\'s dates wait for it. ' +
+        'A trip of one: save them with update_trip at once, no vote.',
+    );
+    expect(speak).not.toContain('is an open proposal');
+    expect(speak).not.toContain('never search on it unless someone asks');
   });
 
   it('never says it cannot do what ixigo or its tools can, never hands the work back, and reports the outcome of a failure', () => {
