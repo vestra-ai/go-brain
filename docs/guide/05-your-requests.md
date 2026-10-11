@@ -403,11 +403,11 @@ The link expires 5 minutes after Go makes it. Ask for it only when the person ta
 
 If Go fails or takes longer than 2 seconds, show "Couldn't open your cards. Try again."
 
-1.3 adds `display`: `sheet` (the default) opens the link in the system browser sheet, as above. `embedded` asks for a page the app shows inside itself: it allows framing only by the app's origins, and when it is done it posts `{ "type": "go-vault", "status": "saved" | "cancelled" | "failed" }` to its parent window. Until Go has that page it answers `display: "embedded"` with a 409 `conflict` error, "not available yet": open the sheet instead.
+1.3 adds `display`: `sheet` (the default) opens the link in the system browser sheet, as above. `embedded` asks for a page the app shows inside itself, for `start: "home"` only: the person unlocks there and sees what their vault holds. The page allows framing only by the app's origins, needs no third-party cookies, and when it is done it posts `{ "type": "go-vault", "status": "saved" | "cancelled" | "failed" }` to its parent window. Adding a card or a login always opens in the sheet: Go answers `display: "embedded"` with any other `start` with a 409 `conflict` error, so open that one in the sheet.
 
 <!-- schema: CreateLink -->
 ```json
-{ "kind": "vault", "person_id": "p_rahul", "start": "add_card", "display": "embedded" }
+{ "kind": "vault", "person_id": "p_rahul", "start": "home", "display": "embedded" }
 ```
 
 ## Place ideas: `place_info` (1.3)
@@ -419,7 +419,7 @@ The home screen's ideas are the server's own, picked for each starting city. To 
 { "name": "Ladakh", "from_city": "Delhi" }
 ```
 
-Go answers from the places it has learned: trips' destinations, places on its cards, and the ideas it learns ahead. It sends the place with its photos (6 to 12 when ixigo's guide has them), where it is, and the best months (1 to 12). `tag` and `travel` (the usual way there from that city) are in the shape for later: Go doesn't send them yet.
+Go answers from the places it has learned: trips' destinations, places on its cards, and the ideas it learns ahead. It sends the place with its photos (6 to 12 when ixigo's guide has them), where it is, and the best months (1 to 12). A region ixigo can't put on the map, such as Kerala or Ladakh, comes with its photos and best months but no `lat` or `lng`. `tag` and `travel` (the usual way there from that city) are in the shape for later: Go doesn't send them yet.
 
 <!-- schema: PlaceInfo -->
 ```json

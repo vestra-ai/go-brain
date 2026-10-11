@@ -81,6 +81,21 @@ export function registerTravelTaps(taps: Brain['taps'], d: TravelTapDeps): void 
         tripId: tap.trip_id, personId: tap.person_id, kind: row.optionKind as 'flight' | 'train' | 'bus', way: wayOf(shown.journey),
         optionId: offer.optionId, title: shown.title, journey: shown.journey ?? null, pickedAt: d.now(),
       }).catch((err: unknown) => d.log.error({ err, cardId: tap.card_id }, "travel: keeping a person's pick failed"));
+      // The App team's G2 (11 Oct): with Go booking it (BOOKING), the pick is the booking. Their own card shows their flight
+      // alone, with no buttons left, and no second card goes up; Go books it on the trip's computer up to ixigo's pay step.
+      // A card the room shares stays as it is, for the others to pick from.
+      if (d.booking && offer.kind === 'flight' && offer.sourceUrl && (await d.booking.onFor(tap.trip_id))) {
+        const forWho = row.card.for_person_ids ?? [];
+        if (forWho.length === 1 && forWho[0] === tap.person_id) {
+          const chosen = { ...row.card, options: [shown], actions: [] };
+          void d.results.replaceCard(tap.trip_id, chosen)
+            .then(() => d.link.request('replace_card', { trip_id: tap.trip_id, card: chosen }))
+            .catch((err: unknown) => d.log.error({ err, cardId: tap.card_id }, "travel: showing a person's pick on their card failed"));
+        }
+        const name = (await d.nameOf?.(tap.trip_id, tap.person_id).catch(() => null)) ?? 'you';
+        await d.booking.start({ tapId: tap.tap_id, tripId: tap.trip_id, personId: tap.person_id, name, offer, choice: 'basic' });
+        return { result: 'done', toast: "Go is booking it on the trip's computer" };
+      }
       const card = buildConfirmMineCard({ cardId: stableId('c_mine', tap.tap_id), personId: tap.person_id, optionKind: row.optionKind, checkedAt: offer.checkedAt, option: shown });
       // Posted after the answer, as a vote is: a request to the Server must not hold the 3 s tap answer.
       void d.link.request('post_message', { trip_id: tap.trip_id, request_id: stableId('go_tap', tap.tap_id, 'mine'), card, visible_to_person_ids: [tap.person_id] })

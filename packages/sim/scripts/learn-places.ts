@@ -2,7 +2,8 @@
 // Learns the home screen's idea places before the Server's place_info asks for them (rev 5 R6). It connects a FakeServer
 // as its own instance, makes a fresh trip (its own computer; no dates, so no stays load), then asks Go to learn each place
 // through that trip (POST /admin/places/learn): one at a time, with a pause between, printing what place_info will answer.
-// It stops at the first refusal (ixigo's 401, 403, 429 or check comes back as a 502). Run it in its ixigo queue turn.
+// A place neither ixigo's place box nor its guide knows (unknown_place) is skipped; it stops at the first refusal (ixigo's
+// 401, 403, 429 or check comes back as a 502). Run it in its ixigo queue turn.
 // The URL and the secrets come from the environment only, never argv. On Railway, from the service's own variables:
 //   railway run --service brain --environment staging -- sh -c \
 //     'GO_URL="https://$RAILWAY_PUBLIC_DOMAIN" GO_ADMIN_TOKEN="$ADMIN_TOKEN" pnpm --filter @go/sim learn-places'
@@ -50,6 +51,11 @@ try {
       body: JSON.stringify({ trip_id: tripId, name }),
     });
     const body = (await res.json().catch(() => ({}))) as Learned;
+    if (res.status === 404 && body.error?.code === 'unknown_place') {
+      console.log(`${name}: neither ixigo's place box nor its guide knows it; skipped.`);
+      await pause(PAUSE_MS);
+      continue;
+    }
     if (!res.ok || !body.place) {
       console.error(`${name}: ${res.status} ${body.error?.message ?? ''}. Stopped.`);
       process.exitCode = 1;

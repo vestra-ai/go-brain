@@ -214,6 +214,8 @@ export interface SearchFor {
   tripId?: string;
   messageId?: string;
   turnId?: string;
+  /** A try again Go promised the room (try-again.ts): a paced page goes through ixigo's quiet (engine.ts RunFor.retry). */
+  retry?: boolean;
 }
 
 /** What answers behind the layer: the fake ixigo, ixigo's MCP server, or ixigo.com itself through the recipes. */

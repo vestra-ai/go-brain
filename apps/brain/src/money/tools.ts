@@ -67,7 +67,8 @@ export function setMandateTool(run: SetRun): QuickTool<SetMandateInput> {
           tell_the_room: r.unbookable
             ? 'Say this in one short line, before anything about who pays: there is nothing to set up for paying for this option.'
             : r.parked
-              ? 'It waits on the trip\'s ixigo login, and Go carries on with it by itself once the login is in. Do what refused says, and never ask for a number or a code in the chat.'
+              ? 'It waits on the trip\'s ixigo login, whose card is already up asking for it, and Go carries on with it by itself once the login is in. ' +
+                'Do what refused says: never ask for the login again, and never ask for a number or a code in the chat.'
               : r.claim
                 ? 'The I\'ll book it card is up with your message. Say in one short line that whoever taps it books for everyone. Never pick who pays.'
                 : SAY_THE_REFUSAL,

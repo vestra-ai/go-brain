@@ -10,10 +10,11 @@ import { goaPack } from '../../tasks/testing/goa.js';
 import { loadBook } from '../book/book.js';
 import { createEngine } from '../book/engine.js';
 import { createIxigoWebBackend } from '../recipes/backend.js';
-import { renderSearchWake, searchWakeAnswer } from '../search-wake.js';
+import { renderSearchWake, searchWakeAnswer, tryAgainAnswer } from '../search-wake.js';
 import { answerItself, handOver, putUpCard, searchAnswer, travelTools } from '../tools.js';
 import { makeTurnCtx } from '../../composer/tools.js';
 import type { Travel, TravelSearch } from '../travel.js';
+import { TRY_AGAIN_MS, type TryAgain } from '../try-again.js';
 
 const FOUND: TravelSearch = {
   checkedAt: '2026-10-07T12:00:30.000Z',
@@ -229,49 +230,132 @@ describe('a stays search past its 12 s (staging pass, 8 Oct: a cold box took 13 
   });
 });
 
-describe('a search ixigo will only show as a link', () => {
-  it("posts a card that links to the flights on ixigo with the conditions set, and never says there are none", async () => {
-    const page = 'https://www.ixigo.com/search/result/flight?from=DEL&to=GOI&date=06112026&returnDate=&adults=4&children=0&infants=0&class=e&source=Search%20Form';
+// G1, the App team, 11 Oct: on prod one traveller got options, the other a link card ("Go can't read ixigo's flights from
+// its computer right now"). An ixigo search link card is never the answer: Go says it plainly and tries again.
+describe("a search ixigo didn't load", () => {
+  const page = 'https://www.ixigo.com/search/result/flight?from=DEL&to=GOI&date=06112026&returnDate=&adults=4&children=0&infants=0&class=e&source=Search%20Form';
+  const refused = () => new TravelError('link_only', "ixigo won't show its results to Go's computer right now.", page);
+  const DELHI_GOA = { from: 'Delhi', to: 'Goa', date: '2026-11-06' };
+  const now = () => new Date('2026-10-07T12:00:31Z');
+  const inAMinute = new Date(now().getTime() + TRY_AGAIN_MS);
+  const deskOf = () => {
+    const puts: DeskItem[] = [];
+    return { puts, desk: { put: async (item: Omit<DeskItem, 'id'> & { id?: string }) => { puts.push({ ...item, id: item.id! }); } } };
+  };
+  const turnOf = (wake: DeskItem[], turnId = 'turn_g1') => makeTurnCtx({ tripId: 't_goa', turnId, link: {} as never, pack: goaPack(), wake, signal: new AbortController().signal });
+
+  it('says so in plain words with no card, and puts its try again on the desk a minute out', async () => {
     const cards: unknown[] = [];
     const turn = { ...ctx, cards } as unknown as TurnCtx;
-    const travel = { search: async () => { throw new TravelError('link_only', "ixigo won't show its results to Go's computer right now.", page); }, waitMs: async () => null } as unknown as Travel;
-    const tools = travelTools({ travel, results: {} as ResultsStore, images: {} as Images, now: () => new Date('2026-10-07T12:00:31Z') });
-    const out = (await tools.find((t) => t.name === 'search_flights')!.run({ from: 'Delhi', to: 'Goa', date: '2026-11-06', depart_after: '18:00' }, turn)) as Record<string, unknown>;
-    // The link is the recipe's own, with ixigo's filter and sort params already on it.
-    expect(out).toMatchObject({ count: 0, link: page, set_for: 'for 4 from Delhi' });
-    // Go books no flights: the room line sends people to ixigo and offers only to note their pick.
-    expect(out.tell_the_room).toContain("to book on ixigo, and that if they tell you which one, you'll note it for the group");
-    expect(out.tell_the_room).toContain('never offer to book one or to take it from there');
-    expect(out.tell_the_room).toContain('Never say there are no flights');
-    expect(cards).toEqual([expect.objectContaining({
-      kind: 'notice', card_id: 'c_link_turn_w1_1', title: 'Flights, Delhi to Goa', source: { name: 'ixigo', url: page },
-      body: expect.stringContaining('set for 4 from Delhi'),
-      actions: [{ action_id: 'see_on_ixigo', label: 'See flights on ixigo', style: 'primary' }],
+    const { puts, desk } = deskOf();
+    const travel = { search: async () => { throw refused(); }, waitMs: async () => null } as unknown as Travel;
+    const tools = travelTools({ travel, results: {} as ResultsStore, images: {} as Images, now, desk });
+    const out = (await tools.find((t) => t.name === 'search_flights')!.run({ ...DELHI_GOA, depart_after: '18:00' }, turn)) as Record<string, unknown>;
+    expect(cards).toEqual([]);
+    expect(out).toMatchObject({ count: 0, not_loaded: true });
+    expect(out).not.toHaveProperty('link');
+    expect(out.tell_the_room).toContain(`"I couldn't load flights from Delhi to Goa just now; I'll try again in a minute."`);
+    expect(out.tell_the_room).toContain('Never send or offer a link');
+    expect(out.tell_the_room).toContain('never say there are none');
+    expect(puts).toEqual([expect.objectContaining({
+      id: expect.stringMatching(/^try_again:t_goa:search_\w+:1$/), tripId: 't_goa', kind: 'search', ref: 'flights', dueAt: inAMinute,
+      payload: { source: 'travel_try_again', key: expect.any(String), what: 'flights from Delhi to Goa', n: 1, query: expect.objectContaining({ ...DELHI_GOA, departAfter: '18:00' }) },
     })]);
   });
-});
 
-describe('a flights search that outlives its turn and gets ixigo\'s own page', () => {
-  // Flights read their page now (flights.results), so a cold box can outlast the turn's wait; ixigo refusing it, or its
-  // page held back, then answers with the link. The wake puts that card up: never "it didn't work".
-  it('puts its link card and line up when it wakes Go, with no model call', async () => {
-    const page = 'https://www.ixigo.com/search/result/flight?from=DEL&to=GOI&date=06112026&returnDate=&adults=4&children=0&infants=0&class=e&source=Search%20Form';
-    const puts: DeskItem[] = [];
-    const desk = { put: async (item: Omit<DeskItem, 'id'> & { id?: string }) => { puts.push({ ...item, id: item.id! }); } };
-    const now = () => new Date('2026-10-07T12:00:31Z');
-    const refused = Promise.reject(new TravelError('link_only', "ixigo won't show its results to Go's computer right now.", page));
-    handOver('flights', { from: 'Delhi', to: 'Goa', date: '2026-11-06' }, refused, { tripId: 't_goa', fallbackId: 'turn_l1:flights' }, { desk, now, results: {} as ResultsStore });
+  // The lead, 11 Oct: a try may go through Go's own quiet, never ixigo's (a 403, a 429, Cloudflare's check), which would
+  // risk the shared address for every trip. Go says so, and the try waits past it.
+  it('when ixigo itself asked us to slow down, says so and puts the try just past its quiet, never inside it', async () => {
+    const turn = { ...ctx, cards: [] } as unknown as TurnCtx;
+    const { puts, desk } = deskOf();
+    const quietEnds = now().getTime() + 9 * 60_000 + 30_000;
+    const ixigoQuiet = vi.fn(() => quietEnds);
+    const travel = { search: async () => { throw refused(); }, waitMs: async () => null } as unknown as Travel;
+    const tools = travelTools({ travel, results: {} as ResultsStore, images: {} as Images, now, desk, ixigoQuiet });
+    const out = (await tools.find((t) => t.name === 'search_flights')!.run(DELHI_GOA, turn)) as Record<string, unknown>;
+    expect(out.tell_the_room).toContain(`"I couldn't load flights from Delhi to Goa: ixigo asked us to slow down, so I'll try again in about 10 minutes."`);
+    expect(ixigoQuiet).toHaveBeenCalledWith('flights', expect.objectContaining(DELHI_GOA));
+    expect(puts).toEqual([expect.objectContaining({ id: expect.stringMatching(new RegExp(`^try_again:t_goa:search_\\w+:1:${quietEnds}$`)), dueAt: new Date(quietEnds + 5_000) })]);
+    // A late search the same: its line on the wake says it, and its try waits past the quiet.
+    const late = deskOf();
+    handOver('flights', DELHI_GOA, Promise.reject(refused()), { tripId: 't_goa', fallbackId: 'turn_q1:flights' }, { desk: late.desk, now, ixigoQuiet, results: {} as ResultsStore });
+    await vi.waitFor(() => expect(late.puts).toHaveLength(2));
+    expect(late.puts.map((p) => [p.id, p.dueAt])).toEqual([[`try_again:t_goa:turn_q1:flights:1:${quietEnds}`, new Date(quietEnds + 5_000)], ['search:t_goa:turn_q1:flights:not_loaded', now()]]);
+    expect(late.puts[1]!.payload).toMatchObject({ line: "I couldn't load flights from Delhi to Goa: ixigo asked us to slow down, so I'll try again in about 10 minutes." });
+  });
+
+  it("a try that comes inside ixigo's own quiet (it refused another page since) asks nothing: the same try goes back on the desk past it", async () => {
+    const { puts, desk } = deskOf();
+    const search = vi.fn(async () => FOUND);
+    const quietEnds = now().getTime() + 8 * 60_000;
+    const answer = tryAgainAnswer({ travel: { search } as unknown as Travel, results: {} as ResultsStore, desk, now, ixigoQuiet: () => quietEnds });
+    const t: DeskItem = { id: 'try_again:t_goa:k4:2', tripId: 't_goa', kind: 'search', ref: 'flights', dueAt: now(), payload: { source: 'travel_try_again', key: 'k4', what: 'flights from Delhi to Goa', n: 2, query: DELHI_GOA } satisfies TryAgain };
+    const turn = turnOf([t]);
+    expect(await answer({ tripId: 't_goa', wake: [t], pack: goaPack(), ctx: turn })).toBe(true);
+    expect(search).not.toHaveBeenCalled();
+    expect([turn.cards, turn.lines]).toEqual([[], []]);
+    expect(puts).toEqual([expect.objectContaining({ id: `try_again:t_goa:k4:2:${quietEnds}`, dueAt: new Date(quietEnds + 5_000), payload: expect.objectContaining({ n: 2, key: 'k4', query: DELHI_GOA }) })]);
+  });
+
+  it('a late search says so on its wake, with no card and no model call, and its try goes on the desk', async () => {
+    const { puts, desk } = deskOf();
+    handOver('flights', DELHI_GOA, Promise.reject(refused()), { tripId: 't_goa', fallbackId: 'turn_l1:flights' }, { desk, now, results: {} as ResultsStore });
+    await vi.waitFor(() => expect(puts).toHaveLength(2));
+    const line = "I couldn't load flights from Delhi to Goa just now; I'll try again in a minute.";
+    expect(puts.map((p) => [p.id, p.dueAt])).toEqual([['try_again:t_goa:turn_l1:flights:1', inAMinute], ['search:t_goa:turn_l1:flights:not_loaded', now()]]);
+    const said = puts[1]!;
+    expect(said.payload).toMatchObject({ source: 'travel_search', error: 'link_only', line });
+    expect(said.payload).not.toHaveProperty('link');
+    // Woken with other things too, the model says the same line, never a link.
+    expect(renderSearchWake(said)).toContain('never send a link');
+    expect(renderSearchWake(said)).toContain(line);
+    const next = turnOf([said]);
+    expect(await searchWakeAnswer({ results: {} as ResultsStore, images: {} as Images })({ tripId: 't_goa', wake: [said], pack: goaPack(), ctx: next })).toBe(true);
+    expect([next.cards, next.lines, next.answered]).toEqual([[], [line], true]);
+  });
+
+  it('each try searches again through ixigo\'s quiet, posts nothing itself, and the next goes on the desk when it fails too', async () => {
+    const { puts, desk } = deskOf();
+    const search = vi.fn(async () => { throw refused(); });
+    const answer = tryAgainAnswer({ travel: { search } as unknown as Travel, results: {} as ResultsStore, desk, now });
+    const first: DeskItem = { id: 'try_again:t_goa:k1:1', tripId: 't_goa', kind: 'search', ref: 'flights', dueAt: now(), payload: { source: 'travel_try_again', key: 'k1', what: 'flights from Delhi to Goa', n: 1, query: DELHI_GOA } satisfies TryAgain };
+    const turn = turnOf([first]);
+    expect(await answer({ tripId: 't_goa', wake: [first], pack: goaPack(), ctx: turn })).toBe(true);
+    expect([turn.cards, turn.lines, turn.answered]).toEqual([[], [], true]);
+    expect(search).toHaveBeenCalledWith('flights', DELHI_GOA, { tripId: 't_goa', retry: true });
     await vi.waitFor(() => expect(puts).toHaveLength(1));
-    const line = 'Flights Delhi to Goa on Fri 6 Nov are on ixigo, set for 4 from Delhi: book there, and tell me which one so I can note it for the group.';
-    expect(puts[0]!.payload).toMatchObject({ error: 'link_only', link: { url: page, title: 'Flights, Delhi to Goa', who: 'for 4 from Delhi', line } });
-    // Woken with other things too, the model is told to search again: the card goes up from that search.
-    expect(renderSearchWake(puts[0]!)).toContain('Search again with the same words');
-    const pack = goaPack();
-    const next = makeTurnCtx({ tripId: 't_goa', turnId: 'turn_l2', link: {} as never, pack, wake: [puts[0]!], signal: new AbortController().signal });
-    expect(await searchWakeAnswer({ results: {} as ResultsStore, images: {} as Images })({ tripId: 't_goa', wake: [puts[0]!], pack, ctx: next })).toBe(true);
-    expect(next.cards).toEqual([expect.objectContaining({ kind: 'notice', title: 'Flights, Delhi to Goa', source: { name: 'ixigo', url: page } })]);
-    expect(next.lines).toEqual([line]);
-    expect(next.answered).toBe(true);
+    expect(puts[0]).toMatchObject({ id: 'try_again:t_goa:k1:2', dueAt: inAMinute, payload: { n: 2, key: 'k1', query: DELHI_GOA } });
+    // The last try failing too: Go's last word, plain, and no third try.
+    const last = turnOf([puts[0]!], 'turn_g2');
+    expect(await answer({ tripId: 't_goa', wake: [puts[0]!], pack: goaPack(), ctx: last })).toBe(true);
+    await vi.waitFor(() => expect(puts).toHaveLength(2));
+    expect(puts[1]).toMatchObject({ id: 'search:t_goa:k1:gave_up', dueAt: now(), payload: { error: 'link_only', line: "I tried again and still couldn't load flights from Delhi to Goa. Ask me in a bit and I'll look once more." } });
+    const word = turnOf([puts[1]!], 'turn_g3');
+    expect(await searchWakeAnswer({ results: {} as ResultsStore, images: {} as Images })({ tripId: 't_goa', wake: [puts[1]!], pack: goaPack(), ctx: word })).toBe(true);
+    expect(word.cards).toEqual([]);
+  });
+
+  it('a try that lands wakes Go with its options, whose card goes up as any late search\'s does', async () => {
+    const { puts, desk } = deskOf();
+    const results = { save: async (s: Record<string, unknown>) => ({ ...s, resultsId: 'r_try1' }) } as unknown as ResultsStore;
+    // A run of its own: no card in the room has shown it.
+    const landed = { ...FOUND, runId: 'ixigo.buses|try|1791370860000' };
+    const answer = tryAgainAnswer({ travel: { search: async () => landed } as unknown as Travel, results, desk, now });
+    const t: DeskItem = { id: 'try_again:t_goa:k2:1', tripId: 't_goa', kind: 'search', ref: 'buses', dueAt: now(), payload: { source: 'travel_try_again', key: 'k2', what: 'buses from Mumbai to Goa', n: 1, query: BUSES } satisfies TryAgain };
+    expect(await answer({ tripId: 't_goa', wake: [t], pack: goaPack(), ctx: turnOf([t]) })).toBe(true);
+    await vi.waitFor(() => expect(puts).toHaveLength(1));
+    expect(puts[0]).toMatchObject({ id: `search:t_goa:${landed.runId}`, ref: 'buses', payload: { source: 'travel_search', count: 1, resultsId: 'r_try1', error: null } });
+  });
+
+  it('woken with a message too, the try still starts, and the model answers the message, saying nothing of the try', async () => {
+    const { desk } = deskOf();
+    const search = vi.fn(async () => FOUND);
+    const answer = tryAgainAnswer({ travel: { search } as unknown as Travel, results: { save: async () => ({ resultsId: 'r' }) } as unknown as ResultsStore, desk, now });
+    const t: DeskItem = { id: 'try_again:t_goa:k3:1', tripId: 't_goa', kind: 'search', ref: 'buses', dueAt: now(), payload: { source: 'travel_try_again', key: 'k3', what: 'buses from Mumbai to Goa', n: 1, query: BUSES } satisfies TryAgain };
+    const message: DeskItem = { id: 'm1', tripId: 't_goa', kind: 'message', ref: 'm1', dueAt: now(), payload: { messageId: 'm1', seq: 9 } };
+    expect(await answer({ tripId: 't_goa', wake: [t, message], pack: goaPack(), ctx: turnOf([t, message]) })).toBe(false);
+    expect(search).toHaveBeenCalledTimes(1);
+    expect(renderSearchWake(t)).toContain('Say nothing about it');
   });
 });
 
@@ -286,28 +370,30 @@ describe("a flight's travellers", () => {
     now: () => new Date('2026-10-07T12:00:31Z'),
   });
   const backend = createIxigoWebBackend({ book, engine, now: () => new Date('2026-10-07T12:00:31Z') });
-  const travel = { search: (kind: never, q: never, o: never) => backend.search(kind, q, o), waitMs: async () => null } as unknown as Travel;
-  const search = (ask: string, travellers?: number) => {
+  // The page ixigo's own link opens, set for the travellers the search ran with: Go shows it nobody (G1), but its count is the search's.
+  const links: string[] = [];
+  const travel = {
+    search: (kind: never, q: never, o: never) => backend.search(kind, q, o).catch((err: unknown) => { if (err instanceof TravelError && err.link) links.push(err.link); throw err; }),
+    waitMs: async () => null,
+  } as unknown as Travel;
+  const search = async (ask: string, travellers?: number): Promise<string> => {
     const line = msg(90, 'p_rahul', ask);
     const turn = { ...ctx, cards: [], pack: { ...pack, messages: [...pack.messages, line] }, wake: [{ kind: 'message', payload: { messageId: line.message_id, seq: 90 } }] } as unknown as TurnCtx;
     const tools = travelTools({ travel, results: {} as ResultsStore, images: {} as Images, now: () => new Date('2026-10-07T12:00:31Z') });
-    return tools.find((t) => t.name === 'search_flights')!.run({ from: 'Delhi', to: 'Goa', date: '2026-11-06', ...(travellers ? { travellers } : {}) }, turn) as Promise<Record<string, unknown>>;
+    await tools.find((t) => t.name === 'search_flights')!.run({ from: 'Delhi', to: 'Goa', date: '2026-11-06', ...(travellers ? { travellers } : {}) }, turn);
+    return links.at(-1)!;
   };
 
   it("never take the model's count for the whole trip: the link is for the 3 who live in Delhi (re-drill 5)", async () => {
     for (const travellers of [5, 4, undefined]) {
-      const out = await search('@Go flights from Delhi to Goa on Friday', travellers);
-      expect(out.link, String(travellers)).toContain('&adults=3&');
-      expect(out.set_for).toBe('for 3 from Delhi');
+      expect(await search('@Go flights from Delhi to Goa on Friday', travellers), String(travellers)).toContain('&adults=3&');
     }
   });
 
   it('take a number the ask itself says: "for 2 of us"', async () => {
-    const out = await search('@Go flights from Delhi to Goa on Friday for 2 of us', 2);
-    expect(out.link).toContain('&adults=2&');
-    expect(out.set_for).toBe('for 2 from Delhi');
+    expect(await search('@Go flights from Delhi to Goa on Friday for 2 of us', 2)).toContain('&adults=2&');
     // A different number from the model's than the ask's: the ask's people, counted by home.
-    expect((await search('@Go flights from Delhi to Goa on Friday for 2 of us', 5)).link).toContain('&adults=3&');
+    expect(await search('@Go flights from Delhi to Goa on Friday for 2 of us', 5)).toContain('&adults=3&');
   });
 });
 

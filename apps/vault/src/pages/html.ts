@@ -6,8 +6,13 @@ const head = (title: string): string =>
 
 const mark = '<div class="mark" aria-label="Go">Go</div>';
 
-export function homePage(): string {
-  return `${head('Your Go vault')}<body data-page="home"><main>
+/** The App's origins on the body, for an embedded page's word to its parent when it is done (go-vault). */
+const framing = (o: { origins: readonly string[] } | null, embedded: boolean): string =>
+  o ? ` data-frame-origins="${o.origins.join(' ')}"${embedded ? ' data-display="embedded"' : ''}` : '';
+
+/** embedded (rev 5 R8): inside the App, unlock only. No card or travel form: those stay in the browser sheet. */
+export function homePage(embedded: { origins: readonly string[] } | null = null): string {
+  return `${head('Your Go vault')}<body data-page="home"${framing(embedded, true)}><main>
 <header class="top">${mark}<h1>Your vault</h1><p class="muted">Your cards, under your Face ID. The AI in your chat never sees them.</p></header>
 <section id="loading" class="card"><p class="muted">Opening your vault</p></section>
 <section id="expired" class="card" hidden><h2>This link has expired</h2><p class="muted">Open your vault again from Go: You, then My vault.</p></section>
@@ -33,13 +38,16 @@ export function homePage(): string {
 <label class="tick-row"><input id="t-allow" type="checkbox"> Go can use these to book tickets for me</label>
 <button class="primary" type="submit">Save</button> <button id="travel-delete" type="button" hidden>Delete</button>
 <p id="travel-msg" class="msg" role="status"></p></form></section>
+<p id="embedded-note" class="fine" hidden>To add a card or your travel details, open your vault from Go in the browser.</p>
+<button id="done-btn" type="button" hidden>Done</button>
 <section class="card"><h2>Who opened your vault</h2><ul id="log" class="list small"></ul></section>
 </div>
 </main><script src="/static/webauthn.js"></script><script src="https://js.stripe.com/v3/"></script><script src="/static/vault.js"></script></body></html>`;
 }
 
-export function payPage(): string {
-  return `${head('Approve payment')}<body data-page="pay"><main>
+/** framing: the App's origins, which may frame the page; it tells the App when it is done, whichever way it opened. */
+export function payPage(framed: { origins: readonly string[] } | null = null): string {
+  return `${head('Approve payment')}<body data-page="pay"${framing(framed, false)}><main>
 <header class="top">${mark}<h1>Approve payment</h1></header>
 <section id="loading" class="card"><p class="muted">Loading the payment</p></section>
 <section id="gone" class="card" hidden><h2 id="gone-title">This link has expired</h2><p id="gone-msg" class="muted"></p></section>
@@ -48,6 +56,7 @@ export function payPage(): string {
 <p class="refund" id="refund" hidden></p>
 <div class="row"><span class="muted">Card</span><span id="card"></span></div>
 <button id="approve-btn" class="primary big">Approve with Face ID</button><p id="pay-msg" class="msg" role="status"></p>
+<button id="close-btn" type="button" hidden>Cancel</button>
 <p class="fine">The group agreed to this first. It works once, for this amount only.</p></section>
 <section id="done" class="card done" hidden><div class="tick" aria-hidden="true">&#10003;</div><h2>Paid</h2>
 <p class="muted">Go is booking it now. You can close this page.</p></section>

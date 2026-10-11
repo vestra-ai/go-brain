@@ -3,6 +3,8 @@ import { describe, expect, it } from 'vitest';
 import { applyConstraints } from '../../filters.js';
 import type { CaptureSpec, FetchPlan } from '../../recipes/recipe.js';
 import { capture, fixture } from '../../recipes/__tests__/fixtures.js';
+import { TravelError } from '../../mcp-travel.js';
+import { ChallengedError } from '../../recipes/runners.js';
 import type { TravelOption } from '../../travel.js';
 import { BOOK_DIR, loadBook } from '../book.js';
 import { createEngine } from '../engine.js';
@@ -573,6 +575,70 @@ describe('flights.results', () => {
     expect(runs).toHaveLength(3);
     // Every other recipe is never paced.
     expect(engine.pacedOut('trains.between')).toBe(false);
+  });
+
+  // G1, 11 Oct: Go told the room it would try again in a minute. That try asks ixigo itself through Go's own quiet (a load
+  // that failed some other way), never through the gap, and never through ixigo's own quiet: when ixigo refused (a 403, a
+  // 429, Cloudflare's check), asking again inside it risks the shared address for every trip.
+  describe('a promised try again (RunFor.retry)', () => {
+    const t0 = Date.parse('2026-10-09T18:00:00Z');
+    function paced(fail: () => never | undefined) {
+      const clock = { ms: t0 };
+      const runs: string[] = [];
+      let failing = true;
+      const runner = {
+        read: async (_trip: string, url: string) => {
+          runs.push(url);
+          if (failing) fail();
+          const refused = failing;
+          return { captures: [capture(STREAM, STREAM_URL, refused ? '{"message":"Forbidden"}' : fixture('flights-del-goi-2026-11-13.sse'), refused ? 403 : 200)], finalUrl: url };
+        },
+      };
+      const engine = createEngine({ book, runner: () => runner, trip: async () => ({ people: 4, homes: HOMES }), now: () => new Date(clock.ms) });
+      return { engine, runs, clock, heal: () => (failing = false) };
+    }
+
+    it("goes through Go's own quiet (the page timed out), never through the gap: ixigo has no quiet of its own on", async () => {
+      const p = paced(() => {
+        throw new TravelError('unreachable', "ixigo's page did not answer on the trip's computer.");
+      });
+      await expect(p.engine.answer('flights.results', GIVEN, { tripId: 't_a' })).rejects.toMatchObject({ code: 'unreachable' });
+      p.heal();
+      expect(p.engine.ixigoQuietUntil('flights.results')).toBeNull();
+      // 10 s on: in the gap, so even a try waits.
+      p.clock.ms += 10_000;
+      expect([p.engine.pacedOut('flights.results'), p.engine.pacedOut('flights.results', true)]).toEqual([true, true]);
+      await expect(p.engine.answer('flights.results', GIVEN, { tripId: 't_a', retry: true })).rejects.toMatchObject({ code: 'unreachable' });
+      // A minute on: still quiet for every other search, but the try loads the page, and its answer lifts the quiet.
+      p.clock.ms += 50_000;
+      expect([p.engine.pacedOut('flights.results'), p.engine.pacedOut('flights.results', true)]).toEqual([true, false]);
+      await expect(p.engine.answer('flights.results', { ...GIVEN, date: '2026-11-14' }, { tripId: 't_b' })).rejects.toMatchObject({ code: 'unreachable' });
+      expect((await p.engine.answer('flights.results', GIVEN, { tripId: 't_a', retry: true })).as).toBe('options');
+      expect(p.runs).toHaveLength(2);
+      p.clock.ms += 20_000;
+      expect(p.engine.pacedOut('flights.results')).toBe(false);
+    });
+
+    for (const [why, fail] of [
+      ['ixigo answered its call 403', () => undefined],
+      ["Cloudflare's check held the page", () => { throw new ChallengedError(); }],
+    ] as const) {
+      it(`never goes through ixigo's own quiet (${why}): it holds every run, a try too, and says when it ends`, async () => {
+        const p = paced(fail as () => never | undefined);
+        await expect(p.engine.answer('flights.results', GIVEN, { tripId: 't_a' })).rejects.toBeInstanceOf(TravelError);
+        p.heal();
+        expect(p.engine.ixigoQuietUntil('flights.results')).toBe(t0 + 10 * 60_000);
+        p.clock.ms += 60_000;
+        expect([p.engine.pacedOut('flights.results'), p.engine.pacedOut('flights.results', true)]).toEqual([true, true]);
+        await expect(p.engine.answer('flights.results', GIVEN, { tripId: 't_a', retry: true })).rejects.toMatchObject({ code: 'unreachable' });
+        expect(p.runs).toHaveLength(1);
+        // Past ixigo's quiet, the try loads.
+        p.clock.ms = t0 + 10 * 60_000 + 5_000;
+        expect(p.engine.ixigoQuietUntil('flights.results')).toBeNull();
+        expect((await p.engine.answer('flights.results', GIVEN, { tripId: 't_a', retry: true })).as).toBe('options');
+        expect(p.runs).toHaveLength(2);
+      });
+    }
   });
 });
 

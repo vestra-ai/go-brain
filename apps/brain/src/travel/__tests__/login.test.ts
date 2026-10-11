@@ -11,7 +11,7 @@ import { BOOK_DIR, checkRecipe, loadBook, type Book } from '../book/book.js';
 import { createEngine } from '../book/engine.js';
 import type { DeskItem } from '../../desk/desk.js';
 import {
-  createIxigoLogin, HANDOFF_MS, HANDOFF_PAGE_MS, HELLO_WAIT_MS, IDENTITY, ixigoLoginTool, LOGIN_CALLS, LOGIN_POLL_MS, LOGIN_TAB, LOGIN_URL, loginFrom, RECHECK_MS, renderLoginResume,
+  cardIsTheAsk, createIxigoLogin, HANDOFF_MS, HANDOFF_PAGE_MS, HELLO_WAIT_MS, IDENTITY, ixigoLoginTool, LOGIN_CALLS, LOGIN_POLL_MS, LOGIN_TAB, LOGIN_URL, loginFrom, RECHECK_MS, renderLoginResume,
   SELF_CHECK_MS, USERINFO, WALLET,
 } from '../login.js';
 import { TravelError } from '../mcp-travel.js';
@@ -882,7 +882,7 @@ describe('a recipe that needs the login', () => {
     expect(await w.state()).toBe('skipped');
 
     const no = await w.login.ensure(w.tripId, 'Price lock');
-    expect(no).toEqual({ ok: false, note: "Price lock needs the trip's ixigo login. Go asked Rahul to log in on the card: say so in one line, and never ask for a number or a code in the chat." });
+    expect(no).toEqual({ ok: false, note: `Price lock needs the trip's ixigo login. ${cardIsTheAsk('Rahul', "I'll carry on")}` });
     const posts = w.link.of('post_message');
     expect(posts).toHaveLength(2);
     expect(posts[1]).toMatchObject({ text: "Rahul, this needs ixigo linked for the trip: one login on the trip's computer, about a minute.", card: { card_id: `c_login_${w.tripId}_1` } });
@@ -1007,7 +1007,7 @@ describe('logging out', () => {
     await w.login.personGone(w.tripId, 'p_rahul', 'forgot');
     await w.login.settled();
     expect(await w.state()).toBe('logged_out');
-    expect(await w.login.ensure(w.tripId, 'The train booking')).toMatchObject({ ok: false, note: expect.stringContaining('Go asked Priya to log in') });
+    expect(await w.login.ensure(w.tripId, 'The train booking')).toMatchObject({ ok: false, note: expect.stringContaining("Priya's login card is up in the chat with its own line: that is the ask.") });
     const asked = w.link.of('post_message').at(-1)!;
     expect(asked).toMatchObject({ mentions: ['p_priya'], card: { for_person_ids: ['p_priya'] } });
     expect(JSON.stringify(asked)).not.toContain('p_rahul');
@@ -1021,7 +1021,7 @@ describe('logging out', () => {
     await w.login.personGone(w.tripId, 'p_rahul', 'forgot');
     await w.login.settled();
     const before = w.link.of('post_message').length;
-    expect(await w.login.ensure(w.tripId, 'The train booking')).toMatchObject({ ok: false, note: expect.stringContaining('Go asked Priya to log in') });
+    expect(await w.login.ensure(w.tripId, 'The train booking')).toMatchObject({ ok: false, note: expect.stringContaining("Priya's login card is up in the chat with its own line: that is the ask.") });
     // A new card, pinned to Priya, posted now: the line the model gets is true.
     expect(w.link.of('post_message').slice(before)).toEqual([expect.objectContaining({ mentions: ['p_priya'], card: expect.objectContaining({ for_person_ids: ['p_priya'] }) })]);
   });
@@ -1037,7 +1037,7 @@ describe('a booking ask on a trip with no login (8 Oct demo: "heyy can you try b
     w.clock.now = new Date(NOW.getTime() + 3 * 60_000);
     expect(await w.login.ensure(w.tripId, what, { park: { what, resume } })).toEqual({
       ok: false,
-      note: 'Go asked Rahul in the chat, with the login card, and carries on with booking Saudades Homestays once the login is in. Say nothing more about it.',
+      note: `Booking Saudades Homestays waits on the trip's ixigo login, and Go carries on with it once the login is in. ${cardIsTheAsk('Rahul', "I'll re-check Saudades Homestays and book it")}`,
     });
     const posts = w.link.of('post_message');
     expect(posts).toHaveLength(2);
@@ -1068,13 +1068,35 @@ describe('a booking ask on a trip with no login (8 Oct demo: "heyy can you try b
     expect(renderLoginResume({ ...w.wakes[0]!, payload: { source: 'options', action: 'pick' } }, goaPack({ trip: w.trip }))).toBeNull();
   });
 
+  // p2's re-run #24, 11 Oct: "book the villa we liked yesterday" put the login card up with its line asking Rahul, and Go's
+  // reply asked him again ("Rahul, I need you to log in to ixigo first"). The card is the ask: the reply adds only what
+  // comes once he's in.
+  it("tells the reply the card is the ask: never a second login ask, only what comes once they're in, while they log in too", async () => {
+    const next = cardIsTheAsk('Rahul', "I'll re-check Saudades Homestays and book it");
+    expect(next).toContain('Never ask Rahul or anyone to log in again, and never point at the card.');
+    expect(next).toContain(`"once Rahul's logged in, I'll re-check Saudades Homestays and book it"`);
+    const w = world();
+    await w.setup();
+    w.clock.now = new Date(NOW.getTime() + 3 * 60_000);
+    expect((await w.login.ensure(w.tripId, what, { park: { what, resume } })).ok).toBe(false);
+    // Rahul is logging in on Go's screen: the booking asked again still never asks him again.
+    await w.tap('ixigo_login', 'p_rahul');
+    expect(await w.state()).toBe('logging_in');
+    const before = w.link.of('post_message').length;
+    expect(await w.login.ensure(w.tripId, what, { park: { what, resume }, booking: true })).toEqual({
+      ok: false, note: `Saudades Homestays needs the trip's ixigo login, and Rahul is logging in on Go's screen now. ${next}`,
+    });
+    // No new card or line for it.
+    expect(w.link.of('post_message')).toHaveLength(before);
+  });
+
   it('asks once for a turn that runs again, and Not now lets the waiting booking go with the login', async () => {
     const w = world({ statuses: [200] });
     await w.setup();
     w.clock.now = new Date(NOW.getTime() + 3 * 60_000);
     await w.login.ensure(w.tripId, what, { park: { what, resume } });
     const again = await w.login.ensure(w.tripId, what, { park: { what, resume } });
-    expect(again).toMatchObject({ ok: false, note: expect.stringContaining("Rahul's login card is just above, and Go carries on once the login is in") });
+    expect(again).toMatchObject({ ok: false, note: expect.stringContaining(cardIsTheAsk('Rahul', "I'll re-check Saudades Homestays and book it")) });
     expect(w.link.of('post_message')).toHaveLength(2);
 
     await w.tap('ixigo_not_now', 'p_rahul');

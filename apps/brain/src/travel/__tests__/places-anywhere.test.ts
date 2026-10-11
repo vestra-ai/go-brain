@@ -13,6 +13,7 @@ import { learnFromPage, loadLearnedPlaces } from '../recipes/places-store.js';
 import type { ResultsStore } from '../results.js';
 import { travelTools } from '../tools.js';
 import type { Travel } from '../travel.js';
+import { TravelError } from '../mcp-travel.js';
 
 let db: { pool: Pool; drop: () => Promise<void> };
 beforeAll(async () => { db = await withSchema(); });
@@ -38,24 +39,31 @@ const backend = createIxigoWebBackend({ book, engine, now });
 function tool(name: string) {
   const cards: Array<Record<string, unknown>> = [];
   const turn = { tripId: 't_goa', turnId: 'turn_w1', cards, pack, wake: [], stableId: (p: string) => `${p}_turn_w1_1` } as unknown as TurnCtx;
-  const travel = { search: (kind: never, q: never, o: never) => backend.search(kind, q, o), waitMs: async () => null } as unknown as Travel;
+  // The page ixigo's own link opens, set as the search ran: Go shows it nobody (G1), but it says what the search asked.
+  const links: string[] = [];
+  const travel = {
+    search: (kind: never, q: never, o: never) => backend.search(kind, q, o).catch((err: unknown) => { if (err instanceof TravelError && err.link) links.push(err.link); throw err; }),
+    waitMs: async () => null,
+  } as unknown as Travel;
   const tools = travelTools({ travel, results: {} as ResultsStore, images: {} as Images, now: () => new Date('2026-10-07T12:00:31Z') });
   const t = tools.find((x) => x.name === name)!;
-  return { cards, run: (args: Record<string, unknown>) => t.run(args, turn) as Promise<Record<string, unknown>> };
+  return { cards, links, run: (args: Record<string, unknown>) => t.run(args, turn) as Promise<Record<string, unknown>> };
 }
 
 describe('a flight anywhere', () => {
-  it("London to Delhi on 20 Oct, non-stop: ixigo's link for LHR to DEL, the date, the travellers, non-stop and the cheapest first", async () => {
+  it("London to Delhi on 20 Oct, non-stop: searched as LHR to DEL, the date, the travellers, non-stop and the cheapest first", async () => {
     // Keshav's ask on staging: "@Go what is the most economical non stop flight between London and Delhi on 20th October?"
     const t = tool('search_flights');
     const out = await t.run({ from: 'London (LHR)', to: 'Delhi', date: '2026-10-20', non_stop: true });
-    const link = String(out.link);
+    const link = String(t.links.at(-1));
     expect(link).toMatch(/^https:\/\/www\.ixigo\.com\/search\/result\/flight\?from=LHR&to=DEL&date=20102026&/);
     // Nobody in the trip lives by Heathrow, so the link is for the whole group.
     expect(link).toContain('&adults=5&');
     expect(link).toContain('&stops=0');
     expect(link.endsWith('&sort_type=cheapest')).toBe(true);
-    expect(t.cards).toEqual([expect.objectContaining({ kind: 'notice', title: 'Flights, London (LHR) to Delhi', source: { name: 'ixigo', url: link } })]);
+    // No page loads here, so Go says it plainly: never ixigo's link on a card (G1, 11 Oct).
+    expect(t.cards).toEqual([]);
+    expect(out).toMatchObject({ not_loaded: true, tell_the_room: expect.stringContaining("I couldn't load flights from London (LHR) to Delhi just now") });
     expect(JSON.stringify(out)).not.toMatch(OTHER_SITES);
   });
 

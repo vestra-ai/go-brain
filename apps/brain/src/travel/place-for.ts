@@ -53,13 +53,22 @@ type KeptPlace = ResolvedPlace & { best_months: number[] | null };
 /** The guide loads tried for a photo: the place itself, then what it lies in (Old Manali's is Manali's). */
 const PHOTO_TRIES = 2;
 
-export function createPlaceFor(d: PlaceForDeps): PlaceFor {
-  /**
-   * ixigo's guide photo for the first of these that has one, and that guide's labelled photos, through Go's image cache;
-   * none when no guide has a photo. The months are the first guide's that names any: [] when the guides answered with
-   * none, null when no guide answered at all.
-   */
-  const guideOf = async (names: string[], tripId: string): Promise<{ photo: string | null; photos: Photo[]; months: number[] | null }> => {
+/** What ixigo's guide gives a place: its own name for it, its photo and labelled photos (re-hosted), and its best months. */
+export interface Guide {
+  name: string | null;
+  photo: string | null;
+  photos: Photo[];
+  /** [] when the guides answered with none, null when no guide answered at all. */
+  months: number[] | null;
+}
+export type GuideOf = (names: string[], tripId: string) => Promise<Guide>;
+
+/**
+ * ixigo's guide photo for the first of these that has one, and that guide's labelled photos, through Go's image cache;
+ * none when no guide has a photo. The months are the first guide's that names any.
+ */
+export function createGuideOf(d: Pick<PlaceForDeps, 'engine' | 'images' | 'log'>): GuideOf {
+  return async (names, tripId) => {
     let months: number[] | null = null;
     for (const name of names.slice(0, PHOTO_TRIES)) {
       try {
@@ -69,13 +78,25 @@ export function createPlaceFor(d: PlaceForDeps): PlaceFor {
         const photo = row?.['photo'];
         if (typeof photo !== 'string') continue;
         const list = row?.['photos'];
-        return { photo: await d.images.rehostUrl(photo), photos: Array.isArray(list) ? await photosOf(list as SourcePhoto[], d.images) : [], months };
+        // "Kerala, India": the place's own name is before the country.
+        const dest = row?.['destination'];
+        const own = typeof dest === 'string' ? dest.split(',')[0]!.trim() : '';
+        return {
+          name: own || null,
+          photo: await d.images.rehostUrl(photo),
+          photos: Array.isArray(list) ? await photosOf(list as SourcePhoto[], d.images) : [],
+          months,
+        };
       } catch (err) {
         d.log?.warn({ err: String(err), tripId, place: name }, "travel: ixigo's guide gave no photo for a place");
       }
     }
-    return { photo: null, photos: [], months };
+    return { name: null, photo: null, photos: [], months };
   };
+}
+
+export function createPlaceFor(d: PlaceForDeps): PlaceFor {
+  const guideOf = createGuideOf(d);
   const resolvedOf = (k: KeptPlace): ResolvedPlace => ({ place: k.place, kind: k.kind, within: k.within });
 
   return async (words, o) => {
