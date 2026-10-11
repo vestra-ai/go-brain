@@ -2,6 +2,8 @@
 
 Every claim on this page links to its proof in this repo: a file and line, a test by its name, a CI run, or a measured number with how it was measured. Where something is simulated, this page says so.
 
+**How the App, the Server and Go fit together, across the three repos: [ARCHITECTURE.md](ARCHITECTURE.md).** Go's own inside is in [docs/architecture.md](docs/architecture.md).
+
 ## What Go is
 
 Go is the AI member of a trip group. Friends plan a trip in a group chat, and Go is in that chat with them as one more member. It reads every message, stays quiet through the chatter, and answers when someone asks it something: "Go is typing..." shows at once, and the answer follows. It keeps track of what each person said and what the group agreed, with a link to the message that proves it, and it forgets a person exactly when they ask.
