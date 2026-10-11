@@ -1,0 +1,373 @@
+{
+ "status": "success",
+ "message": "success",
+ "Route": "Bangalore-Goa",
+ "JourneyDate": "2026-11-06",
+ "ServiceID": "407",
+ "SeatLayoutID": "Bharat Benz AC Sleeper (2 + 1)",
+ "travelerAgentName": "IntrCity SmartBus",
+ "busTypeName": "Bharat Benz AC Sleeper (2 + 1)",
+ "startTimeDateFormat": "2026-11-06 22:35",
+ "upperTotalRows": "4",
+ "upperTotalColumns": "11",
+ "lowerTotalRows": "4",
+ "lowerTotalColumns": "11",
+ "lowerDividerRow": "3",
+ "upperDividerRow": "3",
+ "maxNumberOfSeats": 6,
+ "minAge": "12",
+ "titles": [
+  "Seat Number",
+  "Row ID",
+  "Column ID",
+  "Seat Type",
+  "Availability",
+  "Is Ladies Seat",
+  "Seat Fare",
+  "Seat ID",
+  "GST Amount",
+  "Service Charge",
+  "Toll Fee",
+  "Service Fee",
+  "Child Fare",
+  "Child Service Fee Percentage",
+  "seat_flip",
+  "price_filter"
+ ],
+ "TotalSeatList": {
+  "lowerdeck_seat_nos": [
+   "1LC, 1, 1, LB, Y, M, 4765, 0, 238.00, 0.00, 0, 0,h,4765",
+   "2LC, 1, 3, LB, Y, M, 4992, 0, 250.00, 0.00, 0, 0,h,4992",
+   "3LC, 1, 5, LB, Y, M, 4992, 0, 250.00, 0.00, 0, 0,h,4992",
+   "4LC, 1, 7, LB, Y, M, 4992, 0, 250.00, 0.00, 0, 0,h,4992",
+   "5LC, 1, 9, LB, Y, M, 4765, 0, 238.00, 0.00, 0, 0,h,4765",
+   "6LC, 1, 11, LB, Y, M, 3858, 0, 193.00, 0.00, 0, 0,h,3858",
+   "1LB, 2, 1, LB, Y, M, 4765, 0, 238.00, 0.00, 0, 0,h,4765",
+   "2LB, 2, 3, LB, Y, M, 4992, 0, 250.00, 0.00, 0, 0,h,4992",
+   "3LB, 2, 5, LB, Y, M, 4992, 0, 250.00, 0.00, 0, 0,h,4992",
+   "4LB, 2, 7, LB, Y, M, 4992, 0, 250.00, 0.00, 0, 0,h,4992",
+   "5LB, 2, 9, LB, Y, M, 4765, 0, 238.00, 0.00, 0, 0,h,4765",
+   "6LB, 2, 11, LB, Y, M, 3858, 0, 193.00, 0.00, 0, 0,h,3858",
+   "1LA, 4, 1, LB, Y, M, 5241, 0, 262.00, 0.00, 0, 0,h,5241",
+   "2LA, 4, 3, LB, Y, M, 5491, 0, 275.00, 0.00, 0, 0,h,5491",
+   "3LA, 4, 5, LB, Y, M, 5491, 0, 275.00, 0.00, 0, 0,h,5491",
+   "4LA, 4, 7, LB, Y, M, 5491, 0, 275.00, 0.00, 0, 0,h,5491",
+   "5LA, 4, 9, LB, Y, M, 5241, 0, 262.00, 0.00, 0, 0,h,5241",
+   "6LA, 4, 11, LB, Y, M, 4243, 0, 212.00, 0.00, 0, 0,h,4243"
+  ],
+  "upperdeck_seat_nos": [
+   "1UC, 1, 1, UB, Y, M, 4539, 0, 227.00, 0.00, 0, 0,h,4539",
+   "2UC, 1, 3, UB, Y, M, 4765, 0, 238.00, 0.00, 0, 0,h,4765",
+   "3UC, 1, 5, UB, Y, M, 4765, 0, 238.00, 0.00, 0, 0,h,4765",
+   "4UC, 1, 7, UB, Y, M, 4765, 0, 238.00, 0.00, 0, 0,h,4765",
+   "5UC, 1, 9, UB, Y, M, 4539, 0, 227.00, 0.00, 0, 0,h,4539",
+   "6UC, 1, 11, UB, Y, M, 3858, 0, 193.00, 0.00, 0, 0,h,3858",
+   "1UB, 2, 1, UB, Y, M, 4539, 0, 227.00, 0.00, 0, 0,h,4539",
+   "2UB, 2, 3, UB, Y, M, 4765, 0, 238.00, 0.00, 0, 0,h,4765",
+   "3UB, 2, 5, UB, Y, M, 4765, 0, 238.00, 0.00, 0, 0,h,4765",
+   "4UB, 2, 7, UB, Y, M, 4765, 0, 238.00, 0.00, 0, 0,h,4765",
+   "5UB, 2, 9, UB, Y, M, 4539, 0, 227.00, 0.00, 0, 0,h,4539",
+   "6UB, 2, 11, UB, Y, M, 3858, 0, 193.00, 0.00, 0, 0,h,3858",
+   "1UA, 4, 1, UB, Y, M, 4992, 0, 250.00, 0.00, 0, 0,h,4992",
+   "2UA, 4, 3, UB, Y, M, 5241, 0, 262.00, 0.00, 0, 0,h,5241",
+   "3UA, 4, 5, UB, Y, M, 5241, 0, 262.00, 0.00, 0, 0,h,5241",
+   "4UA, 4, 7, UB, Y, M, 4992, 0, 250.00, 0.00, 0, 0,h,4992",
+   "5UA, 4, 9, UB, Y, M, 4243, 0, 212.00, 0.00, 0, 0,h,4243"
+  ]
+ },
+ "faresList": [
+  "3858",
+  "4243",
+  "4539",
+  "4765",
+  "4992",
+  "5241",
+  "5491"
+ ],
+ "offerFaresList": [
+  {
+   "fare": "4765",
+   "discountedFare": "4765"
+  },
+  {
+   "fare": "4992",
+   "discountedFare": "4992"
+  },
+  {
+   "fare": "3858",
+   "discountedFare": "3858"
+  },
+  {
+   "fare": "5241",
+   "discountedFare": "5241"
+  },
+  {
+   "fare": "5491",
+   "discountedFare": "5491"
+  },
+  {
+   "fare": "4243",
+   "discountedFare": "4243"
+  },
+  {
+   "fare": "4539",
+   "discountedFare": "4539"
+  }
+ ],
+ "gentsSeats": [],
+ "singleLadySeats": [],
+ "singleGentSeats": [],
+ "allow_ladies_to_book_double_seats": "1",
+ "boardingPoints": [
+  {
+   "placeName": "Chandapura - Infront of Adyar Anand Bhavan A2B, Near Nandhana Palace, Hosur Road, Towards Silk board",
+   "placeTime": "07:45 PM",
+   "placeId": "14531",
+   "landMark": "Infront of Adyar Anand Bhavan A2B, Near Nandhana Palace, Hosur Road, Towards Silk board (Bangalore)",
+   "placeTimeTwfFormat": "19:45",
+   "dt": "2026-11-06 19:45",
+   "latlong": "12.807669, 77.697803"
+  },
+  {
+   "placeName": "Bommasandra - Near Narayana Hrudayalaya Bus Stop, Towards Electronic City",
+   "placeTime": "07:50 PM",
+   "placeId": "6999",
+   "landMark": "Near Narayana Hrudayalaya Bus Stop, Towards Electronic City (Bangalore)",
+   "placeTimeTwfFormat": "19:50",
+   "dt": "2026-11-06 19:50",
+   "latlong": "12.8103, 77.695801"
+  },
+  {
+   "placeName": "Electronic City - After Electronic City Toll Plaza",
+   "placeTime": "08:00 PM",
+   "placeId": "293",
+   "landMark": "After Electronic City Toll Plaza (Bangalore)",
+   "placeTimeTwfFormat": "20:00",
+   "dt": "2026-11-06 20:00",
+   "latlong": "12.8467, 77.6716"
+  },
+  {
+   "placeName": "Silk Board - Mahindra Sireesh Auto Showroom, Next to Skywalk, Towards Madiwala",
+   "placeTime": "08:15 PM",
+   "placeId": "3237",
+   "landMark": "Mahindra Sireesh Auto Showroom, Next to Skywalk, Towards Madiwala (Bangalore)",
+   "placeTimeTwfFormat": "20:15",
+   "dt": "2026-11-06 20:15",
+   "latlong": "12.9123, 77.625603"
+  },
+  {
+   "placeName": "BTM Layout - Infront of Gangotri Hospital",
+   "placeTime": "08:25 PM",
+   "placeId": "3930",
+   "landMark": "Infront of Gangotri Hospital (Bangalore)",
+   "placeTimeTwfFormat": "20:25",
+   "dt": "2026-11-06 20:25",
+   "latlong": "12.9164, 77.6138"
+  },
+  {
+   "placeName": "Jayanagar - Near Jayanagar Metro Station",
+   "placeTime": "08:50 PM",
+   "placeId": "5101",
+   "landMark": "Near Jayanagar Metro Station (Bangalore)",
+   "placeTimeTwfFormat": "20:50",
+   "dt": "2026-11-06 20:50",
+   "latlong": "12.9289, 77.580101"
+  },
+  {
+   "placeName": "South End Circle - Under The South End Circle, Metro Station, Towards Lalbagh",
+   "placeTime": "08:55 PM",
+   "placeId": "9481",
+   "landMark": "Under The South End Circle, Metro Station, Towards Lalbagh (Bangalore)",
+   "placeTimeTwfFormat": "20:55",
+   "dt": "2026-11-06 20:55",
+   "latlong": "12.938392, 77.580064"
+  },
+  {
+   "placeName": "Lalbagh West Gate - Infront of Kamat Hotel, Towards Majestic",
+   "placeTime": "09:00 PM",
+   "placeId": "9482",
+   "landMark": "Infront of Kamat Hotel, Towards Majestic (Bangalore)",
+   "placeTimeTwfFormat": "21:00",
+   "dt": "2026-11-06 21:00",
+   "latlong": "12.949224, 77.579892"
+  },
+  {
+   "placeName": "Corporation Circle - Infront of Indira Canteen, Opp St. Marthas Hospital",
+   "placeTime": "09:10 PM",
+   "placeId": "3938",
+   "landMark": "Infront of Indira Canteen, Opp St. Marthas Hospital (Bangalore)",
+   "placeTimeTwfFormat": "21:10",
+   "dt": "2026-11-06 21:10",
+   "latlong": "12.968, 77.586899"
+  },
+  {
+   "placeName": "Anand Rao Circle - Infront of Empire Restaurant",
+   "placeTime": "09:25 PM",
+   "placeId": "6154",
+   "landMark": "Infront of Empire Restaurant (Bangalore)",
+   "placeTimeTwfFormat": "21:25",
+   "dt": "2026-11-06 21:25",
+   "latlong": "12.979625, 77.575084"
+  },
+  {
+   "placeName": "Majestic - Boarding Zone - IntrCity Boarding Zone, High5 Holidays, Shop No.18 - Hotel Mayura Complex, Opp Majestic Bus Stand",
+   "placeTime": "09:30 PM",
+   "placeId": "3231",
+   "landMark": "IntrCity Boarding Zone, High5 Holidays, Shop No.18 - Hotel Mayura Complex, Opp Majestic Bus Stand (Bangalore)",
+   "placeTimeTwfFormat": "21:30",
+   "dt": "2026-11-06 21:30",
+   "latlong": "12.975958, 77.574989"
+  },
+  {
+   "placeName": "Malleshwaram - Near KC General Hospital, Opp ICICI Bank",
+   "placeTime": "09:45 PM",
+   "placeId": "5047",
+   "landMark": "Near KC General Hospital, Opp ICICI Bank (Bangalore)",
+   "placeTimeTwfFormat": "21:45",
+   "dt": "2026-11-06 21:45",
+   "latlong": "12.9967, 77.568298"
+  },
+  {
+   "placeName": "Rajaji Nagar - Near Rajaji Nagar Metro Station Bus Stop",
+   "placeTime": "09:55 PM",
+   "placeId": "3848",
+   "landMark": "Near Rajaji Nagar Metro Station Bus Stop (Bangalore)",
+   "placeTimeTwfFormat": "21:55",
+   "dt": "2026-11-06 21:55",
+   "latlong": "13.0003, 77.549698"
+  },
+  {
+   "placeName": "Yeshwanthpur - Boarding Zone - IntrCity Boarding Zone, Vijay Travels, Next to Aparna Elina Apartments Entrance Gate, Opp Metro Pillar No. 328",
+   "placeTime": "10:05 PM",
+   "placeId": "14849",
+   "landMark": "IntrCity Boarding Zone, Vijay Travels, Next to Aparna Elina Apartments Entrance Gate, Opp Metro Pillar No. 328 (Bangalore)",
+   "placeTimeTwfFormat": "22:05",
+   "dt": "2026-11-06 22:05",
+   "latlong": "13.020889, 77.552194"
+  },
+  {
+   "placeName": "Goragunte Palya - Infront of People Tree Hospital",
+   "placeTime": "10:15 PM",
+   "placeId": "3499",
+   "landMark": "Infront of People Tree Hospital (Bangalore)",
+   "placeTimeTwfFormat": "22:15",
+   "dt": "2026-11-06 22:15",
+   "latlong": "13.0289, 77.539497"
+  },
+  {
+   "placeName": "Jalahalli Cross - Bus Stop",
+   "placeTime": "10:25 PM",
+   "placeId": "3913",
+   "landMark": "Bus Stop (Bangalore)",
+   "placeTimeTwfFormat": "22:25",
+   "dt": "2026-11-06 22:25",
+   "latlong": "13.0399, 77.518303"
+  },
+  {
+   "placeName": "8 Mile T Dasarahalli - 8th Mile Signal (Service Road)",
+   "placeTime": "10:30 PM",
+   "placeId": "3915",
+   "landMark": "8th Mile Signal (Service Road) (Bangalore)",
+   "placeTimeTwfFormat": "22:30",
+   "dt": "2026-11-06 22:30",
+   "latlong": "13.0453, 77.507004"
+  },
+  {
+   "placeName": "Parle G Toll Gate - After Parle Toll, Bus Stop, Towards Tumkur",
+   "placeTime": "10:35 PM",
+   "placeId": "3095",
+   "landMark": "After Parle Toll, Bus Stop, Towards Tumkur (Bangalore)",
+   "placeTimeTwfFormat": "22:35",
+   "dt": "2026-11-06 22:35",
+   "latlong": "13.0501, 77.493301"
+  }
+ ],
+ "droppingPoints": [
+  {
+   "placeName": "Mollem (Dhoodhsagar) - Opp Bharat Petrol Pump",
+   "placeTime": "09:10 AM",
+   "placeId": "6691",
+   "placeTimeTwfFormat": "09:10",
+   "dt": "2026-11-07 09:10",
+   "landMark": "Opp Bharat Petrol Pump (Goa)",
+   "latlong": "15.3768, 74.228302"
+  },
+  {
+   "placeName": "Ponda - Opp HP Petrol Pump, Neha Nagar, Panjim Highway, Curti",
+   "placeTime": "10:00 AM",
+   "placeId": "13143",
+   "placeTimeTwfFormat": "10:00",
+   "dt": "2026-11-07 10:00",
+   "landMark": "Opp HP Petrol Pump, Neha Nagar, Panjim Highway, Curti (Goa)",
+   "latlong": "15.409924, 74.025691"
+  },
+  {
+   "placeName": "Margoa - Opp Kadamba Bus Stand",
+   "placeTime": "10:30 AM",
+   "placeId": "6334",
+   "placeTimeTwfFormat": "10:30",
+   "dt": "2026-11-07 10:30",
+   "landMark": "Opp Kadamba Bus Stand (Goa)",
+   "latlong": "15.2878, 73.955002"
+  },
+  {
+   "placeName": "Verna - Near Titan Gate Bus Stop",
+   "placeTime": "10:50 AM",
+   "placeId": "6619",
+   "placeTimeTwfFormat": "10:50",
+   "dt": "2026-11-07 10:50",
+   "landMark": "Near Titan Gate Bus Stop (Goa)",
+   "latlong": "15.369897, 73.926983"
+  },
+  {
+   "placeName": "Panjim - Near Ritz Classic Patto Restaurant, Behind KTC Bus Stand",
+   "placeTime": "11:20 AM",
+   "placeId": "4695",
+   "placeTimeTwfFormat": "11:20",
+   "dt": "2026-11-07 11:20",
+   "landMark": "Near Ritz Classic Patto Restaurant, Behind KTC Bus Stand (Goa)",
+   "latlong": "15.4945, 73.838997"
+  },
+  {
+   "placeName": "Mapusa - New Interstate Bus Stand, Opp Carvalho HP Petrol Pump",
+   "placeTime": "11:50 AM",
+   "placeId": "5493",
+   "placeTimeTwfFormat": "11:50",
+   "dt": "2026-11-07 11:50",
+   "landMark": "New Interstate Bus Stand, Opp Carvalho HP Petrol Pump (Goa)",
+   "latlong": "15.5881, 73.809196"
+  }
+ ],
+ "cancellationsPolicy": [
+  {
+   "cc": "Rs. 3279",
+   "rp": "85%",
+   "tl": "Rs 3279 /- @ 85% refund",
+   "con": "Before 2-Nov 19:45"
+  },
+  {
+   "cc": "Rs. 2701",
+   "rp": "70%",
+   "tl": "Rs 2701 /- @ 70% refund",
+   "con": "Between 2-Nov 19:45 & 4-Nov 19:45"
+  },
+  {
+   "cc": "Rs. 965",
+   "rp": "25%",
+   "tl": "Rs 965 /- @ 25% refund",
+   "con": "Between 4-Nov 19:45 & 5-Nov 19:45"
+  },
+  {
+   "cc": "Rs. 193",
+   "rp": "5%",
+   "tl": "Rs 193 /- @ 5% refund",
+   "con": "Between 5-Nov 19:45 & 6-Nov 19:39"
+  },
+  {
+   "cc": "Rs. 0",
+   "rp": "0%",
+   "tl": "Rs 0 /- @ 0% refund",
+   "con": "After 6-Nov 19:39"
+  }
+ ]
+}
