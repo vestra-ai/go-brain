@@ -14,6 +14,7 @@ import type * as C from '@go/contract';
 import type { Brain } from '../app.js';
 import type { CardTapParams } from '../door/methods.js';
 import type { DeskItem } from '../desk/desk.js';
+import { SocketCallError } from '../door/rpc.js';
 import type { TripPack } from '../trips/pack.js';
 import { PAY_FLIGHT, type FlightBooking } from './booking/flight-booking.js';
 import { BOOK_MINE, budgetSheet, buildConfirmMineCard, buildOptionsCard, CHANGE_MINE, clip, ixigoPage, PERSONAL_KINDS } from './cards.js';
@@ -189,8 +190,11 @@ export function registerTravelTaps(taps: Brain['taps'], d: TravelTapDeps): void 
           const voting = await d.results.setCardDecision(tap.trip_id, cardId, decisionId, left);
           if (voting) await d.link.request('post_message', { trip_id: tap.trip_id, request_id: stableId('go_more_card', tap.tap_id), card: voting });
         } catch (err) {
-          // Options that never joined the vote were never shown: the next See more offers them again.
-          if (!added) await d.results.dropCard(tap.trip_id, cardId).catch(() => undefined);
+          // Options the Server refused to add never joined the vote: never shown, so the next See more offers them again.
+          // A 503 (the Server unreachable, after the link's retries) may have added them all the same: the card and its
+          // offers are kept, unposted, so a winner among them can still be booked and none is added twice.
+          const refused = err instanceof SocketCallError && err.code !== 503;
+          if (!added && refused) await d.results.dropCard(tap.trip_id, cardId).catch(() => undefined);
           throw err;
         } finally {
           moreRunning.delete(set.resultsId);

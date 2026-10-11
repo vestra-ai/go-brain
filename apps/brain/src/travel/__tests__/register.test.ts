@@ -7,6 +7,7 @@ import { buildFlightsLinkCard, buildOptionsCard, SEE_ALL_ACTION } from '../cards
 import { stableId } from '../ids.js';
 import { picksOf } from '../picks.js';
 import { registerTravel } from '../register.js';
+import { SocketCallError } from '../../door/rpc.js';
 import { createResultsStore, MORE_CARD, type ResultOption } from '../results.js';
 
 let db: Awaited<ReturnType<typeof withSchema>>;
@@ -211,7 +212,7 @@ describe('registerTravel', () => {
       voteIs('open', 10);
       // The Server refuses the add: the new card is dropped, so its stays were never shown, and the next tap offers them.
       const adds = lb.link.sent('add_vote_options').length;
-      lb.link.failNext = { method: 'add_vote_options', error: new Error('409 conflict: the vote closed') };
+      lb.link.failNext = { method: 'add_vote_options', error: new SocketCallError(409, 'conflict: the vote closed') };
       expect(await more('tap_m3a')).toEqual({ result: 'done' });
       await eventually(() => lb.link.sent('add_vote_options').length > adds);
       await eventually(async () => (await results.card('t_goa', stableId(MORE_CARD, 'tap_m3a'))) === null);
@@ -231,6 +232,39 @@ describe('registerTravel', () => {
       const posts = lb.link.sent('post_message').length;
       expect(await more('tap_m4')).toEqual({ result: 'done', toast: "That's everything ixigo listed for this search" });
       expect(lb.link.sent('post_message')).toHaveLength(posts);
+    } finally {
+      lb.link.request = real;
+    }
+  });
+
+  // Your reviewer, 11 Oct: a 503 from add_vote_options may have added them on the Server all the same.
+  it('"See more" keeps its card, unposted, when the Server may have added its stays (a 503), and never adds them twice', async () => {
+    const results = createResultsStore(db.pool);
+    const options: ResultOption[] = Array.from({ length: 11 }, (_, i) => ({
+      kind: 'stay', title: `Assagao ${i + 1}`, priceMinor: 500_000, totalMinor: 1_500_000, currency: 'INR', priceNote: 'per night, per room',
+      highlights: [], facts: { nights: 3 }, sourceUrl: `https://www.ixigo.com/hotels/${9100 + i}/details?hName=Assagao%20${i + 1}`,
+    }));
+    const set = await results.save({ tripId: 't_goa', optionKind: 'stay', source: 'search', query: { area: 'assagao', guests: 5 }, options, checkedAt: '2026-10-07T12:00:00.000Z' });
+    const ctx = lb.ctx({ turnId: 'turn_more2' });
+    const shown = (await lb.tools.run('show_options', { line: 'Here are stays in Assagao.', results_id: set.resultsId, title: 'Stays in Assagao' }, ctx)) as any;
+    const first = C.OptionsCard.parse(ctx.cards[0]);
+    const real = lb.link.request.bind(lb.link);
+    lb.link.request = (async (method: string, params: unknown) =>
+      method === 'read_trip'
+        ? { ...GOA_TRIP, decisions: [{ decision_id: shown.decision_id, status: 'open', options: Array.from({ length: 10 }, (_, i) => ({ label: `S${i}` })) }] }
+        : real(method as 'post_message', params as never)) as typeof lb.link.request;
+    const more = (tapId: string) => lb.taps.tap('options', 'more_options', { tap_id: tapId, trip_id: 't_goa', card_id: first.card_id, action_id: 'more_options', person_id: 'p_meher' }, first);
+    try {
+      const adds = lb.link.sent('add_vote_options').length;
+      lb.link.failNext = { method: 'add_vote_options', error: new SocketCallError(503, 'unavailable') };
+      expect(await more('tap_m5')).toEqual({ result: 'done' });
+      await eventually(() => lb.link.sent('add_vote_options').length > adds);
+      await new Promise((r) => setTimeout(r, 50));
+      const kept = stableId(MORE_CARD, 'tap_m5');
+      expect(await results.card('t_goa', kept)).not.toBeNull();
+      expect(lb.link.sent('post_message').some((p) => (p.card as { card_id?: string } | undefined)?.card_id === kept)).toBe(false);
+      // Its stay counts as shown: the next See more never adds it again.
+      expect(await more('tap_m6')).toEqual({ result: 'done', toast: "That's everything ixigo listed for this search" });
     } finally {
       lb.link.request = real;
     }
