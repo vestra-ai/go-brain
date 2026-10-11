@@ -89,14 +89,16 @@ export function ageOn(dob: string, day: string): number | null {
   return age >= 0 && age < 130 ? age : null;
 }
 
+const WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
 /** A day (YYYY-MM-DD) as the results page's list of dates under a class writes it: "Fri, 06 Nov" (p0's T1). */
 export function dayLabel(day: string): string | null {
   const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(day);
   if (!m) return null;
   const at = new Date(Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3])));
-  const weekday = at.toLocaleDateString('en-GB', { weekday: 'short', timeZone: 'UTC' });
-  const month = at.toLocaleDateString('en-GB', { month: 'short', timeZone: 'UTC' });
-  return `${weekday}, ${m[3]} ${month}`;
+  // Fixed names: a locale's own may write "Sept", where the page writes "Sep".
+  return `${WEEKDAYS[at.getUTCDay()]}, ${m[3]} ${MONTHS[at.getUTCMonth()]}`;
 }
 
 /** One passenger as ixigo's train form takes them: their name as on their ID, age on the day, gender, IRCTC user ID. */

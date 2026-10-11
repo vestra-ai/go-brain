@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { ageOn, classNow, seatWords, trainOf, trainResultsAddress } from '../train-steps.js';
+import { ageOn, classNow, dayLabel, seatWords, trainOf, trainResultsAddress } from '../train-steps.js';
 
 // A train option's own address, as trains.between gives it (the Mandovi, CSMT to Madgaon, 6 Nov).
 const MANDOVI = 'https://www.ixigo.com/trains/10103?orgn=CSMT&dstn=MAO&departDate=2026-11-06&quota=GN';
@@ -46,6 +46,12 @@ describe("a person's own train, as its booking reads it", () => {
     expect(seatWords({ status: 'RAC 5', chance: null })).toBe("It's RAC (RAC 5): you travel on a shared side berth until a full berth frees up.");
     expect(seatWords({ status: 'AVAILABLE 8', chance: null })).toBeNull();
     expect(seatWords({ status: 'REGRET', chance: null })).toBe('ixigo says regret for it now.');
+  });
+
+  it('writes a day as the page lists it under a class (p0\'s T1: "Fri, 06 Nov"), September as Sep', () => {
+    expect(dayLabel('2026-11-06')).toBe('Fri, 06 Nov');
+    expect(dayLabel('2026-09-01')).toBe('Tue, 01 Sep');
+    expect(dayLabel('06-11-2026')).toBeNull();
   });
 
   it("takes a passenger's age in whole years on the day they travel", () => {
