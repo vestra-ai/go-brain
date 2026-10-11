@@ -118,7 +118,9 @@ export const LOGIN_POLL_MS = 2_000;
  * "Every /v1 key is resting" on the next Log in to ixigo).
  */
 export const LOGIN_POLL_FAST_FOR_MS = 30_000;
-export const LOGIN_POLL_SLOW_MS = 5_000;
+// 3 s (was 5 s): 20 reads a minute per open login, a third of a Go key's 60; the page after a login (ixigo's desktop
+// home, in the App's view) shows until Go has read it landed (Saket, 11 Oct).
+export const LOGIN_POLL_SLOW_MS = 3_000;
 /** A one-tap login shows "I'm logged in" only when Go has seen nothing land this long (Bash's read gone quiet, say). */
 export const SELF_CHECK_MS = 60_000;
 /** How often Go looks over the one-tap logins (sweep): a restart of Go loses at most this much of a person's wait. */
