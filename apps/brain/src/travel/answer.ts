@@ -9,7 +9,7 @@
  */
 import type { DeskItem } from '../desk/desk.js';
 import type { TripPack } from '../trips/pack.js';
-import { clip, formatInr } from './cards.js';
+import { clip, formatInr, stayFrom } from './cards.js';
 import { asked } from './filters.js';
 import { agreedDates, readTravelAsk } from './recipes/ask.js';
 import { airportOf, busCityOf, norm, stationOf, stayPlaceOf } from './recipes/places.js';
@@ -183,10 +183,14 @@ export function answerTitle(kind: TravelKind, q: TravelQuery): string {
  * The card's line, built from the options the card shows: the search's scope and conditions and the cheapest price on
  * the card, said to whoever asked (CARD_LINE: no ids, no "I'll", no count of the card's options). Never a price the card
  * does not show (a stays card shows the engine's first three, not the cheapest: staging pass, 8 Oct). "Pool stays in
- * North Goa for 6 to 9 Nov, from ₹4,334 a night." "Flights Delhi to Goa on Fri 6 Nov, leaving after 7:00 pm, from
- * ₹3,890 per person."
+ * North Goa for 6 to 9 Nov, from ₹38,400 for 3 nights, about ₹7,700 each." (a night's, "from ₹4,334 a night", only for
+ * stays with no total) "Flights Delhi to Goa on Fri 6 Nov, leaving after 7:00 pm, from ₹3,890 per person."
  */
-export function answerLine(kind: TravelKind, q: TravelQuery, shown: ReadonlyArray<{ priceMinor?: number; priceNote?: string }>): string {
+export function answerLine(
+  kind: TravelKind,
+  q: TravelQuery,
+  shown: ReadonlyArray<{ priceMinor?: number; priceNote?: string; totalMinor?: number; facts?: ResultOption['facts'] }>,
+): string {
   const priced = shown.filter((o): o is { priceMinor: number; priceNote?: string } => (o.priceMinor ?? 0) > 0);
   const cheapest = priced.reduce<(typeof priced)[number] | undefined>((a, o) => (!a || o.priceMinor < a.priceMinor ? o : a), undefined);
   const unit = kind === 'stays' ? 'a night' : (cheapest?.priceNote ?? 'per person').replace(/,\s*from$/i, '');
@@ -195,7 +199,9 @@ export function answerLine(kind: TravelKind, q: TravelQuery, shown: ReadonlyArra
     const terms = asked(kind, q).filter((t) => t !== 'with a pool');
     const head = q.mustHave?.includes('pool') ? 'Pool stays' : 'Stays';
     const when = q.checkIn && q.checkOut ? ` for ${rangeText(q.checkIn, q.checkOut)}` : '';
-    return `${head} in ${titleWords(q.area ?? q.to ?? 'Goa')}${when}${terms.length ? `, ${listOf(terms)}` : ''}${from}.`;
+    // The cheapest whole stay and each share, as the card's own price says it (the exam, 10 Oct); a night's only when no
+    // stay on the card has a total.
+    return `${head} in ${titleWords(q.area ?? q.to ?? 'Goa')}${when}${terms.length ? `, ${listOf(terms)}` : ''}${stayFrom(shown) || from}.`;
   }
   const noun = { flights: 'Flights', trains: 'Trains', buses: 'Buses' }[kind];
   const terms = asked(kind, q);
@@ -213,6 +219,16 @@ export function leftOff(unapplied: readonly string[]): string {
   const of = (c: string): [string, string] => FILTERS[c] ?? [c.replace(/_/g, ' '), c.replace(/_/g, ' ')];
   const names = unapplied.map((c) => of(c)[0]);
   return `ixigo's ${listOf(names)} filter${names.length > 1 ? 's' : ''} didn't load in time, so these aren't filtered for ${listOf(unapplied.map((c) => of(c)[1]))}`;
+}
+
+/**
+ * ixigo's own filters left off because together they left no stay: "Private Pool alone leaves out every stay, so these
+ * leave it out". The options are the nearest without them, never called a fit (the exam's re-run, 10 Oct).
+ */
+export function droppedWords(dropped: readonly string[]): string {
+  return dropped.length === 1
+    ? `${dropped[0]} alone leaves out every stay, so these leave it out`
+    : `${listOf([...dropped])} leave out every stay, so these leave them out`;
 }
 
 /** A line with words before it ("Already on ixigo: "), its own first letter then lower case. */

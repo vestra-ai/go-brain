@@ -299,7 +299,8 @@ describe('a search that answers itself', () => {
     const card = C.OptionsCard.parse(ctx.cards[0]);
     expect(card.options.map((o) => o.title)).toEqual(['Casa Mareia', 'Villa Sol', 'The Palms Villa']);
     expect(ctx.lines).toHaveLength(1);
-    expect(ctx.lines[0]).toMatch(/^Pool stays in North Goa for 6 to 9 Nov, .+, from ₹[\d,]+ a night\.$/);
+    // From the card's cheapest whole stay, as its price says it: The Palms, 3 nights at ₹12,200 (the exam's #5 follow-up).
+    expect(ctx.lines[0]).toMatch(/^Pool stays in North Goa for 6 to 9 Nov, .+, from ₹36,600 for 3 nights\.$/);
     // No count of the card's options: price and scope only.
     expect(ctx.lines[0]).not.toMatch(/\b\d+ (pool )?stays\b/i);
     expect(card.actions?.map((a) => a.action_id)).toEqual(['pick', 'vote']);
@@ -422,6 +423,11 @@ describe('put_to_vote', () => {
     // One meaning on the card and its vote: the whole stay, 3 nights at ₹16,900 (the Server team's 10 Oct §6c).
     expect((vote.options as Array<{ price_minor: number }>).map((o) => o.price_minor)).toEqual(card.options.map((o) => o.price_minor));
     expect((vote.options as Array<{ price_minor: number }>)[0]!.price_minor).toBe(5_070_000);
+    // Its note says the whole stay first with what it covers and the night in brackets, as the pay card then does (the
+    // lead, 10 Oct: "Paid ₹38,400 … ₹12,800 per night" read as a night's).
+    expect((vote.options as Array<{ note?: string }>)[0]!.note).toBe('Morjim, ₹50,700 for 3 nights (₹16,900 a night)');
+    // Its payment names it beside the amount the pay card says: what it covers and its night, never the amount again.
+    expect(await travel.payWords!(card.options[0]!.option_id)).toBe('Morjim: 3 nights (₹16,900 a night)');
     expect(ctx.cards).toEqual([expect.objectContaining({ kind: 'vote', card_id: 'c_vote_turn_v3_1', decision_id: out.decision_id })]);
     expect(ctx.lines).toEqual(['Vote is up.']);
     expect((ctx.cards[0] as { fallback_text: string }).fallback_text).toMatch(/^Vote: Where do we stay\?/);

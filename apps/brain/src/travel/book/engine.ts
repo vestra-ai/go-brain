@@ -1177,6 +1177,14 @@ export function createEngine(d: EngineDeps) {
     },
     answer,
     answerShared,
+    /**
+     * A facts answer kept for the recipe and the words asked, inside its time, or null; one still being read is its read.
+     * Loads nothing: an ask that must answer at once (rev 5 R9's get_option_details, 3 s) answers from what is kept.
+     */
+    peek(id: string, given: Record<string, unknown>): Promise<EngineAnswer> | null {
+      const recipe = d.book.get(id);
+      return recipe?.answer.as === 'facts' ? keptHit(recipe, given) : null;
+    },
     /** Whether a paced recipe's page may not load now (pace): its caller goes another way at once, loading nothing. */
     pacedOut,
     /**

@@ -77,6 +77,10 @@ export async function createTasksLane(brain: Brain, o: TasksLaneOptions = {}): P
     watch: async (tripId, signal) => v1.stream(`/v1/users/${await browsers.userFor(tripId)}/browser/watch?width=${FRAME_WIDTH}&fps=${WATCH_FPS}`, { lastEventId: 0, signal }),
     // The ixigo login's Watch (travel/login.ts): a session on the browser's screen, as the working card's Watch opens one.
     screen: async (tripId, mode) => openSession(v1, await browsers.userFor(tripId), null, mode),
+    // The one-tap login's Watch, ended the moment Go sees the login land (travel/login.ts): Bash's page closes itself.
+    endScreen: async (sessionId) => {
+      await v1.call('DELETE', `/v1/sessions/${encodeURIComponent(sessionId)}`, { signal: AbortSignal.timeout(2_000) });
+    },
     // Where the browser's ixigo login stands, for every trip of the person's (travel/login.ts).
     login: browsers,
   };
@@ -126,6 +130,9 @@ export async function createTasksLane(brain: Brain, o: TasksLaneOptions = {}): P
     recent: (since) => recentTalk(brain.pool, since),
   });
   brain.tripLog.onEvent((ev) => awake.onEvent(ev));
+  // A person opening the room after a while (catch_up) or tapping a card counts as their line: the box is up before their
+  // first ask, which never waits for it to wake (10 Oct drill: 6.3 s of a 15 s trains read).
+  if (brain.recipeRunners) brain.recipeRunners.roomActive = (tripId) => awake.heard(tripId, brain.now());
   void awake.catchUp().catch((err: unknown) => brain.log.warn({ err: String(err) }, 'tasks: the keepalive could not read which trips are talking'));
   // When Go stops (built.stop()): no new sweep or hold, every stream and wait aborted, the last card updates sent.
   brain.onStop(async () => {

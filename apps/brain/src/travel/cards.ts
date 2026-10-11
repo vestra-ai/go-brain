@@ -206,6 +206,16 @@ export function formatClock(hhmm: string): string {
 
 export const CLASS_WORDS: Record<string, string> = { '1A': 'AC First Class', '2A': 'AC 2 Tier', '3A': 'AC 3 Tier', SL: 'Sleeper', CC: 'AC Chair Car', '2S': 'Second Sitting' };
 
+/**
+ * A bus's times as its list gives them: when it leaves, and when it reaches its first stop in the city it goes to, which
+ * is not every drop's ("8:00 pm, first stop in Goa 7:20 am next day"; the exam's re-run, 10 Oct: "reach Goa between 6
+ * and 7:20 am, all dropping at Mapusa" read as Mapusa then, where Paulo reaches Mapusa at 10:30). A drop's own time comes
+ * from the bus's seat layout only (bus-drops.ts).
+ */
+export function busTimes(j: { depart_at: string; arrive_at: string; destination: { name: string } }): string {
+  return `${formatClock(localClock(j.depart_at))}, first stop in ${j.destination.name} ${formatClock(localClock(j.arrive_at))}${arrivalWords(j.depart_at, j.arrive_at)}`;
+}
+
 export function subtitleFor(o: ResultOption): string | null {
   if (o.subtitle) return o.subtitle;
   if (o.journey) {
@@ -214,6 +224,7 @@ export function subtitleFor(o: ResultOption): string | null {
     if (o.kind === 'flight' && typeof j.stops === 'number') extra = j.stops === 0 ? 'non-stop' : `${j.stops} stop`;
     if (o.kind === 'train' && typeof o.facts.class_code === 'string') extra = CLASS_WORDS[o.facts.class_code] ?? o.facts.class_code;
     if (o.kind === 'bus' && typeof o.facts.bus_type === 'string') extra = o.facts.bus_type;
+    if (o.kind === 'bus') return `${busTimes(j)}${extra ? `, ${extra}` : ''}`;
     return `${formatClock(localClock(j.depart_at))} to ${formatClock(localClock(j.arrive_at))}${arrivalWords(j.depart_at, j.arrive_at)}${extra ? `, ${extra}` : ''}`;
   }
   if (o.kind === 'stay') {
@@ -231,33 +242,74 @@ export function subtitleFor(o: ResultOption): string | null {
 /** photos: the Server team's 10 Oct B3, Go's re-hosted copies, labelled when the source says what each shows (photos.ts). */
 export interface CardPick { optionId: string; option: ResultOption; imageUrl: string | null; details?: OptionDetailsT; photos?: C.Photo[] }
 
-/** What a stay's whole price covers: "for 3 nights", "for 3 nights, 2 rooms", or the whole stay when its nights are not known. */
-function stayNote(o: ResultOption): string {
-  const nights = typeof o.facts.nights === 'number' && o.facts.nights > 0 ? o.facts.nights : null;
-  const rooms = typeof o.facts.rooms === 'number' && o.facts.rooms > 1 ? o.facts.rooms : null;
-  return nights ? `for ${nights} night${nights === 1 ? '' : 's'}${rooms ? `, ${rooms} rooms` : ''}` : 'for the whole stay';
+/** A stay as its whole price is said: its total, and the nights, rooms and head count ixigo priced it for. */
+type StayPrice = { totalMinor?: number; facts?: ResultOption['facts'] };
+
+/** What a stay's whole price covers, in words: "3 nights", "3 nights, 2 rooms"; null when its nights are not known. */
+function stayCovers(o: StayPrice): string | null {
+  const nights = typeof o.facts?.nights === 'number' && o.facts.nights > 0 ? o.facts.nights : null;
+  const rooms = typeof o.facts?.rooms === 'number' && o.facts.rooms > 1 ? o.facts.rooms : null;
+  return nights ? `${nights} night${nights === 1 ? '' : 's'}${rooms ? `, ${rooms} rooms` : ''}` : null;
+}
+
+/** What a stay's whole price covers, as its price says it: "for 3 nights", "for 3 nights, 2 rooms", or the whole stay. */
+function stayNote(o: StayPrice): string {
+  const covers = stayCovers(o);
+  return covers ? `for ${covers}` : 'for the whole stay';
+}
+
+/** A stay's night as its whole price's brackets say it: "₹12,800 a night", "₹11,972 a room a night" for more rooms. */
+function stayNight(o: Pick<ResultOption, 'priceMinor' | 'facts'>): string | null {
+  const rooms = typeof o.facts.rooms === 'number' && o.facts.rooms > 1;
+  return o.priceMinor !== undefined ? `${formatInr(o.priceMinor)} ${rooms ? 'a room a night' : 'a night'}` : null;
 }
 
 /**
  * Each person's share of a stay's whole price to the nearest ₹100, worked out here and never by the model ("about ₹7,700
  * each": the demo's ask was "under 8k a head"). Only with the nights and the head count ixigo priced it for, more than one.
  */
-function shareWords(o: ResultOption): string | null {
-  const nights = typeof o.facts.nights === 'number' ? o.facts.nights : null;
-  const guests = typeof o.facts.guests === 'number' && o.facts.guests > 1 ? o.facts.guests : null;
+function shareWords(o: StayPrice): string | null {
+  const nights = typeof o.facts?.nights === 'number' ? o.facts.nights : null;
+  const guests = typeof o.facts?.guests === 'number' && o.facts.guests > 1 ? o.facts.guests : null;
   return o.totalMinor !== undefined && nights && guests ? `about ${formatInr(Math.round(o.totalMinor / guests / 10_000) * 10_000)} each` : null;
 }
 
 /**
- * A stays card's "from": its cheapest whole stay, what that covers and each person's share ("from ₹11,178 for 3 nights,
- * 2 rooms, about ₹2,200 each"), never a night's (the exam, 10 Oct: "from ₹621 per night, per room" for five people).
+ * Stays' "from": the cheapest whole stay, what that covers and each person's share ("from ₹11,178 for 3 nights, 2 rooms,
+ * about ₹2,200 each"), never a night's (the exam, 10 Oct: "from ₹621 per night, per room" for five people); nothing when
+ * none has a total. A stays card's fallback and the line Go posts with it (answer.ts answerLine) both say it.
  */
-function stayFrom(picks: CardPick[]): string {
-  const cheapest = picks.map((p) => p.option).filter((o) => o.totalMinor !== undefined).sort((a, b) => (a.totalMinor ?? 0) - (b.totalMinor ?? 0))[0];
+export function stayFrom(stays: ReadonlyArray<StayPrice>): string {
+  const cheapest = stays.filter((o) => o.totalMinor !== undefined).sort((a, b) => (a.totalMinor ?? 0) - (b.totalMinor ?? 0))[0];
   const total = cheapest?.totalMinor;
   if (!cheapest || total === undefined) return '';
   const each = shareWords(cheapest);
   return `, from ${formatInr(total)} ${stayNote(cheapest)}${each ? `, ${each}` : ''}`;
+}
+
+/**
+ * A stay as its vote and its payment say it: the whole stay first with what it covers, the night only in brackets
+ * ("Anjuna, ₹38,400 for 3 nights (₹12,800 a night), about ₹7,700 each"), so the pay card's "Paid ₹38,400 for Villa Sol,
+ * …" never reads as a night's (the lead, 10 Oct). A stay with no total says what its card does.
+ */
+export function stayLine(o: ResultOption): string | null {
+  if (o.totalMinor === undefined) return subtitleFor(o);
+  const area = typeof o.facts.area === 'string' ? o.facts.area : null;
+  const night = stayNight(o);
+  return [area, `${formatInr(o.totalMinor)} ${stayNote(o)}${night ? ` (${night})` : ''}`, shareWords(o)].filter((x): x is string => x !== null).join(', ');
+}
+
+/**
+ * A stay as its payment names it beside the amount, which the pay card says already: what the whole stay covers and its
+ * night in brackets ("Anjuna: 3 nights (₹12,800 a night)"), so "Paid ₹38,400 to ixigo for Villa Sol, Anjuna: 3 nights
+ * (₹12,800 a night)" never says the amount twice (the lead, 10 Oct). Null when there is nothing to say.
+ */
+export function stayPayWords(o: ResultOption): string | null {
+  const covers = stayCovers(o);
+  const night = stayNight(o);
+  const what = covers && night ? `${covers} (${night})` : (covers ?? night);
+  if (!what) return null;
+  return typeof o.facts.area === 'string' ? `${o.facts.area}: ${what}` : what;
 }
 
 function cardOption(p: CardPick): CardOption {
@@ -312,7 +364,7 @@ export function buildOptionsCard(i: {
     card_id: i.cardId,
     kind: 'options',
     // A stays card's from is its whole stay and each share; a night's only when none of its stays has a total.
-    fallback_text: clip(`${i.picks.length} ${i.picks.length === 1 ? one : many}: ${i.title}${(i.optionKind === 'stay' ? stayFrom(i.picks) : '') || from}`, 300),
+    fallback_text: clip(`${i.picks.length} ${i.picks.length === 1 ? one : many}: ${i.title}${(i.optionKind === 'stay' ? stayFrom(i.picks.map((p) => p.option)) : '') || from}`, 300),
     title: clip(i.title, 80),
     option_kind: i.optionKind,
     checked_at: i.checkedAt,

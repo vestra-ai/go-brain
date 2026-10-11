@@ -104,10 +104,24 @@ These are the buttons Go usually puts on its cards:
 | `call` | `stop` | "Stop the call" | Everyone | Ends the call. |
 | `pay` | `approve` | "Approve" | The payer only | Opens the vault page, where the payer confirms with Face ID. |
 | `pay` | `decline` | "Decline" | The payer only | Declines the payment. |
+| `notice` (the ixigo login card) | `ixigo_login` | "Log in to ixigo" | The person asked only | Opens Go's screen at once, in control, with ixigo's log in coming up in it, and opens it again while they log in. Go sees the login land by itself and carries on. There is no Watch button. |
 
 Good to know:
 - Disable a button while its tap is on the way, so a double tap sends one request.
 - Go still checks who may use a button. It refuses an `approve` from anyone but the payer, even though the app shows that button only to the payer.
+
+### Closing a page Go opened
+
+Some pages that a tap opens close by themselves when Go is done with them. The ixigo login is one: once Go sees the login land, it ends the page's session (`DELETE /v1/sessions/{id}` on Bash).
+- The page then says "This view has ended. You can close it."
+- It also posts `{ "type": "vestra:ended", "session_id": "ses_..." }` to the page around it: the page that framed it, or the window that opened it with `window.open`.
+- A window that a script opened closes itself.
+
+Close the view you opened when either of these happens:
+- That message arrives (a frame, or a window you opened yourself).
+- Go replaces the card you opened it from with one that no longer offers `ixigo_login`. That means the person is logged in (the card offers `ixigo_logout`) or logged out.
+
+The system browser sheet can't hear the page, so it closes on the card. While the person logs in, the card keeps offering `ixigo_login`, which opens the screen again, so the card alone never closes the view too early. When the login goes back to its ask or is skipped, the card still offers `ixigo_login`; Go ends the session then, and the page says the view has ended.
 
 ## Updating a card in place
 
