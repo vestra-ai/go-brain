@@ -14,7 +14,7 @@ import type pg from 'pg';
 import type { Switches } from '../../admin/switches.js';
 import type { ServerLink } from '../../door/server-link.js';
 import { dayText } from '../answer.js';
-import { buildIxigoLinkCard, buildOptionsCard, clip, formatInr } from '../cards.js';
+import { buildIxigoLinkCard, buildOptionsCard, clip, formatInr, type OptionsCardT } from '../cards.js';
 import { stableId } from '../ids.js';
 import type { IxigoLogin } from '../login.js';
 import { bodiesFor } from '../recipes/recipe.js';
@@ -84,6 +84,11 @@ export interface BookingAsk {
   name: string;
   offer: StoredOffer;
   choice: FareChoice;
+  /**
+   * The person's own card as it was before their pick showed it with their flight alone (taps.ts, G2): put back when the
+   * booking stops before the pay card, so they can pick again (the G2 drill, 11 Oct: logged out, nothing was left to tap).
+   */
+  restore?: OptionsCardT;
 }
 
 export interface FlightBookingDeps {
@@ -103,7 +108,7 @@ export interface FlightBookingDeps {
   now: () => Date;
   log: Log;
   /** Where a fare that moved is put to its traveller again, on a card of its own; absent, the run says it in a line. */
-  results?: Pick<ResultsStore, 'optionOf' | 'saveCard'>;
+  results?: Pick<ResultsStore, 'optionOf' | 'saveCard' | 'replaceCard'>;
 }
 
 /**
@@ -193,15 +198,17 @@ export function readyCard(i: {
  * The card for a traveller ixigo's account doesn't have once: their own, saying whose ixigo to add them on. It names
  * nobody but the trip's own people, and none of the account's saved travellers.
  */
-export function travellerAsk(cardId: string, ask: Pick<BookingAsk, 'personId' | 'name'>, owner: string | null, why: 'none' | 'several' | 'login'): NoticeCard {
+export function travellerAsk(cardId: string, ask: Pick<BookingAsk, 'personId' | 'name' | 'restore'>, owner: string | null, why: 'none' | 'several' | 'login'): NoticeCard {
   const on = owner ? `${owner}'s ixigo` : "the trip's ixigo";
+  // Their own card is back as it was (restore): its pick starts the booking again; else the confirm card's Book it.
+  const again = ask.restore ? "tap I'll take this on your card again" : 'tap Book it again';
   // No login (the drill, 10 Oct 15:43Z: the booking stopped at its travellers, and the traveller heard nothing why): the
   // login card is the person's who was asked, so the traveller is told whose it is.
   const body = why === 'none'
-    ? `${ask.name} isn't a saved traveller on ${on} yet; add ${ask.name} there once, then tap Book it again.`
+    ? `${ask.name} isn't a saved traveller on ${on} yet; add ${ask.name} there once, then ${again}.`
     : why === 'several'
-      ? `${on.charAt(0).toUpperCase()}${on.slice(1)} has more than one saved traveller named ${ask.name}; keep one there, then tap Book it again.`
-      : `Your traveller details come from the trip's ixigo login, which isn't linked yet${owner ? `: ${owner} has the Log in to ixigo card` : ''}. Once it's in, tap Book it again.`;
+      ? `${on.charAt(0).toUpperCase()}${on.slice(1)} has more than one saved traveller named ${ask.name}; keep one there, then ${again}.`
+      : `Your traveller details come from the trip's ixigo login, which isn't linked yet${owner ? `: ${owner} has the Log in to ixigo card` : ''}. Once it's in, ${again}.`;
   return {
     card_id: cardId, kind: 'notice', tone: 'heads_up', for_person_ids: [ask.personId],
     title: clip(`${ask.name}, one step on ixigo first`, 80), body: clip(body, 500), fallback_text: clip(body, 300),
@@ -292,6 +299,20 @@ export function createFlightBooking(d: FlightBookingDeps): FlightBooking {
   };
 
   /**
+   * A booking that stopped before the pay card puts the person's own card back as it was, its options and "I'll take
+   * this", so they can pick again; never one whose fare moved (it gets its own card at the new price).
+   */
+  async function putBack(ask: BookingAsk): Promise<void> {
+    if (!ask.restore || !d.results) return;
+    try {
+      await d.results.replaceCard(ask.tripId, ask.restore);
+      await d.link.request('replace_card', { trip_id: ask.tripId, card: ask.restore });
+    } catch (err) {
+      d.log.warn({ err: String(err).slice(0, 200), cardId: ask.restore.card_id }, "travel: a person's card could not be put back after their booking stopped");
+    }
+  }
+
+  /**
    * The fare moved more than 5%: the traveller's own card of that flight at its new price, theirs alone, to pick again
    * (their pick books it, as any pick does); or, with no store for the card, the line alone.
    */
@@ -324,6 +345,7 @@ export function createFlightBooking(d: FlightBookingDeps): FlightBooking {
       await save(runId, { state: 'failed', why });
       await live.step(step, 'failed');
       await live.finish(false);
+      await putBack(ask);
     };
     if (!runner || !ask.offer.sourceUrl) return fail('no_runner', 0);
 
@@ -456,6 +478,7 @@ export function createFlightBooking(d: FlightBookingDeps): FlightBooking {
       } else if (!got.say) {
         await d.link.request('post_message', { request_id: stableId('go_book_no', runId), trip_id: ask.tripId, text: got.refused, visible_to_person_ids: [ask.personId] });
       }
+      await putBack(ask);
       return;
     }
     await live.step(4, 'done');

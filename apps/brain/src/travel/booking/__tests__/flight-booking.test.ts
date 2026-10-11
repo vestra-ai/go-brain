@@ -8,7 +8,8 @@ import type { ReadOptions, RecipeRunner } from '../../recipes/runners.js';
 import { createResultsStore, type ResultOption } from '../../results.js';
 import type { StoredOffer } from '../../travel.js';
 import { SWITCH_RULES } from '../../../admin/switches.js';
-import { createFlightBooking, dayMs, dayOf, FLIGHT_FARE, FLIGHT_STREAM, GRAPH, numbersOf, readyCard, SAVED_TRAVELLERS, TRAVELLER_FIELDS, type FlightBooking, type TicketPay } from '../flight-booking.js';
+import { createFlightBooking, dayMs, dayOf, FLIGHT_FARE, FLIGHT_STREAM, GRAPH, numbersOf, readyCard, SAVED_TRAVELLERS, TRAVELLER_FIELDS, travellerAsk, type FlightBooking, type TicketPay } from '../flight-booking.js';
+import { buildOptionsCard } from '../../cards.js';
 
 let db: Awaited<ReturnType<typeof withSchema>>;
 let lb: LaneBrain;
@@ -342,6 +343,32 @@ describe("Go books a person's own flight up to ixigo's pay button", () => {
     // Heard again, nothing is booked twice.
     await hook.paid!({ tripId: 't_goa', approvalId: 'appr_t1', railRef: 'fake_t1' });
     expect(lb.link.requests.slice(paidFrom).filter((r) => r.method === 'add_booking')).toHaveLength(1);
+  });
+
+  // The G2 drill, 11 Oct: logged out, the booking stopped at its travellers and her card, showing her flight alone with no
+  // buttons, left her nothing to tap.
+  it("puts the person's own card back as it was when the booking stops before the pay card, and says to pick again on it", async () => {
+    const results = createResultsStore(db.pool);
+    const flight: ResultOption = { kind: 'flight', title: 'IndiGo 6E2150', priceMinor: 789_600, currency: 'INR', priceNote: 'per person', highlights: [], facts: {}, sourceUrl: OFFER.sourceUrl! };
+    const set = await results.save({ tripId: 't_goa', optionKind: 'flight', source: 'search', query: {}, options: [flight], checkedAt: '2026-10-10T07:00:00.000Z' });
+    const before = buildOptionsCard({
+      cardId: 'c_restore', title: 'Flights for Meher', optionKind: 'flight', checkedAt: '2026-10-10T07:00:00.000Z',
+      picks: [{ optionId: 'opt_restore', option: flight, imageUrl: null }], forPersonIds: ['p_meher13'],
+    });
+    await results.saveCard({ cardId: 'c_restore', tripId: 't_goa', resultsId: set.resultsId, title: before.title, optionKind: 'flight', card: before }, [{ optionId: 'opt_restore', n: 1, option: flight }], '2026-10-10T07:00:00.000Z');
+    // What her pick showed: her flight alone, no buttons (taps.ts).
+    await results.replaceCard('t_goa', { ...before, actions: [] });
+    const from = lb.link.requests.length;
+    // ixigo's review didn't load: the run stops before her travellers.
+    const b = booking(fakeRunner({ fare: false }).runner, true, null, { results });
+    await b.start({ tapId: 'tap_r1', tripId: 't_goa', personId: 'p_meher13', name: 'Meher', offer: { ...OFFER, optionId: 'opt_restore', cardId: 'c_restore' }, choice: 'basic', restore: before });
+    await b.settled();
+    expect(lb.link.requests.slice(from).filter((r) => r.method === 'replace_card' && (r.params['card'] as { card_id?: string }).card_id === 'c_restore').map((r) => r.params['card'])).toEqual([before]);
+    expect((await results.card('t_goa', 'c_restore'))?.card).toEqual(before);
+    // Its note says to pick again on it; a booking from the confirm card (no card to put back) still says Book it.
+    expect(travellerAsk('c_n', { personId: 'p_meher13', name: 'Meher', restore: before }, 'Rahul', 'login').body)
+      .toBe("Your traveller details come from the trip's ixigo login, which isn't linked yet: Rahul has the Log in to ixigo card. Once it's in, tap I'll take this on your card again.");
+    expect(travellerAsk('c_n', { personId: 'p_meher13', name: 'Meher' }, null, 'none').body).toBe("Meher isn't a saved traveller on the trip's ixigo yet; add Meher there once, then tap Book it again.");
   });
 
   it("sends them to ixigo only when the vault can't take it, saying why; any other no is said, theirs alone", async () => {
