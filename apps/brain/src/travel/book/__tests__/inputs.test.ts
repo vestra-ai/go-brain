@@ -6,7 +6,7 @@ import type { ResultsStore } from '../../results.js';
 import { checkRecipe, loadBook, type Book } from '../book.js';
 import { createEngine } from '../engine.js';
 import type { RecipeFile } from '../format.js';
-import { ixigoTool } from '../tool.js';
+import { ixigoTool, PLACES_CARD } from '../tool.js';
 
 const { book } = loadBook();
 
@@ -153,5 +153,16 @@ describe('an option input', () => {
     expect(ran).toEqual([]);
     // Called as a tool of its own, it is sent back to the ixigo tool.
     expect(tool.misnamed?.('option_facts')).toContain('{"recipe": "option.facts"');
+  });
+
+  // The Server team's rev 5 (R2): "where should we go" answers as a card of places, never a list in words.
+  it("saves the explorer's places as results for a card of their own, and says to show them so", async () => {
+    const rows = [{ place: 'Agra, Uttar Pradesh, India', estimate_minor: 900_000 }];
+    const engine = { answer: async () => ({ as: 'facts' as const, title: 'Where to go from Delhi in December', rows, page: 'https://www.ixigo.com/plan', checkedAt: '2026-10-11T02:00:00.000Z', ms: 1 }) };
+    const saved: unknown[] = [];
+    const tool = ixigoTool({ book, engine, live: () => true, placesOf: async (tripId, r) => { saved.push([tripId, r]); return 'r_places'; } })!;
+    const turn = { tripId: 't_goa', turnId: 'turn_p', cards: [], stableId: (p: string) => `${p}_1` } as unknown as TurnCtx;
+    expect(await tool.run({ recipe: 'plan.explore', inputs: { origin: 'Delhi', month: '2026-12-01' } }, turn)).toMatchObject({ results_id: 'r_places', note: PLACES_CARD, facts: rows });
+    expect(saved).toEqual([['t_goa', rows]]);
   });
 });

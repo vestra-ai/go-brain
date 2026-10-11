@@ -308,6 +308,8 @@ function cardOption(p: CardPick): CardOption {
     ...(p.imageUrl ? { image_url: p.imageUrl } : {}),
     ...(price !== undefined ? { price_minor: price, currency: o.currency ?? 'INR' } : {}),
     ...(note ? { price_note: clip(note, 40) } : {}),
+    // A place's price is ixigo's estimate a person for the trip: the least it may cost (rev 5 R2's rough range).
+    ...(o.kind === 'place' && price !== undefined ? { price_min_minor: price } : {}),
     highlights: o.highlights.map((h) => clip(h, 40)).filter((h) => h.length > 0).slice(0, 4),
     ...(o.journey ? { journey: o.journey } : {}),
     ...(o.place ? { place: { ...o.place, name: clip(o.place.name, 120), ...(o.place.address ? { address: clip(o.place.address, 200) } : {}) } } : {}),

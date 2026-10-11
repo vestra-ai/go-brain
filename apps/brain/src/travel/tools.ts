@@ -12,6 +12,7 @@ import { buildIxigoPageCard, buildOptionsCard, clip, formatInr, IXIGO_SEARCH_PAG
 import { localDay } from '../proactive/clock.js';
 import { answerLine, answerTitle, directPicks, droppedWords, ledBy, leftOff, loadWhat, plainAsk } from './answer.js';
 import { flightDetails, stayDetails, trainDetails } from './details.js';
+import { placeDetails } from './places-card.js';
 import { DEFAULT_TRIP_TZ } from './dates.js';
 import { asked } from './filters.js';
 import { stableId } from './ids.js';
@@ -57,6 +58,8 @@ export interface TravelToolDeps {
    * at a time, so each has its labelled photos and rooms too (the Server team's rev 5, R1).
    */
   showPick?: (tripId: string, pick: TopPick, more?: TopPick[]) => void;
+  /** A place card's first places, given their own place and guide in the background (places-card.ts showPlaces, rev 5 R2). */
+  showPlaces?: (tripId: string, picks: Array<{ cardId: string; optionId: string; name: string }>) => void;
   /** Where the group stays, with its position (group-stay.ts): each bus's nearest drop to it. Absent, none is said. */
   groupStay?: (tripId: string) => Promise<GroupStay | null>;
 }
@@ -384,7 +387,7 @@ export async function putUpCard(
   numbers: number[],
   given: { title: string; line: string },
   ctx: TurnCtx,
-  d: Pick<TravelToolDeps, 'results' | 'images' | 'showPick'>,
+  d: Pick<TravelToolDeps, 'results' | 'images' | 'showPick' | 'showPlaces'>,
 ): Promise<{ cardId: string; shown: number }> {
   const cardId = ctx.stableId('c_opt');
   const run = runOfSet.get(set.resultsId);
@@ -401,7 +404,7 @@ export async function putUpCard(
       const gallery = photos.map((p) => p.url);
       const details = set.optionKind === 'stay'
         ? stayDetails(option, query, people, gallery)
-        : set.optionKind === 'train' ? trainDetails(option) : set.optionKind === 'flight' ? flightDetails(option, people) : null;
+        : set.optionKind === 'train' ? trainDetails(option) : set.optionKind === 'flight' ? flightDetails(option, people) : set.optionKind === 'place' ? placeDetails(option) : null;
       return {
         n: i + 1, optionId: stableId('opt', cardId, i + 1), option, imageUrl: option.imageUrl ? await d.images.rehostUrl(option.imageUrl) : null,
         ...(details ? { details } : {}),
@@ -431,6 +434,8 @@ export async function putUpCard(
       : [];
     d.showPick?.(ctx.tripId, { page: top, name: picks[0]!.option.title, kind: set.optionKind === 'bus' ? 'bus' : 'stay', cardId, optionId: picks[0]!.optionId }, more);
   }
+  // A place card's first three: each one's own place and guide, read in the background after the card is up (rev 5 R2).
+  if (set.optionKind === 'place') d.showPlaces?.(ctx.tripId, picks.slice(0, 3).map((p) => ({ cardId, optionId: p.optionId, name: p.option.title })));
   return { cardId, shown: shown.options.length };
 }
 
