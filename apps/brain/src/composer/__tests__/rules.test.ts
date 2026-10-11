@@ -143,7 +143,11 @@ describe('what stays, said once', () => {
     expect(write).toContain('- Plain text only: no markdown');
     expect(write).toContain(`${CARD_LINE}\n`);
     expect(write).toContain('give the choices with offer_replies');
-    expect(write).toContain('their first name reaches them as a notification');
+    expect(write).toContain('address them in your message here: it reaches them as a notification');
+    // Keshav, 11 Oct ("directed messages should send @name"): speak.post makes each @name a mention (p5).
+    expect(write).toContain(
+      '- To address someone, write @ and their first name: "@Saket, tap Log in to ixigo." Write the full name after @ only when two people share a first name ("@Rahul Kapoor"). Someone you only talk about needs no @.',
+    );
     expect(write).toContain('Never write a message number ("#57")');
     expect(write).toContain('Never describe your own steps, reasons or tools, and never announce a card or a vote');
     expect(write).toContain("Never mention your tools, what they returned, or that something was refused");
