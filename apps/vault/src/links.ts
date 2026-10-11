@@ -1,5 +1,6 @@
 import { createHash, randomBytes } from 'node:crypto';
 import type { Db } from './store/people.js';
+import type { TravelField } from './store/travel.js';
 
 export const LINK_TTL_MS = 5 * 60_000;
 /** Where the vault home opens. No add_login: logins are not stored this week (master §9). */
@@ -18,6 +19,8 @@ export interface LinkRow {
   used_at: Date | null;
   session_hash: Buffer | null;
   session_until: Date | null;
+  /** add_travel: the travel details its page shows (with any it must have that aren't kept); null, every field. */
+  fields: TravelField[] | null;
 }
 
 export function hashToken(token: string): Buffer {
@@ -29,12 +32,14 @@ function mint(): { token: string; hash: Buffer; linkId: string } {
   return { token, hash: hashToken(token), linkId: `lk_${randomBytes(9).toString('base64url')}` };
 }
 
-export async function createHomeLink(db: Db, now: Date, o: { personId: string; start: LinkStart; display?: LinkDisplay }): Promise<{ token: string; expiresAt: Date }> {
+export async function createHomeLink(
+  db: Db, now: Date, o: { personId: string; start: LinkStart; display?: LinkDisplay; fields?: TravelField[] | null },
+): Promise<{ token: string; expiresAt: Date }> {
   const { token, hash, linkId } = mint();
   const expiresAt = new Date(now.getTime() + LINK_TTL_MS);
   await db.query(
-    "insert into links (link_id, token_hash, kind, person_id, start, display, expires_at, created_at) values ($1, $2, 'home', $3, $4, $5, $6, $7)",
-    [linkId, hash, o.personId, o.start, o.display ?? 'sheet', expiresAt, now],
+    "insert into links (link_id, token_hash, kind, person_id, start, display, fields, expires_at, created_at) values ($1, $2, 'home', $3, $4, $5, $6, $7, $8)",
+    [linkId, hash, o.personId, o.start, o.display ?? 'sheet', o.start === 'add_travel' && o.fields?.length ? o.fields : null, expiresAt, now],
   );
   return { token, expiresAt };
 }
@@ -57,7 +62,7 @@ export async function createPayLink(
 export async function findLink(db: Db, token: string): Promise<LinkRow | null> {
   if (!/^[A-Za-z0-9_-]{43}$/.test(token)) return null;
   const r = await db.query<LinkRow>(
-    'select link_id, kind, person_id, start, display, approval_id, expires_at, used_at, session_hash, session_until from links where token_hash = $1',
+    'select link_id, kind, person_id, start, display, approval_id, expires_at, used_at, session_hash, session_until, fields from links where token_hash = $1',
     [hashToken(token)],
   );
   return r.rows[0] ?? null;

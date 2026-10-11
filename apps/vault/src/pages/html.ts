@@ -39,10 +39,11 @@ export function homePage(embedded: { origins: readonly string[] } | null = null)
 <p class="muted">For a ticket Go books for you when the trip's ixigo account has none of yours. Only Go's booking reads them, never the chat.</p>
 <p id="travel-used" class="fine" hidden></p>
 <form id="travel-form">
-<label for="t-first">First and middle name as on your ID</label><input id="t-first" class="field" autocomplete="given-name" maxlength="40" required>
-<label for="t-last">Last name as on your ID</label><input id="t-last" class="field" autocomplete="family-name" maxlength="40" required>
-<label for="t-gender">Gender</label><select id="t-gender" class="field" required><option value="">Choose</option><option value="male">Male</option><option value="female">Female</option></select>
-<label for="t-dob">Date of birth</label><input id="t-dob" class="field" type="date" autocomplete="bday" required>
+<div data-field="first_name"><label for="t-first">First and middle name as on your ID</label><input id="t-first" class="field" autocomplete="given-name" maxlength="40" required></div>
+<div data-field="last_name"><label for="t-last">Last name as on your ID</label><input id="t-last" class="field" autocomplete="family-name" maxlength="40" required></div>
+<div data-field="gender"><label for="t-gender">Gender</label><select id="t-gender" class="field" required><option value="">Choose</option><option value="male">Male</option><option value="female">Female</option></select></div>
+<div data-field="dob"><label for="t-dob">Date of birth</label><input id="t-dob" class="field" type="date" autocomplete="bday" required></div>
+<div data-field="irctc_user_id"><label for="t-irctc">IRCTC user ID, for train tickets (optional)</label><input id="t-irctc" class="field" autocomplete="off" maxlength="35" placeholder="Never your IRCTC password"></div>
 <label class="tick-row"><input id="t-allow" type="checkbox"> Go can use these to book tickets for me</label>
 <button class="primary" type="submit">Save</button> <button id="travel-delete" type="button" hidden>Delete</button>
 <p id="travel-msg" class="msg" role="status"></p></form></section>

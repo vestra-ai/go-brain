@@ -6,7 +6,7 @@ import { masterKeyOf } from '../crypto/envelope.js';
 import { rawBody } from '../http/security.js';
 import { createHomeLink } from '../links.js';
 import { ensurePerson } from '../store/people.js';
-import { travelForBooking } from '../store/travel.js';
+import { TRAVEL_FIELDS, travelForBooking } from '../store/travel.js';
 import { logUnlock } from '../store/unlock-log.js';
 import { checkInternal } from './auth.js';
 import { PayLinkBody, openPayLink, voidPayLinks } from './pay-links.js';
@@ -17,6 +17,11 @@ const LinkBody = z.object({
   // add_travel opens it at the person's travel details.
   start: z.enum(['home', 'add_card', 'add_login', 'add_travel']).nullish(),
   display_name: z.string().min(1).max(80).nullish(),
+  /**
+   * add_travel: the travel details a booking still needs (Go's one ask for a ticket: a date of birth, the IRCTC user ID
+   * for a train); its page shows those, with any it must have that the person hasn't kept. Absent: every field.
+   */
+  fields: z.array(z.enum(TRAVEL_FIELDS)).min(1).max(TRAVEL_FIELDS.length).nullish(),
   /** 1.3 (rev 5 R8): embedded, inside the App, for the unlock only; card and travel entry stay in the browser sheet. */
   display: z.enum(['sheet', 'embedded']).nullish(),
 });
@@ -54,7 +59,7 @@ export const internalRoutes: FastifyPluginAsync<{ deps: VaultDeps }> = async (ap
     if (display === 'embedded' && start !== 'home') {
       return reply.code(409).send({ error: { code: 'conflict', message: 'adding a card or travel details opens in the browser sheet, never embedded' } });
     }
-    const link = await createHomeLink(deps.pool, now, { personId: body.data.person_id, start, display });
+    const link = await createHomeLink(deps.pool, now, { personId: body.data.person_id, start, display, fields: start === 'add_travel' ? (body.data.fields ?? null) : null });
     return { url: `${deps.env.VAULT_PUBLIC_URL}/l/${link.token}`, expires_at: link.expiresAt.toISOString() };
   });
 
@@ -94,7 +99,7 @@ export const internalRoutes: FastifyPluginAsync<{ deps: VaultDeps }> = async (ap
     const details = await travelForBooking(deps.pool, master, now, { personId, travellerPersonId: booking.traveller_person_id });
     if (!details) return reply.code(404).send({ error: { code: 'none', message: 'no travel details kept' } });
     await logUnlock(deps.pool, now, { personId, kind: 'travel_read', tripId, bookingRef: booking.ref, reason: booking.purpose });
-    return { first_name: details.first_name, last_name: details.last_name, gender: details.gender, dob: details.dob };
+    return { first_name: details.first_name, last_name: details.last_name, gender: details.gender, dob: details.dob, irctc_user_id: details.irctc_user_id ?? null };
   });
 
   app.get('/internal/both-keys', async () => {
