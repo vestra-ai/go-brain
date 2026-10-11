@@ -408,7 +408,9 @@ describe("ixigo's trip explorer", () => {
     expect(runs.map((r) => r.url)).toEqual(Array(4).fill(`${IXIGO}/plan?origin=Delhi&travelMonth=december`));
     const err = await engine.answer('plan.explore', { origin: 'Delhi', month: 'someday soon' }, { tripId: 't_goa' }).catch((e: unknown) => e);
     expect(err).toBeInstanceOf(TravelError);
-    expect(err).toMatchObject({ code: 'needs_more', message: 'month is a date written YYYY-MM-DD, any day in the month they would travel, not "someday soon".' });
+    // A month given that is no date is still refused, never silently next month: the model said something, so it hears
+    // how to say it; only a month left out is next month (#503).
+    expect(err).toMatchObject({ code: 'needs_more', message: 'month "someday soon" is not a date: give it as YYYY-MM-DD (any day in the month they would travel; left out, next month).' });
     expect(runs).toHaveLength(4);
   });
 

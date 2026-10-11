@@ -653,7 +653,7 @@ export function createEngine(d: EngineDeps) {
       // own date reading threw on "December", and the model saw no way to fix that and tried it again (prod drill, 11 Oct).
       if (input.kind === 'date') {
         const day = dateOf(v, d.now());
-        if (!day) throw new TravelError('needs_more', `${name} is a date written YYYY-MM-DD${input.about ? `, ${input.about}` : ''}, not "${clip(String(v), 40)}".`);
+        if (!day) throw new TravelError('needs_more', `${name} "${clip(String(v), 40)}" is not a date: give it as YYYY-MM-DD${input.about ? ` (${input.about})` : ''}.`);
         inputs[name] = day;
         continue;
       }
