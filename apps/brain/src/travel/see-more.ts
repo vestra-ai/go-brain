@@ -12,6 +12,11 @@ import type { Travel, TravelQuery } from './travel.js';
 import { addToVote, VOTE_MOST } from './votes.js';
 import type { TravelTapDeps } from './taps.js';
 
+/** What a "See more" toasts while its card is still coming: a tap's toast, never a line of its own when typed (typed-more.ts). */
+export const LOOKING_FOR_MORE = 'Looking for more on ixigo';
+export const MORE_ON_THE_WAY = 'More are on the way';
+export const WORKING_TOASTS: ReadonlySet<string> = new Set([LOOKING_FOR_MORE, MORE_ON_THE_WAY]);
+
 /** "See more" with nothing more: the search's own all shown, and ixigo has no next page of it. */
 export const ALL_SHOWN = "That's all ixigo has for this search";
 
@@ -58,7 +63,7 @@ export function createSeeMore(d: Pick<TravelTapDeps, 'results' | 'link' | 'log' 
     if (!row || !set || (!personal && !decisionId) || !images) return { result: 'refused', toast: 'Those options are no longer here' };
     // A second tap meanwhile (a double tap, two people, another card of the same search) would add the same options again.
     const lock = personal ? `${set.resultsId}|${o.personId}` : set.resultsId;
-    if (moreRunning.has(lock)) return { result: 'done', toast: 'More are on the way' };
+    if (moreRunning.has(lock)) return { result: 'done', toast: MORE_ON_THE_WAY };
     // Claimed before anything waits, until its card is up or it gives up.
     moreRunning.add(lock);
     let running = false;
@@ -131,7 +136,7 @@ export function createSeeMore(d: Pick<TravelTapDeps, 'results' | 'link' | 'log' 
       // the 3 s tap answer.
       running = true;
       void more().catch((err: unknown) => d.log.error({ err, cardId: o.cardId }, 'travel: See more failed'));
-      return travel ? { result: 'done', toast: 'Looking for more on ixigo' } : { result: 'done' };
+      return travel ? { result: 'done', toast: LOOKING_FOR_MORE } : { result: 'done' };
     } finally {
       if (!running) moreRunning.delete(lock);
     }

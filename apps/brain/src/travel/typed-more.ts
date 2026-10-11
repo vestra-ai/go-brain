@@ -6,7 +6,7 @@
 import type { DirectAnswer } from '../composer/context.js';
 import { PERSONAL_KINDS } from './cards.js';
 import type { ResultsStore } from './results.js';
-import type { SeeMore } from './see-more.js';
+import { WORKING_TOASTS, type SeeMore } from './see-more.js';
 
 /** How long after its card a "more" is still about it. */
 export const MORE_WITHIN_MS = 2 * 60 * 60_000;
@@ -40,8 +40,10 @@ export function typedMoreAnswer(d: { seeMore: SeeMore; results: Pick<ResultsStor
     const row = await d.results.card(tripId, shown.card.card_id);
     if (!row || (!row.card.decision_id && !PERSONAL_KINDS.has(row.optionKind))) return false;
     const answer = await d.seeMore({ tripId, cardId: row.cardId, personId, key: said.message_id });
-    // Its card follows, as a tap's does; what a tap would toast is said.
-    if (answer.toast) ctx.lines.push(`${answer.toast}.`);
+    // Its card follows, as a tap's does. What a tap would toast is said only when it is an outcome (all shown, the vote
+    // closed): a "still looking" toast would be a second line beside the live card's "On it." (the lead's tone drill,
+    // 11 Oct: "Looking for more on ixigo." under "On it.").
+    if (answer.toast && !WORKING_TOASTS.has(answer.toast)) ctx.lines.push(`${answer.toast}.`);
     ctx.answered = true;
     return true;
   };
