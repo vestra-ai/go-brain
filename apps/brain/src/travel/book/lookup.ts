@@ -136,7 +136,8 @@ async function suggestionsIn(s: ReturnType<typeof suggestionsOf>, body: unknown)
 }
 
 /** What ixigo's suggestions give for the words: the place, or the entries the model chooses from, or nothing. */
-export type Picked = { place: Record<string, unknown> } | { choose: Suggestion[] } | null;
+/** nearest: the place has no entry of its own in the box, and this is the nearest ixigo lists for it (pickSuggestion). */
+export type Picked = { place: Record<string, unknown>; nearest?: true } | { choose: Suggestion[] } | null;
 
 const tokens = (t: string): string[] => norm(t).split(/[^\p{L}\p{N}]+/u).filter((x) => x.length > 0);
 const HOME = 'India';
@@ -149,9 +150,16 @@ const HOME = 'India';
  * 3. else the model chooses from the entries that fit (Udaipur City (UDZ) or Udaipur (UDPU)).
  * An entry fits when every word of the ask is in its name or second line. Entries in India come first unless none fits.
  */
-export function pickSuggestion(words: string, list: Suggestion[]): Picked {
+export function pickSuggestion(words: string, list: Suggestion[], o: { nearest?: boolean } = {}): Picked {
   if (list.length === 0) return null;
   const asked = tokens(words);
+  // A place with no airport of its own (Varkala): ixigo's flight box lists the airports near it, the nearest first, and
+  // none is the place by its own name. That first (in India, first) is the one, never a choice for anyone to make
+  // (Keshav's Varkala trip, 11 Oct: every flights search stopped on "TRV, TCR or COK?").
+  if (o.nearest && !list.some((s) => asked.every((t) => tokens(`${s.name} ${s.placeName}`).includes(t)))) {
+    const first = list.find((s) => s.country === null || s.country === HOME) ?? list[0]!;
+    return { place: first.place, nearest: true };
+  }
   const fitting = list.filter((s) => {
     const seen = new Set(tokens(`${s.name} ${s.line}`));
     return asked.every((t) => seen.has(t));
