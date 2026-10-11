@@ -21,7 +21,7 @@ import { createIxigoLogin, HELLO_LINE } from '../../travel/login.js';
 import { createFakeTravel } from '../../travel/mcp-travel.js';
 import { createResultsStore } from '../../travel/results.js';
 import { travelTools } from '../../travel/tools.js';
-import { createComposer, logTurn, OVER_BUDGET, TROUBLE } from '../turn.js';
+import { createComposer, logTurn, OVER_BUDGET, TROUBLE, TYPING_MIN_MS } from '../turn.js';
 import { ASK_HOW_MUCH, renderMessageWake, renderSetupWake, renderTripChangeWake } from '../wakes.js';
 
 let db: Awaited<ReturnType<typeof withSchema>>;
@@ -46,6 +46,8 @@ function room(o: {
   const calls: Array<{ method: string; params: any }> = [];
   const notes: Array<{ method: string; params: any }> = [];
   const released: string[] = [];
+  // The waits a post held for typing's minimum, recorded instead of slept.
+  const slept: number[] = [];
   const link = createServerLink({ pool: db.pool, log: silentLog, timeoutMs: 1_000 });
   const answers: Record<string, () => Record<string, unknown>> = {
     post_message: () => ({ message_id: `m_go_${calls.length}`, seq: 100 + calls.length }),
@@ -87,8 +89,9 @@ function room(o: {
     client: model.client, model: 'claude-sonnet-5-5', claimNew: o.claimNew ?? (async () => []),
     release: o.release ?? (async (_turnId, ids) => { released.push(...ids); }),
     ...(o.budget ? { budget: o.budget } : {}),
+    sleep: async (ms) => { slept.push(ms); },
   });
-  return { tripId, calls, notes, link, model, composer, pack, speak, released, context, posts: () => calls.filter((c) => c.method === 'post_message') };
+  return { tripId, calls, notes, slept, link, model, composer, pack, speak, released, context, posts: () => calls.filter((c) => c.method === 'post_message') };
 }
 
 const item = (tripId: string, m: Message, namesGo: boolean): DeskItem => ({
@@ -136,6 +139,71 @@ describe('a composer turn', () => {
     expect(r.posts()).toHaveLength(1);
     expect(r.notes.map((x) => x.params.on)).toEqual([true, false]);
     // A tool call is not writing: a silent turn never shows it (the chatter test above).
+  });
+
+  // Keshav, 11 Oct: "Go is typing…" showed only when @Go was in the message. On an untagged line it went on at Go's last
+  // words, well under a second before the post, which the App never drew; a turn that searched first showed none until
+  // its final text, and a lane's answer with no model call never showed it at all.
+  describe('typing on a turn nobody named Go in', () => {
+    const lookup = (seen: boolean[], r: () => ReturnType<typeof room>): QuickTool<Record<string, never>> => ({
+      name: 'lookup', description: 'Looks something up.', input: z.object({}),
+      run: async () => {
+        seen.push(r().notes.some((x) => x.params.on === true));
+        return { found: 3 };
+      },
+    });
+
+    it('goes on as the model starts a tool that acts (a search), before the tool runs, and off once the post lands', async () => {
+      const q = msg(5, 'p_kabir', 'what are stays like in Anjuna');
+      const seen: boolean[] = [];
+      let rr: ReturnType<typeof room> | undefined;
+      const r = room({ messages: [q], extraTools: [lookup(seen, () => rr!)], script: [{ tools: [{ name: 'lookup', input: {} }] }, { text: 'Three under 5k, all near the flea market.' }] });
+      rr = r;
+      await turn(r, [item(r.tripId, q, false)]);
+      expect(seen).toEqual([true]);
+      expect(r.posts()).toHaveLength(1);
+      expect(r.notes.map((x) => x.params.on)).toEqual([true, false]);
+    });
+
+    it('never goes on for a turn that only reads memory and stays silent', async () => {
+      const q = msg(6, 'p_meher', 'haha that was a great trip last year');
+      const recall: QuickTool<Record<string, never>> = { name: 'recall', description: 'Searches the chat.', input: z.object({}), run: async () => ({ lines: [] }) };
+      const r = room({ messages: [q], extraTools: [recall], script: [{ tools: [{ name: 'recall', input: {} }] }, { tools: [{ name: 'stay_silent', input: { reason: 'banter' } }] }] });
+      await turn(r, [item(r.tripId, q, false)]);
+      expect(r.posts()).toEqual([]);
+      expect(r.notes).toEqual([]);
+      expect(r.slept).toEqual([]);
+    });
+
+    it("holds a quick post until typing has shown its minimum, so the App draws it; a turn that names Go starts typing at once and never waits", async () => {
+      const q = msg(7, 'p_kabir', 'anyone know if Anjuna has an ATM?');
+      const r = room({ messages: [q], script: [{ text: 'Yes, a few along the main road.' }] });
+      await turn(r, [item(r.tripId, q, false)]);
+      expect(r.slept).toHaveLength(1);
+      expect(r.slept[0]).toBeGreaterThan(TYPING_MIN_MS - 1_000);
+      expect(r.slept[0]).toBeLessThanOrEqual(TYPING_MIN_MS);
+      expect(r.notes.map((x) => x.params.on)).toEqual([true, false]);
+      const ask = msg(8, 'p_arjun', '@Go is there an ATM in Anjuna?');
+      const tagged = room({ messages: [ask], script: [{ text: 'Yes, a few along the main road.' }] });
+      await turn(tagged, [item(tagged.tripId, ask, true)]);
+      expect(tagged.slept).toEqual([]);
+      expect(tagged.notes.map((x) => x.params.on)).toEqual([true, false]);
+    });
+
+    it("a lane's answer with no model call shows typing too, held its minimum, then off", async () => {
+      const q = msg(9, 'p_priya', 'stays in Anjuna for 6 to 9 Nov');
+      const r = room({ messages: [q], script: [] });
+      r.context.addDirect(async ({ ctx }) => {
+        ctx.lines.push('Stays in Anjuna for 6 to 9 Nov, from ₹4,800 a night.');
+        ctx.answered = true;
+        return true;
+      });
+      await turn(r, [item(r.tripId, q, false)]);
+      expect(r.posts().map((p) => p.params.text)).toEqual(['Stays in Anjuna for 6 to 9 Nov, from ₹4,800 a night.']);
+      expect(r.slept).toHaveLength(1);
+      expect(r.notes.map((x) => x.params.on)).toEqual([true, false]);
+      expect(r.model.bodies).toEqual([]);
+    });
   });
 
   it('the greeting: hello only, and the model is not told to open a vote', async () => {

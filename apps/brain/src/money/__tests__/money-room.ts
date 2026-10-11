@@ -80,7 +80,7 @@ export async function startMoneyRoom(o: { script: Script }) {
     PAY_RAIL: 'fake',
   });
   const model = fakeAnthropic(o.script);
-  const b = await buildBrain(env, { pool: db.pool, anthropic: model.client, logger: false, timings: { waitMs: 300, deskPollMs: 50, deskRetryMs: [50, 100] } });
+  const b = await buildBrain(env, { pool: db.pool, anthropic: model.client, logger: false, timings: { waitMs: 300, deskPollMs: 50, deskRetryMs: [50, 100], typingMinMs: 0 } });
   built = b;
   const travel = new FakeTravel(now);
   b.brain.travel = travel;

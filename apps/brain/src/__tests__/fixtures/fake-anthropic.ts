@@ -79,7 +79,10 @@ export function fakeAnthropic(script: Script, side: (body: any) => string = () =
             await wait();
             if (r.throws) throw r.throws;
             if (r.text) yield { type: 'content_block_delta', index: 0, delta: { type: 'text_delta', text: r.text } };
-            for (let k = 0; k < tools.length; k++) yield { type: 'content_block_delta', index: k + 1, delta: { type: 'input_json_delta', partial_json: '{}' } };
+            for (let k = 0; k < tools.length; k++) {
+              yield { type: 'content_block_start', index: k + 1, content_block: { type: 'tool_use', id: `toolu_${n}_${k}`, name: tools[k]!.name, input: {} } };
+              yield { type: 'content_block_delta', index: k + 1, delta: { type: 'input_json_delta', partial_json: '{}' } };
+            }
           },
           async finalMessage() {
             if (r.throws) throw r.throws;
