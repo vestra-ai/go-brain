@@ -70,7 +70,7 @@ describe('flights there and back, as pairs priced there and back', () => {
     expect(first.facts).toMatchObject({
       back_flights: 'IX1196', back_depart_at: '2026-11-16T19:05:00+05:30', there_fare_minor: 863_000, back_fare_minor: 913_000,
       pair_price: "ixigo's own price for this pair", total_for_group: '₹70,000 for 4',
-      lock: 'Lock Price ₹899 a person for the pair, holds 48 h', lock_fee_minor: 89_900, lock_hours: 48,
+      lock: 'Lock Price ₹899 a person for the pair, holds 48 h', lock_fee_minor: 89_900, lock_hours: 48, arrival_airport: 'Dabolim (GOI)',
     });
     // A pair ixigo's page didn't price: the two fares added up, said as such.
     const other = got.options[1]!;
