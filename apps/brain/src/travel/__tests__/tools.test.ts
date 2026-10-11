@@ -604,6 +604,32 @@ describe("a shared thing's card is its vote", () => {
     expect(lb.link.sent('close_vote')).toHaveLength(closes);
   });
 
+  // #459 with #469: a card of 10 that joins an open vote of 10 fills it to the most one vote takes.
+  it('gives a card that fills the open stays vote to its most no See more, the vote having no room for more', async () => {
+    const stay = (area: string, i: number) => ({
+      kind: 'stay' as const, title: `${area} ${i}`, priceMinor: 500_000, totalMinor: 1_500_000, currency: 'INR', priceNote: 'per night, per room', highlights: [], facts: { nights: 3 },
+      sourceUrl: `https://www.ixigo.com/hotels/${(area === 'Baga' ? 9700 : 9800) + i}/details?hName=${area}%20${i}`,
+    });
+    const save = (area: string, n: number) =>
+      results.save({ tripId: 't_goa', optionKind: 'stay', source: 'search', query: { area }, options: Array.from({ length: n }, (_, i) => stay(area, i + 1)), checkedAt: '2026-10-07T12:00:00.000Z' });
+    let open: Array<{ decision_id: string; voted: number; options: Array<{ label: string }> }> = [];
+    const server = {
+      request: async (method: string, params: unknown) =>
+        method === 'read_trip' ? { ...GOA_TRIP, decisions: open.map((v) => ({ ...v, status: 'open' })) } : lb.link.request(method as 'open_vote', params as never),
+    } as unknown as typeof lb.link;
+    const candolim = await save('Candolim', 10);
+    const first = (await lb.tools.run('show_options', { line: 'Stays in Candolim.', results_id: candolim.resultsId, title: 'Stays in Candolim' }, lb.ctx({ turnId: 'turn_fill1', link: server }))) as any;
+    open = [{ decision_id: first.decision_id, voted: 0, options: Array.from({ length: 10 }, (_, i) => ({ label: `Candolim ${i + 1}` })) }];
+    const baga = await save('Baga', 12);
+    const ctx = lb.ctx({ turnId: 'turn_fill2', link: server });
+    const joined = (await lb.tools.run('show_options', { line: 'Stays in Baga.', results_id: baga.resultsId, title: 'Stays in Baga' }, ctx)) as any;
+    expect(joined.decision_id).toBe(first.decision_id);
+    const card = C.OptionsCard.parse(ctx.cards[0]);
+    expect(card.options).toHaveLength(10);
+    // 20 in the vote now, the most: no See more, though the search has two more.
+    expect(card.actions).toEqual([]);
+  });
+
   it("never puts a ticket to a group vote: a train's card is each traveller's own pick, and the model is told so", async () => {
     const found = (await lb.tools.run('search_trains', { from: 'Delhi', to: 'Goa', date: '2026-11-06' }, lb.ctx({ turnId: 'turn_tr1' }))) as any;
     const showCtx = lb.ctx({ turnId: 'turn_tr2' });

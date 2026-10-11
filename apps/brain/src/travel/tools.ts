@@ -27,7 +27,7 @@ import { toResultOption, unseenNumbers, type OptionKind, type ResultOption, type
 import type { SearchWake } from './search-wake.js';
 import { Clock, MUST_HAVES, type Travel, type TravelKind, type TravelOption, type TravelQuery, type TravelSearch } from './travel.js';
 import { notLoadedLine, stillNotLoadedLine, TRIES, tryAgain, waitFor } from './try-again.js';
-import { openVoteFromCard } from './votes.js';
+import { openVoteFromCard, VOTE_MOST } from './votes.js';
 
 export interface TravelToolDeps {
   /**
@@ -494,7 +494,8 @@ export async function putUpCard(
       d.log?.warn({ err: String(err).slice(0, 200), cardId }, 'travel: a card went up without its vote');
       return null;
     });
-    if (voted && voted.ok) shown = (await d.results.setCardDecision(ctx.tripId, cardId, voted.decisionId, more)) ?? shown;
+    // See more only while the vote has room: a card that joined the open vote (votes.ts) may have filled it.
+    if (voted && voted.ok) shown = (await d.results.setCardDecision(ctx.tripId, cardId, voted.decisionId, more && (voted.size ?? 0) < VOTE_MOST)) ?? shown;
   }
   ctx.cards.push(shown);
   ctx.lines.push(given.line);
