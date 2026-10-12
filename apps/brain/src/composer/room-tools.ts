@@ -98,7 +98,15 @@ const UpdateTripInput = z.object({
     ),
   dates: z.object({ start: z.iso.date(), end: z.iso.date() }).optional(),
   vibe: z.array(z.string().min(1).max(40)).max(12).optional(),
-  decision_id: z.string().min(1).max(64).optional().describe('For a title, place or dates: the closed vote that decided it, like d_place (the record shows it).'),
+  decision_id: z.string().min(1).max(64).optional().describe('For a place or dates: the closed vote that decided it, like d_place (the record shows it).'),
+  agreed_message_ids: z
+    .array(z.string().min(1).max(64))
+    .max(30)
+    .optional()
+    .describe(
+      'For a place or dates with no vote: the proposal\'s message number first, then each reply agreeing ("yes", "works"). ' +
+        'Saved when they and those who reacted 👍 or ✅ to the proposal are more than half of the trip.',
+    ),
   stay: z
     .string()
     .min(1)
@@ -194,6 +202,10 @@ export function roomTools(o: { now: () => Date; pool: Pool; travel?: () => Trave
           tally: d.options.map((op, k) => `${inlineData(op.label)} ${d.tally[k] ?? 0}`),
           voted: d.voted,
           of: d.of,
+          // A vote Go closes wakes nobody after (closed_by_go): what it settled is saved in this turn (Keshav, 12 Oct).
+          ...(won
+            ? { next: 'Save what it settled now with update_trip and its decision_id (dates, place or name), or for a stay continue as the stay vote does.' }
+            : {}),
         };
       } catch (e) {
         if (codeOf(e) === 409) return { ok: false, error: 'That vote is not open.' };
@@ -207,23 +219,25 @@ export function roomTools(o: { now: () => Date; pool: Pool; travel?: () => Trave
     name: 'update_trip',
     description:
       "Change the trip's title (its name), place, dates, vibe or the stay the group wants: you change them yourself, never send anyone to the App for it. " +
-      "The title, place and dates change by the group's vote (decision_id), applied the moment it closes; anyone asking to change one gets " +
-      "the vote opened at once (open_vote), never a refusal. A trip of one has no vote: their word is the decision, applied at once.",
+      "The place and dates change by the group's vote (decision_id), applied the moment it closes; anyone asking to change one gets " +
+      "the vote opened at once (open_vote), never a refusal. A rename (the trip's name) is done at once on anyone's ask, never a vote. " +
+      'A trip of one has no vote: their word is the decision, applied at once.',
     input: UpdateTripInput,
     async run(a, ctx) {
       // The trip's one writer: the checks (who decided it, a stay or place a vote decided, days before today) and the request are there.
-      const { decision_id: decisionId, ...change } = a;
+      const { decision_id: decisionId, agreed_message_ids: agreedMessages, ...change } = a;
       const r = await saveTrip(
         o,
         { link: ctx.link, tripId: ctx.tripId, pack: ctx.pack, requestId: () => ctx.stableId('go_trip') },
-        { ...change, ...(decisionId ? { decisionId } : {}) },
+        { ...change, ...(decisionId ? { decisionId } : {}), ...(agreedMessages ? { agreedMessages } : {}) },
       );
       if (!r.ok && r.notDecided) {
         return {
           ok: false,
           error: r.error,
           tell_the_room:
-            "When a closed vote in the record decided it, call update_trip again with the vote's id. Otherwise open the vote on it now " +
+            "When a closed vote in the record decided it, call update_trip again with the vote's id; when more than half of the trip " +
+            'agreed in the chat, again with agreed_message_ids. Otherwise open the vote on it now ' +
             '(open_vote, one tap each) and say so in one short line, or point at the vote already open on it: never a refusal or a ' +
             'lecture. Never say it changed, and never say who said or picked what unless their own message says it.',
         };

@@ -11,7 +11,7 @@ import { DEFAULT_TZ, localDay } from '../proactive/clock.js';
 import type { OptionPlace } from '../travel/results.js';
 import type { ResolvedPlace, Travel } from '../travel/travel.js';
 import { clip } from '../composer/sanitize.js';
-import type { TripPack } from './pack.js';
+import { messageByRef, type TripPack } from './pack.js';
 
 export interface TripChange {
   title?: string | undefined;
@@ -21,25 +21,47 @@ export interface TripChange {
   stay?: string | undefined;
   /** 1.1: the group's budget per person, in minor units (set_budget, travel/trip-budget.ts). */
   budgetPerPersonMinor?: number | undefined;
-  /** The closed vote that decided a title, place or dates change (groupDecided). */
+  /** The closed vote that decided a place or dates change (groupDecided). */
   decisionId?: string | undefined;
   /** A caller that holds the vote's winner itself: a place card's vote applied on close (placeOnClose). */
   agreed?: true | undefined;
+  /** The chat's agreement on a place or dates with no vote: the proposal's message first, then the replies agreeing (chatAgreed). */
+  agreedMessages?: readonly string[] | undefined;
 }
 
 /**
- * Who changes where the trip goes, its dates or its title: the group's vote, applied the moment it closes, and nobody's
- * word alone, the organizer's neither (Keshav, 11 Oct, after the Varkala trip: "for change of place voting was right
- * move but remove the organizer stuff"). A trip of one has no vote: their word is the decision.
+ * Who changes where the trip goes or its dates: the group's vote, applied the moment it closes, and nobody's word alone,
+ * the organizer's neither (Keshav, 11 Oct, after the Varkala trip: "for change of place voting was right move but remove
+ * the organizer stuff"). Its name is anyone's ask (saveTrip). A trip of one has no vote: their word is the decision.
  */
 export function groupDecided(pack: TripPack, decisionId?: string): boolean {
   if (pack.trip.people.length <= 1) return true;
   return decisionId !== undefined && pack.trip.decisions.some((x) => x.decision_id === decisionId && x.status === 'closed');
 }
 
-/** What Go hears when a title, place or dates change has no closed vote behind it. */
+/** A reaction that agrees: a thumbs up (any skin tone), a check, OK or praise hands, 100, a heart or a fire. */
+const AGREES = ['👍', '✅', '✔', '👌', '🙌', '💯', '❤', '🔥'];
+
+/**
+ * The group agreed in the chat (Keshav, 12 Oct: "when the AI figures out something it should update, because the entire UI
+ * is reactive"): the people behind the messages given (the proposal first, then the replies that agree) and those who
+ * reacted to the proposal agreeing (4 ✅ on Aryan's "1 to 4 Nov") are more than half of the trip's people.
+ */
+export function chatAgreed(pack: TripPack, refs: readonly string[] | undefined): boolean {
+  const found = (refs ?? []).map((r) => messageByRef(pack.messages, r)).filter((m) => m !== undefined);
+  if (found.length === 0) return false;
+  const people = new Set(pack.trip.people.map((p) => p.person_id));
+  const agreed = new Set<string>();
+  for (const m of found) if (m.author.kind === 'person' && people.has(m.author.person_id)) agreed.add(m.author.person_id);
+  for (const r of found[0]!.reactions) {
+    if (r.person_id && people.has(r.person_id) && AGREES.some((e) => r.emoji.startsWith(e))) agreed.add(r.person_id);
+  }
+  return agreed.size * 2 > people.size;
+}
+
+/** What Go hears when a place or dates change has no closed vote behind it. */
 export const NOT_DECIDED =
-  "The group's vote changes the trip's title, place or dates: give the closed vote (decision_id), or open the vote on it now.";
+  "The group's vote changes the trip's place or dates: give the closed vote (decision_id), or open the vote on it now.";
 
 export interface SaveTripDeps {
   pool: Pool;
@@ -87,7 +109,9 @@ export async function saveTrip(
     ...(a.stay ? { stay: a.stay } : {}),
   };
   if (Object.keys(fields).length === 0 && !a.destination) return { ok: false, error: 'Nothing to change.' };
-  if ((a.title || a.destination || a.dates) && !a.agreed && !groupDecided(at.pack, a.decisionId)) {
+  // A rename is anyone's ask, never a vote (Keshav, 12 Oct: voting is for important things, "not for faltu things like
+  // changing the name of the group"): only where the trip goes and its dates wait for the group.
+  if ((a.destination || a.dates) && !a.agreed && !groupDecided(at.pack, a.decisionId) && !chatAgreed(at.pack, a.agreedMessages)) {
     return { ok: false, error: NOT_DECIDED, notDecided: true };
   }
   let note: string | undefined;

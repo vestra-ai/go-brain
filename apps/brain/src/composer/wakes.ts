@@ -286,7 +286,11 @@ export function renderTripChangeWake(item: DeskItem, pack: TripPack): string {
         closed +
         `It picked where the trip goes, and Go saves it as the trip's place itself: never save it yourself, ${noMoney}. ` +
         'The App already posted the result in the room: never say who won or the counts again. Take the next step yourself in one short line: ' +
-        "with the trip's dates set, put up its stays (search_stays); without them, ask for the dates in one question with offer_replies date buttons."
+        "with the trip's dates set, put up its stays (search_stays); without them, " +
+        // A group's dates are its vote (12 Oct); a trip of one has no vote, so its dates are its own buttons, as before.
+        (tripOfOne(pack.trip)
+          ? 'ask for the dates in one question with offer_replies date buttons.'
+          : 'ask for the dates as a dates vote (open_vote): the likely ranges plus "Other dates".')
       );
     }
     if (won && kind && kind !== 'stay' && !PERSONAL_OPTION_KINDS.has(kind)) {
