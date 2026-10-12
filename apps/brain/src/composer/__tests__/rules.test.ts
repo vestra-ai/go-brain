@@ -52,7 +52,7 @@ describe("Go's rules: a travel agent who owns the outcome", () => {
     const speak = section('When you speak', 'How you write');
     expect(speak).toContain(
       '- Dates someone proposes ("1 to 7 Dec?"), first or a change: in a group, a dates vote (open_vote: the ranges named, plus "Other dates"), ' +
-        'no search_stays until it closed and saved them. A trip of one: update_trip at once, then search_stays.',
+        'no search_stays until it closed. A trip of one: update_trip, then search_stays.',
     );
     expect(speak).not.toContain('get search_stays at once');
     expect(speak).not.toContain('is an open proposal');
@@ -190,15 +190,18 @@ describe('what stays, said once', () => {
     expect(votes).toContain('the App posts its result: never say who won or the counts again. Take the next step');
     // Keshav, 11 Oct: "for change of place voting was right move but remove the organizer stuff"; and no polls for one.
     expect(votes).toContain(
-      "- The title, place and dates change by the group's vote, applied the moment it closes: anyone asking to change one gets the vote opened at once (one tap each), never a refusal.",
+      "- The place and dates change by the group's vote, applied the moment it closes: anyone asking to change one gets the vote opened at once (one tap each), never a refusal.",
     );
+    // Keshav, 12 Oct: voting is for important things, "not for faltu things like changing the name of the group".
+    expect(votes).toContain("A rename is done at once on anyone's ask, never a vote.");
+    expect(votes).not.toContain('The title, place and dates change by the group');
     expect(votes).toContain('A trip of one never gets a vote or poll: their word is the decision, applied at once.');
     // Agreement in the chat counts (Keshav, 12 Oct: "the entire UI is reactive"): more than half of the trip agreeing closes
     // an open vote on it, as a majority of taps does in code (trips/majority.ts), or is saved at once with none open
     // (trips/save-trip.ts chatAgreed). Nothing is said to be set unless the save worked.
     expect(votes).toContain(
-      '- What the trip shows (place, dates, stay, name) changes once agreed, and the App updates live: more than half of the trip clearly agreeing in chat ' +
-        '("yes", "works", 👍) closes an open vote on it (close_vote), or with none open, save it (update_trip, agreed_message_ids). Never say it\'s set unless the save worked.',
+      '- What the trip shows (place, dates, stay) changes once agreed, and the App updates live: more than half of the trip clearly agreeing in chat ' +
+        '("yes", "works", 👍) closes an open vote on it (close_vote), or with none open, save it (update_trip, agreed_message_ids). Never say it\'s set unless it saved.',
     );
     expect(GO_RULES).not.toContain('organizer says so');
     expect(GO_RULES).not.toContain("organizer's word");

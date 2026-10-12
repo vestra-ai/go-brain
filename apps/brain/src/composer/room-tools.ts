@@ -98,13 +98,13 @@ const UpdateTripInput = z.object({
     ),
   dates: z.object({ start: z.iso.date(), end: z.iso.date() }).optional(),
   vibe: z.array(z.string().min(1).max(40)).max(12).optional(),
-  decision_id: z.string().min(1).max(64).optional().describe('For a title, place or dates: the closed vote that decided it, like d_place (the record shows it).'),
+  decision_id: z.string().min(1).max(64).optional().describe('For a place or dates: the closed vote that decided it, like d_place (the record shows it).'),
   agreed_message_ids: z
     .array(z.string().min(1).max(64))
     .max(30)
     .optional()
     .describe(
-      'For a title, place or dates with no vote: the proposal\'s message number first, then each reply agreeing ("yes", "works"). ' +
+      'For a place or dates with no vote: the proposal\'s message number first, then each reply agreeing ("yes", "works"). ' +
         'Saved when they and those who reacted 👍 or ✅ to the proposal are more than half of the trip.',
     ),
   stay: z
@@ -219,8 +219,9 @@ export function roomTools(o: { now: () => Date; pool: Pool; travel?: () => Trave
     name: 'update_trip',
     description:
       "Change the trip's title (its name), place, dates, vibe or the stay the group wants: you change them yourself, never send anyone to the App for it. " +
-      "The title, place and dates change by the group's vote (decision_id), applied the moment it closes; anyone asking to change one gets " +
-      "the vote opened at once (open_vote), never a refusal. A trip of one has no vote: their word is the decision, applied at once.",
+      "The place and dates change by the group's vote (decision_id), applied the moment it closes; anyone asking to change one gets " +
+      "the vote opened at once (open_vote), never a refusal. A rename (the trip's name) is done at once on anyone's ask, never a vote. " +
+      'A trip of one has no vote: their word is the decision, applied at once.',
     input: UpdateTripInput,
     async run(a, ctx) {
       // The trip's one writer: the checks (who decided it, a stay or place a vote decided, days before today) and the request are there.

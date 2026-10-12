@@ -188,8 +188,9 @@ describe('the room\'s tools', () => {
   });
 
   // Keshav, 11 Oct, after the Varkala trip: "for change of place voting was right move but remove the organizer stuff".
-  // Nobody's word moves a group's title, place or dates, the organizer's neither: the vote does, and an ask opens one.
-  it("changes the title, place or dates by the group's closed vote, and a trip of one on their word", async () => {
+  // Nobody's word moves a group's place or dates, the organizer's neither: the vote does, and an ask opens one. Its name
+  // is anyone's ask (Keshav, 12 Oct: voting is "not for faltu things like changing the name of the group").
+  it("changes the place or dates by the group's closed vote, the name on anyone's ask, and a trip of one on their word", async () => {
     const dates = { start: '2026-12-01', end: '2026-12-07' };
     const at = (extra: ReturnType<typeof msg>[], decisions: ReturnType<typeof vote>[] = [], people?: number) => {
       const f = fakeLink({ update_trip: () => ({ seq: 80 }) });
@@ -201,7 +202,7 @@ describe('the room\'s tools', () => {
     };
     // A member's ask, the organizer's "Yes switch", two people agreeing: no vote, so the vote is opened, never a refusal.
     const asked = at([msg(61, 'p_priya', 'switch it to South Goa'), msg(62, 'p_rahul', 'Yes switch'), msg(63, 'p_arjun', 'yes 1 to 7 Dec works')]);
-    for (const a of [{ dates }, { destination: 'South Goa' }, { title: 'Bakchod launde' }]) {
+    for (const a of [{ dates }, { destination: 'South Goa' }]) {
       expect(await tool('update_trip').run(a, asked.ctx)).toMatchObject({
         ok: false, error: NOT_DECIDED, tell_the_room: expect.stringContaining('open the vote on it now (open_vote, one tap each)'),
       });
@@ -211,6 +212,10 @@ describe('the room\'s tools', () => {
     expect(told.tell_the_room).toContain('never say who said or picked what unless their own message says it');
     expect(told.tell_the_room).not.toContain('organizer');
     expect(asked.calls).toEqual([]);
+    // A rename in a group: saved at once, no decision_id and no vote.
+    const named = at([msg(61, 'p_priya', 'rename the group to Bakchod launde')]);
+    expect(await tool('update_trip').run({ title: 'Bakchod launde' }, named.ctx)).toEqual({ ok: true, changed: ['title'] });
+    expect(named.calls[0]?.params).toMatchObject({ title: 'Bakchod launde' });
     // A closed vote: applied, the 7 to 0 rename too. An open vote decides nothing yet.
     const voted = at([], [vote({ decision_id: 'd_dates', status: 'closed', result_index: 0 })]);
     expect(await tool('update_trip').run({ dates, decision_id: 'd_dates' }, voted.ctx)).toEqual({ ok: true, changed: ['dates'] });
