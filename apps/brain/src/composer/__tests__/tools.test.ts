@@ -170,8 +170,10 @@ describe('the room\'s tools', () => {
       if (p.decision_id === 'd_old') throw new SocketCallError(409, 'vote not open', 'conflict');
       return { decision: closed, seq: 61 };
     } });
+    // A vote Go closes wakes nobody after it (closed_by_go): its result says to save what it settled now (12 Oct).
     expect(await tool('close_vote').run({ decision_id: 'd_stay' }, ctx)).toEqual({
       ok: true, winner: '<data>Villa Sol</data>', tally: ['<data>Villa Sol</data> 3', '<data>Casa Azul</data> 1'], voted: 4, of: 5,
+      next: 'Save what it settled now with update_trip and its decision_id (dates, place or name), or for a stay continue as the stay vote does.',
     });
     expect(await tool('close_vote').run({ decision_id: 'd_old' }, ctx)).toEqual({ ok: false, error: 'That vote is not open.' });
   });
