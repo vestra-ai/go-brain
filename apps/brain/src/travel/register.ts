@@ -49,6 +49,7 @@ import { budgetNow, budgetTool, createTripBudgets, stayCap } from './trip-budget
 import { showBusDrops } from './bus-drops.js';
 import { saveTrip } from '../trips/save-trip.js';
 import { placeOnClose, placeOptions, showPlaces, type PlacePick } from './places-card.js';
+import { createMajorityClose } from '../trips/majority.js';
 import { optionDetailsHandler } from './option-details.js';
 import { showPickPhotos, type TopPick } from './pick-photos.js';
 import type { TravelKind, TravelQuery } from './travel.js';
@@ -240,6 +241,9 @@ export const registerTravel: RegisterLane = async (brain) => {
   // The trip's itinerary from its dates and bookings: Go writes it, the App's Itinerary tab shows it (travel/itinerary.ts).
   const itinerary = createItinerary({ link: brain.door.link, packs: brain.packs, log: brain.log, placesFor: stayPlaces(results) });
   brain.tripLog.onEvent((ev) => itinerary.onEvent(ev));
+  // A vote Go opened closes once one option has more than half of the trip's people (trips/majority.ts).
+  const majority = createMajorityClose({ link: brain.door.link, packs: brain.packs, log: brain.log });
+  brain.tripLog.onEvent((ev) => majority.onEvent(ev));
   brain.onStop(function stopItineraryRewrites() {
     return itinerary.settled();
   });
