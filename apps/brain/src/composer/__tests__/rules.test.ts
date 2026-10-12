@@ -37,7 +37,7 @@ describe("Go's rules: a travel agent who owns the outcome", () => {
   it('asks at most one question a turn, never two in one message, only when it blocks, and always with buttons: dates as likely ranges', () => {
     expect(section('How you work', 'When you speak')).toContain(
       '- At most one question a turn, never two in one message, only when nothing can move without the answer, and always with its choices as offer_replies buttons, ' +
-        'never in words alone: dates get their likely ranges ("1 to 7 Dec", "8 to 14 Dec", "Other dates").',
+        'never in words alone: dates get their likely ranges ("1 to 7 Dec", "8 to 14 Dec", "Other dates"), in a group as a vote.',
     );
   });
 
@@ -45,16 +45,16 @@ describe("Go's rules: a travel agent who owns the outcome", () => {
   // waited ("Once a couple of you agree, I'll pull up stays"). A proposal is searched at once; only agreement moves the trip.
   // Keshav, 12 Oct ("polls are needed for date adjustments when more than 1 person in group, they are not coming"): prod
   // t_4426539b31290625, Saket's "1 to 5 Nov" got stays and no vote, and the trip never got dates. A group's proposed dates
-  // open the dates vote in the same turn; a trip of one's are saved at once.
-  it('searches stays for proposed dates at once; a group gets a dates vote the same turn, a trip of one has them saved', () => {
+  // open the dates vote; a trip of one's are saved at once. After the demo (Ankur, Saket, Keshav, 12 Oct): one person's
+  // tap on a date button went straight to stays, and the group picked a stay and skipped the dates vote: a group's stays
+  // wait for the dates vote to close.
+  it("a group's proposed dates open a dates vote, and no stays until it closed; a trip of one has them saved, then stays", () => {
     const speak = section('When you speak', 'How you write');
     expect(speak).toContain(
-      '- Dates someone proposes ("1 to 7 Dec?"), the first dates or a change, get search_stays at once for those dates, the card\'s line saying so.',
+      '- Proposed dates ("1 to 7 Dec?"): in a group, a dates vote (open_vote: the ranges named, plus "Other dates"), ' +
+        'and no search_stays till it closed; a trip of one: update_trip, then search_stays.',
     );
-    expect(speak).toContain(
-      'In a group, open a dates vote with open_vote in the same turn: the ranges people named, plus "Other dates"; the trip\'s dates wait for it. ' +
-        'A trip of one: save them with update_trip at once, no vote.',
-    );
+    expect(speak).not.toContain('get search_stays at once');
     expect(speak).not.toContain('is an open proposal');
     expect(speak).not.toContain('never search on it unless someone asks');
   });
@@ -190,9 +190,19 @@ describe('what stays, said once', () => {
     expect(votes).toContain('the App posts its result: never say who won or the counts again. Take the next step');
     // Keshav, 11 Oct: "for change of place voting was right move but remove the organizer stuff"; and no polls for one.
     expect(votes).toContain(
-      "- The title, place and dates change by the group's vote, applied the moment it closes: anyone asking to change one gets the vote opened at once (one tap each), never a refusal.",
+      "- The place and dates change by the group's vote, applied the moment it closes: anyone asking to change one gets the vote opened at once (one tap each), never a refusal.",
     );
+    // Keshav, 12 Oct: voting is for important things, "not for faltu things like changing the name of the group".
+    expect(votes).toContain("A rename is anyone's ask, done at once.");
+    expect(votes).not.toContain('The title, place and dates change by the group');
     expect(votes).toContain('A trip of one never gets a vote or poll: their word is the decision, applied at once.');
+    // Agreement in the chat counts (Keshav, 12 Oct: "the entire UI is reactive"): more than half of the trip agreeing closes
+    // an open vote on it, as a majority of taps does in code (trips/majority.ts), or is saved at once with none open
+    // (trips/save-trip.ts chatAgreed). Nothing is said to be set unless the save worked.
+    expect(votes).toContain(
+      '- Chat agreement counts: more than half of the trip saying yes ("works", 👍) closes an open vote (close_vote), ' +
+        'or with none open, save it (update_trip, agreed_message_ids). Never say it\'s set unless it saved.',
+    );
     expect(GO_RULES).not.toContain('organizer says so');
     expect(GO_RULES).not.toContain("organizer's word");
     expect(votes).toContain('- Never say who said, picked or agreed to what unless their own message in the chat says it.');

@@ -549,7 +549,14 @@ describe('why Go woke, and the trip block', () => {
     const text = context().renderWake(wake({ kind: 'trip_change', ref: 'decision:d_where', payload: { type: 'decision.closed', decisionId: 'd_where' } }), p);
     expect(text).toContain("It picked where the trip goes, and Go saves it as the trip's place itself");
     expect(text).toContain('never set_mandate or ask_to_pay, and never a word about booking or paying it');
-    expect(text).toContain("with the trip's dates set, put up its stays (search_stays); without them, ask for the dates in one question with offer_replies date buttons");
+    // A group's dates are asked as a dates vote, never one person's button (12 Oct).
+    expect(text).toContain("with the trip's dates set, put up its stays (search_stays); without them, ask for the dates as a dates vote (open_vote): the likely ranges plus \"Other dates\".");
+    expect(text).not.toContain('offer_replies date buttons');
+    // A trip of one's place card closes on their one tap: no vote for its dates, their own buttons as before.
+    const one = { ...p, trip: { ...p.trip, people: p.trip.people.slice(0, 1) } };
+    const alone = context().renderWake(wake({ kind: 'trip_change', ref: 'decision:d_where', payload: { type: 'decision.closed', decisionId: 'd_where' } }), one);
+    expect(alone).toContain("without them, ask for the dates in one question with offer_replies date buttons.");
+    expect(alone).not.toContain('open_vote');
     expect(text).not.toMatch(/I'll book it|save the winner as the stay/);
   });
 

@@ -19,7 +19,7 @@ describe('a message as the model names it', () => {
 });
 
 // Keshav, 11 Oct: "for change of place voting was right move but remove the organizer stuff".
-describe('who decides a title, place or dates change', () => {
+describe('who decides a place or dates change', () => {
   it("the group's closed vote, never an open one, and nobody's word: the organizer's neither", () => {
     const decisions = [vote({ decision_id: 'd_name', status: 'closed', result_index: 0 }), vote({ decision_id: 'd_open' })];
     expect(groupDecided(pack(decisions), 'd_name')).toBe(true);
