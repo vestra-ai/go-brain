@@ -4,6 +4,23 @@ Every claim on this page links to its proof in this repo: a file and line, a tes
 
 **How the App, the Server and Go fit together, across the three repos: [ARCHITECTURE.md](ARCHITECTURE.md).** Go's own inside is in [docs/architecture.md](docs/architecture.md).
 
+## Read this first: we are not ixigo's internal team
+
+Go was built by Vestra, a team from outside ixigo, during ixigo's hackweek. Please review it as that. We did not have what ixigo's own teams have:
+
+- **No working access to ixigo's MCP servers or internal APIs.** We asked for MCP and SDK access on 6 Oct; the docs sat behind ixigo's VPN. On 8 Oct we received reference PDFs for the trains MCP and the flight booking APIs, but never an endpoint or a token we could call. Go has an MCP lane built against those references, behind a switch: `TRAVEL_MODE` `ixigo` with `IXIGO_MCP_URL` ([`apps/brain/src/admin/switches.ts:17`](apps/brain/src/admin/switches.ts#L17), [`apps/brain/src/travel/register.ts:78`](apps/brain/src/travel/register.ts#L78), its health probe in [`apps/brain/src/admin/health.ts:150`](apps/brain/src/admin/health.ts#L150)). Production logs "IXIGO_MCP_URL is not set" at every start, because we never had one.
+- **No payment rail, no account systems, no internal inventory.** The only help from ixigo's side was letting our computers' one shared address through its Cloudflare check for the hackweek (10 Oct).
+
+**So Go uses ixigo the way a person does: on ixigo.com itself.** Each trip has its own computer with a real browser, logged in to the traveller's own ixigo account. Go searches with ixigo's own pages and filters, reads the same answers ixigo's pages load, and books on ixigo's own pages up to the pay button ([`apps/brain/src/travel/book/engine.ts`](apps/brain/src/travel/book/engine.ts), [`apps/brain/recipes`](apps/brain/recipes), [`apps/brain/src/travel/booking`](apps/brain/src/travel/booking)). Every price, seat, coupon and fare type you see in Go is ixigo's live data, not ours.
+
+What that means when you judge it:
+
+- **Speed.** A real browser is slower than an API: on production tonight a flights page took 3 to 5 s and a stays search 8 to 11 s (Go's `book: run` log lines). Go answers at once and shows its live browser while it works, so people watch the work instead of waiting on a spinner.
+- **ixigo's own defences.** Cloudflare checks and rate limits apply to us as to any outside visitor. Go paces flights pages to one every 20 s across all trips, with a 10 minute quiet after a refusal ([`apps/brain/recipes/flights/results.yaml:110`](apps/brain/recipes/flights/results.yaml#L110)), and retries by itself.
+- **Payment is simulated.** With no payment rail, Go stops at ixigo's pay button, and the demo's "Pay with ixigo money" is the Server's simulated payment.
+- **Trains are parked:** ixigo's train booking needs each traveller's own IRCTC login. **International tickets** stop before passport details, which Go doesn't fill yet.
+- **With ixigo's internal access, the search side switches with one setting** (`TRAVEL_MODE` `ixigo` and the MCP's address), and booking through ixigo's APIs would replace the browser steps in one module ([`apps/brain/src/travel/booking`](apps/brain/src/travel/booking)). The App, the Server and the contract would not change.
+
 ## What Go is
 
 Go is the AI member of a trip group. Friends plan a trip in a group chat, and Go is in that chat with them as one more member. It reads every message, stays quiet through the chatter, and answers when someone asks it something: "Go is typing..." shows at once, and the answer follows. It keeps track of what each person said and what the group agreed, with a link to the message that proves it, and it forgets a person exactly when they ask.

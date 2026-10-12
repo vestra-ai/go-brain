@@ -4,6 +4,8 @@
 
 **Judges: start at [SUBMISSION.md](SUBMISSION.md)**, which links every claim to its proof and says what is live and what is simulated.
 
+**We are not ixigo's internal team.** Go was built from outside ixigo, with no working access to ixigo's MCP servers or internal APIs, so it uses ixigo.com itself, in a real browser per trip, up to the pay button. What that means for review: [Read this first](SUBMISSION.md#read-this-first-we-are-not-ixigos-internal-team).
+
 Go is the AI member of a trip group. Friends plan a trip in a group chat, and Go is in that chat with them: it reads every message, answers when someone asks, keeps track of what each person said and what the group agreed, searches flights and stays, hands long jobs to the trip's own computer, books what the group voted for only with two keys, and can phone a business for the group. To the people in the room, Go is one member of the group, and this repo is Go.
 
 ## The three parts
