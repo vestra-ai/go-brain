@@ -28,6 +28,7 @@ describe("Go closes a vote it opened once one option has the trip's majority", (
     ({ event_id: 'ev_1', type: 'decision.voted', trip_id: tripId, data: { decision_id: 'd_dates', voted: tally.reduce((a, b) => a + b, 0), of: 3, tally } }) as unknown as C.Event;
   const world = (people: string[], decision: C.Decision, fail = false) => {
     const closes: Array<Record<string, unknown>> = [];
+    const wakes: Array<Record<string, unknown>> = [];
     const said: string[] = [];
     const m = createMajorityClose({
       link: { request: (async (method: string, params: Record<string, unknown>) => {
@@ -37,15 +38,25 @@ describe("Go closes a vote it opened once one option has the trip's majority", (
         return {};
       }) as never },
       packs: { get: async () => ({ trip: { people: people.map(person), decisions: [decision] } }) as never },
+      desk: { put: async (item) => void wakes.push(item as Record<string, unknown>) },
+      now: () => new Date('2026-10-12T07:00:00Z'),
       log: { info: (_o, msg) => void said.push(msg), warn: (_o, msg) => void said.push(msg) },
     });
-    return { m, closes, said };
+    return { m, closes, wakes, said };
   };
 
   it("2 of a trip's 3 on one option: Go closes the vote at once, once, so its wake saves the dates", async () => {
     const w = world(['p_saket', 'p_rahul', 'p_ankur'], dates({ voted: 2, tally: [2, 0, 0] }));
     await w.m.onEvent(voted([2, 0, 0]));
     expect(w.closes).toEqual([{ request_id: expect.stringMatching(/^go_close_majority/), trip_id: 't_munnar', decision_id: 'd_dates' }]);
+    // The close comes back closed_by_go, which intake wakes nobody for: the closed vote's wake is put here, 2 s on, so its
+    // winner is saved (When? fills in) once the close is in the pack.
+    expect(w.wakes).toEqual([
+      {
+        id: 'change:majority:d_dates', tripId: 't_munnar', kind: 'trip_change', ref: 'decision:d_dates', dueAt: new Date('2026-10-12T07:00:02Z'),
+        payload: { type: 'decision.closed', decisionId: 'd_dates', reason: 'majority' },
+      },
+    ]);
     // The same vote again (a retried event): the same request id, so the Server answers it once.
     await w.m.onEvent(voted([2, 0, 0]));
     expect(w.closes[1]!.request_id).toBe(w.closes[0]!.request_id);
@@ -56,6 +67,7 @@ describe("Go closes a vote it opened once one option has the trip's majority", (
     await one.m.onEvent(voted([1, 0, 0]));
     await one.m.onEvent(voted([1, 1, 0]));
     expect(one.closes).toEqual([]);
+    expect(one.wakes).toEqual([]);
   });
 
   it("a trip of one, a person's own poll, a vote already closed and other events are left alone", async () => {
@@ -77,6 +89,7 @@ describe("Go closes a vote it opened once one option has the trip's majority", (
     const w = world(['p_saket', 'p_rahul'], dates({ tally: [2, 0, 0] }), true);
     await expect(w.m.onEvent(voted([2, 0, 0]))).resolves.toBeUndefined();
     expect(w.said.at(-1)).toContain('did not go through');
+    expect(w.wakes).toEqual([]);
   });
 });
 

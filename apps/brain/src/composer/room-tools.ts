@@ -202,6 +202,10 @@ export function roomTools(o: { now: () => Date; pool: Pool; travel?: () => Trave
           tally: d.options.map((op, k) => `${inlineData(op.label)} ${d.tally[k] ?? 0}`),
           voted: d.voted,
           of: d.of,
+          // A vote Go closes wakes nobody after (closed_by_go): what it settled is saved in this turn (Keshav, 12 Oct).
+          ...(won
+            ? { next: 'Save what it settled now with update_trip and its decision_id (dates, place or name), or for a stay continue as the stay vote does.' }
+            : {}),
         };
       } catch (e) {
         if (codeOf(e) === 409) return { ok: false, error: 'That vote is not open.' };

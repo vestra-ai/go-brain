@@ -242,7 +242,7 @@ export const registerTravel: RegisterLane = async (brain) => {
   const itinerary = createItinerary({ link: brain.door.link, packs: brain.packs, log: brain.log, placesFor: stayPlaces(results) });
   brain.tripLog.onEvent((ev) => itinerary.onEvent(ev));
   // A vote Go opened closes once one option has more than half of the trip's people (trips/majority.ts).
-  const majority = createMajorityClose({ link: brain.door.link, packs: brain.packs, log: brain.log });
+  const majority = createMajorityClose({ link: brain.door.link, packs: brain.packs, desk: brain.desk, now: brain.now, log: brain.log });
   brain.tripLog.onEvent((ev) => majority.onEvent(ev));
   brain.onStop(function stopItineraryRewrites() {
     return itinerary.settled();
