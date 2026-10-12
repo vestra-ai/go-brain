@@ -10,6 +10,8 @@ Go is the AI member of a trip group's chat. It is built by three teams in three 
 
 This page shows how the three fit together. Every claim links to the file that does it, on each repo's `main`. Go's inside is described in more depth in [docs/architecture.md](docs/architecture.md), and the claims with their tests and numbers are in [SUBMISSION.md](SUBMISSION.md).
 
+> **Read this first: we are not ixigo's internal team.** Go was built by Vestra, from outside ixigo, during the hackweek, with no working access to ixigo's MCP servers, internal APIs, payment rail or account systems (we received reference PDFs, never an endpoint or a token). So Go uses ixigo the way a person does: on ixigo.com itself, in a real browser per trip, logged in to the traveller's own ixigo account, searching and booking on ixigo's own pages up to the pay button. Its MCP lane is built and waits behind one switch. What that means for speed, payment, trains and review is in [SUBMISSION.md](SUBMISSION.md#read-this-first-we-are-not-ixigos-internal-team).
+
 ## 1. The picture
 
 ```mermaid
