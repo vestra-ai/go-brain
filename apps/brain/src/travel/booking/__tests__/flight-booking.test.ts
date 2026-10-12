@@ -143,13 +143,13 @@ describe("Go books a person's own flight up to ixigo's pay button", () => {
   it('prices the fare type they asked for, and a repeat of the tap starts nothing', async () => {
     const { runner, reads } = fakeRunner();
     const b = booking(runner);
-    // A traveller the account has saved (Meher), so the booking runs to its end: four reads, the stage's two and the private two.
+    // The booking runs to its end on the stage's two reads: ixigo's results and the review page.
     // Flex, at ₹9,045 after the coupon, within 5% of the ₹9,000 its card showed.
     const ask = { tapId: 'tap_b2', tripId: 't_goa', personId: 'p_meher6', name: 'Meher', offer: { ...OFFER, priceMinor: 900_000 }, choice: 'flex' as const };
     await b.start(ask);
     await b.start(ask);
     await b.settled();
-    expect(reads).toHaveLength(4);
+    expect(reads).toHaveLength(2);
     expect(reads[1]!.plan.steps).toEqual([{ op: 'click', role: 'radio', near_text: 'Free Cancellation + Rescheduling' }]);
     const row = (await db.pool.query(`select state, total_minor from flight_bookings where person_id = 'p_meher6'`)).rows[0];
     expect(row).toEqual({ state: 'ready_to_pay', total_minor: String(940_500 - 36_000) });
@@ -472,7 +472,7 @@ describe("Go books a person's own flight up to ixigo's pay button", () => {
     // Asked in words (book_flight): no card kept with the booking, so his own card gets the flight with its button back.
     const from = lb.link.requests.length;
     const b = booking(fakeRunner().runner, true, stale, { results });
-    // Meher: the name on the trip account's saved travellers, so the run reaches its pay step.
+    // The run reaches its pay step: no traveller step stands before it.
     await b.start({ tapId: 'words_t1', tripId: 't_goa', personId: 'p_saket', name: 'Meher Varma', offer, choice: 'basic' });
     await b.settled();
     const sent = lb.link.requests.slice(from);
@@ -493,7 +493,7 @@ describe("Go books a person's own flight up to ixigo's pay button", () => {
   });
 
   it("Pay says it opens soon with no ticket payment yet, says ixigo's refusal, and answers inside the tap when the Server is slow", async () => {
-    // A saved traveller's booking (Meher's name on the account), so it ends on its ready card and Pay finds it.
+    // The booking ends on its ready card, and Pay finds it.
     const b0 = booking(fakeRunner().runner);
     await b0.start({ tapId: 'tap_q1', tripId: 't_goa', personId: 'p_q', name: 'Meher', offer: OFFER, choice: 'basic' });
     await b0.settled();
