@@ -11,8 +11,8 @@ import type { StoredOffer } from '../../travel.js';
 import { SWITCH_RULES } from '../../../admin/switches.js';
 import { spokenFirstName } from '../travellers.js';
 import {
-  createFlightBooking, dayMs, dayOf, FLIGHT_FARE, FLIGHT_STREAM, GRAPH, LOGIN_WAIT_MS, newTravellerSteps, numbersOf, readyCard, SAVED_TRAVELLERS, TRAVELLER_FEMALE,
-  TRAVEL_DETAILS, TRAVELLER_FIELDS, TRAVELLER_MALE, travellerAsk, TRAVELLERS_RETRY, detailsAsk, hasFields, ticketWhen,
+  createFlightBooking, dayMs, dayOf, FLIGHT_FARE, FLIGHT_STREAM, GRAPH, numbersOf, readyCard,
+  TRAVEL_DETAILS, travellerAsk, detailsAsk, hasFields, ticketWhen,
   type FlightBooking, type TicketPay,
 } from '../flight-booking.js';
 import { buildOptionsCard, type OptionsCardT } from '../../cards.js';
@@ -58,55 +58,22 @@ const COUPONS = JSON.stringify({
   } },
 });
 
-// The account's saved travellers as ixigo answers them (E2's keys; made-up people): Meher once, Arjun twice.
-const SAVED = JSON.stringify({
-  data: [
-    { id: 'tv1', firstName: 'Meher', lastName: 'Kapoor', dob: '1994-03-02', travellerType: 'ADULT' },
-    { id: 'tv2', firstName: 'Arjun', lastName: 'Rao', travellerType: 'ADULT' },
-    { id: 'tv3', firstName: 'Arjun', lastName: 'Mehta', travellerType: 'ADULT' },
-  ],
-});
-
 type Read = { url: string; plan: FetchPlan; o: ReadOptions | undefined };
-/**
- * saved: how the traveller step's own call for the saved travellers goes: answered (the default), refused by ixigo once
- * then answered, or refused every time. calls: each read of it, in order.
- */
-/** fillFails: how many reads that type a new traveller into ixigo's form find no box. */
-function fakeRunner(o: { fare?: boolean; tick?: boolean | 'ran_out'; saved?: 'ok' | 'once' | 'never'; intl?: boolean; fillFails?: number } = {}): { runner: RecipeRunner; reads: Read[]; calls: string[] } {
+/** ixigo's results, then the flight's review page; fare: false, a review that answers nothing. */
+function fakeRunner(o: { fare?: boolean } = {}): { runner: RecipeRunner; reads: Read[] } {
   const reads: Read[] = [];
-  const calls: string[] = [];
-  let fills = 0;
   const runner: RecipeRunner = {
     name: 'browser_fetch',
     async read(_trip, url, plan, opts) {
       reads.push({ url, plan, o: opts });
       if (url.includes('/search/result/flight')) return { captures: [{ ...capture(FLIGHT_STREAM, 'https://www.ixigo.com/flights/v2/search/stream', STREAM), content_type: 'text/event-stream' }], finalUrl: url };
-      if (opts?.private && plan.capture.some((c) => c.match === SAVED_TRAVELLERS)) {
-        calls.push(SAVED_TRAVELLERS);
-        const refused = o.saved === 'never' || (o.saved === 'once' && calls.length === 1);
-        const call = `https://www.ixigo.com${SAVED_TRAVELLERS}?date=${dayMs('06112026')}`;
-        // The traveller step's fields call, with its journeyType (an international ticket needs passport details).
-        const fields = capture(TRAVELLER_FIELDS, `https://www.ixigo.com${TRAVELLER_FIELDS}?fareKey=x&journeyType=${o.intl ? 'INTERNATIONAL' : 'DOMESTIC'}`, '{"data":{}}');
-        return { captures: [refused ? capture(SAVED_TRAVELLERS, call, '{"errors":[{"message":"unauthorized"}]}', 401) : capture(SAVED_TRAVELLERS, call, SAVED), fields], finalUrl: url };
-      }
-      if (opts?.private && plan.steps?.some((st) => st.op === 'click' && st.near_text === 'First & Middle Name')) {
-        fills += 1;
-        if (fills <= (o.fillFails ?? 0)) throw new Error('504 timeout at 3 click');
-      }
-      if (opts?.private) {
-        if (o.tick === false) throw new Error('504 timeout at 3 click');
-        // Ran out of time at the tick, with the traveller step's call caught: the runner answers it, and its trace says so.
-        if (o.tick === 'ran_out') opts.onTrace?.({ started_at: 0, elapsed_ms: 20_000, calls: [], failed: { status: 504, why: 'ran out of time at 3 click' } });
-        return { captures: [capture(TRAVELLER_FIELDS, 'https://www.ixigo.com/flight-booking/v1/traveller/display-fields?x', '{"data":{}}')], finalUrl: url };
-      }
       return {
         captures: o.fare === false ? [] : [capture(FLIGHT_FARE, 'https://www.ixigo.com/flight-booking/flight-fare?x', FARE), capture(GRAPH, 'https://www.ixigo.com/graph', COUPONS)],
         finalUrl: url,
       };
     },
   };
-  return { runner, reads, calls };
+  return { runner, reads };
 }
 
 const OFFER: StoredOffer = {
@@ -141,48 +108,34 @@ describe("the basic fare declines Free Cancellation only where ixigo offers it",
 
 describe("Go books a person's own flight up to ixigo's pay button", () => {
   it('opens the fare on the stage for them alone, picks the fare type, keeps ixigo\'s coupon, and posts their ready card', async () => {
-    const { runner, reads, calls } = fakeRunner();
+    const { runner, reads } = fakeRunner();
     const b = booking(runner);
     expect(await b.onFor('t_goa')).toBe(true);
     const from = lb.link.requests.length;
     await b.start({ tapId: 'tap_b1', tripId: 't_goa', personId: 'p_meher', name: 'Meher', offer: OFFER, choice: 'basic' });
     await b.settled();
-    // 1. ixigo's results for one adult, on the stage, the stream's last event; 2. that flight's review page, on the stage;
-    // 4. the same page again in a private tab, twice: its traveller step's own call for the saved travellers, then her
-    // saved traveller ticked there.
+    // 1. ixigo's results for one adult, on the stage, the stream's last event; 2. that flight's review page, on the stage.
     expect(reads.map((r) => [new URL(r.url).pathname, r.o?.stage ?? false, r.o?.private ?? false])).toEqual([
-      ['/search/result/flight', true, false], ['/flight/booking/1044/tok123', true, false], ['/flight/booking/1044/tok123', false, true], ['/flight/booking/1044/tok123', false, true],
+      ['/search/result/flight', true, false], ['/flight/booking/1044/tok123', true, false],
     ]);
     expect(new URL(reads[0]!.url).searchParams.get('adults')).toBe('1');
     expect(reads[0]!.plan.capture).toEqual([{ match: FLIGHT_STREAM, required: true, max_bytes: 4_194_304, sse: 'last' }]);
     expect(new URL(reads[1]!.url).searchParams.get('ftk')).toBe('T-6E2150');
     expect(reads[1]!.plan.steps).toEqual([{ op: 'click', role: 'radio', text: "I don't want Free Cancellation", optional: true, within_ms: 10_000 }]);
-    // The account's saved travellers, as ixigo's traveller step asks for them itself (prod, 11 Oct: ixigo turned away Go's
-    // own call), and her own ticked by her name there.
-    expect(calls).toEqual([SAVED_TRAVELLERS]);
-    expect(reads[2]!.plan).toEqual({
-      capture: [{ match: SAVED_TRAVELLERS, required: true }, { match: TRAVELLER_FIELDS, required: false }],
-      steps: [{ op: 'click', role: 'radio', text: "I don't want Free Cancellation", optional: true, within_ms: 10_000 }, { op: 'click', role: 'button', name: 'Continue' }],
-    });
-    expect(reads[3]!.plan).toEqual({
-      capture: [{ match: TRAVELLER_FIELDS, required: true }],
-      steps: [{ op: 'click', role: 'radio', text: "I don't want Free Cancellation", optional: true, within_ms: 10_000 }, { op: 'click', role: 'button', name: 'Continue' }, { op: 'click', text: 'Meher Kapoor' }],
-    });
     // Her live card ticking each step, then her ready card with what she would pay: each posted for her alone (1.2).
     const sent = lb.link.requests.slice(from);
     expect(sent.filter((r) => r.method === 'post_message').map((r) => r.params['visible_to_person_ids'])).toEqual([['p_meher'], ['p_meher']]);
     const live = sent.filter((r) => (r.params['card'] as { kind?: string } | undefined)?.kind === 'working').at(-1)!.params['card'] as C.Card & { steps: Array<{ state: string }> };
     expect(live).toMatchObject({ title: 'Booking IndiGo 6E2150 for Meher', state: 'done' });
-    expect(live.steps.map((s) => s.state)).toEqual(['done', 'done', 'done', 'done', 'done']);
+    expect(live.steps.map((s) => s.state)).toEqual(['done', 'done', 'done', 'done']);
     const ready = C.NoticeCard.parse(sent.find((r) => (r.params['card'] as { kind?: string } | undefined)?.kind === 'notice')!.params['card']);
     expect(ready).toMatchObject({
       title: 'Ready to pay ₹7,536 for Meher', for_person_ids: ['p_meher'],
       body: "IndiGo 6E2150, Fri 6 Nov, no free cancellation. ixigo's SALE coupon: ₹360 off.",
       actions: [{ action_id: 'pay_flight', label: 'Pay', only_for_person_ids: ['p_meher'] }],
     });
-    // Nothing of the account's wallet or of its saved travellers reaches the room.
+    // Nothing of the account's wallet reaches the room.
     expect(JSON.stringify(sent)).not.toContain('987654');
-    expect(JSON.stringify(sent)).not.toMatch(/Kapoor|Rao|Mehta/);
     const row = (await db.pool.query(`select state, total_minor, coupon_code, coupon_minor, review_url from flight_bookings where person_id = 'p_meher'`)).rows[0];
     expect(row).toMatchObject({ state: 'ready_to_pay', total_minor: '753600', coupon_code: 'SALE', coupon_minor: '36000' });
   });
@@ -190,13 +143,13 @@ describe("Go books a person's own flight up to ixigo's pay button", () => {
   it('prices the fare type they asked for, and a repeat of the tap starts nothing', async () => {
     const { runner, reads } = fakeRunner();
     const b = booking(runner);
-    // A traveller the account has saved (Meher), so the booking runs to its end: four reads, the stage's two and the private two.
+    // The booking runs to its end on the stage's two reads: ixigo's results and the review page.
     // Flex, at ₹9,045 after the coupon, within 5% of the ₹9,000 its card showed.
     const ask = { tapId: 'tap_b2', tripId: 't_goa', personId: 'p_meher6', name: 'Meher', offer: { ...OFFER, priceMinor: 900_000 }, choice: 'flex' as const };
     await b.start(ask);
     await b.start(ask);
     await b.settled();
-    expect(reads).toHaveLength(4);
+    expect(reads).toHaveLength(2);
     expect(reads[1]!.plan.steps).toEqual([{ op: 'click', role: 'radio', near_text: 'Free Cancellation + Rescheduling' }]);
     const row = (await db.pool.query(`select state, total_minor from flight_bookings where person_id = 'p_meher6'`)).rows[0];
     expect(row).toEqual({ state: 'ready_to_pay', total_minor: String(940_500 - 36_000) });
@@ -244,160 +197,40 @@ describe("Go books a person's own flight up to ixigo's pay button", () => {
     expect(line.params).toMatchObject({ text: "Meher, IndiGo 6E2150 is ₹7,536 now, up from ₹6,000. Tap I'll take this to book it at ₹7,536.", visible_to_person_ids: ['p_meher9'] });
   });
 
-  // Keshav, 11 Oct: "why is it asking to add me to Saket's saved traveller… its not mandatory, it can use the details of
-  // the traveller and just go ahead".
-  it("types a traveller who isn't saved into ixigo's own form from their vault's details, never asks them to be saved, and books on to the pay card", async () => {
-    const vaultAsks: unknown[] = [];
-    const pay: TicketPay = {
-      onPaid: () => undefined,
-      travelDetails: async (i) => (vaultAsks.push(i), { firstName: 'Arjun', lastName: 'Varma', gender: 'male', dob: '1990-01-01' }),
-    };
+  // Saket's demo recording, 12 Oct: "not saved as a traveller" lines during a flight booking. The booking and the payment
+  // are the Server's (payment.completed), so ixigo's traveller step is never needed.
+  it("a pick goes from ixigo's fare straight to its pay card: no login wait, no saved-traveller read, no traveller form, no gender ask", async () => {
     const { runner, reads } = fakeRunner();
-    const b = booking(runner, true, pay);
-    const from = lb.link.requests.length;
-    await b.start({ tapId: 'tap_pf1', tripId: 't_goa', personId: 'p_arjun2', name: 'Arjun', offer: OFFER, choice: 'basic' });
-    await b.settled();
-    // Two saved Arjuns: neither is surely his, so he is typed in, from his vault, for a ticket of his own.
-    expect(vaultAsks).toEqual([{ tripId: 't_goa', personId: 'p_arjun2', booking: { ref: expect.stringMatching(/^fb_/), travellerPersonId: 'p_arjun2', purpose: 'IndiGo 6E2150, for Arjun' } }]);
-    expect(reads.at(-1)!.o?.private).toBe(true);
-    expect(reads.at(-1)!.plan.steps).toEqual([
-      { op: 'click', role: 'radio', text: "I don't want Free Cancellation", optional: true, within_ms: 10_000 }, { op: 'click', role: 'button', name: 'Continue' },
-      { op: 'click', role: 'textbox', near_text: 'Adult 1' }, { op: 'click', name: 'Mr', near_text: 'Title' },
-      { op: 'click', role: 'textbox', near_text: 'First & Middle Name' }, { op: 'type', text: 'Arjun' },
-      { op: 'click', role: 'textbox', near_text: 'Last Name' }, { op: 'type', text: 'Varma' },
-    ]);
-    expect((await db.pool.query(`select state from flight_bookings where person_id = 'p_arjun2'`)).rows[0]).toEqual({ state: 'ready_to_pay' });
-    // Never "add yourself to X's saved travellers", and none of his details reaches a card or a line.
-    expect(JSON.stringify(lb.link.requests.slice(from))).not.toMatch(/saved traveller|Varma|1990/);
-  });
-
-  it("asks a traveller's gender once, theirs alone, with Male and Female, when no vault has it, and carries on by itself on their tap", async () => {
-    const results = createResultsStore(db.pool);
-    const flight: ResultOption = { kind: 'flight', title: 'IndiGo 6E2150', priceMinor: 789_600, currency: 'INR', priceNote: 'per person', highlights: [], facts: {}, sourceUrl: OFFER.sourceUrl! };
-    const set = await results.save({ tripId: 't_goa', optionKind: 'flight', source: 'search', query: {}, options: [flight], checkedAt: '2026-10-10T07:00:00.000Z' });
-    await results.saveCard(
-      { cardId: 'c_pf', tripId: 't_goa', resultsId: set.resultsId, title: 'Flights', optionKind: 'flight', card: { card_id: 'c_pf' } as never },
-      [{ optionId: 'opt_pf', n: 1, option: flight }], '2026-10-10T07:00:00.000Z',
-    );
-    const offer = { ...OFFER, optionId: 'opt_pf', cardId: 'c_pf', resultsId: set.resultsId };
-    const { runner, reads } = fakeRunner();
-    // His name in the trip, as on his ID; no vault details.
-    const b = booking(runner, true, null, { results, nameOf: async () => 'Kabir Singh' });
-    const from = lb.link.requests.length;
-    await b.start({ tapId: 'tap_pf2', tripId: 't_goa', personId: 'p_kabir3', name: 'Kabir Singh', offer, choice: 'basic' });
-    await b.settled();
-    const asked = lb.link.requests.slice(from).filter((r) => (r.params['card'] as C.Card | undefined)?.kind === 'notice');
-    expect(asked.map((r) => r.params['visible_to_person_ids'])).toEqual([['p_kabir3']]);
-    const card = C.NoticeCard.parse(asked[0]!.params['card']);
-    expect(card).toMatchObject({ for_person_ids: ['p_kabir3'], title: 'Kabir, one detail for your ticket' });
-    expect(card.actions?.map((a) => [a.action_id, a.label, a.only_for_person_ids])).toEqual([[TRAVELLER_MALE, 'Male', ['p_kabir3']], [TRAVELLER_FEMALE, 'Female', ['p_kabir3']]]);
-    expect((await db.pool.query(`select state, why from flight_bookings where person_id = 'p_kabir3'`)).rows[0]).toEqual({ state: 'failed', why: 'gender_needed' });
-    // His tap: kept, and the booking carries on by itself, typed in as Mr Kabir Singh, to his pay card.
-    expect(await b.gender({ tripId: 't_goa', cardId: card.card_id, personId: 'p_kabir3', gender: 'male' })).toEqual({ result: 'done', toast: 'Go carries on with your booking' });
-    await b.settled();
-    expect(reads.at(-1)!.plan.steps?.slice(2)).toEqual(newTravellerSteps({ first: 'Kabir', last: 'Singh', gender: 'male' }));
-    expect((await db.pool.query(`select state from flight_bookings where person_id = 'p_kabir3'`)).rows[0]).toEqual({ state: 'ready_to_pay' });
-    // Asked once: a second tap finds nothing waiting.
-    expect(await b.gender({ tripId: 't_goa', cardId: card.card_id, personId: 'p_kabir3', gender: 'female' })).toEqual({ result: 'refused', toast: 'This booking has moved on' });
-  });
-
-  // Prod, 11 Oct (fb_def5s1f6…, fb_xaxfpt62…, fb_57z1hwje…): every newcomer stopped at ixigo's Title, looked for by a
-  // name no box has. ixigo's labels are not tied to their boxes (E2): each box is the first textbox after its label.
-  it("fills ixigo's Adult 1 form as ixigo draws it: each box clicked by its label's words, then typed into as the focused box", async () => {
-    const pay: TicketPay = { onPaid: () => undefined, travelDetails: async () => ({ firstName: 'Meher', lastName: 'Varma', gender: 'female', dob: '1992-02-02' }) };
-    const fills = (reads: Read[]) => reads.filter((r) => r.plan.steps?.some((st) => st.op === 'click' && st.near_text === 'First & Middle Name'));
-    const ok = fakeRunner();
-    const b = booking(ok.runner, true, pay);
-    await b.start({ tapId: 'tap_ts1', tripId: 't_goa', personId: 'p_kabir6', name: 'Kabir', offer: OFFER, choice: 'basic' });
-    await b.settled();
-    // One read: the fare, Continue, then the form, its Title a dropdown and every name typed into the box clicked.
-    expect(fills(ok.reads).map((r) => r.plan.steps!.slice(2))).toEqual([[
-      { op: 'click', role: 'textbox', near_text: 'Adult 1' },
-      { op: 'click', name: 'Ms', near_text: 'Title' },
-      { op: 'click', role: 'textbox', near_text: 'First & Middle Name' },
-      { op: 'type', text: 'Meher' },
-      { op: 'click', role: 'textbox', near_text: 'Last Name' },
-      { op: 'type', text: 'Varma' },
-    ]]);
-    // No type step names a box ixigo never names.
-    expect(fills(ok.reads)[0]!.plan.steps!.filter((st) => st.op === 'type').every((st) => !('name' in st) && !('role' in st))).toBe(true);
-    expect((await db.pool.query(`select state from flight_bookings where person_id = 'p_kabir6'`)).rows[0]).toEqual({ state: 'ready_to_pay' });
-    // A box not found: said, and stopped, nothing submitted.
-    const none = fakeRunner({ fillFails: 1 });
-    const c = booking(none.runner, true, pay);
-    const from = lb.link.requests.length;
-    await c.start({ tapId: 'tap_ts2', tripId: 't_goa', personId: 'p_kabir7', name: 'Kabir', offer: OFFER, choice: 'basic' });
-    await c.settled();
-    expect(fills(none.reads)).toHaveLength(1);
-    expect(lb.link.requests.slice(from).filter((r) => r.method === 'post_message' && !r.params['card']).map((r) => r.params['text'])).toEqual([
-      "Go couldn't fill your traveller details on ixigo's form, so it stopped before booking IndiGo 6E2150. Tap I'll take this to try again.",
-    ]);
-    expect((await db.pool.query(`select why from flight_bookings where person_id = 'p_kabir7'`)).rows[0]).toEqual({ why: 'traveller_not_filled' });
-  });
-
-  it("stops, saying why, for what Go can't type: an international ticket's passport details, or a last name it doesn't have", async () => {
-    const from = lb.link.requests.length;
-    const intl = booking(fakeRunner({ intl: true }).runner, true, null, { nameOf: async () => 'Kabir Singh' });
-    await intl.start({ tapId: 'tap_pf3', tripId: 't_goa', personId: 'p_kabir4', name: 'Kabir', offer: OFFER, choice: 'basic' });
-    await intl.settled();
-    const one = booking(fakeRunner().runner, true, null, { nameOf: async () => 'Kabir' });
-    await one.start({ tapId: 'tap_pf4', tripId: 't_goa', personId: 'p_kabir5', name: 'Kabir', offer: OFFER, choice: 'basic' });
-    await one.settled();
-    const said = (person: string) => lb.link.requests.slice(from).filter((r) => r.method === 'post_message' && !r.params['card'] && JSON.stringify(r.params['visible_to_person_ids']) === `["${person}"]`).map((r) => r.params['text']);
-    expect(said('p_kabir4')).toEqual(["An international ticket needs passport details on ixigo's form, which Go doesn't fill yet, so it stopped before booking IndiGo 6E2150."]);
-    expect(said('p_kabir5')).toEqual([
-      "ixigo's traveller form needs your last name as on your ID, and your name in the trip is one word, so Go stopped before booking IndiGo 6E2150. Add your travel details in Go, then tap I'll take this to try again.",
-    ]);
-    const rows = (await db.pool.query(`select person_id, why from flight_bookings where person_id in ('p_kabir4', 'p_kabir5') order by person_id`)).rows;
-    expect(rows).toEqual([{ person_id: 'p_kabir4', why: 'international_traveller' }, { person_id: 'p_kabir5', why: 'traveller_name_needed' }]);
-  });
-
-  it('asks for the trip\'s ixigo login before the saved travellers, and waits there for it when there is none', async () => {
-    const { runner, calls } = fakeRunner();
-    const asked: string[] = [];
-    const asks: unknown[] = [];
+    const ensured: string[] = [];
+    void lb.switches.set('BOOKING', 'on');
+    void lb.switches.set('TRAVEL_MODE', 'ixigo_web');
+    // A one-word name, no gender, no vault and no ixigo login: none of it stops a flight.
     const b = createFlightBooking({
-      pool: db.pool, runner: () => runner, link: lb.link, switches: lb.switches, now: lb.brain.now, log: lb.brain.log, nameOf: async () => 'Someone',
-      // As the real ensure does with for: the trip's login ask is the person booking's (login.ts).
-      login: {
-        ensure: async (trip, what, o) => {
-          asked.push(what);
-          asks.push(o);
-          await db.pool.query(
-            `insert into ixigo_logins (trip_id, person_id, state, attempt, asked_at, updated_at) values ($1, $2, 'asked', 0, now(), now())
-             on conflict (trip_id) do update set person_id = excluded.person_id`,
-            [trip, o?.for ?? 'p_rahul'],
-          );
-          return { ok: false, note: 'asked to log in' };
-        },
-      },
+      pool: db.pool, runner: () => runner, link: lb.link, switches: lb.switches, now: lb.brain.now, log: lb.brain.log, nameOf: async () => 'Meher',
+      login: { ensure: async (_trip, what) => { ensured.push(what); return { ok: false, note: 'asked to log in' }; } },
     });
-    await b.start({ tapId: 'tap_l1', tripId: 't_goa', personId: 'p_meher5', name: 'Meher', offer: OFFER, choice: 'basic' });
+    const from = lb.link.requests.length;
+    await b.start({ tapId: 'tap_st1', tripId: 't_goa', personId: 'p_straight1', name: 'Meher', offer: OFFER, choice: 'basic' });
     await b.settled();
-    expect(asked).toEqual(['Booking IndiGo 6E2150 for Meher']);
-    // Its login card goes to the person booking, first (the lead, 11 Oct: Keshav's booking asked Saket, the organizer).
-    expect(asks).toEqual([{ booking: true, for: 'p_meher5' }]);
-    // She is told why, on a card for her alone: the login card is hers, and Go carries on by itself once it's in
-    // (Keshav, 11 Oct).
-    const told = lb.link.requests.filter((r) => (r.params['card'] as { card_id?: string } | undefined)?.card_id?.startsWith('c_book_login'));
-    expect(told.map((r) => [r.params['visible_to_person_ids'], (r.params['card'] as { body: string }).body])).toEqual([
-      [['p_meher5'], "Your booking needs the trip's ixigo login, which isn't linked yet. Log in on your card and Go carries on with your booking."],
+    expect(ensured).toEqual([]);
+    // ixigo's results and the review page, on the stage: no private tab, no Continue, no traveller form.
+    expect(reads.map((r) => [new URL(r.url).pathname, r.o?.stage ?? false, r.o?.private ?? false])).toEqual([
+      ['/search/result/flight', true, false], ['/flight/booking/1044/tok123', true, false],
     ]);
-    expect(calls).toEqual([]);
-    // It waits on the login, with what it carries on with.
-    const row = (await db.pool.query(`select state, why, resume, waiting_since from flight_bookings where person_id = 'p_meher5'`)).rows[0];
-    expect(row).toMatchObject({ state: 'failed', why: 'login_needed', resume: { tapId: 'tap_l1', name: 'Meher', choice: 'basic' }, waiting_since: expect.any(Date) });
-    await db.pool.query("delete from ixigo_logins where trip_id = 't_goa'");
-  });
-
-  it("stops when her saved traveller couldn't be ticked on ixigo's traveller step, whether the fetch failed or ran out at the tick", async () => {
-    for (const [tick, person] of [[false, 'p_meher2'], ['ran_out', 'p_meher3']] as const) {
-      const b = booking(fakeRunner({ tick }).runner);
-      await b.start({ tapId: `tap_${person}`, tripId: 't_goa', personId: person, name: 'Meher', offer: OFFER, choice: 'basic' });
-      await b.settled();
-      const row = (await db.pool.query(`select state, why from flight_bookings where person_id = $1`, [person])).rows[0];
-      expect(row, String(tick)).toEqual({ state: 'failed', why: 'traveller_not_ticked' });
-    }
+    expect(reads.flatMap((r) => r.plan.steps ?? [])).toEqual([FARE_TYPES.basic.click]);
+    // Her live card's four steps, then her pay card: no login card, no gender ask, no line about travellers.
+    const sent = lb.link.requests.slice(from);
+    const cards = sent.map((r) => r.params['card'] as { card_id: string; kind: string; steps?: Array<{ text: string; state: string }> } | undefined).filter((c) => c !== undefined);
+    const live = cards.filter((c) => c.kind === 'working').at(-1)!;
+    expect(live.steps).toEqual([
+      { text: 'Opening IndiGo 6E2150 on ixigo', state: 'done' }, { text: 'Choosing no free cancellation', state: 'done' },
+      { text: "ixigo's coupon", state: 'done' }, { text: 'Ready to pay for Meher', state: 'done' },
+    ]);
+    expect(cards.filter((c) => /^c_book_(login|gender)/.test(c.card_id))).toEqual([]);
+    expect(sent.filter((r) => r.method === 'post_message' && r.params['card'] === undefined)).toEqual([]);
+    expect(JSON.stringify(sent)).not.toMatch(/saved traveller|traveller form|gender/i);
+    expect(cards.find((c) => c.kind === 'notice')).toMatchObject({ title: 'Ready to pay ₹7,536 for Meher' });
+    expect((await db.pool.query(`select state from flight_bookings where person_id = 'p_straight1'`)).rows[0]).toEqual({ state: 'ready_to_pay' });
   });
 
   // p2's prod audit (11 Oct, #15): its words said "Booking … for <first last>". Go says first names.
@@ -411,40 +244,6 @@ describe("Go books a person's own flight up to ixigo's pay button", () => {
     expect(cards.find((c) => c.kind === 'working')?.title).toBe('Booking IndiGo 6E2150 for Meher');
     expect(cards.find((c) => c.kind === 'notice')?.title).toBe('Ready to pay ₹7,536 for Meher');
     expect(JSON.stringify(lb.link.requests.slice(from))).not.toContain('Kapoor');
-  });
-
-  // Keshav's first real booking (prod, 11 Oct 08:28Z): ixigo turned away Go's own call for his saved travellers, the run
-  // stopped with nothing said, and Go then told him it couldn't book flights.
-  it('says when the saved travellers did not read and reads them once more, booking on when they come', async () => {
-    const { runner, calls } = fakeRunner({ saved: 'once' });
-    const b = booking(runner);
-    const from = lb.link.requests.length;
-    expect(await b.start({ tapId: 'tap_sv1', tripId: 't_goa', personId: 'p_meher18', name: 'Meher', offer: OFFER, choice: 'basic' })).toBe('started');
-    await b.settled();
-    expect(calls).toEqual([SAVED_TRAVELLERS, SAVED_TRAVELLERS]);
-    const said = lb.link.requests.slice(from).filter((r) => r.method === 'post_message' && !r.params['card']);
-    expect(said.map((r) => [r.params['text'], r.params['visible_to_person_ids']])).toEqual([[TRAVELLERS_RETRY, ['p_meher18']]]);
-    expect((await db.pool.query(`select state from flight_bookings where person_id = 'p_meher18'`)).rows[0]).toEqual({ state: 'ready_to_pay' });
-  });
-
-  it("stops after the second read fails too, saying what is missing and to tap again, never that Go can't book, and never an ixigo page", async () => {
-    const { runner, calls, reads } = fakeRunner({ saved: 'never' });
-    const b = booking(runner);
-    const from = lb.link.requests.length;
-    await b.start({ tapId: 'tap_sv2', tripId: 't_goa', personId: 'p_meher19', name: 'Meher', offer: OFFER, choice: 'basic' });
-    await b.settled();
-    // Read twice, and nothing ticked: no third private read.
-    expect(calls).toEqual([SAVED_TRAVELLERS, SAVED_TRAVELLERS]);
-    expect(reads.filter((r) => r.o?.private)).toHaveLength(2);
-    const said = lb.link.requests.slice(from).filter((r) => r.method === 'post_message' && r.params['text']);
-    expect(said.map((r) => r.params['text'])).toEqual([
-      TRAVELLERS_RETRY,
-      "Go still couldn't read your saved travellers on ixigo, so it stopped before booking IndiGo 6E2150. Tap I'll take this to try again.",
-    ]);
-    expect(said.every((r) => JSON.stringify(r.params['visible_to_person_ids']) === '["p_meher19"]')).toBe(true);
-    expect(said.every((r) => r.params['card'] === undefined)).toBe(true);
-    expect(JSON.stringify(said)).not.toMatch(/can't book|cannot book|on ixigo yourself/i);
-    expect((await db.pool.query(`select state, why from flight_bookings where person_id = 'p_meher19'`)).rows[0]).toEqual({ state: 'failed', why: 'travellers_not_read' });
   });
 
   // Prod, 11 Oct: two taps on the room's card 1.5 s apart ran two bookings for one pick.
@@ -607,7 +406,7 @@ describe("Go books a person's own flight up to ixigo's pay button", () => {
     // What her pick showed: her flight alone, no buttons (taps.ts).
     await results.replaceCard('t_goa', { ...before, actions: [] });
     const from = lb.link.requests.length;
-    // ixigo's review didn't load: the run stops before her travellers.
+    // ixigo's review didn't load: the run stops before her pay card.
     const b = booking(fakeRunner({ fare: false }).runner, true, null, { results });
     await b.start({ tapId: 'tap_r1', tripId: 't_goa', personId: 'p_meher13', name: 'Meher', offer: { ...OFFER, optionId: 'opt_restore', cardId: 'c_restore' }, choice: 'basic', restore: before });
     await b.settled();
@@ -618,93 +417,6 @@ describe("Go books a person's own flight up to ixigo's pay button", () => {
       .toBe("Your booking needs the trip's ixigo login, which isn't linked yet. Log in on your card and Go carries on with your booking.");
     expect(travellerAsk('c_n', { personId: 'p_meher13', name: 'Meher' }, 'Rahul').body)
       .toBe("Your booking needs the trip's ixigo login, which isn't linked yet: Rahul has the Log in to ixigo card. Once it's in, Go carries on with your booking.");
-  });
-
-  // Keshav, 11 Oct: "when logged in, automatically continue"; the lead: a login let go, or never in, puts the card back.
-  describe('a booking that waits on the trip login', () => {
-    // Made in each test: the database is ready only once beforeAll has run.
-    const store = () => createResultsStore(db.pool);
-    const flight: ResultOption = { kind: 'flight', title: 'IndiGo 6E2150', priceMinor: 789_600, currency: 'INR', priceNote: 'per person', highlights: [], facts: {}, sourceUrl: OFFER.sourceUrl! };
-    /** A person's own card of one flight, as their pick left it (their flight alone, no buttons), kept and its offer saved. */
-    const ownCard = async (tripId: string, personId: string, cardId: string) => {
-      const results = store();
-      const set = await results.save({ tripId, optionKind: 'flight', source: 'search', query: {}, options: [flight], checkedAt: '2026-10-10T07:00:00.000Z' });
-      const before = buildOptionsCard({
-        cardId, title: 'Flights for Meher', optionKind: 'flight', checkedAt: '2026-10-10T07:00:00.000Z', picks: [{ optionId: `${cardId}_1`, option: flight, imageUrl: null }], forPersonIds: [personId],
-      });
-      await results.saveCard({ cardId, tripId, resultsId: set.resultsId, title: before.title, optionKind: 'flight', card: before }, [{ optionId: `${cardId}_1`, n: 1, option: flight }], '2026-10-10T07:00:00.000Z');
-      await results.replaceCard(tripId, { ...before, actions: [] });
-      return { before, offer: { ...OFFER, tripId, optionId: `${cardId}_1`, cardId, resultsId: set.resultsId } };
-    };
-    /** The trip's login, out until `in` is set. */
-    const loginOf = () => {
-      const s = { in: false };
-      return { s, login: { ensure: async () => (s.in ? { ok: true as const } : { ok: false as const, note: 'asked to log in' }) } };
-    };
-    const make = (login: { ensure: () => Promise<{ ok: true } | { ok: false; note: string }> }) =>
-      createFlightBooking({
-        pool: db.pool, runner: () => fakeRunner().runner, link: lb.link, switches: lb.switches, now: lb.brain.now, log: lb.brain.log, nameOf: async () => 'Meher', login, results: store(),
-      });
-    const cardSent = (from: number, cardId: string) => lb.link.requests.slice(from).filter((r) => r.method === 'replace_card' && (r.params['card'] as { card_id?: string }).card_id === cardId);
-
-    it("keeps the pick pending, card and all, and carries on by itself when the login lands, to the end", async () => {
-      const { before, offer } = await ownCard('t_wait1', 'p_meher14', 'c_wait1');
-      const { s, login } = loginOf();
-      const b = make(login);
-      const from = lb.link.requests.length;
-      await b.start({ tapId: 'tap_w1', tripId: 't_wait1', personId: 'p_meher14', name: 'Meher', offer, choice: 'basic', restore: before });
-      await b.settled();
-      // Waiting: her card stays as her pick left it.
-      expect(cardSent(from, 'c_wait1')).toEqual([]);
-      expect((await db.pool.query(`select why from flight_bookings where person_id = 'p_meher14'`)).rows[0]).toEqual({ why: 'login_needed' });
-      // The login lands (login.ts onLoggedIn): the booking runs again from the start, to its ready card.
-      s.in = true;
-      await b.resumeWaiting('t_wait1');
-      await b.settled();
-      expect((await db.pool.query(`select state from flight_bookings where person_id = 'p_meher14'`)).rows[0]).toEqual({ state: 'ready_to_pay' });
-      expect(cardSent(from, 'c_wait1')).toEqual([]);
-      // Heard again, nothing runs twice.
-      await b.resumeWaiting('t_wait1');
-      await b.settled();
-      expect((await db.pool.query(`select state from flight_bookings where person_id = 'p_meher14'`)).rows[0]).toEqual({ state: 'ready_to_pay' });
-    });
-
-    it('carries on from the sweep when the login landed while nothing heard it; puts the card back for a login let go or never in', async () => {
-      const { s, login } = loginOf();
-      const b = make(login);
-      // Landed while nothing heard it: the login's row says in since the booking stopped.
-      const landed = await ownCard('t_wait2', 'p_meher15', 'c_wait2');
-      await b.start({ tapId: 'tap_w2', tripId: 't_wait2', personId: 'p_meher15', name: 'Meher', offer: landed.offer, choice: 'basic', restore: landed.before });
-      await b.settled();
-      s.in = true;
-      const at = new Date(Date.now() + 60_000);
-      await db.pool.query(`insert into ixigo_logins (trip_id, person_id, state, asked_at, logged_in_at, checked_at, updated_at) values ('t_wait2', 'p_meher15', 'logged_in', $1, $1, $1, $1)`, [at]);
-      await b.sweep();
-      await b.settled();
-      expect((await db.pool.query(`select state from flight_bookings where person_id = 'p_meher15'`)).rows[0]).toEqual({ state: 'ready_to_pay' });
-      // Let go (Not now): her card is back as it was, to pick again.
-      s.in = false;
-      const skipped = await ownCard('t_wait3', 'p_meher16', 'c_wait3');
-      await b.start({ tapId: 'tap_w3', tripId: 't_wait3', personId: 'p_meher16', name: 'Meher', offer: skipped.offer, choice: 'basic', restore: skipped.before });
-      await b.settled();
-      await db.pool.query(`insert into ixigo_logins (trip_id, person_id, state, asked_at) values ('t_wait3', 'p_meher16', 'skipped', now())`);
-      // Never in: past LOGIN_WAIT_MS, the same.
-      const never = await ownCard('t_wait4', 'p_meher17', 'c_wait4');
-      await b.start({ tapId: 'tap_w4', tripId: 't_wait4', personId: 'p_meher17', name: 'Meher', offer: never.offer, choice: 'basic', restore: never.before });
-      await b.settled();
-      await db.pool.query(`update flight_bookings set waiting_since = waiting_since - make_interval(secs => $1) where person_id = 'p_meher17'`, [LOGIN_WAIT_MS / 1000 + 1]);
-      const from = lb.link.requests.length;
-      await b.sweep();
-      expect(cardSent(from, 'c_wait3').map((r) => r.params['card'])).toEqual([skipped.before]);
-      expect(cardSent(from, 'c_wait4').map((r) => r.params['card'])).toEqual([never.before]);
-      expect((await store().card('t_wait4', 'c_wait4'))?.card).toEqual(never.before);
-      const rows = (await db.pool.query(`select person_id, why from flight_bookings where person_id in ('p_meher16', 'p_meher17') order by person_id`)).rows;
-      expect(rows).toEqual([{ person_id: 'p_meher16', why: 'login_let_go' }, { person_id: 'p_meher17', why: 'login_let_go' }]);
-      // Swept again, nothing is put back twice.
-      const from2 = lb.link.requests.length;
-      await b.sweep();
-      expect(cardSent(from2, 'c_wait3')).toEqual([]);
-    });
   });
 
   // Keshav, 11 Oct: an ixigo page is never the answer; pay is always through the vault.
@@ -760,7 +472,7 @@ describe("Go books a person's own flight up to ixigo's pay button", () => {
     // Asked in words (book_flight): no card kept with the booking, so his own card gets the flight with its button back.
     const from = lb.link.requests.length;
     const b = booking(fakeRunner().runner, true, stale, { results });
-    // Meher: the name on the trip account's saved travellers, so the run reaches its pay step.
+    // The run reaches its pay step: no traveller step stands before it.
     await b.start({ tapId: 'words_t1', tripId: 't_goa', personId: 'p_saket', name: 'Meher Varma', offer, choice: 'basic' });
     await b.settled();
     const sent = lb.link.requests.slice(from);
@@ -781,7 +493,7 @@ describe("Go books a person's own flight up to ixigo's pay button", () => {
   });
 
   it("Pay says it opens soon with no ticket payment yet, says ixigo's refusal, and answers inside the tap when the Server is slow", async () => {
-    // A saved traveller's booking (Meher's name on the account), so it ends on its ready card and Pay finds it.
+    // The booking ends on its ready card, and Pay finds it.
     const b0 = booking(fakeRunner().runner);
     await b0.start({ tapId: 'tap_q1', tripId: 't_goa', personId: 'p_q', name: 'Meher', offer: OFFER, choice: 'basic' });
     await b0.settled();

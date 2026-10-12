@@ -18,7 +18,6 @@ import { buildOptionsCard, clip, formatInr, type OptionsCardT } from '../cards.j
 import { stableId } from '../ids.js';
 import type { IxigoLogin } from '../login.js';
 import { bodiesFor } from '../recipes/recipe.js';
-import type { FetchPlan } from '../recipes/recipe.js';
 import type { RecipeRunner } from '../recipes/runners.js';
 import type { Booked, Paid } from '../../money/pay.js';
 import type { TravelDetails, TravelField } from '../../money/vault-client.js';
@@ -28,27 +27,16 @@ import { fareFor, reviewAddress } from './review-address.js';
 import { tapAgain } from './tap-again.js';
 import { FARE_TYPES, ixigoCoupon, reviewFare, type FareChoice } from './review-read.js';
 import { ageOn, classNow, dayLabel, seatWords, TRAIN_AVAILABILITY, trainOf, trainPassengerSteps, trainResultsAddress } from './train-steps.js';
-import { idNameOf, matchTravellers, savedTravellers, spokenFirstName } from './travellers.js';
+import { spokenFirstName } from './travellers.js';
 
 export const FLIGHT_STREAM = '/flights/v2/search/stream';
 export const FLIGHT_FARE = '/flight-booking/flight-fare';
 export const GRAPH = '/graph';
-/**
- * The account's saved travellers (E2, his browser, 10 Oct 11:21Z: the traveller step's own call, `date` the day flown),
- * caught as the traveller step makes it: ixigo turns away Go's own call for it, which lacks the page's headers.
- */
-export const SAVED_TRAVELLERS = '/api/v2/users/traveller';
-/** The review step's Continue, which opens the traveller step. */
-const CONTINUE = { op: 'click', role: 'button', name: 'Continue' } as const;
-/** Said to them alone when their saved travellers didn't read, before the one read more. */
-export const TRAVELLERS_RETRY = "Go couldn't read your saved travellers on ixigo just now. Trying again.";
 /** A traveller's gender, asked once, theirs alone, when it is the one thing ixigo's form needs that Go doesn't have. */
 export const TRAVELLER_MALE = 'traveller_male';
 export const TRAVELLER_FEMALE = 'traveller_female';
 /** How long a booking counts as under way: a run takes under a minute, and one a restart cut off frees its person after. */
 export const RUNNING_MS = 3 * 60_000;
-/** The traveller step's fields, its own first call once the review step's Continue is pressed (E2). */
-export const TRAVELLER_FIELDS = '/flight-booking/v1/traveller/display-fields';
 /** ixigo's own flights stream, as flights.results reads it: the last whole event, up to Bash's most. */
 const STREAM_BYTES = 4_194_304;
 /** The pay card's action, on the traveller's ready card. */
@@ -239,7 +227,7 @@ export function readyCard(i: {
 /**
  * The note when a booking waits on the trip's ixigo login. ownerIsThem: the login card is theirs (the booker is asked
  * first, the lead, 11 Oct). Go carries on by itself once it's in (Keshav, 11 Oct: "when logged in, automatically
- * continue"). A traveller who isn't saved on the account is never asked to be: Go types them in (newTravellerSteps).
+ * continue").
  */
 export function travellerAsk(cardId: string, ask: Pick<BookingAsk, 'personId' | 'name' | 'restore'>, owner: string | null, ownerIsThem = false): NoticeCard {
   // The drill, 10 Oct 15:43Z: the booking stopped at its travellers, and the traveller heard nothing why.
@@ -303,36 +291,12 @@ export function detailsAsk(cardId: string, personId: string, name: string, need:
   };
 }
 
-/** A traveller typed into ixigo's form: their name as on their ID and the title their gender gives. */
-export interface NewTraveller { first: string; last: string; gender: 'male' | 'female' }
-
 /**
  * The shapes ixigo's Title may take, tried in turn (the lead, 11 Oct; E2 saw its label, not its control): a select, which
  * takes its option typed in; chips or buttons; radios. Each by the title's own text, Mr or Ms.
  */
 export const TITLE_SHAPES = ['select', 'chips', 'radio'] as const;
 export type TitleShape = (typeof TITLE_SHAPES)[number];
-
-/**
- * ixigo's "Adult 1" form on the traveller step (E2, his browser, 10 Oct: Title, "First & Middle Name", "Last Name",
- * Nationality, India by default), filled for a traveller not saved on the account. Its labels are not tied to their
- * boxes: each box is a textbox with no name, the first after its label's words (prod, 11 Oct: every newcomer's booking
- * stopped at its Title, looked for by a name no box has). So each box is clicked by its label's words, which gives it the
- * cursor, and typed into as the box with focus; the Title is a dropdown, its box clicked open and its title clicked by
- * its own words. Each near_text is one text: a match between two would start the search again. A step that finds nothing
- * ends the fetch before anything is submitted.
- */
-export function newTravellerSteps(t: NewTraveller): NonNullable<FetchPlan['steps']> {
-  const title = t.gender === 'male' ? 'Mr' : 'Ms';
-  return [
-    { op: 'click', role: 'textbox', near_text: 'Adult 1' },
-    { op: 'click', name: title, near_text: 'Title' },
-    { op: 'click', role: 'textbox', near_text: 'First & Middle Name' },
-    { op: 'type', text: t.first },
-    { op: 'click', role: 'textbox', near_text: 'Last Name' },
-    { op: 'type', text: t.last },
-  ];
-}
 
 export interface FlightBooking {
   /**
@@ -606,7 +570,7 @@ export function createFlightBooking(d: FlightBookingDeps): FlightBooking {
     const runner = d.runner();
     const title = ask.offer.title;
     const live = bookingLiveCard(d, ask.tripId, stableId('c_book', runId), `Booking ${title} for ${ask.name}`, [
-      `Opening ${title} on ixigo`, `Choosing ${FARE_TYPES[ask.choice].words}`, "ixigo's coupon", 'Filling travellers privately', `Ready to pay for ${ask.name}`,
+      `Opening ${title} on ixigo`, `Choosing ${FARE_TYPES[ask.choice].words}`, "ixigo's coupon", `Ready to pay for ${ask.name}`,
     ], [ask.personId]);
     const fail = async (why: string, step: number): Promise<void> => {
       d.log.info({ runId, tripId: ask.tripId, why }, 'travel: a flight booking stopped');
@@ -666,112 +630,12 @@ export function createFlightBooking(d: FlightBookingDeps): FlightBooking {
     await save(runId, { state: 'travellers', total_minor: amountMinor, coupon_code: coupon?.code ?? null, coupon_minor: coupon?.savingMinor ?? null });
     await live.step(2, 'done');
 
-    // 4. Their saved traveller, privately (the lead, 10 Oct: never stream the account's saved travellers): the list read
-    // inside the logged-in page, matched by first name, then ticked on ixigo's traveller step in a private tab (no
-    // picture). The list and their name live in this run's memory only. Nothing is submitted.
-    await live.step(3, 'doing');
-    if (!(await waitForLogin(ask, runId, live, 3))) return;
-    const ms = dayMs(results.searchParams.get('date') ?? '');
-    const iso = ms !== null ? new Date(ms + 330 * 60_000).toISOString().slice(0, 10) : '';
-    // The list as ixigo's traveller step asks for it itself once Continue is pressed, caught in a private tab: the page's
-    // own call carries the headers ixigo wants. Go's own call for it from inside the page carried none, ixigo turned it
-    // away, and Keshav's first real booking stopped with nothing true said (prod, 11 Oct 08:28Z). A read that fails is
-    // said to them, and read once more.
-    // The traveller step's fields call comes with it: its journeyType says an international ticket (passport details).
-    let international = false;
-    const readSaved = async (): Promise<unknown> => {
-      const got = await runner
-        .read(ask.tripId, review, { capture: [{ match: SAVED_TRAVELLERS, required: true }, { match: TRAVELLER_FIELDS, required: false }], steps: [FARE_TYPES[ask.choice].click, CONTINUE] }, { private: true, tag: runId })
-        .catch(() => null);
-      const fields = got?.captures.find((c) => c.url.includes(TRAVELLER_FIELDS));
-      if (fields) international = /^international$/i.test(new URL(fields.url).searchParams.get('journeyType') ?? '');
-      const body = got ? bodiesFor(got.captures, SAVED_TRAVELLERS)[0] : undefined;
-      return body === undefined ? null : parsed(body);
-    };
-    let list = await readSaved();
-    if (list === null) {
-      d.log.info({ runId, tripId: ask.tripId }, "travel: a flight booking's saved travellers didn't read; once more");
-      await d.link
-        .request('post_message', { request_id: stableId('go_book_retry', runId), trip_id: ask.tripId, text: TRAVELLERS_RETRY, visible_to_person_ids: [ask.personId] })
-        .catch(() => undefined);
-      list = await readSaved();
-    }
-    if (list === null) {
-      // Said as it is, never "Go can't book flights", and never an ixigo page as the answer (Keshav's ruling): their card
-      // goes back (fail), to tap again.
-      await d.link
-        .request('post_message', {
-          request_id: stableId('go_book_unread', runId), trip_id: ask.tripId, visible_to_person_ids: [ask.personId],
-          text: `Go still couldn't read your saved travellers on ixigo, so it stopped before booking ${title}. Tap I'll take this to try again.`,
-        })
-        .catch(() => undefined);
-      return fail('travellers_not_read', 3);
-    }
-    const [match] = matchTravellers([{ personId: ask.personId, name: ask.name, kind: 'adult' }], savedTravellers(list, iso));
-    if (!match) return fail('travellers_not_read', 3);
-    const tell = (key: string, text: string) =>
-      d.link.request('post_message', { request_id: stableId(key, runId), trip_id: ask.tripId, text, visible_to_person_ids: [ask.personId] }).catch(() => undefined);
-    // Their saved traveller ticked; else (not saved on the account, or several with their first name) typed into ixigo's
-    // own traveller form (Keshav, 11 Oct: "its not mandatory, it can use the details of the traveller and just go ahead").
-    let steps: NonNullable<FetchPlan['steps']> = [];
-    let newcomer: NewTraveller | null = null;
-    if (match.status === 'matched') {
-      steps = [FARE_TYPES[ask.choice].click, CONTINUE, { op: 'click', text: match.shown }];
-    } else {
-      if (international) {
-        await tell('go_book_intl', `An international ticket needs passport details on ixigo's form, which Go doesn't fill yet, so it stopped before booking ${title}.`);
-        return fail('international_traveller', 3);
-      }
-      // Their travel details from their vault when they kept them (#395: for a ticket of their own), else their name in
-      // the trip. Their values go only into ixigo's form: never a log, the model or a card.
-      const vaulted = await d.pay?.()?.travelDetails?.({
-        tripId: ask.tripId, personId: ask.personId, booking: { ref: runId, travellerPersonId: ask.personId, purpose: clip(`${title}, for ${ask.name}`, 200) },
-      }).catch(() => null) ?? null;
-      const named = vaulted ? { first: vaulted.firstName, last: vaulted.lastName } : idNameOf(await d.nameOf(ask.tripId, ask.personId).catch(() => ''));
-      if (!named) {
-        await tell('go_book_name', `ixigo's traveller form needs your last name as on your ID, and your name in the trip is one word, so Go stopped before booking ${title}. Add your travel details in Go, then tap I'll take this to try again.`);
-        return fail('traveller_name_needed', 3);
-      }
-      const gender = vaulted?.gender ?? ask.gender;
-      if (!gender) {
-        // The one thing missing: asked once, theirs alone, with buttons; their tap carries the booking on (gender).
-        const askCardId = stableId('c_book_gender', runId);
-        await d.link.request('post_message', {
-          request_id: stableId('go_book_gender', runId), trip_id: ask.tripId, card: genderAsk(askCardId, ask.personId, ask.name), visible_to_person_ids: [ask.personId],
-        });
-        const resume: Resume = { tapId: ask.tapId, name: ask.name, choice: ask.choice, ...(ask.restore ? { restore: ask.restore } : {}), askCardId };
-        await d.pool.query(`update flight_bookings set state = 'failed', why = 'gender_needed', resume = $2, updated_at = $3 where run_id = $1`, [runId, JSON.stringify(resume), d.now()]);
-        await live.step(3, 'failed');
-        await live.finish(false);
-        return;
-      }
-      newcomer = { ...named, gender };
-    }
-    // The tick or the form is the last step: a fetch that ran out of time before it (their name not on the list, a box
-    // not found) answers with what it caught all the same, so it is its trace that says it failed. Nothing is submitted.
-    const tick = async (plan: NonNullable<FetchPlan['steps']>): Promise<boolean> => {
-      let ranOut = false;
-      return runner
-        .read(ask.tripId, review, { capture: [{ match: TRAVELLER_FIELDS, required: true }], steps: plan }, { private: true, tag: runId, onTrace: (t) => { if (t.failed) ranOut = true; } })
-        .then(() => !ranOut, () => false);
-    };
-    let ticked = false;
-    if (newcomer) {
-      ticked = await tick([FARE_TYPES[ask.choice].click, CONTINUE, ...newTravellerSteps(newcomer)]);
-    } else {
-      ticked = await tick(steps);
-    }
-    if (!ticked && match.status !== 'matched') {
-      await tell('go_book_unfilled', `Go couldn't fill your traveller details on ixigo's form, so it stopped before booking ${title}. Tap I'll take this to try again.`);
-      return fail('traveller_not_filled', 3);
-    }
-    if (!ticked) return fail('traveller_not_ticked', 3);
-    await live.step(3, 'done');
-
-    // 5. Ready to pay.
+    // 4. Ready to pay, straight from ixigo's fare. The booking and the payment are the Server's (payment.completed), so
+    // ixigo's own traveller step is never needed: no login wait, no saved travellers read, no traveller form, no gender
+    // ask (Saket's demo, 12 Oct: "not saved as a traveller" lines during a booking).
     const flies = dayOf(ask.offer.sourceUrl);
     await readyToPay({
-      ask, runId, live, step: 4, amountMinor,
+      ask, runId, live, step: 3, amountMinor,
       purpose: clip(`${title}${flies ? `, ${dayText(flies)}` : ''}, for ${ask.name}`, 200),
       ready: (cardId) => readyCard({ cardId, personId: ask.personId, name: ask.name, title, when: flies ? dayText(flies) : null, choice: ask.choice, amountMinor, coupon }),
     });
