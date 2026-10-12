@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type * as C from '@go/contract';
 import { createMajorityClose, majorityOf } from '../majority.js';
+import { chatAgreed, saveTrip } from '../save-trip.js';
 
 describe('a vote decided by more than half of the trip', () => {
   it('needs more than half of the trip\'s people on one option: 2 of 2, 2 of 3, 3 of 4, 3 of 5', () => {
@@ -76,5 +77,38 @@ describe("Go closes a vote it opened once one option has the trip's majority", (
     const w = world(['p_saket', 'p_rahul'], dates({ tally: [2, 0, 0] }), true);
     await expect(w.m.onEvent(voted([2, 0, 0]))).resolves.toBeUndefined();
     expect(w.said.at(-1)).toContain('did not go through');
+  });
+});
+
+describe('the group agreeing in the chat, with no vote open', () => {
+  const people = ['p_aryan', 'p_saket', 'p_rahul'];
+  const msg = (seq: number, author: string | null, reactions: Array<[string, string | null]> = []) =>
+    ({
+      message_id: `m_${seq}`, seq, updated_seq: seq, author: author ? { kind: 'person', person_id: author } : { kind: 'go' }, text: 'x', attachments: [],
+      mentions_go: false, mentions: [], reactions: reactions.map(([emoji, person_id]) => ({ emoji, person_id })),
+    }) as unknown as C.Message;
+  const pack = (messages: C.Message[], who = people) => ({ trip: { people: who.map((id) => ({ person_id: id })), decisions: [] }, messages, seq: 9 }) as never;
+
+  it("saves once more than half of the trip agreed: the proposer and a reply, or reactions on the proposal (Aryan's 4 ✅)", () => {
+    expect(chatAgreed(pack([msg(18, 'p_aryan'), msg(19, 'p_saket')]), ['#18', '19'])).toBe(true);
+    expect(chatAgreed(pack([msg(18, 'p_aryan', [['✅', 'p_rahul']])]), ['#18'])).toBe(true);
+    const five = ['p_aryan', 'p_saket', 'p_rahul', 'p_ankur', 'p_kabir'];
+    expect(chatAgreed(pack([msg(18, 'p_aryan', [['✅', 'p_saket'], ['✅', 'p_rahul'], ['👍🏽', 'p_ankur']])], five), ['18'])).toBe(true);
+  });
+
+  it("1 of 3 is not agreement: no save, and Go opens the vote; Go's own reactions, other emoji and unknown messages count for nothing", () => {
+    expect(chatAgreed(pack([msg(18, 'p_aryan')]), ['18'])).toBe(false);
+    expect(chatAgreed(pack([msg(18, 'p_aryan', [['✅', null], ['😂', 'p_saket']])]), ['18'])).toBe(false);
+    expect(chatAgreed(pack([msg(18, 'p_aryan'), msg(20, null)]), ['18', '20', '#99'])).toBe(false);
+    expect(chatAgreed(pack([]), undefined)).toBe(false);
+  });
+
+  it('a group change with only one person agreeing is refused as not decided, before anything is written', async () => {
+    const r = await saveTrip(
+      { pool: {} as never, now: () => new Date('2026-10-12T00:00:00Z') },
+      { link: { request: async () => { throw new Error('nothing is written'); } }, tripId: 't_x', pack: pack([msg(18, 'p_aryan')]), requestId: () => 'r' },
+      { dates: { start: '2026-11-01', end: '2026-11-04' }, agreedMessages: ['18'] },
+    );
+    expect(r).toMatchObject({ ok: false, notDecided: true });
   });
 });

@@ -99,6 +99,14 @@ const UpdateTripInput = z.object({
   dates: z.object({ start: z.iso.date(), end: z.iso.date() }).optional(),
   vibe: z.array(z.string().min(1).max(40)).max(12).optional(),
   decision_id: z.string().min(1).max(64).optional().describe('For a title, place or dates: the closed vote that decided it, like d_place (the record shows it).'),
+  agreed_message_ids: z
+    .array(z.string().min(1).max(64))
+    .max(30)
+    .optional()
+    .describe(
+      'For a title, place or dates with no vote: the proposal\'s message number first, then each reply agreeing ("yes", "works"). ' +
+        'Saved when they and those who reacted 👍 or ✅ to the proposal are more than half of the trip.',
+    ),
   stay: z
     .string()
     .min(1)
@@ -212,18 +220,19 @@ export function roomTools(o: { now: () => Date; pool: Pool; travel?: () => Trave
     input: UpdateTripInput,
     async run(a, ctx) {
       // The trip's one writer: the checks (who decided it, a stay or place a vote decided, days before today) and the request are there.
-      const { decision_id: decisionId, ...change } = a;
+      const { decision_id: decisionId, agreed_message_ids: agreedMessages, ...change } = a;
       const r = await saveTrip(
         o,
         { link: ctx.link, tripId: ctx.tripId, pack: ctx.pack, requestId: () => ctx.stableId('go_trip') },
-        { ...change, ...(decisionId ? { decisionId } : {}) },
+        { ...change, ...(decisionId ? { decisionId } : {}), ...(agreedMessages ? { agreedMessages } : {}) },
       );
       if (!r.ok && r.notDecided) {
         return {
           ok: false,
           error: r.error,
           tell_the_room:
-            "When a closed vote in the record decided it, call update_trip again with the vote's id. Otherwise open the vote on it now " +
+            "When a closed vote in the record decided it, call update_trip again with the vote's id; when more than half of the trip " +
+            'agreed in the chat, again with agreed_message_ids. Otherwise open the vote on it now ' +
             '(open_vote, one tap each) and say so in one short line, or point at the vote already open on it: never a refusal or a ' +
             'lecture. Never say it changed, and never say who said or picked what unless their own message says it.',
         };
